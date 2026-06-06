@@ -460,6 +460,26 @@ def get_system_jobs(limit: int = 100, include_raw: bool = False) -> Dict[str, An
     return list_job_control_records(limit=safe_limit, include_raw=include_raw)
 
 
+# JOB_RETENTION_1_ROUTES
+@router.get("/jobs/retention-policy")
+def get_job_retention_policy() -> Dict[str, Any]:
+    from app.services.job_history_retention_service import retention_policy
+    return retention_policy()
+
+
+@router.post("/jobs/prune")
+def prune_system_job_history(payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    from app.services.job_history_retention_service import DEFAULT_KEEP_LATEST, prune_job_history
+
+    request = payload if isinstance(payload, dict) else {}
+    keep_latest = int(request.get("keep_latest") or DEFAULT_KEEP_LATEST)
+    dry_run = request.get("dry_run", True)
+    if isinstance(dry_run, str):
+        dry_run = dry_run.strip().lower() not in {"false", "0", "no"}
+
+    return prune_job_history(keep_latest=keep_latest, dry_run=bool(dry_run))
+
+
 @router.get("/jobs/{job_id}")
 def get_system_job(job_id: str, include_raw: bool = False) -> Dict[str, Any]:
     job = get_job_control_detail(job_id=job_id, include_raw=include_raw)
