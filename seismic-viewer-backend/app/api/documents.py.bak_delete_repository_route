@@ -1,0 +1,620 @@
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional
+from concurrent.futures import ThreadPoolExecutor
+import mimetypes
+import os
+import json
+import subprocess
+import uuid
+
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
+from app.services.job_service import JobService
+from app.services.conversion_job_service import ConversionJobService
+
+from app.services.repository_registry_service import (
+    add_repository,
+    get_repository,
+    list_repositories,
+    resolve_repository_path,
+)
+from app.services.document_registry_service import (
+    get_document,
+    list_documents,
+    resolve_document_path,
+    scan_repository_for_documents,
+)
+from app.services.repository_package_scanner_service import scan_repository_packages
+from app.services.package_registry_service import (
+    get_segy_file,
+    list_lines,
+    list_packages,
+    list_segy_files,
+    persist_repository_scan,
+    update_segy_file_conversion,
+)
+
+
+router = APIRouter(prefix="/api", tags=["data-repositories-documents"])
+
+UPLOAD_DIR = os.environ.get("UPLOADS_DIR", "./data/uploads")
+ZARR_DIR = os.environ.get("ZARR_DIR", "./data/zarr")
+VOLUMES_JSON = os.environ.get("VOLUMES_JSON", "./data/volumes.json")
+JOBS_DIR = os.environ.get("JOBS_DIR", "./data/jobs")
+ZARR_TMP_DIR = os.environ.get("ZARR_TMP_DIR", "./data/zarr_tmp")
+
+registry_job_service = JobService(JOBS_DIR)
+registry_conversion_job_service = ConversionJobService(
+    job_service=registry_job_service,
+    volumes_json=VOLUMES_JSON,
+)
+registry_conversion_executor = ThreadPoolExecutor(max_workers=1)
+
+
+
+
+
+def _load_registry_volumes() -> dict:
+    if os.path.exists(VOLUMES_JSON):
+        try:
+            with open(VOLUMES_JSON, "r", encoding="utf-8") as f:
+                value = json.load(f)
+            return value if isinstance(value, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_registry_volumes(volumes: dict) -> None:
+    os.makedirs(os.path.dirname(VOLUMES_JSON), exist_ok=True)
+    with open(VOLUMES_JSON, "w", encoding="utf-8") as f:
+        json.dump(volumes, f, indent=2, ensure_ascii=False)
+
+
+def _registry_lookup_by_id(items: list[dict], id_field: str, value: str | None) -> dict | None:
+    if not value:
+        return None
+    for item in items:
+        if item.get(id_field) == value:
+            return item
+    return None
+
+
+def _attach_registry_source_to_volume(segy_file: dict) -> dict | None:
+    """
+    Ensure the converted registry SEG-Y is represented in volumes.json
+    as a normal Data Manager volume with external-source provenance.
+    """
+    volume_id = segy_file.get("volume_id")
+    if not volume_id:
+        return None
+
+    volumes = _load_registry_volumes()
+    volume = volumes.get(volume_id)
+
+    if not volume:
+        return None
+
+    packages = list_packages(repository_id=segy_file.get("repository_id"))
+    lines = list_lines(repository_id=segy_file.get("repository_id"))
+
+    package = _registry_lookup_by_id(packages, "package_id", segy_file.get("package_id"))
+    line = _registry_lookup_by_id(lines, "line_id", segy_file.get("line_id"))
+
+    line_display = line.get("display_name") if line else None
+    package_display = package.get("display_name") if package else None
+
+    display_name = line_display or segy_file.get("filename") or volume.get("filename") or volume_id
+
+    volume["id"] = volume.get("id") or volume_id
+    volume["filename"] = volume.get("filename") or segy_file.get("filename")
+    volume["display_name"] = volume.get("display_name") or display_name
+    volume["dataset_type"] = volume.get("dataset_type") or "2d_line"
+    volume["zarr_url"] = volume.get("zarr_url") or segy_file.get("zarr_url")
+
+    volume["source"] = {
+        "source_type": "external_repository",
+        "repository_id": segy_file.get("repository_id"),
+        "package_id": segy_file.get("package_id"),
+        "line_id": segy_file.get("line_id"),
+        "segy_file_id": segy_file.get("segy_file_id"),
+        "package_display_name": package_display,
+        "line_display_name": line_display,
+        "original_filename": segy_file.get("filename"),
+        "original_relative_path": segy_file.get("relative_path"),
+        "conversion_status": segy_file.get("conversion_status"),
+        "job_id": segy_file.get("job_id"),
+    }
+
+    metadata = volume.get("metadata") or {}
+    metadata["source_type"] = "external_repository"
+    metadata["repository_id"] = segy_file.get("repository_id")
+    metadata["package_id"] = segy_file.get("package_id")
+    metadata["line_id"] = segy_file.get("line_id")
+    metadata["segy_file_id"] = segy_file.get("segy_file_id")
+    metadata["package_display_name"] = package_display
+    metadata["line_display_name"] = line_display
+    metadata["original_filename"] = segy_file.get("filename")
+    metadata["original_relative_path"] = segy_file.get("relative_path")
+    volume["metadata"] = metadata
+
+    volumes[volume_id] = volume
+    _save_registry_volumes(volumes)
+
+    return volume
+
+
+class RepositoryCreateRequest(BaseModel):
+    name: str
+    root_path: str
+    repository_type: str = "local_folder"
+    read_only: bool = True
+    notes: Optional[str] = None
+
+
+@router.get("/repositories")
+def api_list_repositories():
+    return {
+        "repositories": list_repositories()
+    }
+
+
+@router.post("/repositories")
+def api_add_repository(payload: RepositoryCreateRequest):
+    try:
+        repo = add_repository(
+            name=payload.name,
+            root_path=payload.root_path,
+            repository_type=payload.repository_type,
+            read_only=payload.read_only,
+            notes=payload.notes,
+        )
+        return {
+            "repository": repo
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/repositories/{repository_id}")
+def api_get_repository(repository_id: str):
+    repo = get_repository(repository_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    return {
+        "repository": repo
+    }
+
+
+@router.post("/repositories/{repository_id}/scan-documents")
+def api_scan_repository_documents(
+    repository_id: str,
+    max_files: int = Query(50000, ge=1, le=500000),
+):
+    try:
+        return scan_repository_for_documents(repository_id, max_files=max_files)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/documents")
+def api_list_documents(
+    repository_id: Optional[str] = None,
+    linked_scope: Optional[str] = None,
+):
+    return {
+        "documents": list_documents(
+            repository_id=repository_id,
+            linked_scope=linked_scope,
+        )
+    }
+
+
+@router.get("/documents/{document_id}")
+def api_get_document(document_id: str):
+    doc = get_document(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {
+        "document": doc
+    }
+
+
+@router.get("/documents/{document_id}/view")
+def api_view_document(document_id: str):
+    doc = get_document(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    try:
+        path = resolve_document_path(document_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Document source file missing")
+
+    media_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+
+    return FileResponse(
+        path=str(path),
+        filename=path.name,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{path.name}"'
+        },
+    )
+
+
+@router.get("/documents/{document_id}/download")
+def api_download_document(document_id: str):
+    doc = get_document(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    try:
+        path = resolve_document_path(document_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Document source file missing")
+
+    media_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
+
+    return FileResponse(
+        path=str(path),
+        filename=path.name,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{path.name}"'
+        },
+    )
+
+
+@router.post("/documents/{document_id}/reveal")
+def api_reveal_document(document_id: str):
+    doc = get_document(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    try:
+        path = resolve_document_path(document_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Document source file missing")
+
+    try:
+        subprocess.run(["open", "-R", str(path)], check=False)
+        return {
+            "ok": True,
+            "document_id": document_id,
+            "revealed_path": str(path),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@router.get("/repositories/{repository_id}/scan-packages")
+def api_scan_repository_packages(
+    repository_id: str,
+    max_files: int = Query(100000, ge=1, le=500000),
+):
+    try:
+        return scan_repository_packages(repository_id, max_files=max_files)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+@router.post("/repositories/{repository_id}/persist-scan")
+def api_persist_repository_scan(
+    repository_id: str,
+    max_files: int = Query(100000, ge=1, le=500000),
+):
+    try:
+        return persist_repository_scan(repository_id, max_files=max_files)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/packages")
+def api_list_packages(repository_id: Optional[str] = None):
+    return {
+        "packages": list_packages(repository_id=repository_id)
+    }
+
+
+@router.get("/lines")
+def api_list_lines(
+    package_id: Optional[str] = None,
+    repository_id: Optional[str] = None,
+):
+    return {
+        "lines": list_lines(package_id=package_id, repository_id=repository_id)
+    }
+
+
+@router.get("/segy-files")
+def api_list_segy_files(
+    package_id: Optional[str] = None,
+    line_id: Optional[str] = None,
+    repository_id: Optional[str] = None,
+):
+    return {
+        "segy_files": list_segy_files(
+            package_id=package_id,
+            line_id=line_id,
+            repository_id=repository_id,
+        )
+    }
+
+@router.post("/segy-files/{segy_file_id}/convert")
+def api_convert_registry_segy_file(segy_file_id: str):
+    segy_file = get_segy_file(segy_file_id)
+    if not segy_file:
+        raise HTTPException(status_code=404, detail="SEG-Y file not found")
+
+    if segy_file.get("conversion_status") in {"queued", "converting"}:
+        return {
+            "status": segy_file.get("conversion_status"),
+            "message": "Conversion is already queued or running.",
+            "segy_file": segy_file,
+        }
+
+    try:
+        input_path = resolve_repository_path(
+            segy_file["repository_id"],
+            segy_file["relative_path"],
+        )
+    except Exception as exc:
+        updated = update_segy_file_conversion(
+            segy_file_id=segy_file_id,
+            conversion_status="error",
+            error=str(exc),
+        )
+        raise HTTPException(status_code=400, detail={
+            "message": "Failed to resolve SEG-Y source path",
+            "error": str(exc),
+            "segy_file": updated,
+        })
+
+    if not input_path.exists() or not input_path.is_file():
+        updated = update_segy_file_conversion(
+            segy_file_id=segy_file_id,
+            conversion_status="error",
+            error=f"Source SEG-Y file missing: {input_path}",
+        )
+        raise HTTPException(status_code=404, detail={
+            "message": "Source SEG-Y file missing",
+            "path": str(input_path),
+            "segy_file": updated,
+        })
+
+    file_id = str(uuid.uuid4())
+    job_id = str(uuid.uuid4())
+
+    os.makedirs(ZARR_DIR, exist_ok=True)
+    os.makedirs(ZARR_TMP_DIR, exist_ok=True)
+    os.makedirs(JOBS_DIR, exist_ok=True)
+
+    output_path = os.path.join(ZARR_DIR, f"{file_id}.zarr")
+    temp_output_path = os.path.join(ZARR_TMP_DIR, f"{file_id}.zarr.tmp")
+    zarr_url = f"/data/zarr/{file_id}.zarr"
+
+    registry_job_service.create_job(
+        job_id=job_id,
+        file_id=file_id,
+        filename=segy_file.get("filename") or input_path.name,
+        input_path=str(input_path),
+        output_path=output_path,
+        temp_output_path=temp_output_path,
+    )
+
+    updated = update_segy_file_conversion(
+        segy_file_id=segy_file_id,
+        conversion_status="queued",
+        volume_id=file_id,
+        job_id=job_id,
+        zarr_url=zarr_url,
+    )
+
+    registry_conversion_executor.submit(registry_conversion_job_service.run, job_id)
+
+    return {
+        "status": "queued",
+        "message": "Registry SEG-Y conversion queued.",
+        "job_id": job_id,
+        "volume_id": file_id,
+        "zarr_url": zarr_url,
+        "segy_file": updated,
+    }
+
+@router.post("/segy-files/{segy_file_id}/refresh-status")
+def api_refresh_registry_segy_file_status(segy_file_id: str):
+    segy_file = get_segy_file(segy_file_id)
+    if not segy_file:
+        raise HTTPException(status_code=404, detail="SEG-Y file not found")
+
+    job_id = segy_file.get("job_id")
+    if not job_id:
+        return {
+            "status": segy_file.get("conversion_status", "not_converted"),
+            "message": "No job_id is attached to this SEG-Y registry item.",
+            "segy_file": segy_file,
+        }
+
+    job = registry_job_service.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+
+    job_status = str(job.get("status", "")).lower()
+    job_error = job.get("error")
+
+    completed_statuses = {"completed", "complete", "done", "success", "succeeded", "finished"}
+    failed_statuses = {"failed", "error", "errored"}
+
+    if job_error:
+        updated = update_segy_file_conversion(
+            segy_file_id=segy_file_id,
+            conversion_status="error",
+            error=str(job_error),
+        )
+    elif job_status in completed_statuses:
+        updated = update_segy_file_conversion(
+            segy_file_id=segy_file_id,
+            conversion_status="converted",
+            volume_id=segy_file.get("volume_id"),
+            job_id=job_id,
+            zarr_url=segy_file.get("zarr_url"),
+            error=None,
+        )
+        # Clear stale error from earlier failed attempts.
+        files = list_segy_files(repository_id=updated.get("repository_id"))
+        # Direct file rewrite is handled through helper below.
+        from app.services.package_registry_service import SEGY_FILES_PATH, _read_json_list, _write_json_list
+        all_files = _read_json_list(SEGY_FILES_PATH)
+        for item in all_files:
+            if item.get("segy_file_id") == segy_file_id:
+                item.pop("conversion_error", None)
+                updated = item
+                break
+        _write_json_list(SEGY_FILES_PATH, all_files)
+
+        # Ensure the converted registry item is represented as a normal Data Manager volume.
+        _attach_registry_source_to_volume(updated)
+    elif job_status in failed_statuses:
+        updated = update_segy_file_conversion(
+            segy_file_id=segy_file_id,
+            conversion_status="error",
+            error=str(job.get("message") or "Conversion job failed"),
+        )
+    else:
+        updated = update_segy_file_conversion(
+            segy_file_id=segy_file_id,
+            conversion_status="converting",
+            volume_id=segy_file.get("volume_id"),
+            job_id=job_id,
+            zarr_url=segy_file.get("zarr_url"),
+        )
+
+    return {
+        "status": updated.get("conversion_status"),
+        "job_status": job.get("status"),
+        "job_id": job_id,
+        "volume_id": updated.get("volume_id"),
+        "zarr_url": updated.get("zarr_url"),
+        "segy_file": updated,
+        "job": job,
+    }
+
+
+
+
+# Volume-scoped supporting documents.
+# This keeps the Info tab from showing every document in a repository.
+VOLUME_DOCUMENTS_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+
+
+def _volume_doc_get_volume(volume_id: str) -> dict:
+    volumes_path = VOLUME_DOCUMENTS_DATA_DIR / "volumes.json"
+    if not volumes_path.exists():
+        return {}
+
+    data = json.loads(volumes_path.read_text(encoding="utf-8"))
+
+    if isinstance(data, dict):
+        if volume_id in data:
+            return data[volume_id] or {}
+
+        for value in data.values():
+            if isinstance(value, dict) and value.get("id") == volume_id:
+                return value
+
+    if isinstance(data, list):
+        for value in data:
+            if isinstance(value, dict) and value.get("id") == volume_id:
+                return value
+
+    return {}
+
+
+def _volume_doc_source(volume: dict) -> dict:
+    metadata = volume.get("metadata") or {}
+    source = volume.get("source") or {}
+
+    return {
+        "repository_id": source.get("repository_id") or metadata.get("repository_id"),
+        "package_id": source.get("package_id") or metadata.get("package_id"),
+        "line_id": source.get("line_id") or metadata.get("line_id"),
+        "segy_file_id": source.get("segy_file_id") or metadata.get("segy_file_id"),
+        "package_display_name": source.get("package_display_name") or metadata.get("package_display_name"),
+        "line_display_name": source.get("line_display_name") or metadata.get("line_display_name"),
+        "original_relative_path": source.get("original_relative_path") or metadata.get("original_relative_path"),
+    }
+
+
+def _volume_doc_matches(doc: dict, source: dict) -> bool:
+    package_id = str(source.get("package_id") or "").strip().lower()
+    line_id = str(source.get("line_id") or "").strip().lower()
+    segy_file_id = str(source.get("segy_file_id") or "").strip().lower()
+
+    source_rel = str(source.get("original_relative_path") or "").strip()
+    source_package = source_rel.split("/")[0].strip().lower() if "/" in source_rel else ""
+
+    package_display = str(source.get("package_display_name") or "").strip().lower()
+    package_tokens = [x for x in {source_package, package_display} if x]
+
+    doc_package_id = str(doc.get("package_id") or "").strip().lower()
+    doc_line_id = str(doc.get("line_id") or "").strip().lower()
+    doc_segy_file_id = str(doc.get("segy_file_id") or "").strip().lower()
+    rel_path = str(doc.get("relative_path") or "").strip().lower()
+    filename = str(doc.get("filename") or "").strip().lower()
+
+    if package_id and doc_package_id and doc_package_id == package_id:
+        return True
+
+    if line_id and doc_line_id and doc_line_id == line_id:
+        return True
+
+    if segy_file_id and doc_segy_file_id and doc_segy_file_id == segy_file_id:
+        return True
+
+    for token in package_tokens:
+        if rel_path == token or rel_path.startswith(f"{token}/") or filename.startswith(token) or token in filename:
+            return True
+
+    return False
+
+
+@router.get("/volumes/{volume_id}/documents")
+def api_list_volume_documents(volume_id: str):
+    volume = _volume_doc_get_volume(volume_id)
+    source = _volume_doc_source(volume)
+
+    repository_id = source.get("repository_id")
+    if not repository_id:
+        return {
+            "volume_id": volume_id,
+            "source": source,
+            "documents": [],
+            "warning": "Selected volume has no repository source metadata.",
+        }
+
+    docs = list_documents(repository_id=repository_id)
+
+    scoped_docs = [
+        doc for doc in docs
+        if _volume_doc_matches(doc, source)
+    ]
+
+    return {
+        "volume_id": volume_id,
+        "source": source,
+        "documents": scoped_docs,
+        "document_count": len(scoped_docs),
+    }

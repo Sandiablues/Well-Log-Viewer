@@ -1,0 +1,232 @@
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
+
+
+CANDIDATE_ENCODINGS = [
+    "ascii",
+    "utf-8",
+    "latin1",
+    "cp037",
+    "cp500",
+    "cp1140",
+]
+
+
+SEISMIC_TERMS = [
+    "SEG",
+    "SEGY",
+    "SEG-Y",
+    "LINE",
+    "SURVEY",
+    "INLINE",
+    "IN-LINE",
+    "CROSSLINE",
+    "XLINE",
+    "CROSS-LINE",
+    "SAMPLE",
+    "INTERVAL",
+    "MIGRATION",
+    "STACK",
+    "PSTM",
+    "PSDM",
+    "DATUM",
+    "CDP",
+    "CMP",
+    "TRACE",
+    "BIN",
+    "PROCESSING",
+    "ACQUISITION",
+    "VELOCITY",
+]
+
+
+def _wrap_40x80(text: str) -> str:
+    padded = text[:3200].ljust(3200)
+    return "\n".join(padded[i:i + 80].rstrip() for i in range(0, 3200, 80)).rstrip()
+
+
+def _normalize_for_scoring(text: str) -> str:
+    return text.replace("\x00", " ").replace("\r", "\n")
+
+
+def _score_text(text: str, encoding: str) -> Dict[str, Any]:
+    sample = _normalize_for_scoring(text[:3200])
+    total = max(1, len(sample))
+
+    replacement_count = sample.count("\ufffd")
+    nul_count = sample.count("\x00")
+    control_count = sum(
+        1 for c in sample
+        if ord(c) < 32 and c not in "\n\r\t"
+    )
+    printable_count = sum(
+        1 for c in sample
+        if c.isprintable() or c in "\n\r\t"
+    )
+
+    printable_ratio = printable_count / total
+    replacement_ratio = replacement_count / total
+    control_ratio = control_count / total
+
+    upper = sample.upper()
+
+    # SEG-Y textual headers often have C01..C40 card labels.
+    c_line_matches = len(re.findall(r"(?:^|\n)\s*C\s*\d{2}\b", upper))
+    compact_c_line_matches = len(re.findall(r"C\d{2}", upper[:400]))
+
+    term_hits = sum(1 for term in SEISMIC_TERMS if term in upper)
+
+    # A readable ASCII header commonly has spaces; bad EBCDIC-as-ASCII often does not.
+    space_ratio = sample.count(" ") / total
+
+    # Penalize mojibake-like accented noise if excessive.
+    odd_extended = sum(1 for c in sample if ord(c) > 126)
+    odd_extended_ratio = odd_extended / total
+
+    score = 0.0
+    score += printable_ratio * 100.0
+    score += min(term_hits, 12) * 12.0
+    score += min(c_line_matches, 40) * 10.0
+    score += min(compact_c_line_matches, 40) * 4.0
+    score += min(space_ratio, 0.45) * 80.0
+
+    score -= replacement_ratio * 250.0
+    score -= control_ratio * 300.0
+    score -= min(odd_extended_ratio, 0.5) * 120.0
+    score -= nul_count * 0.1
+
+    # Tiny preference against latin1 unless it clearly wins. Latin1 can decode anything,
+    # so it should not beat a clean ASCII/UTF-8/EBCDIC candidate by accident.
+    if encoding == "latin1":
+        score -= 8.0
+
+    return {
+        "encoding": encoding,
+        "score": round(score, 3),
+        "printable_ratio": round(printable_ratio, 4),
+        "replacement_count": replacement_count,
+        "control_count": control_count,
+        "odd_extended_ratio": round(odd_extended_ratio, 4),
+        "space_ratio": round(space_ratio, 4),
+        "c_line_count": c_line_matches,
+        "compact_c_line_count": compact_c_line_matches,
+        "seismic_term_hits": term_hits,
+    }
+
+
+def decode_textual_header(raw: bytes) -> Dict[str, Any]:
+    raw_3200 = raw[:3200].ljust(3200, b"\x00")
+    candidates: List[Dict[str, Any]] = []
+
+    for encoding in CANDIDATE_ENCODINGS:
+        try:
+            decoded = raw_3200.decode(encoding, errors="replace")
+        except LookupError:
+            continue
+
+        metrics = _score_text(decoded, encoding)
+        candidates.append({
+            **metrics,
+            "text": _wrap_40x80(decoded),
+        })
+
+    if not candidates:
+        fallback = raw_3200.decode("latin1", errors="replace")
+        candidates.append({
+            **_score_text(fallback, "latin1"),
+            "text": _wrap_40x80(fallback),
+        })
+
+    candidates.sort(key=lambda item: item["score"], reverse=True)
+    best = candidates[0]
+    second = candidates[1] if len(candidates) > 1 else None
+
+    def encoding_family(encoding: str) -> str:
+        # ASCII is valid UTF-8. Latin-1 is also a permissive single-byte decode,
+        # but should remain separate because it can mask bad data.
+        if encoding in {"ascii", "utf-8"}:
+            return "ascii_utf8"
+        return encoding
+
+    best_family = encoding_family(best["encoding"])
+    competing = [
+        candidate for candidate in candidates[1:]
+        if encoding_family(candidate["encoding"]) != best_family
+    ]
+    strongest_competing = competing[0] if competing else None
+
+    margin = (
+        best["score"] - strongest_competing["score"]
+        if strongest_competing is not None
+        else 999.0
+    )
+
+    clean_text = (
+        best["printable_ratio"] >= 0.90
+        and best["replacement_count"] == 0
+        and best["control_count"] <= 10
+        and best["odd_extended_ratio"] <= 0.05
+    )
+
+    strong_content = (
+        best["seismic_term_hits"] >= 4
+        or best["c_line_count"] >= 5
+        or best["compact_c_line_count"] >= 8
+    )
+
+    confidence = "low"
+    if best["score"] >= 180 and margin >= 25:
+        confidence = "high"
+    elif best["score"] >= 180 and clean_text and strong_content:
+        # Handles clean ASCII/UTF-8 ties and non-C01 textual headers such as
+        # TEXT-prefixed processing headers.
+        confidence = "high"
+    elif best["score"] >= 120 and margin >= 10:
+        confidence = "medium"
+    elif best["score"] >= 120 and clean_text:
+        confidence = "medium"
+
+    warnings: List[str] = []
+    if confidence == "low":
+        warnings.append("Textual header encoding confidence is low; displayed text is best-effort.")
+    if best["replacement_count"] > 0:
+        warnings.append("Decoded textual header contains replacement characters.")
+    if best["control_count"] > 20:
+        warnings.append("Decoded textual header contains many control characters.")
+
+    return {
+        "selected_encoding": best["encoding"],
+        "confidence": confidence,
+        "score": best["score"],
+        "bytes": len(raw_3200),
+        "line_count": 40,
+        "text": best["text"],
+        "alternatives": [
+            {k: v for k, v in candidate.items() if k != "text"}
+            for candidate in candidates
+        ],
+        "warnings": warnings,
+    }
+
+
+def write_textual_header_sidecars(index_dir: Path, raw_header: bytes) -> Dict[str, Any]:
+    index_dir.mkdir(parents=True, exist_ok=True)
+
+    raw_3200 = raw_header[:3200].ljust(3200, b"\x00")
+    result = decode_textual_header(raw_3200)
+
+    (index_dir / "segy_text_header.raw").write_bytes(raw_3200)
+    (index_dir / "segy_text_header.txt").write_text(result["text"], encoding="utf-8")
+    (index_dir / "segy_text_header_decode.json").write_text(
+        json.dumps(
+            {k: v for k, v in result.items() if k != "text"},
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    return result

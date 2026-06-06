@@ -1,0 +1,401 @@
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  fetchLines,
+  fetchPackages,
+  fetchRepositories,
+  fetchSegyFiles,
+} from "../services/registryService";
+import type {
+  LineRecord,
+  PackageRecord,
+  RepositoryRecord,
+  SegyFileRecord,
+} from "../services/registryService";
+
+type Props = {
+  onRepositoryChanged?: () => Promise<void> | void;
+  onBrowseRepository?: (repositoryId: string) => void;
+};
+
+type SourceStructureType =
+  | "single_isolated_line"
+  | "single_line_with_docs"
+  | "single_line_multi_version"
+  | "survey_with_line_folders"
+  | "survey_flat_lines";
+
+const sourceStructureOptions: Array<{
+  value: SourceStructureType;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "single_isolated_line",
+    label: "Single isolated 2D SEG-Y line",
+    description: "One SEG-Y file with no supporting documentation.",
+  },
+  {
+    value: "single_line_with_docs",
+    label: "Single 2D line folder with supporting documents",
+    description: "One line plus reports, observer logs, maps, navigation, or other supporting files.",
+  },
+  {
+    value: "single_line_multi_version",
+    label: "Single 2D line with multiple processing versions",
+    description: "Several SEG-Y files representing versions of the same line, plus possible documents.",
+  },
+  {
+    value: "survey_with_line_folders",
+    label: "2D survey with multiple line folders",
+    description: "A survey folder containing line-level folders, each with SEG-Y and possible documents.",
+  },
+  {
+    value: "survey_flat_lines",
+    label: "2D survey with flat SEG-Y lines and documents",
+    description: "A survey folder containing many SEG-Y lines directly, plus possible supporting documents.",
+  },
+];
+
+function clean(value?: string): string {
+  return value ? value.replaceAll("_", " ") : "unknown";
+}
+
+function formatDate(value?: string | null): string {
+  if (!value) return "Not scanned";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
+const panelStyle: React.CSSProperties = {
+  border: "1px solid #333",
+  borderRadius: 10,
+  background: "#1f1f1f",
+  padding: 14,
+  marginBottom: 16,
+  color: "#e5e7eb",
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "7px 9px",
+  borderRadius: 6,
+  border: "1px solid #555",
+  background: "#2b2b2b",
+  color: "#f8fafc",
+  fontSize: 13,
+};
+
+const buttonStyle: React.CSSProperties = {
+  border: "1px solid #557ca5",
+  borderRadius: 6,
+  background: "#2f5f8f",
+  color: "#fff",
+  padding: "7px 11px",
+  fontSize: 13,
+  fontWeight: 650,
+  cursor: "pointer",
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  ...buttonStyle,
+  background: "#334155",
+  border: "1px solid #64748b",
+};
+
+export default function SourceRepositoryManager({
+  onRepositoryChanged,
+  onBrowseRepository,
+  activeDataTab = "2d",
+}: Props) {
+  const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
+  const [packages, setPackages] = useState<PackageRecord[]>([]);
+  const [lines, setLines] = useState<LineRecord[]>([]);
+  const [segyFiles, setSegyFiles] = useState<SegyFileRecord[]>([]);
+
+  const [name, setName] = useState("2D Source Repository");
+  const [rootPath, setRootPath] = useState("");
+  const [sourceStructureType, setSourceStructureType] =
+    useState<SourceStructureType>("survey_with_line_folders");
+
+  const [busyRepoId, setBusyRepoId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function reload() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const repoRecords = await fetchRepositories();
+      const allPackages = await fetchPackages();
+      const allLines = await fetchLines();
+      const allSegyFiles = await fetchSegyFiles();
+
+      setRepositories(repoRecords);
+      setPackages(allPackages);
+      setLines(allLines);
+      setSegyFiles(allSegyFiles);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load source repositories");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    reload();
+  }, []);
+
+  const packageCountByRepo = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const pkg of packages) {
+      map.set(pkg.repository_id, (map.get(pkg.repository_id) || 0) + 1);
+    }
+    return map;
+  }, [packages]);
+
+  const lineCountByRepo = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const line of lines) {
+      map.set(line.repository_id, (map.get(line.repository_id) || 0) + 1);
+    }
+    return map;
+  }, [lines]);
+
+  const segyCountByRepo = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const file of segyFiles) {
+      map.set(file.repository_id, (map.get(file.repository_id) || 0) + 1);
+    }
+    return map;
+  }, [segyFiles]);
+
+  const convertedCountByRepo = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const file of segyFiles) {
+      if (file.conversion_status === "converted" || file.conversion_status === "ready") {
+        map.set(file.repository_id, (map.get(file.repository_id) || 0) + 1);
+      }
+    }
+    return map;
+  }, [segyFiles]);
+
+  async function addRepository() {
+    if (!name.trim()) {
+      setError("Repository name is required.");
+      return;
+    }
+
+    if (!rootPath.trim()) {
+      setError("Root folder path is required.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const selectedType = sourceStructureOptions.find((item) => item.value === sourceStructureType);
+
+      const response = await fetch("/api/repositories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          root_path: rootPath.trim(),
+          repository_type: "local_folder",
+          read_only: true,
+          notes: `source_structure_type=${sourceStructureType}; ${selectedType?.label || ""}`,
+        }),
+      });
+
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(result?.detail || `Add repository failed: ${response.status}`);
+      }
+
+      setMessage("Repository added. Click Scan / Rescan to build inventory.");
+      setShowAddForm(false);
+      await reload();
+      await onRepositoryChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add repository");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function scanRepository(repositoryId: string) {
+    setBusyRepoId(repositoryId);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/repositories/${repositoryId}/persist-scan`, {
+        method: "POST",
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(JSON.stringify(result, null, 2));
+      }
+
+      const summary = result.summary || {};
+      setMessage(
+        `Scan complete: ${summary.package_count || 0} packages, ${summary.line_group_count || 0} lines, ${summary.segy_file_count || 0} SEG-Y files, ${summary.document_count || 0} documents.`
+      );
+
+      await reload();
+      await onRepositoryChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Repository scan failed");
+    } finally {
+      setBusyRepoId(null);
+    }
+  }
+
+
+  function is3DRepository(repo: any): boolean {
+    const text = `${repo.name || ""} ${repo.notes || ""}`.toLowerCase();
+    return (
+      text.includes("3d") ||
+      text.includes("3d_volume_delivery") ||
+      text.includes("3d_segy_intake")
+    );
+  }
+
+  const filteredRepositories = repositories.filter((repo: any) =>
+    activeDataTab === "3d" ? is3DRepository(repo) : !is3DRepository(repo)
+  );
+
+  return (
+    <section style={panelStyle}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 18 }}>Source Repositories</h3>
+          <div style={{ marginTop: 4, fontSize: 12, color: "#a1a1aa" }}>
+            Register external 2D data folders, scan them into source inventory, then browse and convert selected line versions below.
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" style={secondaryButtonStyle} onClick={reload} disabled={loading}>
+            {loading ? "Refreshing..." : "Refresh"}
+          </button>
+          <button type="button" style={buttonStyle} onClick={() => setShowAddForm(!showAddForm)}>
+            {showAddForm ? "Close" : "Add Repository"}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div style={{ marginBottom: 10, padding: 8, borderRadius: 7, background: "rgba(239,68,68,.15)", color: "#fecaca", fontSize: 12, whiteSpace: "pre-wrap" }}>
+          {error}
+        </div>
+      )}
+
+      {message && (
+        <div style={{ marginBottom: 10, padding: 8, borderRadius: 7, background: "rgba(34,197,94,.12)", color: "#bbf7d0", fontSize: 12 }}>
+          {message}
+        </div>
+      )}
+
+      {showAddForm && (
+        <div style={{ border: "1px solid #3f3f46", borderRadius: 8, background: "#18181b", padding: 12, marginBottom: 12, display: "grid", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: "8px 10px", alignItems: "center" }}>
+            <label style={{ fontSize: 13, color: "#cbd5e1" }}>Repository name</label>
+            <input value={name} onChange={(event) => setName(event.target.value)} style={inputStyle} />
+
+            <label style={{ fontSize: 13, color: "#cbd5e1" }}>Root folder path</label>
+            <input value={rootPath} onChange={(event) => setRootPath(event.target.value)} placeholder="/path/to/source/folder" style={inputStyle} />
+
+            <label style={{ fontSize: 13, color: "#cbd5e1" }}>Source structure</label>
+            <select value={sourceStructureType} onChange={(event) => setSourceStructureType(event.target.value as SourceStructureType)} style={inputStyle}>
+              {sourceStructureOptions.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ fontSize: 12, color: "#94a3b8" }}>
+            {sourceStructureOptions.find((item) => item.value === sourceStructureType)?.description}
+          </div>
+
+          <div>
+            <button type="button" style={buttonStyle} onClick={addRepository} disabled={loading}>
+              Register Repository
+            </button>
+          </div>
+        </div>
+      )}
+
+      {repositories.length === 0 && (
+        <div style={{ fontSize: 12, color: "#94a3b8" }}>No source repositories registered.</div>
+      )}
+
+      {repositories.length > 0 && (
+        <div style={{ display: "grid", gap: 10 }}>
+          {filteredRepositories.map((repo) => {
+            const packageCount = packageCountByRepo.get(repo.repository_id) || 0;
+            const lineCount = lineCountByRepo.get(repo.repository_id) || 0;
+            const segyCount = segyCountByRepo.get(repo.repository_id) || 0;
+            const convertedCount = convertedCountByRepo.get(repo.repository_id) || 0;
+
+            return (
+              <div key={repo.repository_id} style={{ border: "1px solid #3f3f46", borderRadius: 8, background: "#18181b", padding: 12, display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "start" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#f8fafc" }}>{repo.name}</div>
+                  <div style={{ marginTop: 4, fontSize: 12, color: "#94a3b8", overflowWrap: "anywhere" }}>{repo.root_path}</div>
+
+                  <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
+                    <span>Status: {repo.status || "unknown"}</span>
+                    <span>Type: {clean(repo.repository_type)}</span>
+                    <span>Packages: {packageCount}</span>
+                    <span>Lines: {lineCount}</span>
+                    <span>SEG-Y: {segyCount}</span>
+                    <span>Converted: {convertedCount}</span>
+                  </div>
+
+                  <div style={{ marginTop: 5, fontSize: 11, color: "#71717a" }}>
+                    Last scanned: {formatDate(repo.last_scanned_at)}
+                  </div>
+
+                  {repo.notes && (
+                    <div style={{ marginTop: 5, fontSize: 11, color: "#71717a" }}>{repo.notes}</div>
+                  )}
+                </div>
+
+                <div style={{ display: "grid", gap: 8 }}>
+                  <button
+                    type="button"
+                    style={buttonStyle}
+                    onClick={() => scanRepository(repo.repository_id)}
+                    disabled={busyRepoId === repo.repository_id}
+                  >
+                    {busyRepoId === repo.repository_id ? "Scanning..." : "Scan / Rescan"}
+                  </button>
+
+                  <button
+                    type="button"
+                    style={secondaryButtonStyle}
+                    onClick={() => onBrowseRepository?.(repo.repository_id)}
+                  >
+                    Browse Source
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}

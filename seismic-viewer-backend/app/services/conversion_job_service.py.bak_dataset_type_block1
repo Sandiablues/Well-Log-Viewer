@@ -1,0 +1,211 @@
+import json
+import os
+import shutil
+from pathlib import Path
+from typing import Any, Dict
+
+import zarr
+
+from app.services.seismic_service import SeismicService
+from app.services.job_service import JobService
+
+
+class ConversionJobService:
+    def __init__(
+        self,
+        job_service: JobService,
+        volumes_json: str = "./data/volumes.json",
+    ):
+        self.job_service = job_service
+        self.volumes_json = Path(volumes_json)
+        self.volumes_json.parent.mkdir(parents=True, exist_ok=True)
+
+    def _load_volumes(self) -> Dict[str, Any]:
+        if self.volumes_json.exists():
+            with open(self.volumes_json, "r") as f:
+                return json.load(f)
+        return {}
+
+    def _save_volumes(self, volumes: Dict[str, Any]) -> None:
+        tmp_path = self.volumes_json.with_suffix(".json.tmp")
+
+        with open(tmp_path, "w") as f:
+            json.dump(volumes, f, indent=2)
+
+        tmp_path.replace(self.volumes_json)
+
+    def _validate_zarr_3d(self, zarr_path: str) -> Dict[str, Any]:
+        arr = zarr.open(zarr_path, mode="r")
+
+        shape = list(arr.shape)
+        chunks = list(arr.chunks)
+
+        if len(shape) != 3:
+            raise ValueError(
+                f"Converted Zarr is not a 3D cube. Shape is {shape}."
+            )
+
+        return {
+            "shape": shape,
+            "chunks": chunks,
+            "dtype": str(arr.dtype),
+        }
+
+    def run(self, job_id: str) -> None:
+        job = self.job_service.get_job(job_id)
+
+        if not job:
+            return
+
+        file_id = job["file_id"]
+        filename = job["filename"]
+        input_path = job["input_path"]
+        output_path = job["output_path"]
+        temp_output_path = job["temp_output_path"]
+
+        try:
+            self.job_service.update_job(
+                job_id,
+                status="reading_metadata",
+                message="Reading SEG-Y metadata...",
+            )
+
+            metadata = SeismicService.get_segy_metadata(input_path)
+
+            is_3d = metadata.get("is_3d")
+            shape = metadata.get("shape")
+
+            if is_3d is False or not shape or len(shape) != 3:
+                self.job_service.update_job(
+                    job_id,
+                    status="failed",
+                    message="SEG-Y was read, but it is not a regular 3D cube.",
+                    error=(
+                        f"Detected shape: {shape}. "
+                        "The current viewer requires inline × crossline × sample geometry."
+                    ),
+                )
+                return
+
+            self.job_service.update_job(
+                job_id,
+                status="converting",
+                message="Converting SEG-Y to temporary Zarr output...",
+            )
+
+            temp_path = Path(temp_output_path)
+            final_path = Path(output_path)
+
+            if temp_path.exists():
+                shutil.rmtree(temp_path)
+
+            if final_path.exists():
+                shutil.rmtree(final_path)
+
+            temp_path.parent.mkdir(parents=True, exist_ok=True)
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+
+            conversion_info = SeismicService.convert_to_zarr(input_path, temp_output_path)
+
+            self.job_service.update_job(
+                job_id,
+                status="validating_zarr",
+                message="Validating converted Zarr volume...",
+            )
+
+            zarr_info = self._validate_zarr_3d(temp_output_path)
+
+            if isinstance(conversion_info, dict):
+                zarr_info = {
+                    **conversion_info,
+                    **zarr_info,
+                }
+
+            self.job_service.update_job(
+                job_id,
+                status="promoting_output",
+                message="Promoting temporary Zarr to final output...",
+            )
+
+            os.replace(temp_output_path, output_path)
+
+            # Promote any sidecar metadata/header files created next to the temp Zarr.
+            # Example:
+            #   data/zarr_tmp/<id>.zarr.segy_text_header.txt
+            # should become:
+            #   data/zarr/<id>.zarr.segy_text_header.txt
+            temp_base = Path(temp_output_path)
+            final_base = Path(output_path)
+
+            # Some sidecar files are created using the final .zarr basename
+            # even though they are still written into data/zarr_tmp.
+            # Handle both patterns:
+            #   <id>.zarr.tmp.*
+            #   <id>.zarr.*
+            sidecar_patterns = [
+                temp_base.name + ".*",
+                final_base.name + ".*",
+            ]
+
+            for pattern in sidecar_patterns:
+                for sidecar in temp_base.parent.glob(pattern):
+                    final_sidecar_name = sidecar.name
+
+                    if final_sidecar_name.startswith(temp_base.name):
+                        final_sidecar_name = final_sidecar_name.replace(
+                            temp_base.name,
+                            final_base.name,
+                            1,
+                        )
+
+                    final_sidecar = final_base.parent / final_sidecar_name
+
+                    if final_sidecar.exists():
+                        final_sidecar.unlink()
+
+                    sidecar.replace(final_sidecar)
+
+            volume_record = {
+                "id": file_id,
+                "filename": filename,
+                "display_name": filename,
+                "hidden": True,
+                "metadata": {
+                    **metadata,
+                    "zarr": zarr_info,
+                },
+                "zarr_url": f"/data/zarr/{file_id}.zarr",
+            }
+
+            self.job_service.update_job(
+                job_id,
+                status="registering_volume",
+                message="Registering converted volume...",
+            )
+
+            volumes = self._load_volumes()
+            volumes[file_id] = volume_record
+            self._save_volumes(volumes)
+
+            self.job_service.update_job(
+                job_id,
+                status="complete",
+                message="SEG-Y conversion complete.",
+                progress=100,
+                volume=volume_record,
+                error=None,
+            )
+
+        except Exception as e:
+            try:
+                if Path(temp_output_path).exists():
+                    shutil.rmtree(temp_output_path)
+            except Exception:
+                pass
+
+            self.job_service.update_job(
+                job_id,
+                status="failed",
+                message="SEG-Y conversion failed.",
+                error=str(e),
+            )

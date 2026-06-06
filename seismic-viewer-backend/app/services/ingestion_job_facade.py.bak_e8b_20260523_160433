@@ -1,0 +1,56 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Dict
+
+from fastapi import HTTPException
+
+from app.api import endpoints as legacy_endpoints
+
+
+def _jobs_dir() -> Path:
+    return Path(getattr(legacy_endpoints, "JOBS_DIR", "./data/jobs"))
+
+
+def list_recent_jobs(limit: int = 20) -> Dict[str, Any]:
+    """
+    List recent conversion jobs.
+
+    This is the first service-boundary extraction from app.api.endpoints.
+    It deliberately reuses the existing JOBS_DIR/job file format so behavior
+    remains unchanged while the API route layer gets thinner.
+    """
+    jobs_path = _jobs_dir()
+    jobs_path.mkdir(parents=True, exist_ok=True)
+
+    jobs = []
+    for path in jobs_path.glob("*.json"):
+        try:
+            with open(path, "r") as f:
+                job = json.load(f)
+            job.setdefault("job_id", path.stem)
+            job["_modified_time"] = path.stat().st_mtime
+            jobs.append(job)
+        except Exception:
+            continue
+
+    jobs.sort(key=lambda job: job.get("_modified_time", 0), reverse=True)
+
+    for job in jobs:
+        job.pop("_modified_time", None)
+
+    return {
+        "count": len(jobs),
+        "jobs": jobs[:limit],
+    }
+
+
+def get_conversion_job(job_id: str) -> Dict[str, Any]:
+    """
+    Read a single conversion job using the existing job service.
+    """
+    job = legacy_endpoints.job_service.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+    return job

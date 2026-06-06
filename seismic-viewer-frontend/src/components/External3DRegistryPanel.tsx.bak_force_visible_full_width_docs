@@ -1,0 +1,564 @@
+import React, { useEffect, useMemo, useState } from "react";
+
+type RepositoryRecord = {
+  repository_id: string;
+  name: string;
+  root_path: string;
+  status?: string;
+  notes?: string;
+};
+
+type PackageRecord = {
+  package_id: string;
+  repository_id: string;
+  display_name?: string;
+  relative_path?: string;
+};
+
+type SegyFileRecord = {
+  segy_file_id: string;
+  repository_id: string;
+  package_id?: string;
+  filename: string;
+  relative_path: string;
+  size_bytes?: number;
+  conversion_status?: string;
+  volume_id?: string | null;
+  zarr_url?: string | null;
+  job_id?: string | null;
+  conversion_error?: string | null;
+};
+
+type DocumentRecord = {
+  document_id?: string;
+  filename?: string;
+  relative_path?: string;
+  document_type?: string;
+  size_bytes?: number;
+};
+
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, init);
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      payload?.detail?.message ||
+        payload?.detail ||
+        payload?.message ||
+        `Request failed: ${response.status}`
+    );
+  }
+
+  return payload as T;
+}
+
+function formatBytes(value?: number): string {
+  const bytes = Number(value || 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return "—";
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(1)} MB`;
+  const gb = mb / 1024;
+  return `${gb.toFixed(2)} GB`;
+}
+
+function isActive(status?: string): boolean {
+  return status === "queued" || status === "converting";
+}
+
+function isConverted(status?: string): boolean {
+  return status === "converted" || status === "ready";
+}
+
+function statusLabel(status?: string): string {
+  if (isConverted(status)) return "Converted";
+  if (status === "queued") return "Queued";
+  if (status === "converting") return "Converting";
+  if (status === "error") return "Error";
+  return "Not converted";
+}
+
+function isLikely2D(file: SegyFileRecord): boolean {
+  const text = `${file.filename} ${file.relative_path}`.toLowerCase();
+  return (
+    text.includes(".2d.") ||
+    text.includes("_2d") ||
+    text.includes("-2d") ||
+    text.endsWith("2d.sgy") ||
+    text.endsWith("2d.segy")
+  );
+}
+
+function is3DRepository(repo: RepositoryRecord): boolean {
+  const text = `${repo.name || ""} ${repo.notes || ""}`.toLowerCase();
+  return (
+    text.includes("3d") ||
+    text.includes("3d_segy_intake") ||
+    text.includes("3d_volume_delivery") ||
+    text.includes("single_3d_volume") ||
+    text.includes("multi_version_3d_delivery")
+  );
+}
+
+const labelStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "#94a3b8",
+  marginBottom: 5,
+};
+
+const selectStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "7px 9px",
+  borderRadius: 6,
+  border: "1px solid #555",
+  background: "#2b2b2b",
+  color: "#f8fafc",
+  fontSize: 13,
+};
+
+const buttonStyle: React.CSSProperties = {
+  border: "1px solid #557ca5",
+  borderRadius: 6,
+  background: "#2f5f8f",
+  color: "#fff",
+  padding: "6px 10px",
+  fontSize: 12,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  ...buttonStyle,
+  background: "#334155",
+  border: "1px solid #64748b",
+};
+
+function StatusBadge({ status }: { status?: string }) {
+  const background = isConverted(status)
+    ? "rgba(34,197,94,.18)"
+    : status === "error"
+      ? "rgba(239,68,68,.18)"
+      : isActive(status)
+        ? "rgba(234,179,8,.18)"
+        : "rgba(148,163,184,.16)";
+
+  const color = isConverted(status)
+    ? "#bbf7d0"
+    : status === "error"
+      ? "#fecaca"
+      : isActive(status)
+        ? "#fde68a"
+        : "#cbd5e1";
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        padding: "3px 8px",
+        borderRadius: 999,
+        background,
+        color,
+        fontSize: 11,
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {statusLabel(status)}
+    </span>
+  );
+}
+
+export default function External3DRegistryPanel({
+  onVolumeRegistered,
+}: {
+  onVolumeRegistered?: () => Promise<void> | void;
+}) {
+  const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
+  const [packages, setPackages] = useState<PackageRecord[]>([]);
+  const [segyFiles, setSegyFiles] = useState<SegyFileRecord[]>([]);
+  const [documents, setDocuments] = useState<DocumentRecord[]>([]);
+
+  const [selectedRepositoryId, setSelectedRepositoryId] = useState("");
+  const [selectedPackageId, setSelectedPackageId] = useState("");
+  const [selectedSegyId, setSelectedSegyId] = useState("");
+
+  const [loading, setLoading] = useState(false);
+  const [busyFileId, setBusyFileId] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  async function loadRepositories() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const payload = await fetchJson<{ repositories: RepositoryRecord[] }>("/api/repositories");
+      const records = (payload.repositories || []).filter(is3DRepository);
+
+      setRepositories(records);
+
+      if (!selectedRepositoryId && records[0]) {
+        setSelectedRepositoryId(records[0].repository_id);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load repositories");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadRepositoryInventory(repositoryId: string) {
+    if (!repositoryId) return;
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const [packagePayload, segyPayload, documentPayload] = await Promise.all([
+        fetchJson<{ packages: PackageRecord[] }>(`/api/packages?repository_id=${encodeURIComponent(repositoryId)}`),
+        fetchJson<{ segy_files: SegyFileRecord[] }>(`/api/segy-files?repository_id=${encodeURIComponent(repositoryId)}`),
+        fetchJson<{ documents: DocumentRecord[] }>(`/api/documents?repository_id=${encodeURIComponent(repositoryId)}`),
+      ]);
+
+      const packageRecords = packagePayload.packages || [];
+      const fileRecords = segyPayload.segy_files || [];
+
+      setPackages(packageRecords);
+      setSegyFiles(fileRecords);
+      setDocuments(documentPayload.documents || []);
+
+      const nextPackageId =
+        selectedPackageId && packageRecords.some((pkg) => pkg.package_id === selectedPackageId)
+          ? selectedPackageId
+          : packageRecords[0]?.package_id || "";
+
+      setSelectedPackageId(nextPackageId);
+
+      const nextFiles = nextPackageId
+        ? fileRecords.filter((file) => file.package_id === nextPackageId)
+        : fileRecords;
+
+      const firstCandidate = nextFiles.find((file) => !isLikely2D(file));
+      setSelectedSegyId((current) =>
+        current && nextFiles.some((file) => file.segy_file_id === current)
+          ? current
+          : firstCandidate?.segy_file_id || ""
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load 3D source inventory");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadRepositories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (selectedRepositoryId) {
+      loadRepositoryInventory(selectedRepositoryId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRepositoryId]);
+
+  const selectedRepository = repositories.find((repo) => repo.repository_id === selectedRepositoryId);
+  const selectedPackage = packages.find((pkg) => pkg.package_id === selectedPackageId);
+
+  const packageFiles = useMemo(() => {
+    if (!selectedPackageId) return segyFiles;
+    return segyFiles.filter((file) => file.package_id === selectedPackageId);
+  }, [segyFiles, selectedPackageId]);
+
+  const volumeCandidates = useMemo(
+    () => packageFiles.filter((file) => !isLikely2D(file)),
+    [packageFiles]
+  );
+
+  const excludedFiles = useMemo(
+    () => packageFiles.filter((file) => isLikely2D(file)),
+    [packageFiles]
+  );
+
+  const selectedFile =
+    volumeCandidates.find((file) => file.segy_file_id === selectedSegyId) ||
+    volumeCandidates[0] ||
+    null;
+
+  const packageDocs = useMemo(() => {
+    if (!selectedPackage) return documents;
+
+    const packagePath = (selectedPackage.relative_path || "").toLowerCase();
+    const packageName = (selectedPackage.display_name || "").toLowerCase();
+
+    return documents.filter((doc) => {
+      const rel = String(doc.relative_path || "").toLowerCase();
+      const filename = String(doc.filename || "").toLowerCase();
+
+      if (!packagePath && !packageName) return true;
+
+      return (
+        (!!packagePath && (rel === packagePath || rel.startsWith(`${packagePath}/`))) ||
+        (!!packageName && (rel.startsWith(`${packageName}/`) || filename.includes(packageName)))
+      );
+    });
+  }, [documents, selectedPackage]);
+
+  const hasActiveConversions = segyFiles.some((file) => isActive(file.conversion_status));
+
+  useEffect(() => {
+    if (!selectedRepositoryId || !hasActiveConversions) return;
+
+    const timer = window.setInterval(() => {
+      loadRepositoryInventory(selectedRepositoryId);
+    }, 5000);
+
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRepositoryId, hasActiveConversions]);
+
+  async function handleConvert(file: SegyFileRecord) {
+    setBusyFileId(file.segy_file_id);
+    setError("");
+    setMessage("");
+
+    try {
+      const result = await fetchJson<any>(`/api/segy-files/${file.segy_file_id}/convert`, {
+        method: "POST",
+      });
+
+      const jobId = result?.job_id || result?.job?.job_id || result?.segy_file?.job_id;
+      setMessage(jobId ? `Conversion queued. Job: ${jobId}` : "Conversion queued.");
+
+      await loadRepositoryInventory(file.repository_id);
+      await onVolumeRegistered?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to queue conversion");
+    } finally {
+      setBusyFileId("");
+    }
+  }
+
+  async function handleRefresh(file: SegyFileRecord) {
+    setBusyFileId(file.segy_file_id);
+    setError("");
+    setMessage("");
+
+    try {
+      await fetchJson<any>(`/api/segy-files/${file.segy_file_id}/refresh-status`, {
+        method: "POST",
+      });
+
+      await loadRepositoryInventory(file.repository_id);
+      await onVolumeRegistered?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to refresh status");
+    } finally {
+      setBusyFileId("");
+    }
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      {error && (
+        <div style={{ padding: 8, borderRadius: 7, background: "rgba(239,68,68,.15)", color: "#fecaca", fontSize: 12 }}>
+          {error}
+        </div>
+      )}
+
+      {message && (
+        <div style={{ padding: 8, borderRadius: 7, background: "rgba(34,197,94,.12)", color: "#bbf7d0", fontSize: 12 }}>
+          {message}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div>
+          <div style={labelStyle}>Repository</div>
+          <select
+            value={selectedRepositoryId}
+            onChange={(event) => {
+              setSelectedRepositoryId(event.target.value);
+              setSelectedPackageId("");
+              setSelectedSegyId("");
+            }}
+            style={selectStyle}
+          >
+            {repositories.map((repo) => (
+              <option key={repo.repository_id} value={repo.repository_id}>
+                {repo.name}
+              </option>
+            ))}
+          </select>
+          {selectedRepository && (
+            <div style={{ marginTop: 6, fontSize: 12, color: "#94a3b8", overflowWrap: "anywhere" }}>
+              {selectedRepository.root_path}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div style={labelStyle}>Package / Delivery Folder</div>
+          <select
+            value={selectedPackageId}
+            onChange={(event) => {
+              setSelectedPackageId(event.target.value);
+              setSelectedSegyId("");
+            }}
+            style={selectStyle}
+          >
+            {packages.map((pkg) => (
+              <option key={pkg.package_id} value={pkg.package_id}>
+                {pkg.display_name || pkg.relative_path || pkg.package_id}
+              </option>
+            ))}
+          </select>
+          <div style={{ marginTop: 6, fontSize: 12, color: "#cbd5e1" }}>
+            {volumeCandidates.length} volume candidate{volumeCandidates.length === 1 ? "" : "s"} · {packageDocs.length} docs
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 42%) 1fr", gap: 12, alignItems: "start" }}>
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <div style={labelStyle}>Volume Candidates</div>
+            <div style={{ fontSize: 12, color: "#94a3b8" }}>{volumeCandidates.length} files</div>
+          </div>
+
+          <div style={{ border: "1px solid #3f3f46", borderRadius: 8, overflow: "hidden" }}>
+            {volumeCandidates.length === 0 && (
+              <div style={{ padding: 10, fontSize: 12, color: "#94a3b8" }}>
+                No 3D volume candidates found.
+              </div>
+            )}
+
+            {volumeCandidates.map((file) => {
+              const selected = file.segy_file_id === selectedFile?.segy_file_id;
+
+              return (
+                <button
+                  key={file.segy_file_id}
+                  type="button"
+                  onClick={() => setSelectedSegyId(file.segy_file_id)}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    border: "none",
+                    borderBottom: "1px solid #27272a",
+                    background: selected ? "rgba(59,130,246,.18)" : "#18181b",
+                    color: "#e5e7eb",
+                    padding: "9px 10px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: selected ? 700 : 600, overflowWrap: "anywhere" }}>
+                    {file.filename}
+                  </div>
+                  <div style={{ marginTop: 4, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 12, color: "#94a3b8" }}>
+                    <StatusBadge status={file.conversion_status} />
+                    <span>{formatBytes(file.size_bytes)}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <div style={labelStyle}>Selected Volume / Conversion Details</div>
+
+          <div style={{ border: "1px solid #3f3f46", borderRadius: 8, minHeight: 178, padding: 12, background: "#18181b" }}>
+            {!selectedFile ? (
+              <div style={{ fontSize: 12, color: "#94a3b8" }}>Select a 3D volume candidate.</div>
+            ) : (
+              <div style={{ display: "grid", gap: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 700, color: "#f8fafc", overflowWrap: "anywhere" }}>
+                    {selectedFile.filename}
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: 12, color: "#94a3b8", overflowWrap: "anywhere" }}>
+                    {selectedFile.relative_path}
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 12 }}>
+                  <StatusBadge status={selectedFile.conversion_status} />
+                  <span>Size: {formatBytes(selectedFile.size_bytes)}</span>
+                  {selectedFile.volume_id && <span>Volume: {selectedFile.volume_id}</span>}
+                  {selectedFile.job_id && <span>Job: {selectedFile.job_id}</span>}
+                </div>
+
+                {selectedFile.conversion_error && (
+                  <div style={{ fontSize: 12, color: "#fecaca", whiteSpace: "pre-wrap" }}>
+                    {selectedFile.conversion_error}
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {!isConverted(selectedFile.conversion_status) && !isActive(selectedFile.conversion_status) && (
+                    <button
+                      type="button"
+                      style={buttonStyle}
+                      onClick={() => handleConvert(selectedFile)}
+                      disabled={busyFileId === selectedFile.segy_file_id}
+                    >
+                      {busyFileId === selectedFile.segy_file_id ? "Queuing..." : "Convert"}
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    style={secondaryButtonStyle}
+                    onClick={() => handleRefresh(selectedFile)}
+                    disabled={busyFileId === selectedFile.segy_file_id}
+                  >
+                    {busyFileId === selectedFile.segy_file_id ? "Checking..." : "Refresh"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "none" }}>
+            <div style={labelStyle}>Package Supporting Documents</div>
+            <div style={{ border: "1px solid #3f3f46", borderRadius: 8, padding: 10, background: "#18181b" }}>
+              {packageDocs.length === 0 ? (
+                <div style={{ fontSize: 12, color: "#94a3b8" }}>No package-level supporting documents found.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 8 }}>
+                  {packageDocs.map((doc) => (
+                    <div key={doc.document_id || doc.relative_path || doc.filename}>
+                      <div style={{ fontSize: 13, fontWeight: 650 }}>{doc.filename}</div>
+                      <div style={{ marginTop: 3, fontSize: 12, color: "#94a3b8", overflowWrap: "anywhere" }}>
+                        {doc.relative_path}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {false && excludedFiles.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={labelStyle}>Excluded / Not 3D</div>
+              <div style={{ border: "1px solid #3f3f46", borderRadius: 8, padding: 10, background: "rgba(63,63,70,.25)" }}>
+                {excludedFiles.map((file) => (
+                  <div key={file.segy_file_id} style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 5 }}>
+                    {file.filename} · {formatBytes(file.size_bytes)} · likely 2D
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {loading && <div style={{ fontSize: 12, color: "#94a3b8" }}>Loading...</div>}
+    </div>
+  );
+}

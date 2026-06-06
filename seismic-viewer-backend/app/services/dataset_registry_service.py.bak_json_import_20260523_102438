@@ -1,0 +1,354 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+from pathlib import Path
+
+from app.services.segy_index_service import SegyIndexService, SEGY_INDEX_DIR
+
+
+def _strip_indexed_prefix(dataset_id: str) -> str:
+    prefix = "indexed-segy-"
+    if dataset_id.startswith(prefix):
+        return dataset_id[len(prefix):]
+    return dataset_id
+
+
+def _record_length_ms(index: Dict[str, Any]) -> Optional[float]:
+    sample_count = index.get("sample_count")
+    sample_interval_ms = index.get("sample_interval_ms")
+    if isinstance(sample_count, int) and isinstance(sample_interval_ms, (int, float)):
+        return (sample_count - 1) * float(sample_interval_ms)
+    return None
+
+
+def _time_range_ms(index: Dict[str, Any]) -> Optional[List[float]]:
+    end = _record_length_ms(index)
+    if end is None:
+        return None
+    return [0, end]
+
+
+def _sample_index_range(index: Dict[str, Any]) -> Optional[List[int]]:
+    sample_count = index.get("sample_count")
+    if isinstance(sample_count, int) and sample_count > 0:
+        return [0, sample_count - 1]
+    return None
+
+
+def _expected_trace_positions(index: Dict[str, Any]) -> Optional[int]:
+    inline_count = index.get("inline_count")
+    crossline_count = index.get("crossline_count")
+    if isinstance(inline_count, int) and isinstance(crossline_count, int):
+        return inline_count * crossline_count
+    return None
+
+
+def _missing_trace_positions(index: Dict[str, Any]) -> Optional[int]:
+    expected = _expected_trace_positions(index)
+    trace_count = index.get("trace_count")
+    if isinstance(expected, int) and isinstance(trace_count, int):
+        return expected - trace_count
+    return None
+
+
+def _load_index(dataset_id: str) -> Dict[str, Any]:
+    clean_id = _strip_indexed_prefix(dataset_id)
+    index = SegyIndexService.load_index(clean_id)
+    return _enrich_index_with_sidecars(index)
+
+
+def _enrich_index_with_sidecars(index: Dict[str, Any]) -> Dict[str, Any]:
+    dataset_id = index.get("dataset_id")
+    if not dataset_id:
+        return index
+
+    index_dir = SEGY_INDEX_DIR / dataset_id
+
+    text_header_path = index_dir / "segy_text_header.txt"
+    if text_header_path.exists() and not index.get("text_header"):
+        index["text_header"] = text_header_path.read_text(encoding="utf-8", errors="replace")
+
+    text_decode_path = index_dir / "segy_text_header_decode.json"
+    if text_decode_path.exists() and not index.get("text_header_decode"):
+        try:
+            decode = json.loads(text_decode_path.read_text(encoding="utf-8"))
+            index["text_header_decode"] = decode
+            index["text_header_encoding"] = decode.get("selected_encoding")
+            index["text_header_confidence"] = decode.get("confidence")
+        except Exception:
+            pass
+
+    binary_header_path = index_dir / "segy_binary_header.json"
+    if binary_header_path.exists() and not index.get("binary_header"):
+        try:
+            index["binary_header"] = json.loads(binary_header_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    if not index.get("trace_header_summary"):
+        index["trace_header_summary"] = {
+            "trace_count": index.get("trace_count"),
+            "inline_count": index.get("inline_count"),
+            "crossline_count": index.get("crossline_count"),
+            "sample_count": index.get("sample_count"),
+            "inline_min": index.get("inline_min"),
+            "inline_max": index.get("inline_max"),
+            "crossline_min": index.get("crossline_min"),
+            "crossline_max": index.get("crossline_max"),
+            "sample_index_range": _sample_index_range(index),
+            "sample_interval_ms": index.get("sample_interval_ms"),
+            "time_range_ms": _time_range_ms(index),
+            "valid_trace_header_count": index.get("valid_trace_header_count"),
+            "invalid_trace_header_count": index.get("invalid_trace_header_count"),
+        }
+
+    return index
+
+
+def _canonical_dataset_from_index(index: Dict[str, Any]) -> Dict[str, Any]:
+    dataset_id = index["dataset_id"]
+    shape = index.get("shape")
+
+    return {
+        "dataset_id": dataset_id,
+        "id": dataset_id,
+        "legacy_volume_id": f"indexed-segy-{dataset_id}",
+        "display_name": f"{_short_name(index)} — Indexed SEG-Y mode",
+        "filename": index.get("source_file_name") or dataset_id,
+        "source_path": index.get("source_path"),
+        "dataset_type": "3d_volume" if index.get("is_3d") else "unknown",
+        "source_format": "segy",
+        "read_mode": "indexed_segy",
+        "storage_status": "indexed",
+        "optimized_cache_status": index.get("optimized_cache_status", "not_started"),
+        "metadata_status": "provisional",
+        "evidence_status": "headers_only",
+        "zarr_url": f"indexed-segy://{dataset_id}",
+        "shape": shape,
+        "axis_order": index.get("axis_order", ["inline", "crossline", "sample"]),
+        "sample_interval_ms": index.get("sample_interval_ms"),
+        "sample_count": index.get("sample_count"),
+        "trace_count": index.get("trace_count"),
+        "inline_count": index.get("inline_count"),
+        "crossline_count": index.get("crossline_count"),
+        "inline_range": _range(index.get("inline_min"), index.get("inline_max")),
+        "crossline_range": _range(index.get("crossline_min"), index.get("crossline_max")),
+        "sample_index_range": _sample_index_range(index),
+        "time_range_ms": _time_range_ms(index),
+        "info_url": f"/api/datasets/{dataset_id}/info",
+        "slice_url": f"/api/datasets/{dataset_id}/slice",
+        "metadata_summary_url": f"/api/datasets/{dataset_id}/metadata-summary",
+        "metadata_completeness_url": f"/api/datasets/{dataset_id}/metadata-completeness",
+        "metadata": _normalized_metadata_from_index(index),
+    }
+
+
+def _short_name(index: Dict[str, Any]) -> str:
+    name = index.get("source_file_name") or index.get("dataset_id") or "Indexed SEG-Y"
+    if name.startswith("Poststack_Final_Migration-Full_"):
+        name = name.replace("Poststack_Final_Migration-Full_", "")
+    if "-Final_Migration-Full-" in name:
+        return name.split("-Final_Migration-Full-")[0]
+    return Path(name).stem
+
+
+def _range(a: Any, b: Any) -> Optional[List[Any]]:
+    if a is None or b is None:
+        return None
+    return [a, b]
+
+
+def _normalized_metadata_from_index(index: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "schema_version": "0.1",
+        "metadata_status": "provisional",
+        "evidence_status": "headers_only",
+        "identity": {
+            "dataset_id": index.get("dataset_id"),
+            "dataset_type": "3d_volume" if index.get("is_3d") else "unknown",
+            "display_name": _short_name(index),
+            "source_file_name": index.get("source_file_name"),
+        },
+        "geometry": {
+            "shape": index.get("shape"),
+            "axis_order": index.get("axis_order", ["inline", "crossline", "sample"]),
+            "trace_count": index.get("trace_count"),
+            "inline_count": index.get("inline_count"),
+            "crossline_count": index.get("crossline_count"),
+            "sample_count": index.get("sample_count"),
+            "inline_range": _range(index.get("inline_min"), index.get("inline_max")),
+            "crossline_range": _range(index.get("crossline_min"), index.get("crossline_max")),
+            "sample_index_range": _sample_index_range(index),
+            "sample_interval_ms": index.get("sample_interval_ms"),
+            "time_range_ms": _time_range_ms(index),
+            "record_length_ms": _record_length_ms(index),
+            "geometry_source": "indexed_segy_headers",
+        },
+        "conversion": {
+            "source_format": "SEG-Y",
+            "target_format": "indexed_segy_preview",
+            "read_mode": "indexed_segy",
+            "optimized_cache_status": index.get("optimized_cache_status", "not_started"),
+            "expected_trace_positions": _expected_trace_positions(index),
+            "missing_trace_positions": _missing_trace_positions(index),
+        },
+        "headers": {
+            "text_header_available": bool(index.get("text_header")),
+            "text_header_encoding": index.get("text_header_encoding"),
+            "text_header_confidence": index.get("text_header_confidence"),
+            "binary_header_available": bool(index.get("binary_header")),
+            "trace_header_summary_available": bool(index.get("trace_header_summary")),
+        },
+        "quality": {
+            "warnings": [
+                "Indexed SEG-Y preview metadata is provisional until optimized cache and supporting documents are verified."
+            ],
+        },
+    }
+
+
+def list_indexed_datasets() -> List[Dict[str, Any]]:
+    datasets: List[Dict[str, Any]] = []
+    if not SEGY_INDEX_DIR.exists():
+        return datasets
+
+    for child in sorted(SEGY_INDEX_DIR.iterdir()):
+        if not child.is_dir():
+            continue
+        try:
+            index = SegyIndexService.load_index(child.name)
+            datasets.append(_canonical_dataset_from_index(index))
+        except Exception:
+            continue
+
+    return datasets
+
+
+def get_dataset(dataset_id: str) -> Dict[str, Any]:
+    index = _load_index(dataset_id)
+    return _canonical_dataset_from_index(index)
+
+
+def get_dataset_info(dataset_id: str) -> Dict[str, Any]:
+    index = _load_index(dataset_id)
+    dataset = _canonical_dataset_from_index(index)
+
+    return {
+        "dataset": dataset,
+        "volume": {
+            "id": dataset["legacy_volume_id"],
+            "dataset_id": dataset["dataset_id"],
+            "filename": dataset["filename"],
+            "display_name": dataset["display_name"],
+            "dataset_type": dataset["dataset_type"],
+            "zarr_url": dataset["zarr_url"],
+            "read_mode": dataset["read_mode"],
+            "optimized_cache_status": dataset["optimized_cache_status"],
+            "metadata": dataset["metadata"],
+        },
+        "metadata": dataset["metadata"],
+        "text_header": index.get("text_header"),
+        "text_header_decode": index.get("text_header_decode"),
+        "binary_header": index.get("binary_header"),
+        "trace_header_summary": index.get("trace_header_summary"),
+        "conversion_info": {
+            "read_mode": "indexed_segy",
+            "source_format": "SEG-Y",
+            "target_format": "indexed_segy_preview",
+            "optimized_cache_status": index.get("optimized_cache_status", "not_started"),
+            "geometry_source": "indexed_segy_headers",
+            "input_trace_count": index.get("trace_count"),
+            "expected_trace_positions": _expected_trace_positions(index),
+            "missing_trace_positions": _missing_trace_positions(index),
+        },
+        "indexed_segy": index,
+    }
+
+
+def get_metadata_summary(dataset_id: str) -> Dict[str, Any]:
+    index = _load_index(dataset_id)
+    dataset = _canonical_dataset_from_index(index)
+    metadata = dataset["metadata"]
+
+    return {
+        "dataset_id": dataset["dataset_id"],
+        "display_name": dataset["display_name"],
+        "dataset_type": dataset["dataset_type"],
+        "metadata_status": "provisional",
+        "status_label": "Indexed SEG-Y preview",
+        "summary": "Fast SEG-Y index is available. Geometry and headers are available from SEG-Y evidence. Optimized Zarr cache and document validation are not complete.",
+        "source": {
+            "source_type": "indexed_segy",
+            "source_format": "SEG-Y",
+            "filename": dataset["filename"],
+            "source_path": dataset["source_path"],
+        },
+        "geometry": metadata["geometry"],
+        "headers": metadata["headers"],
+        "conversion": metadata["conversion"],
+        "documents": {
+            "supporting_documents": [],
+            "document_validation_status": "not_started",
+        },
+        "warnings": metadata["quality"]["warnings"],
+    }
+
+
+def get_metadata_completeness(dataset_id: str) -> Dict[str, Any]:
+    index = _load_index(dataset_id)
+
+    has_geometry = bool(index.get("shape")) and index.get("trace_count") is not None
+    has_text = bool(index.get("text_header"))
+    has_binary = bool(index.get("binary_header"))
+    has_trace_summary = bool(index.get("trace_header_summary"))
+
+    score = 0
+    score += 35 if has_geometry else 0
+    score += 20 if has_text else 0
+    score += 15 if has_binary else 0
+    score += 20 if has_trace_summary else 0
+    score += 0  # documents not scanned yet
+    score = min(score, 90)  # indexed-only metadata should not score as fully validated
+
+    return {
+        "dataset_id": _strip_indexed_prefix(dataset_id),
+        "metadata_status": "provisional",
+        "evidence_status": "headers_only",
+        "completeness": {
+            "percent": score,
+            "status": "indexed_provisional",
+            "categories": {
+                "geometry": {
+                    "score": 1.0 if has_geometry else 0.0,
+                    "status": "available" if has_geometry else "missing",
+                },
+                "headers": {
+                    "score": sum([has_text, has_binary, has_trace_summary]) / 3,
+                    "status": "available" if has_text and has_binary and has_trace_summary else "partial",
+                },
+                "documents": {
+                    "score": 0.0,
+                    "status": "not_started",
+                },
+                "optimized_cache": {
+                    "score": 0.0,
+                    "status": index.get("optimized_cache_status", "not_started"),
+                },
+            },
+            "missing_fields": [
+                "optimized_zarr_cache",
+                "document_validation",
+                "business_metadata",
+                "crs_validation",
+            ],
+            "derived_fields": [
+                "shape",
+                "inline_range",
+                "crossline_range",
+                "sample_interval_ms",
+                "time_range_ms",
+                "trace_count",
+            ],
+        },
+        "summary": "Indexed SEG-Y metadata is available and usable for preview, but remains provisional until optimized cache and document validation are complete.",
+    }

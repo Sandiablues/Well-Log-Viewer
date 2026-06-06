@@ -1,0 +1,72 @@
+# Seismic Viewer / MultiViewer strict runtime-data exclusions
+
+# Seismic source data
+*.sgy
+*.SGY
+*.segy
+*.SEGY
+
+# Zarr and converted seismic artifacts
+*.zarr/
+*.zarr
+*zarr*/
+seismic-viewer-backend/data/zarr/
+seismic-viewer-backend/data/zarr_tmp/
+seismic-viewer-backend/data/optimized_cache/
+seismic-viewer-backend/data/cache/
+seismic-viewer-backend/data/runtime/
+seismic-viewer-backend/data/jobs/
+seismic-viewer-backend/data/uploads/
+seismic-viewer-backend/data/source_intake_manual_uploads/*/segy/
+seismic-viewer-backend/data/source_intake_manual_uploads/*/zarr/
+seismic-viewer-backend/data/source_intake_manual_uploads/*/artifacts/
+
+# Large/generated source-intake payloads
+seismic-viewer-backend/data/source_intake_manual_uploads/**/*.sgy
+seismic-viewer-backend/data/source_intake_manual_uploads/**/*.SGY
+seismic-viewer-backend/data/source_intake_manual_uploads/**/*.segy
+seismic-viewer-backend/data/source_intake_manual_uploads/**/*.SEGY
+
+# Logs/runtime
+*.log
+*.pid
+*.tmp
+*.temp
+*.bak
+*.swp
+.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Node/frontend generated files
+node_modules/
+seismic-viewer-frontend/node_modules/
+seismic-viewer-frontend/dist/
+seismic-viewer-backend/packaged_dist/
+
+# Python virtual environments
+venv/
+.venv/
+seismic-viewer-backend/venv/
+
+# Patch/runtime backups
+_patch_backup_*/
+_runtime_backup_*/
+*_patch_bundle/
+*_source_bundle/
+*_capture_*/
+*_inventory_*/
+
+# Archives and bundles
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# OS/editor
+.idea/
+.vscode/

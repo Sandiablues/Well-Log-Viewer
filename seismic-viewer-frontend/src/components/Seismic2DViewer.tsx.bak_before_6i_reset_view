@@ -1,0 +1,1517 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { fetchSection2D, fetchSlice, getZarrMetadata } from '../services/zarrService';
+import { formatAxisLabel, getVerticalAxis } from '../utils/axisInfo';
+
+
+function format2DTickValue(value: number, discrete = false): string {
+  if (!Number.isFinite(value)) return '—';
+
+  if (discrete) {
+    return String(Math.round(value));
+  }
+
+  if (Math.abs(value) >= 1000) {
+    return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1);
+  }
+
+  if (Number.isInteger(value)) {
+    return value.toFixed(0);
+  }
+
+  return Number(value.toFixed(3)).toString();
+}
+
+function get2DShape(lineInfo: any): number[] {
+  const shape = lineInfo?.metadata?.shape || lineInfo?.metadata?.zarr?.shape || lineInfo?.shape;
+  return Array.isArray(shape) ? shape : [];
+}
+
+function get2DAxisDisplayInfo(lineInfo: any) {
+  const metadata = lineInfo?.metadata || {};
+  const shape = get2DShape(lineInfo);
+
+  const traceCount =
+    Number(metadata.trace_count || metadata.zarr?.trace_count || lineInfo?.trace_count || shape?.[0] || 0);
+
+  const sampleCount =
+    Number(metadata.sample_count || metadata.zarr?.sample_count || lineInfo?.sample_count || shape?.[1] || 0);
+
+  const verticalAxis = getVerticalAxis(lineInfo);
+
+  const verticalMin =
+    verticalAxis?.min !== null && verticalAxis?.min !== undefined
+      ? Number(verticalAxis.min)
+      : 0;
+
+  const verticalMax =
+    verticalAxis?.max !== null && verticalAxis?.max !== undefined
+      ? Number(verticalAxis.max)
+      : Math.max(0, sampleCount - 1);
+
+  const verticalLabel = verticalAxis ? formatAxisLabel(verticalAxis) : 'Sample';
+  const verticalUnit = verticalAxis?.unit && !['index', 'number', 'sample'].includes(String(verticalAxis.unit))
+    ? String(verticalAxis.unit)
+    : '';
+
+  return {
+    horizontal: {
+      label: 'Trace',
+      min: 0,
+      max: Math.max(0, traceCount - 1),
+      discrete: true,
+    },
+    vertical: {
+      label: verticalUnit ? `${verticalLabel} (${verticalUnit})` : verticalLabel,
+      min: Number.isFinite(verticalMin) ? verticalMin : 0,
+      max: Number.isFinite(verticalMax) ? verticalMax : Math.max(0, sampleCount - 1),
+      discrete: !verticalAxis,
+    },
+  };
+}
+
+interface Seismic2DViewerProps {
+  zarrPath: string;
+  dim: number;
+  lineInfo?: any;
+  surveyName?: string;
+  defaultShowLineInfo?: boolean;
+  controlledShowLineInfo?: boolean;
+  showLineInfoControl?: boolean;
+}
+
+type DisplayMode = 'color' | 'gray' | 'wiggle';
+type ProcessingMode = 'raw' | 'demean' | 'trace_rms' | 'agc';
+
+function formatLineInfoValue(value: any): string {
+  if (value === null || value === undefined || value === '') return '—';
+  if (Array.isArray(value)) return value.join(' × ');
+  return String(value);
+}
+
+function LineInfoRow({ label, value }: { label: string; value: any }) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '92px 1fr',
+        gap: '8px',
+        fontSize: '12px',
+        padding: '5px 0',
+        borderBottom: '1px solid #303030',
+      }}
+    >
+      <div style={{ opacity: 0.65 }}>{label}</div>
+      <div style={{ wordBreak: 'break-word' }}>{formatLineInfoValue(value)}</div>
+    </div>
+  );
+}
+
+
+export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim, lineInfo, surveyName, defaultShowLineInfo = true, controlledShowLineInfo, showLineInfoControl = true }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+
+  const [index, setIndex] = useState(0);
+  const [metadata, setMetadata] = useState<any>(null);
+  const [gain, setGain] = useState(1.0);
+  const [clipPercentile, setClipPercentile] = useState(99.0);
+  const [processingMode, setProcessingMode] = useState<ProcessingMode>('demean');
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('gray');
+  const [fitToWidth, setFitToWidth] = useState(true);
+  const [reversePolarity, setReversePolarity] = useState(false);
+  const [reverseDirection, setReverseDirection] = useState(false);
+  const [xScale, setXScale] = useState(1.0);
+  const [yScale, setYScale] = useState(1.0);
+  const [wiggleScale, setWiggleScale] = useState(1.0);
+  const [traceDecimation, setTraceDecimation] = useState('auto');
+  const [wiggleStyle, setWiggleStyle] = useState<'line' | 'variable_area'>('variable_area');
+  const [wiggleFill, setWiggleFill] = useState<'none' | 'positive' | 'negative' | 'both'>('positive');
+  const [wiggleTraceSpacing, setWiggleTraceSpacing] = useState(1.0);
+  const [showWiggleZeroLine, setShowWiggleZeroLine] = useState(true);
+  const [showTimelines, setShowTimelines] = useState(false);
+  const [showAxisLabels, setShowAxisLabels] = useState(true);
+  const [menuCollapsed, setMenuCollapsed] = useState(false);
+  const [displayControlsOpen, setDisplayControlsOpen] = useState(true);
+  const [amplitudeControlsOpen, setAmplitudeControlsOpen] = useState(true);
+  const [wiggleControlsOpen, setWiggleControlsOpen] = useState(true);
+  const [gridAxisControlsOpen, setGridAxisControlsOpen] = useState(false);
+  const [zoomControlsOpen, setZoomControlsOpen] = useState(false);
+  const [timelineIntervalMs, setTimelineIntervalMs] = useState(250);
+  const [sectionInfo, setSectionInfo] = useState<any>(null);
+  const [cursorInfo, setCursorInfo] = useState<any>(null);
+  const [showLineInfoDrawer, setShowLineInfoDrawer] = useState(defaultShowLineInfo);
+  const effectiveShowLineInfoDrawer = controlledShowLineInfo ?? showLineInfoDrawer;
+  const [zoomDrag, setZoomDrag] = useState<any>(null);
+  const [boxZoomEnabled, setBoxZoomEnabled] = useState(false);
+  const [agcWindowSec, setAgcWindowSec] = useState(0.5);
+  const [frequencyFilter, setFrequencyFilter] = useState<'none' | 'bandpass'>('none');
+
+  useEffect(() => {
+    getZarrMetadata(zarrPath).then(setMetadata);
+  }, [zarrPath]);
+
+  useEffect(() => {
+    async function renderSection() {
+      if (!canvasRef.current || !metadata) return;
+
+      const isTrue2DLine = metadata.shape?.length === 2;
+
+      const slice = isTrue2DLine
+        ? await fetchSection2D(
+            zarrPath,
+            1600,
+            900,
+            clipPercentile,
+            processingMode,
+            agcWindowSec,
+            frequencyFilter,
+            8,
+            12,
+            80,
+            100
+          )
+        : await fetchSlice(zarrPath, dim, index);
+
+      setSectionInfo({
+        sourceShape: slice.source_shape || slice.shape,
+        previewShape: slice.shape,
+        traceStride: slice.trace_stride || 1,
+        sampleStride: slice.sample_stride || 1,
+        sampleIntervalMs: slice.sample_interval_ms || slice.processing?.sample_interval_sec * 1000 || metadata.sample_interval_ms || metadata.sample_rate,
+        clipAbs: slice.clip_abs,
+        clipPercentile: slice.clip_percentile,
+        processingMode: slice.processing_mode,
+        processing: slice.processing,
+        agcWindowSec,
+        frequencyFilter,
+        filterLabel: frequencyFilter === 'bandpass' ? 'Bandpass 8/12/80/100 Hz' : 'None',
+        preview: slice.preview,
+      });
+
+      const data = Array.isArray(slice.data) ? slice.data : Array.from(slice.data as any);
+      const [traceCountRaw, sampleCountRaw] = slice.shape;
+
+      const traceCount = isTrue2DLine ? traceCountRaw : sampleCountRaw;
+      const sampleCount = isTrue2DLine ? sampleCountRaw : traceCountRaw;
+
+      const canvas = canvasRef.current;
+      canvas.width = traceCount;
+      canvas.height = sampleCount;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const clipAbs = Math.max(Number(slice.clip_abs) || 1, 1e-12);
+      const polarity = reversePolarity ? -1 : 1;
+
+      const getRawValue = (trace: number, sample: number) => {
+        if (isTrue2DLine) {
+          const actualTrace = reverseDirection ? traceCount - 1 - trace : trace;
+          return Number(data[actualTrace * sampleCount + sample]) || 0;
+        }
+
+        return Number(data[sample * traceCount + trace]) || 0;
+      };
+
+      const getNormValue = (trace: number, sample: number) => {
+        const val = getRawValue(trace, sample) * polarity * gain / clipAbs;
+        return Math.max(-1, Math.min(1, val));
+      };
+
+      const drawTimelines = () => {
+        if (!showTimelines) return;
+
+        const sampleStride = Number(slice.sample_stride || 1);
+        const sectionSampleIntervalMs =
+          Number(slice.sample_interval_ms || 0) ||
+          Number(slice.processing?.sample_interval_sec || 0) * 1000 ||
+          Number(metadata.sample_interval_ms || metadata.sample_rate || 0);
+
+        if (!sectionSampleIntervalMs || !timelineIntervalMs) return;
+
+        const previewSampleIntervalMs = sectionSampleIntervalMs * sampleStride;
+        // Exact requested time-grid interval.
+        // Do not thin or multiply this value; 100 ms must mean 100 ms.
+        const lineStep = Math.max(1, Math.round(timelineIntervalMs / previewSampleIntervalMs));
+
+        ctx.save();
+        ctx.strokeStyle =
+          displayMode === 'color'
+            ? 'rgba(0,0,0,0.14)'
+            : displayMode === 'gray'
+              ? 'rgba(255,255,255,0.22)'
+              : 'rgba(0,0,0,0.20)';
+        ctx.lineWidth = 1;
+
+        for (let y = lineStep; y < sampleCount; y += lineStep) {
+          ctx.beginPath();
+          ctx.moveTo(0, y + 0.5);
+          ctx.lineTo(traceCount, y + 0.5);
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      };
+
+      const renderRaster = () => {
+        const imageData = ctx.createImageData(traceCount, sampleCount);
+
+        for (let y = 0; y < sampleCount; y++) {
+          for (let x = 0; x < traceCount; x++) {
+            const pixelIndex = y * traceCount + x;
+            const norm = getNormValue(x, y);
+
+            if (displayMode === 'gray') {
+              const gray = Math.max(0, Math.min(255, 128 + norm * 128));
+              imageData.data[pixelIndex * 4] = gray;
+              imageData.data[pixelIndex * 4 + 1] = gray;
+              imageData.data[pixelIndex * 4 + 2] = gray;
+            } else {
+              if (norm < 0) {
+                const intensity = 1 + norm;
+                imageData.data[pixelIndex * 4] = intensity * 255;
+                imageData.data[pixelIndex * 4 + 1] = intensity * 255;
+                imageData.data[pixelIndex * 4 + 2] = 255;
+              } else {
+                const intensity = 1 - norm;
+                imageData.data[pixelIndex * 4] = 255;
+                imageData.data[pixelIndex * 4 + 1] = intensity * 255;
+                imageData.data[pixelIndex * 4 + 2] = intensity * 255;
+              }
+            }
+
+            imageData.data[pixelIndex * 4 + 3] = 255;
+          }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        drawTimelines();
+      };
+
+      const renderWiggle = () => {
+        ctx.save();
+
+        // White seismic paper-style background.
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, traceCount, sampleCount);
+
+        drawTimelines();
+
+        /*
+          Robust SU-style wiggle renderer.
+
+          This is not copied SU/X11 code. It is a canvas implementation of the
+          same display idea:
+            - draw a sparse set of traces
+            - center each trace on a baseline
+            - scale amplitude relative to display clip
+            - clamp excursions to avoid trace smearing
+            - optionally fill positive or negative lobes
+            - smooth only for display, not data
+        */
+
+        const targetAutoTraces = 95;
+
+        const decimation =
+          traceDecimation === 'auto'
+            ? Math.max(1, Math.ceil(traceCount / targetAutoTraces))
+            : Math.max(1, parseInt(traceDecimation, 10) || 1);
+
+        const drawnTraceCount = Math.max(1, Math.ceil(traceCount / decimation));
+        const baseTraceSpacing = traceCount / Math.max(1, drawnTraceCount);
+        const traceSpacingFactor = Math.max(0.5, Math.min(3.0, wiggleTraceSpacing));
+        const nominalTraceSpacing = baseTraceSpacing * traceSpacingFactor;
+
+        // Conservative default. Scale slider still works, but cannot destroy the plot.
+        const userScale = Math.max(0.1, Math.min(5.0, wiggleScale));
+        const ampScale = nominalTraceSpacing * 0.62 * userScale;
+        const maxExcursion = nominalTraceSpacing * 0.85;
+
+        const shouldFillPositive =
+          wiggleStyle === 'variable_area' &&
+          (wiggleFill === 'positive' || wiggleFill === 'both');
+
+        const shouldFillNegative =
+          wiggleStyle === 'variable_area' &&
+          (wiggleFill === 'negative' || wiggleFill === 'both');
+
+        const clipNorm = (v: number) => Math.max(-1.75, Math.min(1.75, v));
+
+        const wiggleX = (baseline: number, norm: number) => {
+          const excursion = Math.max(
+            -maxExcursion,
+            Math.min(maxExcursion, clipNorm(norm) * ampScale)
+          );
+          return baseline + excursion;
+        };
+
+        const buildSmoothedNorms = (trace: number) => {
+          const raw = new Float32Array(sampleCount);
+
+          for (let sample = 0; sample < sampleCount; sample++) {
+            raw[sample] = clipNorm(getNormValue(trace, sample));
+          }
+
+          // Light display-only smoothing. This reduces jagged canvas scratch
+          // without changing backend data or suppressing real events.
+          if (sampleCount < 7) return raw;
+
+          const smooth = new Float32Array(sampleCount);
+
+          smooth[0] = raw[0];
+          smooth[1] = raw[1];
+
+          for (let i = 2; i < sampleCount - 2; i++) {
+            smooth[i] =
+              (raw[i - 2] +
+                2 * raw[i - 1] +
+                3 * raw[i] +
+                2 * raw[i + 1] +
+                raw[i + 2]) /
+              9;
+          }
+
+          smooth[sampleCount - 2] = raw[sampleCount - 2];
+          smooth[sampleCount - 1] = raw[sampleCount - 1];
+
+          return smooth;
+        };
+
+        const drawFilledLobes = (
+          baseline: number,
+          norms: Float32Array,
+          fillPositive: boolean
+        ) => {
+          const wantSign = fillPositive ? 1 : -1;
+          let inLobe = false;
+          let lobeStart = 0;
+
+          const hasWantedSign = (v: number) =>
+            fillPositive ? v > 0 : v < 0;
+
+          for (let sample = 0; sample < sampleCount; sample++) {
+            const active = hasWantedSign(norms[sample]);
+
+            if (active && !inLobe) {
+              inLobe = true;
+              lobeStart = sample;
+            }
+
+            const endOfLobe =
+              inLobe &&
+              (!active || sample === sampleCount - 1);
+
+            if (endOfLobe) {
+              const lobeEnd = active && sample === sampleCount - 1 ? sample : sample - 1;
+
+              if (lobeEnd > lobeStart) {
+                ctx.beginPath();
+
+                // Down the baseline.
+                ctx.moveTo(baseline, lobeStart);
+                ctx.lineTo(baseline, lobeEnd);
+
+                // Back up along the wiggle curve.
+                for (let s = lobeEnd; s >= lobeStart; s--) {
+                  ctx.lineTo(wiggleX(baseline, norms[s]), s);
+                }
+
+                ctx.closePath();
+                ctx.fill();
+              }
+
+              inLobe = false;
+            }
+          }
+        };
+
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        for (let trace = 0; trace < traceCount; trace += decimation) {
+          const baseline = trace;
+          const norms = buildSmoothedNorms(trace);
+
+          if (shouldFillPositive) {
+            ctx.fillStyle = 'rgba(0,0,0,0.52)';
+            drawFilledLobes(baseline, norms, true);
+          }
+
+          if (shouldFillNegative) {
+            ctx.fillStyle = 'rgba(60,60,60,0.34)';
+            drawFilledLobes(baseline, norms, false);
+          }
+
+          ctx.beginPath();
+
+          for (let sample = 0; sample < sampleCount; sample++) {
+            const x = wiggleX(baseline, norms[sample]);
+
+            if (sample === 0) {
+              ctx.moveTo(x, sample);
+            } else {
+              ctx.lineTo(x, sample);
+            }
+          }
+
+          ctx.strokeStyle = '#000000';
+          ctx.lineWidth = nominalTraceSpacing >= 10 ? 0.85 : 0.65;
+          ctx.stroke();
+
+          // Optional trace zero-amplitude baseline.
+          // Deliberately visible for testing. If this proves useful, we can tone it down later.
+          if (showWiggleZeroLine) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(baseline, 0);
+            ctx.lineTo(baseline, sampleCount - 1);
+            ctx.strokeStyle = 'rgba(180,0,0,0.75)';
+            ctx.lineWidth = Math.max(0.8, Math.min(1.4, nominalTraceSpacing * 0.08));
+            ctx.setLineDash([6, 6]);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+
+        ctx.restore();
+      };
+
+      if (displayMode === 'color' || displayMode === 'gray') {
+        renderRaster();
+      } else {
+        renderWiggle();
+      }
+    }
+
+    renderSection().catch((err) => {
+      console.error('Failed to render 2D section', err);
+    });
+  }, [
+    zarrPath,
+    dim,
+    index,
+    metadata,
+    gain,
+    clipPercentile,
+    processingMode,
+    displayMode,
+    agcWindowSec,
+    frequencyFilter,
+    wiggleScale,
+    traceDecimation,
+    wiggleStyle,
+    wiggleFill,
+    wiggleTraceSpacing,
+    showWiggleZeroLine,
+    reversePolarity,
+    reverseDirection,
+    showTimelines,
+    timelineIntervalMs,
+  ]);
+
+  if (!metadata) return <div>Loading...</div>;
+
+  const maxIndex = metadata.shape?.length === 2 ? 0 : metadata.shape[dim] - 1;
+
+  const getCanvasPoint = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+
+    const rect = canvas.getBoundingClientRect();
+
+    return {
+      canvas,
+      rect,
+      xCss: event.clientX - rect.left,
+      yCss: event.clientY - rect.top,
+      xCanvas: Math.max(0, Math.min(canvas.width, ((event.clientX - rect.left) / rect.width) * canvas.width)),
+      yCanvas: Math.max(0, Math.min(canvas.height, ((event.clientY - rect.top) / rect.height) * canvas.height)),
+    };
+  };
+
+  const handleCanvasMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const point = getCanvasPoint(event);
+    if (!point || !metadata?.shape) return;
+
+    if (zoomDrag?.active) {
+      setZoomDrag({
+        ...zoomDrag,
+        currentXCss: point.xCss,
+        currentYCss: point.yCss,
+        currentXCanvas: point.xCanvas,
+        currentYCanvas: point.yCanvas,
+      });
+    }
+
+    const canvas = point.canvas;
+    const previewTrace = Math.max(0, Math.min(canvas.width - 1, Math.floor(point.xCanvas)));
+    const previewSample = Math.max(0, Math.min(canvas.height - 1, Math.floor(point.yCanvas)));
+
+    const traceStride = Number(sectionInfo?.traceStride || 1);
+    const sampleStride = Number(sectionInfo?.sampleStride || 1);
+
+    const sourceTrace = reverseDirection
+      ? Math.max(0, (sectionInfo?.sourceShape?.[0] || metadata.shape?.[0] || 0) - 1 - previewTrace * traceStride)
+      : previewTrace * traceStride;
+
+    const sourceSample = previewSample * sampleStride;
+    const sampleRate = Number(metadata.sample_rate || metadata.sample_interval_ms || 0);
+    const timeMs = sampleRate ? sourceSample * sampleRate : null;
+
+    setCursorInfo({
+      trace: sourceTrace,
+      sample: sourceSample,
+      timeMs,
+    });
+  };
+
+  const handleCanvasMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!boxZoomEnabled) return;
+    if (event.button !== 0) return;
+
+    const point = getCanvasPoint(event);
+    if (!point) return;
+
+    setZoomDrag({
+      active: true,
+      startXCss: point.xCss,
+      startYCss: point.yCss,
+      currentXCss: point.xCss,
+      currentYCss: point.yCss,
+      startXCanvas: point.xCanvas,
+      startYCanvas: point.yCanvas,
+      currentXCanvas: point.xCanvas,
+      currentYCanvas: point.yCanvas,
+    });
+  };
+
+  const handleCanvasMouseUp = () => {
+    if (!boxZoomEnabled) return;
+    if (!zoomDrag?.active) return;
+
+    const viewport = viewportRef.current;
+    const canvas = canvasRef.current;
+
+    if (!viewport || !canvas) {
+      setZoomDrag(null);
+      return;
+    }
+
+    const x1 = Math.min(zoomDrag.startXCanvas, zoomDrag.currentXCanvas);
+    const x2 = Math.max(zoomDrag.startXCanvas, zoomDrag.currentXCanvas);
+    const y1 = Math.min(zoomDrag.startYCanvas, zoomDrag.currentYCanvas);
+    const y2 = Math.max(zoomDrag.startYCanvas, zoomDrag.currentYCanvas);
+
+    const boxWidth = x2 - x1;
+    const boxHeight = y2 - y1;
+
+    setZoomDrag(null);
+
+    if (boxWidth < 10 || boxHeight < 10) return;
+
+    const targetXScale = Math.max(1, Math.min(20, canvas.width / boxWidth));
+    const targetYScale = Math.max(1, Math.min(20, canvas.height / boxHeight));
+
+    setFitToWidth(false);
+    setXScale(targetXScale);
+    setYScale(targetYScale);
+
+    window.setTimeout(() => {
+      const scaledLeft = x1 * targetXScale;
+      const scaledTop = y1 * targetYScale;
+
+      viewport.scrollLeft = Math.max(0, scaledLeft - viewport.clientWidth * 0.08);
+      viewport.scrollTop = Math.max(0, scaledTop - viewport.clientHeight * 0.08);
+    }, 0);
+  };
+
+  const handleCanvasDoubleClick = () => {
+    setXScale(1.0);
+    setYScale(1.0);
+    setFitToWidth(true);
+    setZoomDrag(null);
+    setZoomDrag(null);
+
+    const viewport = viewportRef.current;
+    if (viewport) {
+      viewport.scrollLeft = 0;
+      viewport.scrollTop = 0;
+    }
+  };
+
+  const resetDisplay = () => {
+    setGain(1.0);
+    setClipPercentile(99.0);
+    setProcessingMode('demean');
+    setDisplayMode('gray');
+    setReversePolarity(false);
+    setReverseDirection(false);
+    setXScale(1.0);
+    setYScale(1.0);
+    setWiggleScale(1.0);
+    setTraceDecimation('auto');
+    setWiggleStyle('variable_area');
+    setWiggleFill('positive');
+    setWiggleTraceSpacing(1.0);
+    setShowWiggleZeroLine(true);
+    setShowTimelines(false);
+    setTimelineIntervalMs(100);
+    setFitToWidth(true);
+    setZoomDrag(null);
+  };
+
+  const panelStyle: React.CSSProperties = {
+    width: '270px',
+    minWidth: '270px',
+    padding: '12px',
+    borderRight: '1px solid #333',
+    background: '#1b1b1b',
+    overflowY: 'auto',
+    boxSizing: 'border-box',
+  };
+
+  const sectionStyle: React.CSSProperties = {
+    marginBottom: '16px',
+    paddingBottom: '12px',
+    borderBottom: '1px solid #303030',
+  };
+
+  const sectionTitleStyle: React.CSSProperties = {
+    fontSize: '12px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    opacity: 0.65,
+    marginBottom: '8px',
+  };
+
+  const rowStyle: React.CSSProperties = {
+    display: 'grid',
+    gridTemplateColumns: '88px 1fr',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '8px',
+    fontSize: '13px',
+  };
+
+  const selectStyle: React.CSSProperties = {
+    background: '#2b2b2b',
+    color: 'white',
+    border: '1px solid #555',
+    borderRadius: '4px',
+    padding: '4px 6px',
+    width: '100%',
+  };
+
+  const buttonStyle: React.CSSProperties = {
+    background: '#333',
+    color: 'white',
+    border: '1px solid #555',
+    borderRadius: '4px',
+    padding: '6px 8px',
+    cursor: 'pointer',
+    width: '100%',
+  };
+
+  const checkboxRowStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    marginBottom: '8px',
+    fontSize: '13px',
+  };
+
+  const valueStyle: React.CSSProperties = {
+    fontSize: '12px',
+    opacity: 0.75,
+    textAlign: 'right',
+  };
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        height: '100%',
+        background: '#222',
+        color: 'white',
+        boxSizing: 'border-box',
+        minHeight: 0,
+      }}
+    >
+      <aside
+        style={{
+          ...panelStyle,
+          width: menuCollapsed ? 36 : panelStyle.width,
+          minWidth: menuCollapsed ? 36 : panelStyle.minWidth,
+          padding: menuCollapsed ? '8px 4px' : panelStyle.padding,
+          overflow: menuCollapsed ? 'hidden' : panelStyle.overflow,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: menuCollapsed ? 'center' : 'space-between',
+            gap: 10,
+            marginBottom: menuCollapsed ? 0 : 14,
+          }}
+        >
+          {!menuCollapsed && (
+            <div
+              style={{
+                fontSize: 18,
+                fontWeight: 700,
+                letterSpacing: 0.2,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              2D View Controls
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setMenuCollapsed((value) => !value)}
+            title={menuCollapsed ? 'Expand 2D controls' : 'Collapse 2D controls'}
+            style={{
+              width: 30,
+              height: 30,
+              minWidth: 30,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#3a3a3a',
+              color: '#fff',
+              border: '1px solid #777',
+              borderRadius: 0,
+              cursor: 'pointer',
+              fontSize: 16,
+              lineHeight: 1,
+              padding: 0,
+            }}
+          >
+            {menuCollapsed ? '▶' : '◀'}
+          </button>
+        </div>
+
+        {!menuCollapsed && (
+          <>
+        <div style={sectionStyle}>
+          <button
+            type="button"
+            onClick={() => setDisplayControlsOpen((value) => !value)}
+            style={{
+              ...sectionTitleStyle,
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'transparent',
+              border: 'none',
+              color: '#cbd5e1',
+              cursor: 'pointer',
+              padding: '0 0 8px 0',
+              textAlign: 'left',
+            }}
+          >
+            <span>{displayControlsOpen ? '▾' : '▸'} Display</span>
+          </button>
+
+          {displayControlsOpen && (
+            <>
+              <div style={rowStyle}>
+                <label>Mode</label>
+                <select value={displayMode} onChange={(e) => setDisplayMode(e.target.value as DisplayMode)} style={selectStyle}>
+                  <option value="gray">Gray</option>
+                  <option value="color">Color</option>
+                  <option value="wiggle">Wiggle</option>
+                </select>
+              </div>
+
+              <label style={checkboxRowStyle}>
+                <input type="checkbox" checked={fitToWidth} onChange={(e) => setFitToWidth(e.target.checked)} />
+                Fit width
+              </label>
+
+              <label style={checkboxRowStyle}>
+                <input type="checkbox" checked={reverseDirection} onChange={(e) => setReverseDirection(e.target.checked)} />
+                Reverse direction
+              </label>
+            </>
+          )}
+        </div>
+
+        <div style={sectionStyle}>
+          <button
+            type="button"
+            onClick={() => setAmplitudeControlsOpen((value) => !value)}
+            style={{
+              ...sectionTitleStyle,
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'transparent',
+              border: 'none',
+              color: '#cbd5e1',
+              cursor: 'pointer',
+              padding: '0 0 8px 0',
+              textAlign: 'left',
+            }}
+          >
+            <span>{amplitudeControlsOpen ? '▾' : '▸'} Amplitude</span>
+          </button>
+
+          {amplitudeControlsOpen && (
+            <>
+              <div style={rowStyle}>
+                <label>Process</label>
+                <select value={processingMode} onChange={(e) => setProcessingMode(e.target.value as ProcessingMode)} style={selectStyle}>
+                  <option value="raw">Raw</option>
+                  <option value="demean">Demean</option>
+                  <option value="trace_rms">Trace RMS</option>
+                  <option value="agc">AGC</option>
+                </select>
+              </div>
+
+              {processingMode === 'agc' && (
+                <div style={rowStyle}>
+                  <label>AGC window</label>
+                  <select value={agcWindowSec} onChange={(e) => setAgcWindowSec(parseFloat(e.target.value))} style={selectStyle}>
+                    <option value={0.2}>0.2 sec</option>
+                    <option value={0.5}>0.5 sec</option>
+                    <option value={1.0}>1.0 sec</option>
+                  </select>
+                </div>
+              )}
+
+              <div style={rowStyle}>
+                <label>Filter</label>
+                <select value={frequencyFilter} onChange={(e) => setFrequencyFilter(e.target.value as 'none' | 'bandpass')} style={selectStyle}>
+                  <option value="none">None</option>
+                  <option value="bandpass">Bandpass</option>
+                </select>
+              </div>
+
+              {frequencyFilter === 'bandpass' && (
+                <div style={rowStyle}>
+                  <label>Bandpass</label>
+                  <div style={valueStyle}>8 / 12 / 80 / 100 Hz</div>
+                </div>
+              )}
+
+              <div style={rowStyle}>
+                <label>Clip</label>
+                <select value={clipPercentile} onChange={(e) => setClipPercentile(parseFloat(e.target.value))} style={selectStyle}>
+                  <option value={95}>P95</option>
+                  <option value={98}>P98</option>
+                  <option value={99}>P99</option>
+                  <option value={99.5}>P99.5</option>
+                  <option value={99.9}>P99.9</option>
+                </select>
+              </div>
+
+              <div style={rowStyle}>
+                <label>Gain</label>
+                <div>
+                  <input type="range" min={0.1} max={10} step={0.1} value={gain} onChange={(e) => setGain(parseFloat(e.target.value))} style={{ width: '100%' }} />
+                  <div style={valueStyle}>{gain.toFixed(1)}×</div>
+                </div>
+              </div>
+
+              <label style={checkboxRowStyle}>
+                <input type="checkbox" checked={reversePolarity} onChange={(e) => setReversePolarity(e.target.checked)} />
+                Reverse polarity
+              </label>
+            </>
+          )}
+        </div>
+
+        <div style={sectionStyle}>
+          <button
+            type="button"
+            onClick={() => setWiggleControlsOpen((value) => !value)}
+            style={{
+              ...sectionTitleStyle,
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'transparent',
+              border: 'none',
+              color: '#cbd5e1',
+              cursor: 'pointer',
+              padding: '0 0 8px 0',
+              textAlign: 'left',
+            }}
+          >
+            <span>{wiggleControlsOpen ? '▾' : '▸'} Wiggle</span>
+          </button>
+
+          {wiggleControlsOpen && (
+            <>
+              <div style={rowStyle}>
+                <label>Style</label>
+                <select value={wiggleStyle} onChange={(e) => setWiggleStyle(e.target.value as 'line' | 'variable_area')} style={selectStyle}>
+                  <option value="line">Line only</option>
+                  <option value="variable_area">Variable area</option>
+                </select>
+              </div>
+
+              <div style={rowStyle}>
+                <label>Fill</label>
+                <select value={wiggleFill} onChange={(e) => setWiggleFill(e.target.value as 'none' | 'positive' | 'negative' | 'both')} style={selectStyle}>
+                  <option value="none">None</option>
+                  <option value="positive">Positive</option>
+                  <option value="negative">Negative</option>
+                  <option value="both">Both</option>
+                </select>
+              </div>
+
+              <div style={rowStyle}>
+                <label>Scale</label>
+                <div>
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={5}
+                    step={0.1}
+                    value={wiggleScale}
+                    onChange={(e) => setWiggleScale(parseFloat(e.target.value))}
+                    style={{ width: '100%' }}
+                  />
+                  <div style={valueStyle}>{wiggleScale.toFixed(1)}×</div>
+                </div>
+              </div>
+
+              <div style={rowStyle}>
+                <label>Trace spacing</label>
+                <div>
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={3}
+                    step={0.1}
+                    value={wiggleTraceSpacing}
+                    onChange={(e) => setWiggleTraceSpacing(parseFloat(e.target.value))}
+                    style={{ width: '100%' }}
+                  />
+                  <div style={valueStyle}>{wiggleTraceSpacing.toFixed(1)}×</div>
+                </div>
+              </div>
+
+              <div style={rowStyle}>
+                <label>Trace step</label>
+                <select value={traceDecimation} onChange={(e) => setTraceDecimation(e.target.value)} style={selectStyle}>
+                  <option value="auto">Auto</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="4">4</option>
+                  <option value="8">8</option>
+                  <option value="16">16</option>
+                  <option value="32">32</option>
+                  <option value="64">64</option>
+                </select>
+              </div>
+
+              <div style={rowStyle}>
+                <label>Zero line</label>
+                <select value={showWiggleZeroLine ? 'on' : 'off'} onChange={(e) => setShowWiggleZeroLine(e.target.value === 'on')} style={selectStyle}>
+                  <option value="on">On</option>
+                  <option value="off">Off</option>
+                </select>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div style={sectionStyle}>
+          <button
+            type="button"
+            onClick={() => setGridAxisControlsOpen((value) => !value)}
+            style={{
+              ...sectionTitleStyle,
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'transparent',
+              border: 'none',
+              color: '#cbd5e1',
+              cursor: 'pointer',
+              padding: '0 0 8px 0',
+              textAlign: 'left',
+            }}
+          >
+            <span>{gridAxisControlsOpen ? '▾' : '▸'} Grid / Axis</span>
+          </button>
+
+          {gridAxisControlsOpen && (
+            <>
+              <label style={checkboxRowStyle}>
+                <input type="checkbox" checked={showTimelines} onChange={(e) => setShowTimelines(e.target.checked)} />
+                Time grid
+              </label>
+
+              {showTimelines && (
+                <div style={rowStyle}>
+                  <label>Interval</label>
+                  <select value={timelineIntervalMs} onChange={(e) => setTimelineIntervalMs(parseInt(e.target.value, 10))} style={selectStyle}>
+                    <option value={100}>100 ms</option>
+                    <option value={250}>250 ms</option>
+                    <option value={500}>500 ms</option>
+                    <option value={1000}>1000 ms</option>
+                  </select>
+                </div>
+              )}
+
+              <label style={checkboxRowStyle}>
+                <input type="checkbox" checked={showAxisLabels} onChange={(e) => setShowAxisLabels(e.target.checked)} />
+                Axis labels
+              </label>
+            </>
+          )}
+        </div>
+
+        <div style={sectionStyle}>
+          <button
+            type="button"
+            onClick={() => setZoomControlsOpen((value) => !value)}
+            style={{
+              ...sectionTitleStyle,
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'transparent',
+              border: 'none',
+              color: '#cbd5e1',
+              cursor: 'pointer',
+              padding: '0 0 8px 0',
+              textAlign: 'left',
+            }}
+          >
+            <span>{zoomControlsOpen ? '▾' : '▸'} Zoom</span>
+          </button>
+
+          {zoomControlsOpen && (
+            <>
+              <label style={checkboxRowStyle}>
+                <input
+                  type="checkbox"
+                  checked={boxZoomEnabled}
+                  onChange={(e) => setBoxZoomEnabled(e.target.checked)}
+                />
+                Box zoom
+              </label>
+            </>
+          )}
+        </div>
+
+          </>
+        )}
+      </aside>
+
+      <section
+        style={{
+          position: 'relative',
+          flex: 1,
+          minWidth: 0,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          background: '#202020',
+        }}
+      >
+        {showLineInfoControl && (
+          <div
+            data-role="line-info-floating-toggle"
+            style={{
+              position: 'absolute',
+              right: 12,
+              top: 8,
+              zIndex: 80,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 14,
+              padding: '7px 12px',
+              border: '1px solid #3f3f3f',
+              borderRadius: 10,
+              background: 'rgba(18, 18, 18, 0.92)',
+              boxShadow: '0 3px 10px rgba(0,0,0,0.28)',
+            }}
+          >
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                fontSize: 13,
+                color: '#f0f0f0',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={showLineInfoDrawer}
+                onChange={(e) => setShowLineInfoDrawer(e.target.checked)}
+              />
+              Line info
+            </label>
+          </div>
+        )}
+
+        {showLineInfoControl && (
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              padding: '8px 12px',
+              borderBottom: '1px solid #333',
+              background: '#202020',
+            }}
+          >
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 18,
+                padding: '8px 14px',
+                border: '1px solid #3f3f3f',
+                borderRadius: 10,
+                background: 'rgba(24, 24, 24, 0.95)',
+              }}
+            >
+              <label
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  fontSize: 13,
+                  color: '#f0f0f0',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={showLineInfoDrawer}
+                  onChange={(e) => setShowLineInfoDrawer(e.target.checked)}
+                />
+                Line info
+              </label>
+            </div>
+          </div>
+        )}
+
+        <div
+          style={{
+            padding: '8px 12px',
+            borderBottom: '1px solid #333',
+            fontSize: '12px',
+            opacity: 0.85,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+          title={[
+            `2D section: ${metadata.shape?.join(' × ')}`,
+            sectionInfo?.previewShape ? `preview ${sectionInfo.previewShape.join(' × ')}` : '',
+            sectionInfo?.traceStride ? `stride ${sectionInfo.traceStride} × ${sectionInfo.sampleStride}` : '',
+            sectionInfo?.clipAbs ? `clip P${sectionInfo.clipPercentile ?? clipPercentile}: ${Number(sectionInfo.clipAbs).toFixed(1)}` : '',
+            sectionInfo?.processingMode || '',
+          ].filter(Boolean).join(' | ')}
+        >
+          2D section: {metadata.shape?.join(' × ')}
+          {sectionInfo?.previewShape ? ` | preview ${sectionInfo.previewShape.join(' × ')}` : ''}
+          {sectionInfo?.traceStride ? ` | stride ${sectionInfo.traceStride} × ${sectionInfo.sampleStride}` : ''}
+          {sectionInfo?.clipAbs ? ` | clip P${sectionInfo.clipPercentile ?? clipPercentile}: ${Number(sectionInfo.clipAbs).toFixed(1)}` : ''}
+          {sectionInfo?.processingMode ? ` | Process: ${sectionInfo.processingMode}` : ''}
+          {sectionInfo?.processingMode === 'agc' ? ` | AGC window: ${Number(sectionInfo.agcWindowSec ?? agcWindowSec).toFixed(1)} sec` : ''}
+          {sectionInfo?.frequencyFilter && sectionInfo.frequencyFilter !== 'none' ? ` | Filter: ${sectionInfo.filterLabel}` : ''}
+{cursorInfo ? ` | trace ${Math.round(cursorInfo.trace)}, sample ${Math.round(cursorInfo.sample)}${cursorInfo.timeMs != null ? `, ${cursorInfo.timeMs.toFixed(1)} ms` : ''}` : ''} {boxZoomEnabled ? ' | drag box to zoom, double-click reset' : ''}
+        </div>
+
+        {metadata.shape?.length !== 2 && (
+          <div style={{ padding: '8px 12px', borderBottom: '1px solid #333' }}>
+            <label>Slice Index: </label>
+            <input
+              type="range"
+              min={0}
+              max={maxIndex}
+              value={index}
+              onChange={(e) => setIndex(parseInt(e.target.value, 10))}
+            />
+            <span> {index}</span>
+          </div>
+        )}
+
+        <div
+          ref={viewportRef}
+          style={{
+                padding: showAxisLabels ? '12px 12px 44px 78px' : '12px',
+                boxSizing: 'border-box',
+            flex: 1,
+            overflow: 'auto',
+            background: '#000',
+            minHeight: 0,
+            padding: '12px',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            style={{
+              position: 'relative',
+              width: fitToWidth ? `${100 * xScale}%` : `${(canvasRef.current?.width || 100) * xScale}px`,
+              height: `${(canvasRef.current?.height || 100) * yScale}px`,
+              margin: '0 auto',
+            }}
+          >
+            <canvas
+              ref={canvasRef}
+              onMouseDown={handleCanvasMouseDown}
+              onMouseMove={handleCanvasMouseMove}
+              onMouseUp={handleCanvasMouseUp}
+              onDoubleClick={handleCanvasDoubleClick}
+              onMouseLeave={() => {
+                setCursorInfo(null);
+                if (zoomDrag?.active) setZoomDrag(null);
+              }}
+              style={{
+                imageRendering: 'pixelated',
+                width: '100%',
+                height: '100%',
+                display: 'block',
+                background: '#fff',
+                cursor: boxZoomEnabled ? 'crosshair' : 'default',
+              }}
+            />
+
+            {showAxisLabels && (() => {
+              const axisInfo = get2DAxisDisplayInfo(lineInfo);
+
+              const leftGutter = 78;
+              const bottomGutter = 44;
+
+              const tickStyle: React.CSSProperties = {
+                position: 'absolute',
+                color: '#f5f7fb',
+                background: 'rgba(12, 16, 24, 0.44)',
+                border: '1px solid rgba(255,255,255,0.10)',
+                borderRadius: 4,
+                padding: '1px 4px',
+                fontSize: 9,
+                fontWeight: 600,
+                pointerEvents: 'none',
+                zIndex: 20,
+                opacity: 0.78,
+                whiteSpace: 'nowrap',
+              };
+
+              const titleStyle: React.CSSProperties = {
+                position: 'absolute',
+                color: '#f5f7fb',
+                background: 'rgba(12, 16, 24, 0.34)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 4,
+                padding: '1px 5px',
+                fontSize: 9,
+                fontWeight: 700,
+                pointerEvents: 'none',
+                zIndex: 20,
+                opacity: 0.72,
+                whiteSpace: 'nowrap',
+              };
+
+              return (
+                <>
+                  {/* X axis: bottom gutter, outside seismic pixels */}
+                  <div
+                    style={{
+                      ...tickStyle,
+                      left: leftGutter,
+                      bottom: 22,
+                    }}
+                  >
+                    {format2DTickValue(axisInfo.horizontal.min, true)}
+                  </div>
+
+                  <div
+                    style={{
+                      ...tickStyle,
+                      right: 12,
+                      bottom: 22,
+                    }}
+                  >
+                    {format2DTickValue(axisInfo.horizontal.max, true)}
+                  </div>
+
+                  <div
+                    style={{
+                      ...titleStyle,
+                      left: `calc(${leftGutter}px + (100% - ${leftGutter}px) / 2)`,
+                      bottom: 6,
+                      transform: 'translateX(-50%)',
+                    }}
+                  >
+                    {axisInfo.horizontal.label}
+                  </div>
+
+                  {/* Y axis: left gutter, outside seismic pixels */}
+                  <div
+                    style={{
+                      ...tickStyle,
+                      left: 28,
+                      top: 12,
+                    }}
+                  >
+                    {format2DTickValue(axisInfo.vertical.min, axisInfo.vertical.discrete)}
+                  </div>
+
+                  <div
+                    style={{
+                      ...tickStyle,
+                      left: 28,
+                      bottom: bottomGutter + 4,
+                    }}
+                  >
+                    {format2DTickValue(axisInfo.vertical.max, axisInfo.vertical.discrete)}
+                  </div>
+
+                  <div
+                    style={{
+                      ...titleStyle,
+                      left: 4,
+                      top: `calc(50% - ${bottomGutter / 2}px)`,
+                      transform: 'translateY(-50%) rotate(-90deg)',
+                      transformOrigin: 'center center',
+                    }}
+                  >
+                    {axisInfo.vertical.label}
+                  </div>
+                </>
+              );
+            })()}
+
+            {boxZoomEnabled && zoomDrag?.active && (
+              <div
+                style={{
+                  position: 'absolute',
+                  pointerEvents: 'none',
+                  left: `${Math.min(zoomDrag.startXCss, zoomDrag.currentXCss)}px`,
+                  top: `${Math.min(zoomDrag.startYCss, zoomDrag.currentYCss)}px`,
+                  width: `${Math.abs(zoomDrag.currentXCss - zoomDrag.startXCss)}px`,
+                  height: `${Math.abs(zoomDrag.currentYCss - zoomDrag.startYCss)}px`,
+                  border: '2px solid #4aa3ff',
+                  background: 'rgba(74, 163, 255, 0.15)',
+                  boxSizing: 'border-box',
+                }}
+              />
+            )}
+          </div>
+        </div>
+      </section>
+
+      {effectiveShowLineInfoDrawer && (
+        <aside
+          style={{
+            width: '300px',
+            minWidth: '300px',
+            borderLeft: '1px solid #333',
+            background: '#1b1b1b',
+            overflowY: 'auto',
+            boxSizing: 'border-box',
+
+          }}
+        >
+          <div
+            style={{
+              position: 'sticky',
+              top: 0,
+              zIndex: 2,
+              background: '#1b1b1b',
+              borderBottom: '1px solid #333',
+              padding: '10px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+            }}
+          >
+            <strong style={{ fontSize: '13px' }}>Line Info</strong>
+          </div>
+
+          <div style={{ padding: '12px' }}>
+          <div style={{ marginBottom: '14px' }}>
+            <div
+              style={{
+                fontSize: '12px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                opacity: 0.6,
+                marginBottom: '6px',
+              }}
+            >
+              Line Info
+            </div>
+
+            <LineInfoRow label="Survey" value={surveyName} />
+            <LineInfoRow label="Line" value={lineInfo?.line_name || lineInfo?.display_name || lineInfo?.filename || lineInfo?.id} />
+            <LineInfoRow label="File" value={lineInfo?.filename} />
+            <LineInfoRow label="Rel Path" value={lineInfo?.source_relative_path || lineInfo?.metadata?.source_relative_path} />
+            <LineInfoRow label="Shape" value={lineInfo?.shape || metadata?.shape} />
+            <LineInfoRow label="Traces" value={lineInfo?.trace_count || lineInfo?.shape?.[0] || metadata?.shape?.[0]} />
+            <LineInfoRow label="Samples" value={lineInfo?.sample_count || lineInfo?.shape?.[1] || metadata?.shape?.[1]} />
+            <LineInfoRow
+              label="Sample Rate"
+              value={
+                sectionInfo?.sampleIntervalMs
+                  ? `${Number(sectionInfo.sampleIntervalMs).toFixed(3)} ms`
+                  : "—"
+              }
+            />
+            <LineInfoRow
+              label="Record Length"
+              value={
+                sectionInfo?.sampleIntervalMs && sectionInfo?.sourceShape?.[1]
+                  ? `${((Number(sectionInfo.sampleIntervalMs) * Number(sectionInfo.sourceShape[1])) / 1000).toFixed(3)} s`
+                  : "—"
+              }
+            />
+            <LineInfoRow label="Axis" value={lineInfo?.axis_order || metadata?.zarr?.axis_order || ['trace', 'sample']} />
+            <LineInfoRow label="Line ID" value={lineInfo?.line_id || lineInfo?.id} />
+            <LineInfoRow label="Zarr" value={lineInfo?.zarr_url || zarrPath} />
+          </div>
+
+          <div style={{ marginBottom: '14px' }}>
+            <div
+              style={{
+                fontSize: '12px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                opacity: 0.6,
+                marginBottom: '6px',
+              }}
+            >
+              Current Display
+            </div>
+
+            <LineInfoRow label="Display" value={displayMode} />
+            <LineInfoRow label="Process" value={processingMode} />
+            <LineInfoRow label="AGC window" value={processingMode === 'agc' ? `${agcWindowSec.toFixed(1)} sec` : '—'} />
+            <LineInfoRow label="Filter" value={frequencyFilter === 'bandpass' ? 'Bandpass 8/12/80/100 Hz' : 'None'} />
+            <LineInfoRow label="Clip" value={sectionInfo?.clipPercentile ? `P${sectionInfo.clipPercentile}` : `P${clipPercentile}`} />
+            <LineInfoRow label="Clip Abs" value={sectionInfo?.clipAbs ? Number(sectionInfo.clipAbs).toFixed(1) : null} />
+            <LineInfoRow label="Preview" value={sectionInfo?.previewShape} />
+            <LineInfoRow label="Stride" value={sectionInfo?.traceStride ? `${sectionInfo.traceStride} × ${sectionInfo.sampleStride}` : null} />
+          </div>
+
+          <div style={{ fontSize: '12px', opacity: 0.65, lineHeight: 1.4 }}>
+            Full SEG-Y headers and supporting-document links remain in the main Info tab.
+          </div>
+          </div>
+        </aside>)}
+    </div>
+  );
+};

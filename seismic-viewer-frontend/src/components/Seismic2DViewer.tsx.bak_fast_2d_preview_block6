@@ -1,0 +1,161 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { fetchSection2D, fetchSlice, getZarrMetadata } from '../services/zarrService';
+
+interface Seismic2DViewerProps {
+  zarrPath: string;
+  dim: number;
+}
+
+export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [index, setIndex] = useState(0);
+  const [metadata, setMetadata] = useState<any>(null);
+  const [gain, setGain] = useState(1.0);
+
+  const [colorMap, setColorMap] = useState<'grayscale' | 'seismic'>('seismic');
+
+  useEffect(() => {
+    getZarrMetadata(zarrPath).then(setMetadata);
+  }, [zarrPath]);
+
+  useEffect(() => {
+    async function renderSlice() {
+      if (!canvasRef.current || !metadata) return;
+
+      const slice = metadata.shape?.length === 2
+        ? await fetchSection2D(zarrPath)
+        : await fetchSlice(zarrPath, dim, index);
+
+      const data = Array.isArray(slice.data) ? slice.data : Array.from(slice.data as any);
+      const [h, w] = slice.shape;
+
+      const isTrue2DLine = metadata.shape?.length === 2;
+
+      // 2D line Zarr is stored as [trace, sample].
+      // Display should be traces horizontally and samples/time vertically:
+      // canvas width = trace count, canvas height = sample count.
+      const renderWidth = isTrue2DLine ? h : w;
+      const renderHeight = isTrue2DLine ? w : h;
+
+      const canvas = canvasRef.current;
+      canvas.width = renderWidth;
+      canvas.height = renderHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      const imageData = ctx.createImageData(renderWidth, renderHeight);
+
+      const absValues: number[] = [];
+      for (let i = 0; i < data.length; i++) {
+        const absVal = Math.abs(Number(data[i]) || 0);
+        if (absVal > 0) absValues.push(absVal);
+      }
+
+      absValues.sort((a, b) => a - b);
+      const clipIndex = absValues.length > 0
+        ? Math.min(absValues.length - 1, Math.floor(absValues.length * 0.99))
+        : 0;
+      const clipAbs = absValues.length > 0 ? absValues[clipIndex] : 1;
+      const scale = clipAbs > 0 ? 1 / clipAbs : 1;
+      
+      const paintPixel = (pixelIndex: number, rawValue: number) => {
+        let val = (Number(rawValue) || 0) * scale * gain;
+        val = Math.max(-1, Math.min(1, val));
+        
+        if (colorMap === 'grayscale') {
+          val = 128 + val * 128;
+          val = Math.max(0, Math.min(255, val));
+          imageData.data[pixelIndex * 4] = val;
+          imageData.data[pixelIndex * 4 + 1] = val;
+          imageData.data[pixelIndex * 4 + 2] = val;
+        } else {
+          const norm = Math.max(-1, Math.min(1, val));
+          if (norm < 0) {
+            const intensity = 1 + norm;
+            imageData.data[pixelIndex * 4] = intensity * 255;
+            imageData.data[pixelIndex * 4 + 1] = intensity * 255;
+            imageData.data[pixelIndex * 4 + 2] = 255;
+          } else {
+            const intensity = 1 - norm;
+            imageData.data[pixelIndex * 4] = 255;
+            imageData.data[pixelIndex * 4 + 1] = intensity * 255;
+            imageData.data[pixelIndex * 4 + 2] = intensity * 255;
+          }
+        }
+        imageData.data[pixelIndex * 4 + 3] = 255;
+      };
+
+      if (isTrue2DLine) {
+        // Source index: trace * sampleCount + sample
+        // Display index: sample * traceCount + trace
+        const traceCount = h;
+        const sampleCount = w;
+
+        for (let trace = 0; trace < traceCount; trace++) {
+          for (let sample = 0; sample < sampleCount; sample++) {
+            const sourceIndex = trace * sampleCount + sample;
+            const pixelIndex = sample * traceCount + trace;
+            paintPixel(pixelIndex, data[sourceIndex]);
+          }
+        }
+      } else {
+        for (let i = 0; i < data.length; i++) {
+          paintPixel(i, data[i]);
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    renderSlice();
+  }, [zarrPath, dim, index, metadata, gain, colorMap]);
+
+  if (!metadata) return <div>Loading...</div>;
+
+  const maxIndex = metadata.shape?.length === 2 ? 0 : metadata.shape[dim] - 1;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '20px', background: '#222', color: 'white', height: '100%' }}>
+      <div style={{ fontSize: '12px', opacity: 0.8, marginBottom: '8px' }}>
+        2D section: {metadata.shape?.join(' × ')}
+      </div>
+      <div style={{ display: 'flex', gap: '20px', marginBottom: '10px' }}>
+        {metadata.shape?.length !== 2 && (
+          <div>
+            <label>Slice Index: </label>
+            <input 
+              type="range" 
+              min={0} 
+              max={maxIndex} 
+              value={index} 
+              onChange={(e) => setIndex(parseInt(e.target.value))} 
+            />
+            <span> {index}</span>
+          </div>
+        )}
+        <div>
+          <label>Gain: </label>
+          <input 
+            type="range" 
+            min={0.1} 
+            max={10} 
+            step={0.1} 
+            value={gain} 
+            onChange={(e) => setGain(parseFloat(e.target.value))} 
+          />
+          <span> {gain.toFixed(1)}</span>
+        </div>
+        <div>
+          <label>Color Map: </label>
+          <select value={colorMap} onChange={e => setColorMap(e.target.value as any)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>
+            <option value="grayscale">Grayscale</option>
+            <option value="seismic">Seismic (RWB)</option>
+          </select>
+        </div>
+      </div>
+      <div style={{ flex: 1, overflow: 'auto', border: '1px solid #444', background: '#000' }}>
+        <canvas ref={canvasRef} style={{ imageRendering: 'pixelated', width: '100%', height: 'auto' }} />
+      </div>
+    </div>
+  );
+};

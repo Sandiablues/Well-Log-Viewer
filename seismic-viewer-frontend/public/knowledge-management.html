@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Seismic Viewer — Knowledge Management</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #172033;
+      background: #f5f7fb;
+    }
+
+    body { margin: 0; padding: 24px; }
+    .page { max-width: 1420px; margin: 0 auto; }
+    .header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 20px; }
+    h1 { margin: 0 0 6px; font-size: 24px; line-height: 1.2; }
+    .subtitle { color: #5d6678; font-size: 14px; max-width: 820px; }
+    .api-box { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+
+    input, textarea, select, button { font: inherit; }
+    input, textarea, select {
+      border: 1px solid #cbd3df;
+      border-radius: 8px;
+      padding: 9px 10px;
+      background: #fff;
+      box-sizing: border-box;
+      width: 100%;
+    }
+    textarea { min-height: 90px; resize: vertical; }
+
+    button {
+      border: 1px solid #1f4e79;
+      background: #1f4e79;
+      color: #fff;
+      border-radius: 8px;
+      padding: 9px 12px;
+      cursor: pointer;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    button.secondary { background: #fff; color: #1f4e79; }
+    button.danger { border-color: #9a3412; background: #9a3412; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(360px, 440px) 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #d8deea;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 8px 24px rgba(21, 35, 64, .06);
+    }
+
+    .card h2 { margin: 0 0 12px; font-size: 17px; }
+
+    .form-row { display: grid; gap: 6px; margin-bottom: 11px; }
+    .form-row label {
+      color: #4f596b;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .toolbar input, .toolbar select { width: auto; min-width: 180px; }
+
+    .status { margin: 10px 0 0; font-size: 13px; color: #455166; white-space: pre-wrap; }
+    .status.ok { color: #166534; }
+    .status.err { color: #991b1b; }
+
+    .table-wrap { overflow: auto; border: 1px solid #e1e6ef; border-radius: 10px; max-height: 690px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; }
+    th {
+      position: sticky;
+      top: 0;
+      background: #eef3f9;
+      color: #34435a;
+      text-align: left;
+      padding: 9px;
+      border-bottom: 1px solid #d8deea;
+      z-index: 1;
+    }
+    td { padding: 9px; border-bottom: 1px solid #edf1f6; vertical-align: top; }
+    tr.selected { background: #fff7ed; }
+
+    .term { font-weight: 700; color: #172033; }
+    .muted { color: #657085; }
+    .pill {
+      display: inline-block;
+      background: #eef3f9;
+      border: 1px solid #d8deea;
+      border-radius: 999px;
+      padding: 2px 8px;
+      margin: 1px 3px 1px 0;
+      font-size: 12px;
+      color: #34435a;
+    }
+
+    .summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+    .summary div {
+      background: #f8fafc;
+      border: 1px solid #e1e6ef;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+
+    .note { font-size: 12px; color: #6b7280; line-height: 1.4; }
+    .hidden { display: none; }
+
+    @media (max-width: 1050px) {
+      .grid { grid-template-columns: 1fr; }
+      .header { display: block; }
+      .api-box { margin-top: 12px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <div class="header">
+      <div>
+        <h1>Knowledge Management</h1>
+        <div class="subtitle">
+          Load, search, edit, and classify geophysical knowledge terms. Domain is fixed to the approved
+          top-level buckets. Subtype is selected from existing subtype values for that domain.
+        </div>
+      </div>
+
+      <div class="api-box">
+        <label for="apiBase">API</label>
+        <input id="apiBase" style="width: 260px;" />
+        <button class="secondary" onclick="checkHealth()">Check</button>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div>
+        <div class="card">
+          <h2 id="editorTitle">Add Term</h2>
+
+          <input id="recordId" type="hidden" />
+
+          <div class="form-row">
+            <label>Term</label>
+            <input id="term" placeholder="PSTM" />
+          </div>
+
+          <div class="form-row">
+            <label>Definition</label>
+            <textarea id="definition" placeholder="Pre-stack time migration."></textarea>
+          </div>
+
+          <div class="two-col">
+            <div class="form-row">
+              <label>Knowledge Domain</label>
+              <select id="knowledgeDomain" onchange="onDomainChanged()"></select>
+            </div>
+
+            <div class="form-row">
+              <label>Knowledge Subtype</label>
+              <input id="knowledgeSubtype" list="knowledgeSubtypeSuggestions" placeholder="Enter or select subtype" />
+              <datalist id="knowledgeSubtypeSuggestions"></datalist>
+            </div>
+          </div>
+
+          <div class="two-col">
+            <div class="form-row">
+              <label>Authority</label>
+              <select id="authority">
+                <option value="reference">reference</option>
+                <option value="reviewed_reference">reviewed_reference</option>
+                <option value="approved">approved</option>
+                <option value="candidate_promotion">candidate_promotion</option>
+                <option value="test">test</option>
+              </select>
+            </div>
+
+            <div class="form-row">
+              <label>Active</label>
+              <select id="active">
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label>Aliases</label>
+            <input id="aliases" placeholder="alias 1; alias 2" />
+          </div>
+
+          <div class="form-row">
+            <label>Related terms</label>
+            <input id="relatedTerms" placeholder="term 1; term 2" />
+          </div>
+
+          <div class="form-row">
+            <label>Source</label>
+            <input id="source" value="manual" />
+          </div>
+
+          <div class="toolbar">
+            <button onclick="saveTerm()">Save</button>
+            <button class="secondary" onclick="clearEditor()">New / Clear</button>
+          </div>
+
+          <div id="saveStatus" class="status"></div>
+        </div>
+
+        <div class="card" style="margin-top: 18px;">
+          <h2>Import Dictionary</h2>
+
+          <div class="form-row">
+            <label>CSV or JSON file</label>
+            <input id="importFile" type="file" accept=".csv,.json,text/csv,application/json" />
+          </div>
+
+          <div class="form-row">
+            <label>Import source label</label>
+            <input id="importSource" value="dictionary_upload" />
+          </div>
+
+          <button onclick="importFile()">Upload Dictionary</button>
+
+          <p class="note">
+            CSV columns supported: term, definition, category, knowledge_domain, knowledge_subtype,
+            family, specific, aliases, related_terms, source, authority.
+          </p>
+
+          <div id="importStatus" class="status"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Knowledge Terms</h2>
+
+        <div class="toolbar">
+          <input id="query" placeholder="Search terms, aliases, definitions..." onkeydown="if(event.key==='Enter') loadTerms()" />
+          <select id="domainFilter" onchange="loadTerms()"></select>
+          <select id="subtypeFilter" onchange="loadTerms()"></select>
+          <button onclick="loadTerms()">Search</button>
+          <button class="secondary" onclick="resetSearch()">Reset</button>
+          <button class="secondary" onclick="exportTerms()">Export JSON</button>
+        </div>
+
+        <div class="summary">
+          <div>Total: <strong id="totalCount">0</strong></div>
+          <div>Shown: <strong id="shownCount">0</strong></div>
+          <div>Domains: <strong id="domainCount">0</strong></div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="min-width: 90px;">Action</th>
+                <th style="min-width: 150px;">Term</th>
+                <th style="min-width: 150px;">Domain</th>
+                <th style="min-width: 200px;">Subtype</th>
+                <th style="min-width: 320px;">Definition</th>
+                <th style="min-width: 170px;">Aliases</th>
+                <th style="min-width: 160px;">Related</th>
+                <th style="min-width: 120px;">Source</th>
+              </tr>
+            </thead>
+            <tbody id="termsBody">
+              <tr>
+                <td colspan="8" class="muted">No terms loaded yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div id="listStatus" class="status"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const APPROVED_DOMAINS = [
+      "Survey Design",
+      "Legal/Provenance",
+      "Acquisition",
+      "Processing",
+      "Mapping/Interpretation"
+    ];
+
+    const apiBaseInput = document.getElementById("apiBase");
+    let currentTerms = [];
+    let categoryPayload = { knowledge_domains: [], knowledge_subtypes: [] };
+
+    function defaultApiBase() {
+      if (window.location.port === "5173") return "http://127.0.0.1:8000";
+      return window.location.origin;
+    }
+
+    apiBaseInput.value = localStorage.getItem("knowledgeApiBase") || defaultApiBase();
+
+    function apiBase() {
+      const value = apiBaseInput.value.trim().replace(/\/+$/, "");
+      localStorage.setItem("knowledgeApiBase", value);
+      return value;
+    }
+
+    function splitList(value) {
+      return String(value || "")
+        .split(";")
+        .map(x => x.trim())
+        .filter(Boolean);
+    }
+
+    function joinList(items) {
+      return (items || []).join("; ");
+    }
+
+    function setStatus(id, message, kind) {
+      const el = document.getElementById(id);
+      el.textContent = message || "";
+      el.className = "status " + (kind || "");
+    }
+
+    async function requestJson(path, options = {}) {
+      const response = await fetch(apiBase() + path, options);
+      const text = await response.text();
+
+      let data;
+      try { data = text ? JSON.parse(text) : {}; }
+      catch { data = { raw: text }; }
+
+      if (!response.ok) {
+        const detail = data && data.detail ? data.detail : response.statusText;
+        throw new Error(detail);
+      }
+
+      return data;
+    }
+
+    async function checkHealth() {
+      try {
+        const data = await requestJson("/api/knowledge/health");
+        setStatus("listStatus", "Knowledge DB OK:\\n" + data.db_path, "ok");
+      } catch (err) {
+        setStatus("listStatus", "Health check failed: " + err.message, "err");
+      }
+    }
+
+    function populateDomainSelects() {
+      const editorDomain = document.getElementById("knowledgeDomain");
+      const domainFilter = document.getElementById("domainFilter");
+
+      editorDomain.innerHTML = APPROVED_DOMAINS.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join("");
+      domainFilter.innerHTML = '<option value="">All domains</option>' +
+        APPROVED_DOMAINS.map(d => `<option value="${escapeHtml(d)}">${escapeHtml(d)}</option>`).join("");
+    }
+
+    function subtypeOptionsForDomain(domain) {
+      const rows = categoryPayload.knowledge_subtypes || [];
+      const subtypes = rows
+        .filter(x => x.knowledge_domain === domain)
+        .map(x => x.knowledge_subtype)
+        .filter(Boolean);
+
+      return [...new Set(subtypes)].sort();
+    }
+
+    function populateSubtypeSelect(selectId, domain, includeAll=false, currentValue="") {
+      const el = document.getElementById(selectId);
+      const subtypes = subtypeOptionsForDomain(domain);
+
+      // Editor subtype is a free-text input with datalist suggestions.
+      if (selectId === "knowledgeSubtype") {
+        const datalist = document.getElementById("knowledgeSubtypeSuggestions");
+        datalist.innerHTML = subtypes
+          .map(s => `<option value="${escapeHtml(s)}"></option>`)
+          .join("");
+        el.value = currentValue || el.value || "";
+        return;
+      }
+
+      // Filter subtype remains a controlled select.
+      let html = "";
+      if (includeAll) html += '<option value="">All subtypes</option>';
+
+      const values = [...subtypes];
+      if (currentValue && !values.includes(currentValue)) values.unshift(currentValue);
+
+      html += values.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
+      el.innerHTML = html || (includeAll ? '<option value="">All subtypes</option>' : '<option value="">All subtypes</option>');
+
+      if (currentValue) el.value = currentValue;
+    }
+
+    function onDomainChanged() {
+      const domain = document.getElementById("knowledgeDomain").value;
+      const currentSubtype = document.getElementById("knowledgeSubtype").value;
+      populateSubtypeSelect("knowledgeSubtype", domain, false, currentSubtype);
+    }
+
+    async function saveTerm() {
+      const id = document.getElementById("recordId").value.trim();
+      const domain = document.getElementById("knowledgeDomain").value;
+      const subtype = document.getElementById("knowledgeSubtype").value;
+
+      const payload = {
+        term: document.getElementById("term").value.trim(),
+        definition: document.getElementById("definition").value.trim(),
+        category: domain,
+        knowledge_domain: domain,
+        knowledge_subtype: subtype,
+        aliases: splitList(document.getElementById("aliases").value),
+        related_terms: splitList(document.getElementById("relatedTerms").value),
+        source: document.getElementById("source").value.trim() || "manual",
+        authority: document.getElementById("authority").value.trim() || "reference",
+        active: document.getElementById("active").value === "true",
+        metadata: {}
+      };
+
+      if (!payload.term) {
+        setStatus("saveStatus", "Term is required.", "err");
+        return;
+      }
+
+      try {
+        let data;
+        if (id) {
+          data = await requestJson("/api/knowledge/terms/" + encodeURIComponent(id), {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          setStatus("saveStatus", "Updated: " + data.term, "ok");
+        } else {
+          data = await requestJson("/api/knowledge/terms", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          setStatus("saveStatus", "Saved: " + data.term, "ok");
+        }
+
+        await refreshAll();
+        editTerm(data.id);
+      } catch (err) {
+        setStatus("saveStatus", "Save failed: " + err.message, "err");
+      }
+    }
+
+    function clearEditor() {
+      document.getElementById("editorTitle").textContent = "Add Term";
+      document.getElementById("recordId").value = "";
+      document.getElementById("term").value = "";
+      document.getElementById("definition").value = "";
+      document.getElementById("knowledgeDomain").value = "Survey Design";
+      populateSubtypeSelect("knowledgeSubtype", "Survey Design", false, "");
+      document.getElementById("aliases").value = "";
+      document.getElementById("relatedTerms").value = "";
+      document.getElementById("source").value = "manual";
+      document.getElementById("authority").value = "reference";
+      document.getElementById("active").value = "true";
+      setStatus("saveStatus", "", "");
+      renderTerms(currentTerms);
+    }
+
+    function editTerm(id) {
+      const t = currentTerms.find(x => x.id === id);
+      if (!t) return;
+
+      document.getElementById("editorTitle").textContent = "Edit Term";
+      document.getElementById("recordId").value = t.id;
+      document.getElementById("term").value = t.term || "";
+      document.getElementById("definition").value = t.definition || "";
+
+      const domain = t.knowledge_domain || t.category || "Survey Design";
+      const subtype = t.knowledge_subtype || "";
+
+      document.getElementById("knowledgeDomain").value = APPROVED_DOMAINS.includes(domain) ? domain : "Survey Design";
+      populateSubtypeSelect("knowledgeSubtype", document.getElementById("knowledgeDomain").value, false, subtype);
+
+      document.getElementById("aliases").value = joinList(t.aliases || []);
+      document.getElementById("relatedTerms").value = joinList(t.related_terms || []);
+      document.getElementById("source").value = t.source || "manual";
+
+      const authority = t.authority || "reference";
+      const authoritySelect = document.getElementById("authority");
+      if (![...authoritySelect.options].some(o => o.value === authority)) {
+        const opt = document.createElement("option");
+        opt.value = authority;
+        opt.textContent = authority;
+        authoritySelect.appendChild(opt);
+      }
+      authoritySelect.value = authority;
+
+      document.getElementById("active").value = String(t.active !== false);
+
+      renderTerms(currentTerms, id);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    async function importFile() {
+      const fileInput = document.getElementById("importFile");
+      const file = fileInput.files && fileInput.files[0];
+
+      if (!file) {
+        setStatus("importStatus", "Choose a CSV or JSON file first.", "err");
+        return;
+      }
+
+      const source = encodeURIComponent(document.getElementById("importSource").value.trim() || "upload");
+      const form = new FormData();
+      form.append("file", file);
+
+      try {
+        const data = await requestJson("/api/knowledge/import?source=" + source, {
+          method: "POST",
+          body: form
+        });
+
+        let msg = "Import complete.\\nImported: " + data.imported_count + "\\nRejected: " + data.rejected_count;
+        if (data.rejected && data.rejected.length) {
+          msg += "\\nFirst rejection: " + JSON.stringify(data.rejected[0], null, 2);
+        }
+
+        setStatus("importStatus", msg, data.rejected_count ? "err" : "ok");
+        await refreshAll();
+      } catch (err) {
+        setStatus("importStatus", "Import failed: " + err.message, "err");
+      }
+    }
+
+    async function loadCategories() {
+      try {
+        categoryPayload = await requestJson("/api/knowledge/categories");
+        populateDomainSelects();
+
+        const domainFilter = document.getElementById("domainFilter");
+        const subtypeFilter = document.getElementById("subtypeFilter");
+
+        const selectedDomain = domainFilter.value;
+        populateSubtypeSelect("subtypeFilter", selectedDomain || "", true, subtypeFilter.value);
+
+        document.getElementById("domainCount").textContent = (categoryPayload.knowledge_domains || []).length;
+      } catch (err) {
+        setStatus("listStatus", "Category/domain load failed: " + err.message, "err");
+      }
+    }
+
+    async function loadTerms() {
+      const query = document.getElementById("query").value.trim();
+      const domain = document.getElementById("domainFilter").value;
+      const subtype = document.getElementById("subtypeFilter").value;
+
+      const params = new URLSearchParams();
+      params.set("limit", "1000");
+      if (query) params.set("query", query);
+      if (domain) params.set("knowledge_domain", domain);
+      if (subtype) params.set("knowledge_subtype", subtype);
+
+      try {
+        const data = await requestJson("/api/knowledge/terms?" + params.toString());
+        currentTerms = data.terms || [];
+        renderTerms(currentTerms);
+        document.getElementById("totalCount").textContent = data.total || 0;
+        document.getElementById("shownCount").textContent = currentTerms.length;
+        setStatus("listStatus", "", "");
+      } catch (err) {
+        setStatus("listStatus", "Term load failed: " + err.message, "err");
+      }
+    }
+
+    function renderTerms(terms, selectedId="") {
+      const body = document.getElementById("termsBody");
+
+      if (!terms.length) {
+        body.innerHTML = '<tr><td colspan="8" class="muted">No matching terms.</td></tr>';
+        return;
+      }
+
+      body.innerHTML = terms.map(t => `
+        <tr class="${t.id === selectedId ? "selected" : ""}">
+          <td><button class="secondary" onclick="editTerm('${escapeJs(t.id)}')">Edit</button></td>
+          <td>
+            <div class="term">${escapeHtml(t.term)}</div>
+            <div class="muted">${escapeHtml(t.normalized_term || "")}</div>
+          </td>
+          <td>${escapeHtml(t.knowledge_domain || t.category || "")}</td>
+          <td>${escapeHtml(t.knowledge_subtype || "")}</td>
+          <td>${escapeHtml(t.definition || "")}</td>
+          <td>${renderPills(t.aliases || [])}</td>
+          <td>${renderPills(t.related_terms || [])}</td>
+          <td>
+            <div>${escapeHtml(t.source || "")}</div>
+            <div class="muted">${escapeHtml(t.authority || "")}</div>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    function renderPills(items) {
+      if (!items || !items.length) return '<span class="muted">—</span>';
+      return items.map(x => `<span class="pill">${escapeHtml(x)}</span>`).join("");
+    }
+
+    function resetSearch() {
+      document.getElementById("query").value = "";
+      document.getElementById("domainFilter").value = "";
+      populateSubtypeSelect("subtypeFilter", "", true, "");
+      loadTerms();
+    }
+
+    async function exportTerms() {
+      try {
+        const data = await requestJson("/api/knowledge/export");
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "seismic-viewer-knowledge-export.json";
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        setStatus("listStatus", "Export failed: " + err.message, "err");
+      }
+    }
+
+    async function refreshAll() {
+      await loadCategories();
+      await loadTerms();
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function escapeJs(value) {
+      return String(value ?? "").replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+    }
+
+    populateDomainSelects();
+    populateSubtypeSelect("knowledgeSubtype", "Survey Design", false, "");
+    refreshAll();
+  </script>
+</body>
+</html>

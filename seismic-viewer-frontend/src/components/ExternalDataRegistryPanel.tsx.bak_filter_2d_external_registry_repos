@@ -1,0 +1,666 @@
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  convertSegyFile,
+  fetchLines,
+  fetchPackages,
+  fetchRepositories,
+  fetchSegyFiles,
+  refreshSegyFileStatus,
+} from "../services/registryService";
+import type {
+  LineRecord,
+  PackageRecord,
+  RepositoryRecord,
+  SegyFileRecord,
+} from "../services/registryService";
+import { fetchDocuments } from "../services/documentService";
+import type { DocumentRecord } from "../services/documentService";
+
+type Props = {
+  onVolumeRegistered?: () => Promise<void> | void;
+  selectedRepositoryIdFromManager?: string;
+};
+
+function formatBytes(value?: number): string {
+  if (!Number.isFinite(value || NaN)) return "";
+  const bytes = value || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(1)} MB`;
+  const gb = mb / 1024;
+  return `${gb.toFixed(1)} GB`;
+}
+
+function clean(value?: string): string {
+  return value ? value.replaceAll("_", " ") : "unknown";
+}
+
+function statusText(value?: string): string {
+  return clean(value || "not_converted");
+}
+
+const panelStyle: React.CSSProperties = {
+  border: "1px solid #334155",
+  borderRadius: 10,
+  background: "#0f172a",
+  color: "#e5e7eb",
+  padding: 14,
+};
+
+const labelStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: "#94a3b8",
+  marginBottom: 4,
+};
+
+const selectStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "7px 9px",
+  borderRadius: 7,
+  border: "1px solid #475569",
+  background: "#111827",
+  color: "#f8fafc",
+  fontSize: 13,
+};
+
+const buttonStyle: React.CSSProperties = {
+  padding: "6px 10px",
+  borderRadius: 7,
+  border: "1px solid #64748b",
+  background: "#334155",
+  color: "#f8fafc",
+  fontSize: 12,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+function badgeStyle(status?: string): React.CSSProperties {
+  const base: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "3px 8px",
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 700,
+    border: "1px solid #475569",
+  };
+
+  if (status === "converted" || status === "ready") {
+    return {
+      ...base,
+      color: "#bbf7d0",
+      background: "rgba(22, 101, 52, 0.35)",
+      borderColor: "rgba(34, 197, 94, 0.55)",
+    };
+  }
+
+  if (status === "queued" || status === "converting") {
+    return {
+      ...base,
+      color: "#fde68a",
+      background: "rgba(146, 64, 14, 0.35)",
+      borderColor: "rgba(245, 158, 11, 0.55)",
+    };
+  }
+
+  if (status === "error") {
+    return {
+      ...base,
+      color: "#fecaca",
+      background: "rgba(127, 29, 29, 0.35)",
+      borderColor: "rgba(239, 68, 68, 0.55)",
+    };
+  }
+
+  return {
+    ...base,
+    color: "#cbd5e1",
+    background: "rgba(51, 65, 85, 0.5)",
+  };
+}
+
+export default function ExternalDataRegistryPanel({
+  onVolumeRegistered,
+  selectedRepositoryIdFromManager,
+}: Props) {
+  const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
+  const [packages, setPackages] = useState<PackageRecord[]>([]);
+  const [lines, setLines] = useState<LineRecord[]>([]);
+  const [segyFiles, setSegyFiles] = useState<SegyFileRecord[]>([]);
+  const [documents, setDocuments] = useState<DocumentRecord[]>([]);
+
+  const [selectedRepositoryId, setSelectedRepositoryId] = useState("");
+  const [selectedPackageId, setSelectedPackageId] = useState("");
+  const [selectedLineId, setSelectedLineId] = useState("");
+
+  const [loading, setLoading] = useState(false);
+  const [busyFileId, setBusyFileId] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  async function loadRepositories() {
+    setLoading(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const repoRecords = await fetchRepositories();
+      setRepositories(repoRecords);
+
+      if (!selectedRepositoryId && repoRecords.length > 0) {
+        setSelectedRepositoryId(repoRecords[0].repository_id);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load repositories");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadSegyFilesForLine(lineId: string) {
+    if (!lineId) {
+      setSegyFiles([]);
+      return;
+    }
+
+    const fileRecords = await fetchSegyFiles({ lineId });
+    setSegyFiles(fileRecords);
+  }
+
+  useEffect(() => {
+    loadRepositories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    async function loadDocumentsForRepository() {
+      if (!selectedRepositoryId) {
+        setDocuments([]);
+        return;
+      }
+
+      try {
+        const records = await fetchDocuments({ repositoryId: selectedRepositoryId });
+        setDocuments(records);
+      } catch {
+        setDocuments([]);
+      }
+    }
+
+    loadDocumentsForRepository();
+  }, [selectedRepositoryId]);
+
+  useEffect(() => {
+    if (
+      selectedRepositoryIdFromManager &&
+      selectedRepositoryIdFromManager !== selectedRepositoryId
+    ) {
+      setSelectedRepositoryId(selectedRepositoryIdFromManager);
+    }
+  }, [selectedRepositoryIdFromManager, selectedRepositoryId]);
+
+
+
+  useEffect(() => {
+    async function run() {
+      if (!selectedRepositoryId) return;
+
+      setLoading(true);
+      setError("");
+      setNotice("");
+
+      try {
+        const pkgRecords = await fetchPackages(selectedRepositoryId);
+        setPackages(pkgRecords);
+
+        const firstPackageId = pkgRecords[0]?.package_id || "";
+        setSelectedPackageId(firstPackageId);
+        setSelectedLineId("");
+        setLines([]);
+        setSegyFiles([]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load packages");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    run();
+  }, [selectedRepositoryId]);
+
+  useEffect(() => {
+    async function run() {
+      if (!selectedPackageId) return;
+
+      setLoading(true);
+      setError("");
+      setNotice("");
+
+      try {
+        const lineRecords = await fetchLines({ packageId: selectedPackageId });
+        setLines(lineRecords);
+
+        const firstLineId = lineRecords[0]?.line_id || "";
+        setSelectedLineId(firstLineId);
+
+        if (firstLineId) {
+          await loadSegyFilesForLine(firstLineId);
+        } else {
+          setSegyFiles([]);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load lines");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    run();
+  }, [selectedPackageId]);
+
+  const selectedRepository = useMemo(
+    () => repositories.find((repo) => repo.repository_id === selectedRepositoryId),
+    [repositories, selectedRepositoryId]
+  );
+
+  const selectedPackage = useMemo(
+    () => packages.find((pkg) => pkg.package_id === selectedPackageId),
+    [packages, selectedPackageId]
+  );
+
+  const selectedLine = useMemo(
+    () => lines.find((line) => line.line_id === selectedLineId),
+    [lines, selectedLineId]
+  );
+
+  const activeConversions = useMemo(
+    () => segyFiles.some((file) => ["queued", "converting"].includes(file.conversion_status || "")),
+    [segyFiles]
+  );
+
+  useEffect(() => {
+    if (!selectedLineId || !activeConversions) return;
+
+    const timer = window.setInterval(async () => {
+      try {
+        const active = segyFiles.filter((file) =>
+          ["queued", "converting"].includes(file.conversion_status || "")
+        );
+
+        for (const file of active) {
+          await refreshSegyFileStatus(file.segy_file_id);
+        }
+
+        await loadSegyFilesForLine(selectedLineId);
+        await onVolumeRegistered?.();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to monitor conversion status");
+      }
+    }, 3000);
+
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLineId, activeConversions, segyFiles]);
+
+  async function selectLine(lineId: string) {
+    setSelectedLineId(lineId);
+    setNotice("");
+    setError("");
+
+    try {
+      await loadSegyFilesForLine(lineId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load SEG-Y files for selected line");
+    }
+  }
+
+  async function handleConvert(file: SegyFileRecord) {
+    setBusyFileId(file.segy_file_id);
+    setError("");
+    setNotice("");
+
+    try {
+      const result = await convertSegyFile(file.segy_file_id);
+      setNotice(result.job_id ? `Conversion queued. Job: ${result.job_id}` : "Conversion queued.");
+      await loadSegyFilesForLine(file.line_id);
+      await onVolumeRegistered?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to queue conversion");
+    } finally {
+      setBusyFileId(null);
+    }
+  }
+
+  async function handleRefresh(file: SegyFileRecord) {
+    setBusyFileId(file.segy_file_id);
+    setError("");
+    setNotice("");
+
+    try {
+      const result = await refreshSegyFileStatus(file.segy_file_id);
+      setNotice(`Status: ${statusText(result.status)}`);
+      await loadSegyFilesForLine(file.line_id);
+      await onVolumeRegistered?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to refresh status");
+    } finally {
+      setBusyFileId(null);
+    }
+  }
+
+  const packageDocs = useMemo(() => {
+    if (!selectedPackage) return documents;
+
+    const packagePath = String(selectedPackage.relative_path || "").toLowerCase();
+    const packageName = String(selectedPackage.display_name || "").toLowerCase();
+
+    return documents.filter((doc) => {
+      const rel = String(doc.relative_path || "").toLowerCase();
+      const filename = String(doc.filename || "").toLowerCase();
+
+      if (!packagePath && !packageName) return true;
+
+      return (
+        (!!packagePath && (rel === packagePath || rel.startsWith(`${packagePath}/`))) ||
+        (!!packageName && (rel.startsWith(`${packageName}/`) || filename.includes(packageName)))
+      );
+    });
+  }, [documents, selectedPackage]);
+
+  function renderAction(file: SegyFileRecord) {
+    const status = file.conversion_status || "not_converted";
+    const busy = busyFileId === file.segy_file_id;
+
+    if (status === "converted" || status === "ready") {
+      return (
+        <div style={{ display: "grid", gap: 5 }}>
+          <span style={badgeStyle(status)}>Converted</span>
+          {file.volume_id && (
+            <span style={{ fontSize: 11, color: "#94a3b8" }}>volume: {file.volume_id}</span>
+          )}
+        </div>
+      );
+    }
+
+    if (status === "queued" || status === "converting") {
+      return (
+        <button
+          type="button"
+          onClick={() => handleRefresh(file)}
+          disabled={busy}
+          style={{ ...buttonStyle, opacity: busy ? 0.6 : 1 }}
+        >
+          {busy ? "Checking..." : "Check Now"}
+        </button>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={() => handleConvert(file)}
+        disabled={busy}
+        style={{ ...buttonStyle, opacity: busy ? 0.6 : 1 }}
+      >
+        {busy ? "Queuing..." : status === "error" ? "Retry Convert" : "Convert"}
+      </button>
+    );
+  }
+
+  return (
+    <section style={panelStyle}>
+      <div style={{ display: "grid", gap: 12 }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 16, color: "#f8fafc" }}>External Source Registry</h3>
+          <div style={{ marginTop: 4, fontSize: 12, color: "#94a3b8" }}>
+            Browse external source folders and convert selected SEG-Y versions into Managed Data.
+          </div>
+        </div>
+
+        {error && (
+          <div style={{ padding: 8, borderRadius: 7, background: "rgba(239,68,68,.15)", color: "#fecaca", fontSize: 12 }}>
+            {error}
+          </div>
+        )}
+
+        {notice && (
+          <div style={{ padding: 8, borderRadius: 7, background: "rgba(34,197,94,.12)", color: "#bbf7d0", fontSize: 12 }}>
+            {notice}
+          </div>
+        )}
+
+        {activeConversions && (
+          <div style={{ padding: 8, borderRadius: 7, background: "rgba(245,158,11,.12)", color: "#fde68a", fontSize: 12 }}>
+            Monitoring active conversion status automatically...
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <label>
+            <div style={labelStyle}>Repository</div>
+            <select
+              value={selectedRepositoryId}
+              onChange={(event) => setSelectedRepositoryId(event.target.value)}
+              style={selectStyle}
+            >
+              {repositories.map((repo) => (
+                <option key={repo.repository_id} value={repo.repository_id}>
+                  {repo.name} · {repo.status || "unknown"}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            <div style={labelStyle}>Package / Survey</div>
+            <select
+              value={selectedPackageId}
+              onChange={(event) => setSelectedPackageId(event.target.value)}
+              style={selectStyle}
+            >
+              {packages.map((pkg) => (
+                <option key={pkg.package_id} value={pkg.package_id}>
+                  {pkg.display_name} · {clean(pkg.package_type)} · {pkg.segy_count || 0} SEG-Y
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {selectedRepository && (
+          <div style={{ fontSize: 12, color: "#94a3b8", overflowWrap: "anywhere" }}>
+            {selectedRepository.root_path}
+          </div>
+        )}
+
+        {selectedPackage && (
+          <div style={{ fontSize: 12, color: "#cbd5e1" }}>
+            {clean(selectedPackage.package_type)} · {selectedPackage.line_count || 0} lines · {selectedPackage.segy_count || 0} SEG-Y · {selectedPackage.document_count || 0} docs
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 42%) 1fr", gap: 12, alignItems: "start" }}>
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <div style={labelStyle}>Lines</div>
+              <div style={{ fontSize: 12, color: "#94a3b8" }}>
+                {lines.length} line{lines.length === 1 ? "" : "s"}
+              </div>
+            </div>
+
+            <div
+              style={{
+                border: "1px solid #475569",
+                borderRadius: 8,
+                background: "#0b1220",
+                padding: 8,
+                display: "grid",
+                gap: 6,
+              }}
+            >
+              {lines.map((line) => {
+                const selected = String(line.line_id) === String(selectedLineId);
+
+                return (
+                  <button
+                    key={line.line_id}
+                    type="button"
+                    onClick={() => selectLine(line.line_id)}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "9px 10px",
+                      borderRadius: 7,
+                      border: selected ? "2px solid #93c5fd" : "1px solid #334155",
+                      background: selected ? "rgba(59,130,246,.28)" : "#111827",
+                      boxShadow: selected ? "inset 4px 0 0 #60a5fa" : "none",
+                      color: "#f8fafc",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: selected ? 700 : 600 }}>
+                      {line.display_name}
+                    </div>
+                    <div style={{ marginTop: 4, fontSize: 12, color: selected ? "#bfdbfe" : "#94a3b8" }}>
+                      {clean(line.version_status)} · {line.segy_count || 0} SEG-Y
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div style={labelStyle}>Selected Line / Processing Versions</div>
+
+            <div
+              style={{
+                border: "1px solid #475569",
+                borderRadius: 8,
+                background: "#0b1220",
+                padding: 10,
+                minHeight: 180,
+              }}
+            >
+              {!selectedLine && (
+                <div style={{ fontSize: 12, color: "#94a3b8" }}>Select a line to view available SEG-Y versions.</div>
+              )}
+
+              {selectedLine && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ fontWeight: 700, color: "#f8fafc" }}>{selectedLine.display_name}</div>
+                  <div style={{ marginTop: 4, fontSize: 12, color: "#94a3b8" }}>
+                    {clean(selectedLine.line_identity_status)} · {clean(selectedLine.version_status)}
+                  </div>
+                </div>
+              )}
+
+              {segyFiles.length === 0 && selectedLine && (
+                <div style={{ fontSize: 12, color: "#94a3b8" }}>No SEG-Y source files found for this line.</div>
+              )}
+
+              <div style={{ display: "grid", gap: 8 }}>
+                {segyFiles.map((file) => (
+                  <div
+                    key={file.segy_file_id}
+                    style={{
+                      padding: 10,
+                      border: "1px solid #334155",
+                      borderRadius: 8,
+                      background: "#111827",
+                      display: "grid",
+                      gridTemplateColumns: "1fr auto",
+                      gap: 12,
+                      alignItems: "start",
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 650, color: "#f8fafc", overflowWrap: "anywhere" }}>
+                        {file.filename}
+                      </div>
+
+                      <div style={{ marginTop: 4, fontSize: 12, color: "#94a3b8", overflowWrap: "anywhere" }}>
+                        {file.relative_path}
+                      </div>
+
+                      <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <span style={badgeStyle(file.conversion_status)}>
+                          {statusText(file.conversion_status)}
+                        </span>
+
+                        {file.size_bytes ? (
+                          <span style={{ fontSize: 12, color: "#cbd5e1" }}>{formatBytes(file.size_bytes)}</span>
+                        ) : null}
+
+                        {file.job_id ? (
+                          <span style={{ fontSize: 12, color: "#94a3b8" }}>job: {file.job_id}</span>
+                        ) : null}
+                      </div>
+
+                      {file.zarr_url && (
+                        <div style={{ marginTop: 4, fontSize: 12, color: "#94a3b8", overflowWrap: "anywhere" }}>
+                          {file.zarr_url}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>{renderAction(file)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+
+        <div
+          data-role="package-supporting-documents-2d"
+          style={{
+            marginTop: 0,
+            textAlign: "left",
+          }}
+        >
+          <div style={labelStyle}>Package Supporting Documents</div>
+          <div
+            style={{
+              border: "1px solid #475569",
+              borderRadius: 8,
+              padding: 10,
+              background: "#0b1220",
+            }}
+          >
+            {packageDocs.length === 0 ? (
+              <div style={{ fontSize: 12, color: "#94a3b8" }}>
+                No package-level supporting documents found.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 8 }}>
+                {packageDocs.map((doc) => (
+                  <div key={doc.document_id || doc.relative_path || doc.filename}>
+                    <div style={{ fontSize: 13, fontWeight: 650, color: "#f8fafc" }}>
+                      {doc.filename}
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 3,
+                        fontSize: 12,
+                        color: "#94a3b8",
+                        overflowWrap: "anywhere",
+                      }}
+                    >
+                      {doc.relative_path}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {loading && <div style={{ fontSize: 12, color: "#94a3b8" }}>Loading...</div>}
+      </div>
+    </section>
+  );
+}

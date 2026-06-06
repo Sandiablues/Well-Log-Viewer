@@ -1,0 +1,229 @@
+import { useState, useEffect } from 'react'
+import './App.css'
+import { Seismic3DViewer } from './components/Seismic3DViewer'
+import { Seismic2DViewer } from './components/Seismic2DViewer'
+import { DataManager } from './components/DataManager'
+import { LayoutGrid, Box, Image as ImageIcon, Settings, Upload, Database } from 'lucide-react'
+import { getVolumes } from './services/zarrService'; import type { Volume } from './services/zarrService'
+import axios from 'axios'
+
+function App() {
+  const [viewMode, setViewMode] = useState<'3d' | '2d' | 'data'>('3d');
+  const [volumes, setVolumes] = useState<Volume[]>([]);
+  const [selectedVolume, setSelectedVolume] = useState<Volume | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState<string>('');
+
+  useEffect(() => {
+    refreshVolumes();
+  }, []);
+
+  const refreshVolumes = async () => {
+    try {
+      const v = await getVolumes();
+      setVolumes(v);
+      const displayableVolumes = v.filter((volume) => {
+        const shape = volume.metadata?.shape || volume.metadata?.zarr?.shape;
+        return !volume.hidden && volume.metadata?.is_3d !== false && Array.isArray(shape) && shape.length === 3;
+      });
+
+      if (displayableVolumes.length > 0 && !selectedVolume) {
+        setSelectedVolume(displayableVolumes[0]);
+      }
+
+      if (selectedVolume && !displayableVolumes.some((volume) => volume.id === selectedVolume.id)) {
+        setSelectedVolume(displayableVolumes[0] || null);
+      }
+    } catch (e) {
+      console.error("Failed to fetch volumes", e);
+    }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+
+    const file = e.target.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+
+    setIsUploading(true);
+    setUploadMessage('Uploading SEG-Y file...');
+
+    try {
+      const uploadResponse = await axios.post('/api/upload', formData);
+      const jobId = uploadResponse.data.job_id;
+
+      if (!jobId) {
+        throw new Error('Upload response did not include a job_id.');
+      }
+
+      setUploadMessage('SEG-Y upload accepted. Conversion queued.');
+
+      const pollIntervalMs = 1000;
+      const maxPolls = 600; // 10 minutes at 1 second intervals
+      let pollCount = 0;
+
+      await new Promise<void>((resolve, reject) => {
+        const interval = window.setInterval(async () => {
+          pollCount += 1;
+
+          try {
+            const jobResponse = await axios.get(`/api/jobs/${jobId}`);
+            const job = jobResponse.data;
+
+            setUploadMessage(job.message || `Job status: ${job.status}`);
+
+            if (job.status === 'complete') {
+              window.clearInterval(interval);
+              await refreshVolumes();
+
+              if (job.volume?.id) {
+                setSelectedVolume(job.volume);
+              }
+
+              resolve();
+              return;
+            }
+
+            if (job.status === 'failed') {
+              window.clearInterval(interval);
+              reject(new Error(job.error || 'SEG-Y conversion failed.'));
+              return;
+            }
+
+            if (pollCount >= maxPolls) {
+              window.clearInterval(interval);
+              reject(new Error('SEG-Y conversion timed out while waiting for job completion.'));
+            }
+          } catch (err) {
+            window.clearInterval(interval);
+            reject(err);
+          }
+        }, pollIntervalMs);
+      });
+    } catch (e) {
+      console.error("Upload/conversion failed", e);
+      const message = e instanceof Error ? e.message : "Upload failed. Check console for details.";
+      alert(message);
+    } finally {
+      setIsUploading(false);
+      setUploadMessage('');
+      e.target.value = '';
+    }
+  };
+
+  return (
+    <div className="app-container">
+      <nav className="sidebar">
+        <div className="logo">Seismic Viewer</div>
+        <button 
+          className={viewMode === '3d' ? 'active' : ''} 
+          onClick={() => setViewMode('3d')}
+          title="3D View"
+        >
+          <Box size={24} />
+          <span>3D View</span>
+        </button>
+        <button 
+          className={viewMode === '2d' ? 'active' : ''} 
+          onClick={() => setViewMode('2d')}
+          title="2D View"
+        >
+          <ImageIcon size={24} />
+          <span>2D View</span>
+        </button>
+
+        <button 
+          className={viewMode === 'data' ? 'active' : ''} 
+          onClick={() => setViewMode('data')}
+          title="Data Manager"
+        >
+          <Database size={24} />
+          <span>Data</span>
+        </button>
+        
+        <div className="spacer"></div>
+        
+        <div className="upload-btn">
+          <label htmlFor="segy-upload">
+            <Upload size={24} color={isUploading ? "#aaa" : "#4a9eff"} style={{ cursor: 'pointer' }} />
+            <input 
+              id="segy-upload" 
+              type="file" 
+              accept=".sgy,.segy" 
+              style={{ display: 'none' }} 
+              onChange={handleUpload}
+              disabled={isUploading}
+            />
+          </label>
+        </div>
+
+        <button title="Settings">
+          <Settings size={24} />
+          <span>Settings</span>
+        </button>
+      </nav>
+
+      <main className="content">
+        <header className="top-bar">
+          <div className="title">
+            {viewMode === '3d' ? '3D Cube Visualization' : viewMode === '2d' ? '2D Section Viewer' : 'Data Manager'}
+          </div>
+          
+          <div className="controls">
+            <Database size={16} />
+            <select 
+              value={selectedVolume?.id || ''} 
+              onChange={(e) => setSelectedVolume(volumes.find(v => v.id === e.target.value) || null)}
+              className="volume-select"
+              disabled={viewMode === 'data'}
+            >
+              <option value="" disabled>Select Volume</option>
+              {volumes
+                .filter((v) => {
+                  const shape = v.metadata?.shape || v.metadata?.zarr?.shape;
+                  return !v.hidden && v.metadata?.is_3d !== false && Array.isArray(shape) && shape.length === 3;
+                })
+                .map(v => (
+                  <option key={v.id} value={v.id}>{v.display_name || v.filename}</option>
+                ))}
+            </select>
+          </div>
+        </header>
+
+        {isUploading && (
+          <div className="upload-status-bar">
+            <span className="upload-status-dot"></span>
+            <span>{uploadMessage || 'Processing SEG-Y...'}</span>
+          </div>
+        )}
+
+        <div className="viewer-area">
+          {viewMode === 'data' ? (
+            <DataManager
+              volumes={volumes}
+              selectedVolume={selectedVolume}
+              onSelectVolume={(volume) => {
+                setSelectedVolume(volume);
+                setViewMode('3d');
+              }}
+              onRefreshVolumes={refreshVolumes}
+            />
+          ) : selectedVolume ? (
+            viewMode === '3d' ? (
+              <Seismic3DViewer zarrPath={selectedVolume.zarr_url} key={`3d-${selectedVolume.id}`} />
+            ) : (
+              <Seismic2DViewer zarrPath={selectedVolume.zarr_url} dim={0} key={`2d-${selectedVolume.id}`} />
+            )
+          ) : (
+            <div className="no-data">
+              {isUploading ? (uploadMessage || 'Processing SEG-Y...') : 'No volumes found. Please upload a SEG-Y file.'}
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  )
+}
+
+export default App

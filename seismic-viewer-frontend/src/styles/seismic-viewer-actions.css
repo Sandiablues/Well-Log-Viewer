@@ -1,0 +1,151 @@
+/*
+  Seismic Viewer Master Action Styles
+
+  Purpose:
+  - Shared button/action styling rules for future page migration.
+  - Does not affect existing components unless these classes are explicitly used.
+  - Tabs/navigation are intentionally excluded.
+
+  Accepted UI rule:
+  1. Tab labels remain unchanged.
+  2. Colored executable controls use colored outline + colored text only.
+  3. No colored infill on executable buttons.
+  4. Utility controls use neutral outline/text.
+  5. Utility activation may use a brief neutral pulse only.
+  6. Do not change selected-card/selected-row/status-panel styling under this rule.
+*/
+
+:root {
+  --sv-action-primary: #60a5fa;
+  --sv-action-success: #22c55e;
+  --sv-action-danger: #f87171;
+  --sv-action-warning: #facc15;
+
+  --sv-action-text: #e5e7eb;
+  --sv-action-text-neutral: #cbd5e1;
+  --sv-action-text-muted: #94a3b8;
+  --sv-action-text-disabled: #71717a;
+
+  --sv-action-border-neutral: #64748b;
+  --sv-action-border-disabled: #52525b;
+
+  --sv-action-bg: transparent;
+  --sv-action-pulse-neutral: rgba(203, 213, 225, 0.32);
+}
+
+.sv-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sv-action-button {
+  border: 1px solid var(--sv-action-border-neutral);
+  border-radius: 6px;
+  background: var(--sv-action-bg);
+  color: var(--sv-action-text-neutral);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    opacity 80ms ease,
+    box-shadow 80ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.sv-action-button:disabled,
+.sv-action-button[aria-disabled="true"] {
+  border-color: var(--sv-action-border-disabled);
+  color: var(--sv-action-text-disabled);
+  cursor: not-allowed;
+}
+
+.sv-action-button--utility {
+  border-color: var(--sv-action-border-neutral);
+  color: var(--sv-action-text-neutral);
+}
+
+.sv-action-button--primary {
+  border-color: var(--sv-action-primary);
+  color: var(--sv-action-primary);
+}
+
+.sv-action-button--success {
+  border-color: var(--sv-action-success);
+  color: var(--sv-action-success);
+}
+
+.sv-action-button--danger {
+  border-color: var(--sv-action-danger);
+  color: var(--sv-action-danger);
+}
+
+.sv-action-button--warning {
+  border-color: var(--sv-action-warning);
+  color: var(--sv-action-warning);
+}
+
+.sv-action-button--compact {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.sv-action-button--large {
+  padding: 7px 11px;
+  font-size: 13px;
+  min-height: 34px;
+}
+
+.sv-action-button--pulse {
+  box-shadow: 0 0 0 2px var(--sv-action-pulse-neutral);
+  opacity: 0.96;
+}
+
+.sv-action-button--full-width {
+  width: 100%;
+  justify-content: center;
+}
+
+.sv-action-icon-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+/*
+  These are for future migration only.
+  Do not apply automatically to existing selected cards, selected rows, tabs, or panels.
+*/
+.sv-status-outline {
+  border: 1px solid var(--sv-action-border-neutral);
+  border-radius: 8px;
+  background: transparent;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.sv-status-outline--success {
+  border-color: var(--sv-action-success);
+  color: #86efac;
+}
+
+.sv-status-outline--danger {
+  border-color: var(--sv-action-danger);
+  color: #fecaca;
+}
+
+.sv-status-outline--primary {
+  border-color: var(--sv-action-primary);
+  color: var(--sv-action-primary);
+}
+
+.sv-status-outline--muted {
+  border-color: var(--sv-action-border-neutral);
+  color: var(--sv-action-text-muted);
+}

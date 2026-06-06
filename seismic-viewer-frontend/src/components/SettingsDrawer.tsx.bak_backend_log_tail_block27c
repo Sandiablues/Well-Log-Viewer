@@ -1,0 +1,408 @@
+import { useState } from 'react';
+import { getBackendSliceCacheInfo, getRecentJobs, getVolumes } from '../services/zarrService';
+import type { Volume } from '../services/zarrService';
+
+type ViewMode = '3d' | '2d' | 'data' | 'info';
+
+interface SettingsDrawerProps {
+  open: boolean;
+  onClose: () => void;
+  viewMode: ViewMode;
+  selectedVolume: Volume | null;
+  volumes: Volume[];
+  isUploading: boolean;
+  uploadMessage: string;
+}
+
+export function SettingsDrawer({
+  open,
+  onClose,
+  viewMode,
+  selectedVolume,
+  volumes,
+  isUploading,
+  uploadMessage,
+}: SettingsDrawerProps) {
+  const [settingsTab, setSettingsTab] = useState<'frontend' | 'backend' | 'cache' | 'jobs' | 'settings'>('frontend');
+  const [backendCheckStatus, setBackendCheckStatus] = useState<'Not checked' | 'Checking...' | 'Reachable' | 'Failed'>('Not checked');
+  const [backendDatasetCount, setBackendDatasetCount] = useState<number | null>(null);
+  const [backendCheckedAt, setBackendCheckedAt] = useState<string>('');
+  const [cacheCheckStatus, setCacheCheckStatus] = useState<'Not checked' | 'Checking...' | 'Available' | 'Failed'>('Not checked');
+  const [cacheInfo, setCacheInfo] = useState<any>(null);
+  const [cacheCheckedAt, setCacheCheckedAt] = useState<string>('');
+  const [jobsCheckStatus, setJobsCheckStatus] = useState<'Not checked' | 'Checking...' | 'Available' | 'Failed'>('Not checked');
+  const [recentJobs, setRecentJobs] = useState<any[]>([]);
+  const [jobsCheckedAt, setJobsCheckedAt] = useState<string>('');
+
+  if (!open) return null;
+
+  const twoDCount = volumes.filter(
+    (volume) => volume.dataset_type === '2d_line' || volume.dataset_type === '2d_survey'
+  ).length;
+
+  const threeDCount = volumes.filter((volume) => volume.dataset_type === '3d_volume').length;
+  const unknownCount = volumes.filter((volume) => !volume.dataset_type || volume.dataset_type === 'unknown').length;
+
+  const checkBackend = async () => {
+    setBackendCheckStatus('Checking...');
+    setBackendDatasetCount(null);
+
+    try {
+      const backendVolumes = await getVolumes();
+      setBackendCheckStatus('Reachable');
+      setBackendDatasetCount(backendVolumes.length);
+      setBackendCheckedAt(new Date().toLocaleTimeString());
+    } catch (err) {
+      console.error('Backend check failed', err);
+      setBackendCheckStatus('Failed');
+      setBackendDatasetCount(null);
+      setBackendCheckedAt(new Date().toLocaleTimeString());
+    }
+  };
+
+  const checkCache = async () => {
+    setCacheCheckStatus('Checking...');
+    setCacheInfo(null);
+
+    try {
+      const info = await getBackendSliceCacheInfo();
+      setCacheInfo(info);
+      setCacheCheckStatus('Available');
+      setCacheCheckedAt(new Date().toLocaleTimeString());
+    } catch (err) {
+      console.error('Cache check failed', err);
+      setCacheInfo(null);
+      setCacheCheckStatus('Failed');
+      setCacheCheckedAt(new Date().toLocaleTimeString());
+    }
+  };
+
+  const checkJobs = async () => {
+    setJobsCheckStatus('Checking...');
+
+    try {
+      const result = await getRecentJobs(20);
+      setRecentJobs(result.jobs || []);
+      setJobsCheckStatus('Available');
+      setJobsCheckedAt(new Date().toLocaleTimeString());
+    } catch (err) {
+      console.error('Jobs check failed', err);
+      setRecentJobs([]);
+      setJobsCheckStatus('Failed');
+      setJobsCheckedAt(new Date().toLocaleTimeString());
+    }
+  };
+
+  return (
+    <aside
+      style={{
+        position: 'fixed',
+        left: 82,
+        top: 0,
+        bottom: 0,
+        width: 420,
+        zIndex: 100,
+        background: '#181818',
+        color: 'white',
+        borderRight: '1px solid #333',
+        boxShadow: '6px 0 20px rgba(0,0,0,0.35)',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <div
+        style={{
+          padding: '14px 16px',
+          borderBottom: '1px solid #333',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>Settings / System</div>
+          <div style={{ fontSize: 12, opacity: 0.65 }}>Consolidated viewer status panel</div>
+        </div>
+
+        <button
+          onClick={onClose}
+          style={{
+            background: '#333',
+            color: 'white',
+            border: '1px solid #555',
+            borderRadius: 4,
+            padding: '5px 9px',
+            cursor: 'pointer',
+          }}
+        >
+          Close
+        </button>
+      </div>
+
+      <div
+        style={{
+          display: 'flex',
+          gap: 6,
+          flexWrap: 'wrap',
+          padding: '10px 12px',
+          borderBottom: '1px solid #333',
+        }}
+      >
+        {([
+          ['frontend', 'Frontend'],
+          ['backend', 'Backend'],
+          ['cache', 'Cache'],
+          ['jobs', 'Jobs'],
+          ['settings', 'Settings'],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setSettingsTab(key)}
+            style={{
+              background: settingsTab === key ? '#4a4a4a' : '#2b2b2b',
+              color: 'white',
+              border: settingsTab === key ? '1px solid #aaa' : '1px solid #555',
+              borderRadius: 4,
+              padding: '5px 8px',
+              cursor: 'pointer',
+              fontSize: 12,
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ padding: 16, overflowY: 'auto', fontSize: 13, lineHeight: 1.45 }}>
+        {settingsTab === 'frontend' && (
+          <>
+            <h3 style={{ marginTop: 0 }}>Frontend</h3>
+            <div>Viewer mode: <strong>{viewMode}</strong></div>
+            <div>Selected dataset: <strong>{selectedVolume?.display_name || selectedVolume?.filename || 'None'}</strong></div>
+            <div>Selected type: <strong>{selectedVolume?.dataset_type || '—'}</strong></div>
+            <div>Registered datasets in frontend state: <strong>{volumes.length}</strong></div>
+
+            <button
+              onClick={() => {
+                sessionStorage.setItem('seismicViewerReopenSettings', '1');
+                window.location.reload();
+              }}
+              style={{
+                background: '#333',
+                color: 'white',
+                border: '1px solid #555',
+                borderRadius: 4,
+                padding: '6px 10px',
+                cursor: 'pointer',
+                marginTop: 14,
+              }}
+            >
+              Refresh Viewer
+            </button>
+
+            <p style={{ opacity: 0.7, marginTop: 10 }}>
+              Reloads the browser application. It does not rebuild frontend code or restart the backend.
+            </p>
+
+            <hr style={{ borderColor: '#333', margin: '16px 0' }} />
+
+            <div>3D datasets: <strong>{threeDCount}</strong></div>
+            <div>2D datasets: <strong>{twoDCount}</strong></div>
+            <div>Unknown datasets: <strong>{unknownCount}</strong></div>
+          </>
+        )}
+
+        {settingsTab === 'backend' && (
+          <>
+            <h3 style={{ marginTop: 0 }}>Backend</h3>
+
+            <div
+              style={{
+                padding: '10px 12px',
+                border: '1px solid #333',
+                borderRadius: 6,
+                background:
+                  backendCheckStatus === 'Reachable'
+                    ? '#16351f'
+                    : backendCheckStatus === 'Failed'
+                      ? '#3a1616'
+                      : '#242424',
+                marginBottom: 12,
+              }}
+            >
+              <div style={{ fontSize: 12, opacity: 0.75 }}>API Status</div>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{backendCheckStatus}</div>
+              <div style={{ fontSize: 12, opacity: 0.7 }}>
+                Last checked: {backendCheckedAt || '—'}
+              </div>
+            </div>
+
+            <button
+              onClick={checkBackend}
+              style={{
+                background: '#333',
+                color: 'white',
+                border: '1px solid #555',
+                borderRadius: 4,
+                padding: '6px 10px',
+                cursor: 'pointer',
+                marginBottom: 12,
+              }}
+            >
+              Check Backend
+            </button>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '7px 10px' }}>
+              <div style={{ opacity: 0.65 }}>Endpoint</div>
+              <strong>/api/volumes</strong>
+
+              <div style={{ opacity: 0.65 }}>Datasets returned</div>
+              <strong>{backendDatasetCount ?? '—'}</strong>
+            </div>
+
+            <p style={{ opacity: 0.7, marginTop: 14 }}>
+              This is a simple connectivity check. Cache and job diagnostics remain separate.
+            </p>
+          </>
+        )}
+
+        {settingsTab === 'cache' && (
+          <>
+            <h3 style={{ marginTop: 0 }}>Cache</h3>
+
+            <div
+              style={{
+                padding: '10px 12px',
+                border: '1px solid #333',
+                borderRadius: 6,
+                background:
+                  cacheCheckStatus === 'Available'
+                    ? '#16351f'
+                    : cacheCheckStatus === 'Failed'
+                      ? '#3a1616'
+                      : '#242424',
+                marginBottom: 12,
+              }}
+            >
+              <div style={{ fontSize: 12, opacity: 0.75 }}>Backend Slice Cache</div>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{cacheCheckStatus}</div>
+              <div style={{ fontSize: 12, opacity: 0.7 }}>
+                Last checked: {cacheCheckedAt || '—'}
+              </div>
+            </div>
+
+            <button
+              onClick={checkCache}
+              style={{
+                background: '#333',
+                color: 'white',
+                border: '1px solid #555',
+                borderRadius: 4,
+                padding: '6px 10px',
+                cursor: 'pointer',
+                marginBottom: 12,
+              }}
+            >
+              Check Cache
+            </button>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '7px 10px' }}>
+              <div style={{ opacity: 0.65 }}>Entries</div>
+              <strong>{cacheInfo?.entries ?? '—'}</strong>
+
+              <div style={{ opacity: 0.65 }}>Used</div>
+              <strong>{cacheInfo ? `${(cacheInfo.bytes / 1048576).toFixed(1)} MB` : '—'}</strong>
+
+              <div style={{ opacity: 0.65 }}>Limit</div>
+              <strong>{cacheInfo ? `${(cacheInfo.max_bytes / 1048576).toFixed(0)} MB` : '—'}</strong>
+            </div>
+
+            <p style={{ opacity: 0.7, marginTop: 14 }}>
+              This reads backend slice-cache status only. Frontend 3D slice-cache details remain in the 3D viewer Performance tab.
+            </p>
+          </>
+        )}
+
+        {settingsTab === 'jobs' && (
+          <>
+            <h3 style={{ marginTop: 0 }}>Jobs</h3>
+
+            <div>Upload/conversion active: <strong>{isUploading ? 'Yes' : 'No'}</strong></div>
+            <div>Current upload message: <strong>{uploadMessage || '—'}</strong></div>
+
+            <hr style={{ borderColor: '#333', margin: '16px 0' }} />
+
+            <div
+              style={{
+                padding: '10px 12px',
+                border: '1px solid #333',
+                borderRadius: 6,
+                background:
+                  jobsCheckStatus === 'Available'
+                    ? '#16351f'
+                    : jobsCheckStatus === 'Failed'
+                      ? '#3a1616'
+                      : '#242424',
+                marginBottom: 12,
+              }}
+            >
+              <div style={{ fontSize: 12, opacity: 0.75 }}>Recent Jobs</div>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>{jobsCheckStatus}</div>
+              <div style={{ fontSize: 12, opacity: 0.7 }}>
+                Last checked: {jobsCheckedAt || '—'}
+              </div>
+            </div>
+
+            <button
+              onClick={checkJobs}
+              style={{
+                background: '#333',
+                color: 'white',
+                border: '1px solid #555',
+                borderRadius: 4,
+                padding: '6px 10px',
+                cursor: 'pointer',
+                marginBottom: 12,
+              }}
+            >
+              Refresh Jobs
+            </button>
+
+            {recentJobs.length ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {recentJobs.map((job: any) => (
+                  <div
+                    key={job.job_id || job.id}
+                    style={{
+                      border: '1px solid #333',
+                      borderRadius: 6,
+                      padding: '8px 10px',
+                      background: '#202020',
+                    }}
+                  >
+                    <div><strong>{job.status || 'unknown'}</strong> · {job.job_id || job.id || 'no id'}</div>
+                    <div style={{ fontSize: 12, opacity: 0.75 }}>{job.message || job.error || '—'}</div>
+                    {job.filename && <div style={{ fontSize: 12, opacity: 0.65 }}>File: {job.filename}</div>}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ opacity: 0.7 }}>No recent jobs loaded.</p>
+            )}
+          </>
+        )}
+
+        {settingsTab === 'settings' && (
+          <>
+            <h3 style={{ marginTop: 0 }}>Settings</h3>
+            <p>Reserved for application-level preferences.</p>
+            <p style={{ opacity: 0.7 }}>
+              Examples: default 2D display mode, default clip percentile, startup behavior, cache limits, and diagnostics verbosity.
+            </p>
+          </>
+        )}
+      </div>
+    </aside>
+  );
+}

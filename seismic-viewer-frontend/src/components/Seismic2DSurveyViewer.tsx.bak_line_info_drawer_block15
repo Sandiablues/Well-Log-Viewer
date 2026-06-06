@@ -1,0 +1,92 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { get2DSurveyLines } from '../services/zarrService';
+import { Seismic2DViewer } from './Seismic2DViewer';
+
+interface Seismic2DSurveyViewerProps {
+  surveyId: string;
+  surveyName?: string;
+}
+
+export function Seismic2DSurveyViewer({ surveyId, surveyName }: Seismic2DSurveyViewerProps) {
+  const [lines, setLines] = useState<any[]>([]);
+  const [selectedLineId, setSelectedLineId] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLines() {
+      setLoading(true);
+      setError('');
+
+      try {
+        const result = await get2DSurveyLines(surveyId);
+        if (cancelled) return;
+
+        setLines(result || []);
+        setSelectedLineId(result?.[0]?.line_id || '');
+      } catch (err) {
+        console.error('Failed to load 2D survey lines', err);
+        if (!cancelled) setError('Failed to load 2D survey lines.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadLines();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [surveyId]);
+
+  const selectedLine = useMemo(
+    () => lines.find((line) => line.line_id === selectedLineId) || null,
+    [lines, selectedLineId]
+  );
+
+  if (loading) return <div className="no-data">Loading 2D survey lines...</div>;
+  if (error) return <div className="no-data">{error}</div>;
+  if (!lines.length) return <div className="no-data">This 2D survey has no registered lines.</div>;
+
+  return (
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#1f1f1f', color: 'white' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', borderBottom: '1px solid #333' }}>
+        <strong>{surveyName || '2D Survey'}</strong>
+
+        <label style={{ fontSize: '13px', opacity: 0.85 }}>Line:</label>
+
+        <select
+          value={selectedLineId}
+          onChange={(e) => setSelectedLineId(e.target.value)}
+          style={{ background: '#2b2b2b', color: 'white', border: '1px solid #555', padding: '6px 8px', borderRadius: '6px', minWidth: '300px' }}
+        >
+          {lines.map((line) => (
+            <option key={line.line_id} value={line.line_id}>
+              {line.line_name || line.filename || line.line_id}
+            </option>
+          ))}
+        </select>
+
+        {selectedLine && (
+          <span style={{ fontSize: '12px', opacity: 0.75 }}>
+            {selectedLine.shape?.[0] ?? selectedLine.trace_count ?? '—'} traces × {selectedLine.shape?.[1] ?? selectedLine.sample_count ?? '—'} samples
+          </span>
+        )}
+      </div>
+
+      <div style={{ flex: 1, minHeight: 0 }}>
+        {selectedLine?.zarr_url ? (
+          <Seismic2DViewer
+            zarrPath={selectedLine.zarr_url}
+            dim={0}
+            key={`survey-line-${selectedLine.line_id}`}
+          />
+        ) : (
+          <div className="no-data">Selected line has no Zarr URL.</div>
+        )}
+      </div>
+    </div>
+  );
+}
