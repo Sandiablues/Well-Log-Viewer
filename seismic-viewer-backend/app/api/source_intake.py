@@ -94,59 +94,6 @@ def _source_intake_rows_from_payload(payload: Any) -> List[Dict[str, Any]]:
     return []
 
 
-def _source_intake_document_record(document_id: str) -> Dict[str, Any]:
-    target = str(document_id or "").strip()
-    if not target:
-        raise HTTPException(status_code=404, detail="Document id is required")
-    documents = _source_intake_rows_from_payload(_read_source_intake_json(REGISTRY_DIR / "documents.json", []))
-    for document in documents:
-        if str(document.get("document_id") or "").strip() == target:
-            return document
-    raise HTTPException(status_code=404, detail=f"Source Intake document not found: {document_id}")
-
-
-def _resolve_source_intake_document_path(document_id: str) -> Path:
-    # INFO_DOCS_LINKS_1: resolve document links from the backend registry.
-    # The frontend receives only document_id URLs; filesystem resolution stays
-    # backend-owned and constrained to registered source repositories.
-    document = _source_intake_document_record(document_id)
-
-    for key in ("source_path", "absolute_path", "path", "file_path"):
-        raw = str(document.get(key) or "").strip()
-        if raw:
-            candidate = Path(raw).expanduser()
-            if candidate.exists() and candidate.is_file():
-                return candidate.resolve()
-
-    repository_id = str(document.get("repository_id") or "").strip()
-    relative_path = str(document.get("relative_path") or document.get("path") or "").strip()
-    if repository_id and relative_path:
-        repository = get_repository(repository_id)
-        root_path = str((repository or {}).get("root_path") or "").strip()
-        if root_path:
-            root = Path(root_path).expanduser().resolve()
-            candidate = (root / relative_path).resolve()
-            try:
-                candidate.relative_to(root)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Document path escapes registered repository root")
-            if candidate.exists() and candidate.is_file():
-                return candidate
-
-    raise HTTPException(status_code=404, detail=f"Registered document file is not available: {document_id}")
-
-
-def _source_intake_document_file_response(document_id: str, *, disposition: str) -> FileResponse:
-    path = _resolve_source_intake_document_path(document_id)
-    media_type = mimetypes.guess_type(str(path))[0] or "application/octet-stream"
-    return FileResponse(
-        str(path),
-        media_type=media_type,
-        filename=path.name,
-        content_disposition_type=disposition,
-    )
-
-
 _managed_representation_request_service = ManagedRepresentationRequestService()
 _source_intake_workbench_v2_service = SourceIntakeWorkbenchV2Service()
 _source_intake_stage_workbench_service = SourceIntakeStageWorkbenchService(_source_intake_workbench_v2_service)
@@ -224,15 +171,6 @@ class SourceIntakeWorkbenchV2ClearSelectedRequest(BaseModel):
 
 
 
-
-
-class SourceIntakeDocumentAssignmentRequest(BaseModel):
-    candidate_id: Optional[str] = None
-    mode: Optional[str] = None
-    action: str
-    document_ids: List[str] = Field(default_factory=list)
-    line_ids: List[str] = Field(default_factory=list)
-    validate_only: bool = False
 
 
 def _safe_count(items: List[Dict[str, Any]]) -> int:
@@ -1421,135 +1359,6 @@ def list_source_intake_repository_candidates(repository_id: str) -> Dict[str, An
 
 
 
-@router.get("/documents/{document_id}/open")
-def open_source_intake_document(document_id: str):
-    # INFO_DOCS_LINKS_1
-    return _source_intake_document_file_response(document_id, disposition="inline")
-
-
-@router.get("/documents/{document_id}/download")
-def download_source_intake_document(document_id: str):
-    # INFO_DOCS_LINKS_1
-    return _source_intake_document_file_response(document_id, disposition="attachment")
-
-
-@router.get("/packages/{package_id}/documents")
-def get_source_intake_package_documents(package_id: str) -> Dict[str, Any]:
-    try:
-        return get_package_document_bundle(package_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Build Source Intake package document bundle failed: {exc}")
-
-
-@router.get("/candidates/{candidate_id}/documents")
-def get_source_intake_candidate_documents(candidate_id: str) -> Dict[str, Any]:
-    try:
-        return get_candidate_document_bundle(candidate_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Build Source Intake candidate document bundle failed: {exc}")
-
-
-@router.get("/repositories/{repository_id}/document-links")
-def get_source_intake_repository_document_links(repository_id: str) -> Dict[str, Any]:
-    try:
-        return summarize_repository_document_links(repository_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Build Source Intake repository document link summary failed: {exc}")
-
-@router.get("/candidates/{candidate_id}/document-assignment-review")
-def get_source_intake_candidate_document_assignment_review(
-    candidate_id: str,
-    selected_line_ids: Optional[str] = None,
-    mode: Optional[str] = Query(None),
-) -> Dict[str, Any]:
-    try:
-        line_ids = [
-            value.strip()
-            for value in str(selected_line_ids or "").split(",")
-            if value.strip()
-        ]
-        return get_candidate_document_assignment_review(candidate_id, selected_line_ids=line_ids, mode=mode)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Build Source Intake document assignment review failed: {exc}")
-
-
-@router.get("/candidates/{candidate_id}/document-options")
-def get_source_intake_candidate_document_options(
-    candidate_id: str,
-    selected_line_ids: Optional[str] = None,
-    mode: Optional[str] = Query(None),
-) -> Dict[str, Any]:
-    try:
-        line_ids = [
-            value.strip()
-            for value in str(selected_line_ids or "").split(",")
-            if value.strip()
-        ]
-        return get_candidate_document_assignment_review(candidate_id, selected_line_ids=line_ids, mode=mode)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Build Source Intake document options failed: {exc}")
-
-
-@router.get("/candidates/{candidate_id}/document-assignments")
-def get_source_intake_candidate_document_assignments(
-    candidate_id: str,
-    selected_line_ids: Optional[str] = None,
-    mode: Optional[str] = Query(None),
-) -> Dict[str, Any]:
-    try:
-        line_ids = [
-            value.strip()
-            for value in str(selected_line_ids or "").split(",")
-            if value.strip()
-        ]
-        return get_candidate_document_assignment_review(candidate_id, selected_line_ids=line_ids, mode=mode)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Build Source Intake document assignments failed: {exc}")
-
-
-
-@router.post("/candidates/{candidate_id}/document-assignments")
-def post_source_intake_candidate_document_assignments(candidate_id: str, request: SourceIntakeDocumentAssignmentRequest) -> Dict[str, Any]:
-    try:
-        payload = request.model_dump()
-        payload["candidate_id"] = candidate_id
-        return assign_source_intake_documents(payload)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Apply Source Intake candidate document assignments failed: {exc}")
-
-@router.post("/document-assignments")
-def post_source_intake_document_assignments(request: SourceIntakeDocumentAssignmentRequest) -> Dict[str, Any]:
-    try:
-        return assign_source_intake_documents(request.model_dump())
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Apply Source Intake document assignments failed: {exc}")
-
-
-
 @router.get("/workbench")
 def get_source_intake_workbench(
     mode: str = Query(...),
@@ -1805,4 +1614,3 @@ async def create_manual_upload_package(
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-
