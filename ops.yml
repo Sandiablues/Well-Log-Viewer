@@ -1,0 +1,96 @@
+version: "1"
+commands:
+  - name: wl-build-000-source-review
+    image: node:20-bookworm
+    description: "Review Equinor ViDEx Wellog dependency for MultiViewer WLV integration"
+    run: |
+      set -e
+
+      echo "WL-BUILD-000 — Equinor Source Review / Dependency Validation"
+      echo "Diagnostic only. No product scaffold and no MultiViewer implementation."
+      echo
+
+      echo "---- environment ----"
+      node --version
+      npm --version
+      git --version
+      echo
+
+      mkdir -p reports/source_review
+      cd reports/source_review
+
+      echo "---- package metadata ----"
+      npm view @equinor/videx-wellog version > videx_version.txt
+      npm view @equinor/videx-wellog license > videx_license.txt
+      npm view @equinor/videx-wellog peerDependencies --json > videx_peer_dependencies.json || true
+      npm view @equinor/videx-wellog dependencies --json > videx_dependencies.json || true
+      npm view @equinor/videx-wellog repository --json > videx_repository.json || true
+
+      echo "---- clone source repos for inspection ----"
+      git clone --depth 1 https://github.com/equinor/videx-wellog.git videx-wellog
+      git clone --depth 1 https://github.com/equinor/webviz-subsurface-components.git webviz-subsurface-components
+
+      echo "---- source inventory ----"
+      find videx-wellog -maxdepth 3 -type f | sort > videx_file_inventory.txt
+
+      find webviz-subsurface-components -maxdepth 4 -type f \
+        | grep -Ei 'well|log|videx|storybook|package.json|license|readme' \
+        | sort > webviz_well_related_inventory.txt || true
+
+      echo "---- component references ----"
+      grep -RniE "LogViewer|LogController|GraphTrack|ScaleTrack|DualScaleTrack|CanvasTrack|SvgTrack|WellLog" \
+        videx-wellog > videx_component_refs.txt || true
+
+      grep -RniE "WellLog|videx|LogViewer|LogController" \
+        webviz-subsurface-components > webviz_welllog_refs.txt || true
+
+      cat > WL_BUILD_000_REVIEW_CHECKLIST.md <<'EOC'
+      # WL-BUILD-000 — Equinor Source Review / Dependency Validation
+
+      ## Purpose
+
+      Diagnostic only. No product scaffold and no MultiViewer implementation.
+
+      ## Questions to answer
+
+      1. Which exact @equinor/videx-wellog package version is available?
+      2. What license is declared?
+      3. What peer dependencies and runtime dependencies are declared?
+      4. What React / TypeScript compatibility risks exist?
+      5. Which ViDEx components should MultiViewer wrap first?
+      6. What input/data shape does ViDEx expect?
+      7. What examples or Storybook files show correct usage?
+      8. What adapter is needed from MultiViewer well_multitrack_v1?
+      9. Does webviz-subsurface-components add useful wrapper examples?
+      10. Are there reasons not to use webviz as the base architecture?
+
+      ## Architecture rule
+
+      MultiViewer MSI remains the backend authority.
+
+      Equinor ViDEx is only the frontend rendering component layer.
+
+      Do not make Equinor's internal data shape the backend API contract.
+
+      ## Acceptance
+
+      Pass only if the review supports using ViDEx as an adapter-wrapped
+      renderer without violating MSI/backend ownership.
+      EOC
+
+      {
+        echo "# WL-BUILD-000 Generated Source Review Artifacts"
+        echo
+        echo "Generated files:"
+        ls -1
+        echo
+        echo "Package version:"
+        cat videx_version.txt || true
+        echo
+        echo "License:"
+        cat videx_license.txt || true
+      } > WL_BUILD_000_SUMMARY.md
+
+      echo
+      echo "WL-BUILD-000 complete."
+      echo "Review artifacts are under reports/source_review."
