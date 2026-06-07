@@ -36,6 +36,7 @@ from app.api import source_intake_workbench
 from app.api import source_intake_repositories
 from app.api import source_intake_manual_upload
 from app.api import source_intake_geometry_qaqc
+from app.api import source_intake_jobs
 from app.api import managed_data
 from app.api import source_registry_admin
 from app.api import toolbox
@@ -93,6 +94,7 @@ app.include_router(source_intake_workbench.router)
 app.include_router(source_intake_repositories.router)
 app.include_router(source_intake_manual_upload.router)
 app.include_router(source_intake_geometry_qaqc.router)
+app.include_router(source_intake_jobs.router)
 app.include_router(source_intake.router)
 app.include_router(managed_data.router)
 app.include_router(source_registry_admin.router, prefix="/api", tags=["source-registry-admin"])

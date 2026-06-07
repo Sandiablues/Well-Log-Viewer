@@ -1206,8 +1206,3 @@ def get_source_intake_indexed_preview_viewer_source(candidate_id: str, mode: str
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Build indexed preview viewer source failed: {exc}")
-
-
-@router.get("/jobs")
-def list_source_intake_jobs() -> Dict[str, Any]:
-    return {"jobs": [*_read_jobs(), *list_source_intake_index_jobs()]}
