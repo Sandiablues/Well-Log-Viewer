@@ -33,6 +33,7 @@ from app.api import source_staging
 from app.api import source_intake
 from app.api import source_intake_documents
 from app.api import source_intake_workbench
+from app.api import source_intake_repositories
 from app.api import managed_data
 from app.api import source_registry_admin
 from app.api import toolbox
@@ -87,6 +88,7 @@ app.include_router(knowledge_api.router)
 app.include_router(source_staging.router, prefix="/api", tags=["source-staging"])
 app.include_router(source_intake_documents.router)
 app.include_router(source_intake_workbench.router)
+app.include_router(source_intake_repositories.router)
 app.include_router(source_intake.router)
 app.include_router(managed_data.router)
 app.include_router(source_registry_admin.router, prefix="/api", tags=["source-registry-admin"])
