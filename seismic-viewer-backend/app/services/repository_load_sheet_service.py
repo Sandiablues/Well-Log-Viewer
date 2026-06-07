@@ -135,7 +135,7 @@ def _normalize_scan_record(record: dict[str, Any]) -> dict[str, Any]:
         return normalized
 
     if _is_segy_like(record, filename, relative_path):
-        kg = classify_segy_name(filename, relative_path)
+        kg = classify_segy_name(filename)
 
         normalized.update({
             "item_type": "segy",
@@ -155,7 +155,7 @@ def _normalize_scan_record(record: dict[str, Any]) -> dict[str, Any]:
         return classify_source_record(normalized)
 
     if _is_document_like(record, filename):
-        doc = classify_document_name(filename, relative_path)
+        doc = classify_document_name(filename)
 
         normalized.update({
             "item_type": "document",

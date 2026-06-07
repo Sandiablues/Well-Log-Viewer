@@ -156,7 +156,7 @@ def _f3j_apply_knowledge_enrichment(record):
     is_segy = _f3j_is_segy_record(record, str(filename), relative_path)
 
     if is_segy:
-        kg = classify_segy_name(str(filename), relative_path)
+        kg = classify_segy_name(str(filename))
 
         for key in (
             "candidate_kind",
@@ -199,7 +199,7 @@ def _f3j_apply_knowledge_enrichment(record):
 
         return record
 
-    doc = classify_document_name(str(filename), relative_path)
+    doc = classify_document_name(str(filename))
 
     for key in (
         "document_type",
