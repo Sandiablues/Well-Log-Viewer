@@ -1,0 +1,388 @@
+/*
+ * MultiViewer Well Log Viewer — Inspection Shell Styles
+ * WL-BUILD-001B
+ *
+ * Covers the inspection shell chrome and the well log page layout.
+ * The ViDEx LogController renders its own internal DOM/canvas/SVG —
+ * this stylesheet only wraps the container and provides the outer shell.
+ *
+ * MultiViewer UI rules:
+ * - No filled colored executable buttons
+ * - Colored action controls: outline + text only
+ * - Neutral panels/cards
+ * - Simple technical layout
+ */
+
+/* ── Reset & base ─────────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --c-bg:           #0d1117;
+  --c-surface-1:    #161b22;
+  --c-surface-2:    #21262d;
+  --c-surface-3:    #30363d;
+  --c-border:       #30363d;
+  --c-border-sub:   #21262d;
+  --c-text-primary:   #e6edf3;
+  --c-text-secondary: #8b949e;
+  --c-text-muted:     #6e7681;
+  --c-accent:       #388bfd;
+  --c-info:         #388bfd;
+  --c-info-bg:      #1f6feb1a;
+  --c-warning:      #d29922;
+  --c-warning-bg:   #bb800926;
+  --c-error:        #f85149;
+  --c-error-bg:     #da363129;
+  --c-mock:         #d29922;
+  --c-mock-bg:      #161209;
+  --c-mock-border:  #4d3800;
+  --font-sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Cascadia Code', 'Fira Code', 'SF Mono', ui-monospace, monospace;
+  --qaqc-w: 300px;
+  --toolbar-h: 44px;
+  --header-h:  48px;
+  --notice-h:  36px;
+}
+
+html, body, #root {
+  height: 100%;
+  background: var(--c-bg);
+  color: var(--c-text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Inspection shell ─────────────────────────────────────────────────── */
+
+.mvwlv-inspection-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.mvwlv-mock-notice {
+  flex: 0 0 var(--notice-h);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  background: var(--c-mock-bg);
+  border-bottom: 1px solid var(--c-mock-border);
+  color: var(--c-mock);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .03em;
+}
+
+.mvwlv-mock-notice__icon { font-size: 13px; flex-shrink: 0; }
+.mvwlv-mock-notice__label { font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.mvwlv-mock-notice__detail { color: #a07a00; }
+
+.mvwlv-app-header {
+  flex: 0 0 var(--header-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: var(--c-surface-1);
+  border-bottom: 1px solid var(--c-border);
+}
+
+.mvwlv-app-header__brand { display: flex; align-items: baseline; gap: 8px; }
+.mvwlv-app-header__product {
+  font-size: 10px; font-weight: 500; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--c-text-muted);
+}
+.mvwlv-app-header__module { font-size: 14px; font-weight: 600; }
+.mvwlv-app-header__sprint {
+  font-family: var(--font-mono); font-size: 9px; color: var(--c-text-muted);
+  border: 1px solid var(--c-border); border-radius: 3px; padding: 2px 6px;
+}
+
+/* ── Well Log Viewer Page ─────────────────────────────────────────────── */
+
+.well-log-viewer-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.well-log-viewer-page--loading,
+.well-log-viewer-page--error {
+  display: flex; align-items: center; justify-content: center;
+  flex: 1; color: var(--c-text-secondary); font-family: var(--font-mono); font-size: 12px;
+}
+
+.well-log-viewer-page__error-notice { text-align: center; line-height: 2; }
+
+.well-log-viewer-page__layout {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.well-log-viewer-page__viewer-pane {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--c-border);
+}
+
+.well-log-viewer-page__qaqc-pane {
+  flex: 0 0 var(--qaqc-w);
+  width: var(--qaqc-w);
+  overflow-y: auto;
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────────────── */
+
+.well-track-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: var(--toolbar-h);
+  padding: 0 20px;
+  background: var(--c-surface-1);
+  border-bottom: 1px solid var(--c-border);
+  flex-shrink: 0;
+}
+
+.well-track-toolbar__identity {
+  display: flex; align-items: center; gap: 4px;
+  font-family: var(--font-mono); font-size: 12px;
+}
+.well-track-toolbar__well-label { font-weight: 700; }
+.well-track-toolbar__separator,
+.well-track-toolbar__wellbore-label { color: var(--c-text-secondary); }
+
+.well-track-toolbar__domain-group,
+.well-track-toolbar__unit-group,
+.well-track-toolbar__track-count { display: flex; align-items: center; gap: 4px; }
+
+.well-track-toolbar__label {
+  font-size: 10px; color: var(--c-text-muted);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+
+.well-track-toolbar__domain-static {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  color: var(--c-accent);
+  border: 1px solid var(--c-accent);
+  border-radius: 3px; padding: 1px 7px;
+}
+
+.well-track-toolbar__select--outline {
+  appearance: none; background: transparent;
+  border: 1px solid var(--c-border); border-radius: 3px;
+  color: var(--c-text-primary); font-family: var(--font-mono); font-size: 11px;
+  padding: 2px 18px 2px 7px; cursor: pointer;
+}
+.well-track-toolbar__select--outline:focus { outline: none; border-color: var(--c-accent); }
+.well-track-toolbar__track-count-label { font-family: var(--font-mono); font-size: 10px; color: var(--c-text-muted); }
+
+/* ── ViDEx renderer container ─────────────────────────────────────────── */
+/*
+ * The LogController renders internally to canvas/SVG/DOM elements
+ * it creates via D3. We only style the outer wrapper.
+ * Background is set here so the ViDEx canvas sits on a dark surface
+ * consistent with the MultiViewer shell.
+ */
+
+.multiviewer-well-log-viewer {
+  width: 100%;
+  background: var(--c-bg);
+}
+
+.videx-well-log-renderer {
+  width: 100%;
+  background: var(--c-bg);
+}
+
+/* ── QAQC Panel ───────────────────────────────────────────────────────── */
+
+.well-qaqc-panel {
+  height: 100%; display: flex; flex-direction: column;
+  background: var(--c-surface-1); overflow: hidden;
+}
+
+.well-qaqc-panel--loading,
+.well-qaqc-panel--error,
+.well-qaqc-panel--empty {
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px; color: var(--c-text-muted);
+  font-size: 12px; font-family: var(--font-mono); height: 100%;
+}
+
+.well-qaqc-panel__header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; border-bottom: 1px solid var(--c-border);
+  background: var(--c-surface-2); flex-shrink: 0;
+}
+
+.well-qaqc-panel__title {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--c-text-secondary);
+}
+
+.well-qaqc-panel__count {
+  font-family: var(--font-mono); font-size: 10px; color: var(--c-text-muted);
+  background: var(--c-surface-3); border-radius: 10px; padding: 1px 7px;
+}
+
+.well-qaqc-panel__findings-list { list-style: none; overflow-y: auto; flex: 1; }
+
+.well-qaqc-panel__finding {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 14px; border-bottom: 1px solid var(--c-border-sub);
+}
+.well-qaqc-panel__finding:last-child { border-bottom: none; }
+
+.well-qaqc-panel__finding-severity {
+  display: inline-flex; font-family: var(--font-mono); font-size: 9px;
+  font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+  padding: 1px 6px; border-radius: 2px; border: 1px solid; align-self: flex-start;
+}
+
+.well-qaqc-panel__finding--info    .well-qaqc-panel__finding-severity { color: var(--c-info);    border-color: var(--c-info);    background: var(--c-info-bg); }
+.well-qaqc-panel__finding--warning .well-qaqc-panel__finding-severity { color: var(--c-warning); border-color: var(--c-warning); background: var(--c-warning-bg); }
+.well-qaqc-panel__finding--error   .well-qaqc-panel__finding-severity { color: var(--c-error);   border-color: var(--c-error);   background: var(--c-error-bg); }
+
+.well-qaqc-panel__finding-code { font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--c-text-secondary); }
+.well-qaqc-panel__finding-message { font-size: 11px; color: var(--c-text-muted); line-height: 1.6; }
+
+/* -------------------------------------------------------------------------
+   WL-BUILD-001B — minimal ViDEx layout CSS
+
+   @equinor/videx-wellog creates imperative DOM/canvas/SVG nodes. The library
+   expects the host app to provide layout CSS for .log-controller, .track,
+   .track-title, and .track-container. Without this, track titles appear as
+   plain stacked text and the canvases have no usable layout.
+--------------------------------------------------------------------------- */
+
+.videx-well-log-renderer {
+  background: #f7f8fa;
+  color: #111827;
+  border: 1px solid #2f3844;
+  min-height: 560px;
+}
+
+.videx-well-log-renderer .log-controller {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: #f7f8fa;
+  color: #111827;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.videx-well-log-renderer .log-controller.horizontal {
+  flex-direction: column;
+}
+
+.videx-well-log-renderer .track {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 48px;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  border-left: 1px solid #c7ced8;
+  background: #ffffff;
+}
+
+.videx-well-log-renderer .track:first-child {
+  border-left: none;
+}
+
+.videx-well-log-renderer .track-title {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  padding: 2px 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  color: #111827;
+  background: #e8edf3;
+  border-bottom: 1px solid #c7ced8;
+}
+
+.videx-well-log-renderer .track-container {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.videx-well-log-renderer .track-container canvas,
+.videx-well-log-renderer .track-container svg {
+  position: absolute;
+  inset: 0;
+}
+
+.videx-well-log-renderer .scale-track text,
+.videx-well-log-renderer .scale-track .label {
+  fill: #111827;
+  stroke: none;
+}
+
+.videx-well-log-renderer .scale-track line,
+.videx-well-log-renderer .major-tick-line {
+  stroke: #6b7280;
+}
+
+.videx-well-log-renderer .label-bg {
+  fill: #ffffff;
+}
+
+/* -------------------------------------------------------------------------
+   WL-BUILD-001B correction:
+   ViDEx adds .log-controller to the same root element that already has
+   .videx-well-log-renderer. Therefore we must style the same-element selector,
+   not only the descendant selector.
+--------------------------------------------------------------------------- */
+
+.videx-well-log-renderer.log-controller {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  height: 100%;
+  min-height: 560px;
+  overflow: hidden;
+  background: #f7f8fa;
+  color: #111827;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.videx-well-log-renderer.log-controller.horizontal {
+  flex-direction: column;
+}
+
+.videx-well-log-renderer.log-controller > .track {
+  flex: 1 1 0 !important;
+  min-width: 90px;
+  max-width: none !important;
+}
+
+.videx-well-log-renderer.log-controller > .track:first-child {
+  flex: 0 0 90px !important;
+  min-width: 90px;
+  max-width: 90px !important;
+}

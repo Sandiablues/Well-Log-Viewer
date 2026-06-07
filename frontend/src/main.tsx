@@ -1,26 +1,13 @@
+import React from 'react';
 /**
- * MultiViewer Well Log Viewer — Application Entry Point
- * WL-BUILD-001 scaffold
+ * WL-PROTOTYPE-001 — Track Layout Editor Working Template
  *
- * Minimal entry point. The WellLogViewerPage will be mounted here
- * when routing is wired in a later sprint.
+ * Working frontend-only prototype for dbMap-style WLV track layout behavior.
+ * No LAS parsing, no backend persistence, and no production ViDEx wiring here.
  */
 
-import React from 'react';
 import ReactDOM from 'react-dom/client';
-
-// Scaffold placeholder — full routing wired in WL-BUILD-002+
-const ScaffoldRoot: React.FC = () => (
-  <div style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
-    <h1>MultiViewer Well Log Viewer</h1>
-    <p>WL-BUILD-001 scaffold — application entry point placeholder.</p>
-    <p>
-      Routing and page mounting will be wired in WL-BUILD-002.
-      The <code>WellLogViewerPage</code> component is available at{' '}
-      <code>src/wells/WellLogViewerPage.tsx</code>.
-    </p>
-  </div>
-);
+import { TrackLayoutPrototype } from './wells/prototype/TrackLayoutPrototype';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -29,6 +16,6 @@ if (!rootElement) {
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <ScaffoldRoot />
+    <TrackLayoutPrototype />
   </React.StrictMode>,
 );

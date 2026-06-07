@@ -1,27 +1,40 @@
 /**
  * MultiViewer Well Log Viewer — Shell Viewer Component
- * WL-BUILD-001 scaffold
+ * WL-BUILD-001B
  *
  * This component:
  * - Receives a backend-owned WellMultitrackV1 viewer package as a prop
- * - Passes it through the equinorWellLogAdapter
- * - Renders via @equinor/videx-wellog (wired in a later sprint)
+ * - Passes it through equinorWellLogAdapter.adaptToViDEx()
+ * - Renders via VidExWellLogRenderer (the documented ViDEx rendering boundary)
  *
  * Architecture rules:
  * - Does not parse LAS.
  * - Does not infer QAQC.
  * - Does not own lifecycle state.
  * - Only renders what the backend provides.
- * - ViDEx integration is behind the adapter — not called directly here.
+ * - ViDEx integration is isolated in VidExWellLogRenderer.
+ * - This component does NOT import @equinor/videx-wellog directly.
+ *
+ * WL-BUILD-001B: real ViDEx rendering via LogController.
+ * Fake cards and synthetic SVG waveforms from WL-BUILD-001A are removed.
  */
 
 import React from 'react';
 import { adaptToViDEx } from '../adapters/equinorWellLogAdapter';
+import { VidExWellLogRenderer } from '../adapters/videxWellLogRenderer';
 import type { WellMultitrackV1 } from '../types';
 
 interface MultiViewerWellLogViewerProps {
   /** Backend-owned viewer package. Fetched by the page component; passed in as prop. */
   viewerPackage: WellMultitrackV1;
+  /**
+   * Curve samples keyed by curve_id — [depth, value | null][] per curve.
+   *
+   * In production: fetched from each curve's samples_url after receiving
+   * the viewer package from the backend API.
+   * In WL-BUILD-001B: supplied from mockCurveSamples fixture via InspectionShell.
+   */
+  curveSamples: Record<string, (number | null)[][]>;
   /** Display height in pixels. Defaults to 600. */
   height?: number;
 }
@@ -29,51 +42,35 @@ interface MultiViewerWellLogViewerProps {
 /**
  * MultiViewerWellLogViewer
  *
- * Shell component that renders a well_multitrack_v1 viewer package via the
- * Equinor ViDEx adapter.
+ * Shell component. Translates WellMultitrackV1 → ViDEx config via the adapter,
+ * then passes the result to VidExWellLogRenderer for actual rendering.
  *
- * WL-BUILD-001: renders a placeholder panel with contract metadata.
- * Full ViDEx rendering wired in a later sprint.
+ * The rendering boundary is VidExWellLogRenderer — not this component.
+ * This component does not hold ViDEx state or import ViDEx classes.
  */
 export const MultiViewerWellLogViewer: React.FC<MultiViewerWellLogViewerProps> = ({
   viewerPackage,
+  curveSamples,
   height = 600,
 }) => {
-  // Translate backend contract to ViDEx-facing props via adapter.
-  // ViDEx is never called with the raw WellMultitrackV1 directly.
-  const viDExProps = adaptToViDEx(viewerPackage);
+  // Translate backend contract to ViDEx-facing config via the adapter.
+  // The adapter does not import @equinor/videx-wellog.
+  const adapterOutput = adaptToViDEx(viewerPackage);
 
-  // WL-BUILD-001: ViDEx component not yet wired.
-  // Render contract metadata as a scaffold placeholder.
   return (
     <div
       className="multiviewer-well-log-viewer"
-      style={{ height, overflow: 'hidden', position: 'relative' }}
+      style={{ width: '100%', height, overflow: 'hidden', position: 'relative' }}
       data-testid="multiviewer-well-log-viewer"
       data-dataset-id={viewerPackage.dataset_id}
       data-representation-id={viewerPackage.representation_id}
+      data-domain={viewerPackage.display_domain}
     >
-      {/* Scaffold placeholder — replaced by ViDEx renderer in WL-BUILD-002+ */}
-      <div className="multiviewer-well-log-viewer__scaffold-notice">
-        <p>
-          <strong>Well Log Viewer</strong> — scaffold placeholder (WL-BUILD-001)
-        </p>
-        <ul>
-          <li>Package version: {viewerPackage.viewer_package_version}</li>
-          <li>Well: {viewerPackage.well_id} / {viewerPackage.wellbore_id}</li>
-          <li>Domain: {viewerPackage.display_domain} ({viewerPackage.depth_unit})</li>
-          <li>
-            Depth range: {viewerPackage.depth_range.min}–{viewerPackage.depth_range.max}{' '}
-            {viewerPackage.depth_unit}
-          </li>
-          <li>Tracks: {viewerPackage.tracks.length}</li>
-          <li>QAQC findings: {viewerPackage.qaqc_findings.length}</li>
-          <li>Adapter primary axis: {viDExProps.primaryAxis}</li>
-        </ul>
-        <p className="multiviewer-well-log-viewer__scaffold-notice--subtext">
-          ViDEx rendering will be wired in WL-BUILD-002.
-        </p>
-      </div>
+      <VidExWellLogRenderer
+        adapterOutput={adapterOutput}
+        curveSamples={curveSamples}
+        height={height}
+      />
     </div>
   );
 };

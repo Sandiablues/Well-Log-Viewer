@@ -1,139 +1,155 @@
 /**
  * MultiViewer Well Log Viewer — Equinor ViDEx Adapter
- * WL-BUILD-001 scaffold
+ * WL-BUILD-001B
  *
- * This adapter is the ONLY place in the codebase where a backend-owned
- * well_multitrack_v1 viewer package is translated into ViDEx-facing props,
- * config, and data shapes.
+ * This adapter is the translation boundary between the backend-owned
+ * well_multitrack_v1 contract and the ViDEx rendering system.
  *
- * Architecture rules enforced here:
+ * Architecture rules:
  * - Input:  WellMultitrackV1 (backend-owned contract)
- * - Output: ViDEx-compatible props/config (opaque to the rest of the codebase)
+ * - Output: ViDExAdapterOutput (ViDEx-facing config + curve data format)
+ * - This file does NOT import @equinor/videx-wellog.
+ * - ViDEx class instantiation happens only in videxWellLogRenderer.tsx,
+ *   which is the explicitly documented ViDEx rendering boundary.
  * - No LAS parsing occurs here.
  * - No QAQC inference occurs here.
  * - No lifecycle state is held here.
- * - ViDEx internal shapes must not leak out of this file.
- *
- * WL-BUILD-001: adapter skeleton. ViDEx prop shapes will be filled in
- * when @equinor/videx-wellog integration is wired in a later sprint.
+ * - image tracks are skipped (reserved in WL-BUILD-001).
+ * - TVD/TVDSS domains are not active in WL-BUILD-001 (MD only).
  */
 
-import type { WellMultitrackV1, Track, Curve, DepthUnit } from '../types';
+import type { Curve, Track, WellMultitrackV1, DepthUnit } from '../types';
 
 // ---------------------------------------------------------------------------
-// ViDEx-facing output types (opaque outside this adapter)
+// ViDEx-facing output types
 //
-// These are internal translation targets only.
-// They must not be imported by other modules directly.
-// All consumers should use WellMultitrackV1 and call this adapter.
+// These types define what the adapter produces.
+// They are consumed only by videxWellLogRenderer.tsx.
+// They do NOT expose ViDEx class types — the renderer instantiates those.
 // ---------------------------------------------------------------------------
 
 /**
- * Placeholder type for the ViDEx log data structure.
- * Will be replaced with the actual @equinor/videx-wellog type in a later sprint.
- *
- * @internal — do not reference outside this adapter
+ * A ViDEx curve plot definition, translated from a backend Curve record.
+ * Consumed by videxWellLogRenderer.tsx to create LinePlot instances.
  */
-export interface _ViDExLogData {
-  header: Record<string, unknown>;
-  curves: _ViDExCurveEntry[];
-  data: (number | null)[][];
+export interface ViDExCurveDef {
+  /** Corresponds to LinePlot id — matches curve_id from the contract */
+  plotId: string;
+  mnemonic: string;
+  unit: string | null;
+  /** X-axis domain for this curve [min, max] */
+  valueDomain: [number, number];
+  /** CSS color string for this curve's line */
+  color: string;
+  /** Line weight in canvas pixels */
+  lineWidth: number;
 }
 
 /**
- * @internal
+ * A ViDEx track definition, translated from a backend Track record.
+ * Consumed by videxWellLogRenderer.tsx to create ScaleTrack or GraphTrack instances.
  */
-export interface _ViDExCurveEntry {
-  name: string;
-  unit: string;
-  valueType: string;
+export interface ViDExTrackDef {
+  trackId: string;
+  /** 'scale' → ScaleTrack; 'graph' → GraphTrack; 'skip' → image track, not rendered */
+  type: 'scale' | 'graph' | 'skip';
+  label: string;
+  /** 4-char abbreviation for track title when space is constrained */
+  abbr: string;
+  /** For graph tracks: ordered list of curve plot definitions */
+  curves: ViDExCurveDef[];
 }
 
 /**
- * @internal
- */
-export interface _ViDExTrackConfig {
-  type: string;
-  plots: _ViDExPlotConfig[];
-}
-
-/**
- * @internal
- */
-export interface _ViDExPlotConfig {
-  id: string;
-  type: string;
-  scale: string;
-  domain?: [number, number];
-}
-
-/**
- * The assembled ViDEx-facing props produced by this adapter.
- * Consumed only by MultiViewerWellLogViewer.
- *
- * @internal — do not pass WellMultitrackV1 to ViDEx directly
+ * Complete ViDEx-facing output from the adapter.
+ * videxWellLogRenderer.tsx consumes this to build the LogController setup.
  */
 export interface ViDExAdapterOutput {
-  /** ViDEx logData prop — constructed from backend curves only */
-  logData: _ViDExLogData | null;
-  /** ViDEx tracks config prop */
-  tracks: _ViDExTrackConfig[];
-  /** ViDEx primary axis (depth domain string) */
+  /** Depth domain [minMD, maxMD] in the contract's depth_unit */
+  domain: [number, number];
+  /** Depth unit string from the backend contract */
+  depthUnit: DepthUnit;
+  /**
+   * ViDEx primary axis mnemonic.
+   * WL-BUILD-001: always 'md' (Phase 1 is MD-only).
+   */
   primaryAxis: string;
-  /** Depth unit string as ViDEx expects it */
-  axisMnemonics: string[];
+  /** Track definitions in display order */
+  trackDefs: ViDExTrackDef[];
 }
 
 // ---------------------------------------------------------------------------
-// Adapter function
+// Curve color palette
+// One color per curve mnemonic. Used by the adapter; not ViDEx-internal.
 // ---------------------------------------------------------------------------
 
-/**
- * Translate a backend-owned well_multitrack_v1 viewer package into
- * ViDEx-compatible props.
- *
- * This is the single translation boundary.
- * Do not duplicate this translation logic anywhere else in the frontend.
- *
- * @param viewerPackage - Backend-owned well_multitrack_v1 contract
- * @returns ViDExAdapterOutput for use by MultiViewerWellLogViewer only
- *
- * WL-BUILD-001: returns a null/empty skeleton.
- * Full curve sample fetching and ViDEx prop construction deferred to a later sprint.
- */
-export function adaptToViDEx(viewerPackage: WellMultitrackV1): ViDExAdapterOutput {
-  // WL-BUILD-001: placeholder translation
-  // TODO (WL-BUILD-002+):
-  //   1. Fetch curve samples via viewerPackage.tracks[*].curves[*].samples_url
-  //   2. Construct logData header from viewerPackage metadata
-  //   3. Build ViDEx track configs from viewerPackage.tracks
-  //   4. Map scale type (linear/log) to ViDEx domain config
-  //   5. Wire primaryAxis from viewerPackage.display_domain
+const CURVE_COLORS: Record<string, string> = {
+  GR:   '#4caf82',  // green  — standard GR colour convention
+  RHOB: '#e05a4a',  // red    — standard density colour convention
+  NPHI: '#4a90d9',  // blue   — standard neutron colour convention
+  CALI: '#d4a017',  // amber  — standard caliper colour convention
+  DEPT: '#8b949e',  // grey   — depth reference
+};
 
-  const primaryAxis = _mapDisplayDomainToViDExAxis(viewerPackage.display_domain);
+const DEFAULT_CURVE_COLOR = '#7e8fa0';
 
-  const tracks: _ViDExTrackConfig[] = viewerPackage.tracks
-    .map(_translateTrack)
-    .filter((t): t is _ViDExTrackConfig => t !== null);
+function curveColor(mnemonic: string): string {
+  return CURVE_COLORS[mnemonic.toUpperCase()] ?? DEFAULT_CURVE_COLOR;
+}
 
+// ---------------------------------------------------------------------------
+// Translation helpers
+// ---------------------------------------------------------------------------
+
+function translateCurve(curve: Curve): ViDExCurveDef {
   return {
-    logData: null,  // populated when curve sample fetching is wired
-    tracks,
-    primaryAxis,
-    axisMnemonics: [primaryAxis],
+    plotId:      curve.curve_id,
+    mnemonic:    curve.mnemonic,
+    unit:        curve.unit,
+    valueDomain: [curve.scale.min, curve.scale.max],
+    color:       curveColor(curve.mnemonic),
+    lineWidth:   1.5,
   };
 }
 
-// ---------------------------------------------------------------------------
-// Internal translation helpers
-// Private to this adapter — do not export.
-// ---------------------------------------------------------------------------
+function translateTrack(track: Track): ViDExTrackDef {
+  if (track.track_type === 'image') {
+    // Image tracks are reserved and not rendered in WL-BUILD-001.
+    return {
+      trackId: track.track_id,
+      type:    'skip',
+      label:   track.title,
+      abbr:    track.title.substring(0, 4).toUpperCase(),
+      curves:  [],
+    };
+  }
 
-function _mapDisplayDomainToViDExAxis(domain: WellMultitrackV1['display_domain']): string {
-  // ViDEx uses its own axis mnemonic strings.
-  // This mapping is owned by this adapter.
-  // WL-BUILD-001: only MD is active. TVD/TVDSS cases are present for
-  // forward-compatibility but will not be reached until transform services are wired.
+  if (track.track_type === 'depth') {
+    return {
+      trackId: track.track_id,
+      type:    'scale',
+      label:   track.title,
+      abbr:    'MD',
+      curves:  [],  // ScaleTrack handles depth ticks internally
+    };
+  }
+
+  // curve track → GraphTrack
+  return {
+    trackId: track.track_id,
+    type:    'graph',
+    label:   track.title,
+    abbr:    track.title.substring(0, 4).toUpperCase(),
+    curves:  track.curves.map(translateCurve),
+  };
+}
+
+/**
+ * Map depth display domain to ViDEx primary axis mnemonic.
+ * WL-BUILD-001: only MD is active.
+ * TVD/TVDSS present for forward-compatibility; not reachable in Phase 1.
+ */
+function mapDomainToAxis(domain: WellMultitrackV1['display_domain']): string {
   switch (domain) {
     case 'MD':    return 'md';
     case 'TVD':   return 'tvd';
@@ -142,38 +158,37 @@ function _mapDisplayDomainToViDExAxis(domain: WellMultitrackV1['display_domain']
   }
 }
 
+// ---------------------------------------------------------------------------
+// Main adapter function
+// ---------------------------------------------------------------------------
+
 /**
- * Translate a backend Track to a ViDEx track config.
+ * Translate a backend-owned well_multitrack_v1 viewer package into
+ * ViDEx-facing configuration.
  *
- * WL-BUILD-001 active scope: curve and depth tracks only.
- * Image tracks are reserved and must not be rendered — they are skipped here
- * until raster/core image rendering is wired in a later sprint.
+ * This is the single translation boundary.
+ * The renderer (videxWellLogRenderer.tsx) takes this output and
+ * instantiates the actual ViDEx classes.
+ *
+ * @param viewerPackage - Backend-owned well_multitrack_v1 contract
+ * @returns ViDExAdapterOutput consumed by videxWellLogRenderer.tsx only
  */
-function _translateTrack(track: Track): _ViDExTrackConfig | null {
-  if (track.track_type === 'image') {
-    // IMAGE track rendering is deferred. Skip silently.
-    // Do not attempt to render raster or core image tracks in WL-BUILD-001.
-    return null;
-  }
-  return {
-    type: 'stack',  // default ViDEx track type; will be refined per track_type
-    plots: track.curves.map(_translateCurveToPlot),
-  };
-}
+export function adaptToViDEx(viewerPackage: WellMultitrackV1): ViDExAdapterOutput {
+  const trackDefs = viewerPackage.tracks
+    .map(translateTrack)
+    .filter((t): t is ViDExTrackDef => t.type !== 'skip');
 
-function _translateCurveToPlot(curve: Curve): _ViDExPlotConfig {
   return {
-    id: curve.curve_id,
-    type: 'line',  // default; log scale support wired in later sprint
-    scale: curve.scale.type,
-    domain: [curve.scale.min, curve.scale.max],
+    domain:      [viewerPackage.depth_range.min, viewerPackage.depth_range.max],
+    depthUnit:   viewerPackage.depth_unit,
+    primaryAxis: mapDomainToAxis(viewerPackage.display_domain),
+    trackDefs,
   };
 }
 
 /**
- * Utility: map DepthUnit to a ViDEx-friendly display string.
- * @internal
+ * Utility: map DepthUnit to a display label.
  */
-export function _mapDepthUnitLabel(unit: DepthUnit): string {
-  return unit === 'm' ? 'Depth (m)' : 'Depth (ft)';
+export function mapDepthUnitLabel(unit: DepthUnit): string {
+  return unit === 'm' ? 'Depth (m MD)' : 'Depth (ft MD)';
 }
