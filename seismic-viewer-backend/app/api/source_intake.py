@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi import File as ManualUploadFile, Form as ManualUploadForm, UploadFile as ManualUploadUploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -1238,28 +1237,3 @@ def get_source_intake_indexed_preview_viewer_source(candidate_id: str, mode: str
 @router.get("/jobs")
 def list_source_intake_jobs() -> Dict[str, Any]:
     return {"jobs": [*_read_jobs(), *list_source_intake_index_jobs()]}
-
-# MANUAL_UPLOAD_STAGING_1_ROUTE
-@router.post("/manual-upload-package")
-async def create_manual_upload_package(
-    files: List[ManualUploadUploadFile] = ManualUploadFile(...),
-    mode: str = ManualUploadForm("3d"),
-    repository_id: Optional[str] = ManualUploadForm(None),
-    package_name: Optional[str] = ManualUploadForm(None),
-    intended_use: str = ManualUploadForm("source_intake"),
-) -> Dict[str, Any]:
-    # Stage manually uploaded SEG-Y files and supporting documents.
-    # This route must not start indexing, conversion, or MSI registration.
-    try:
-        from app.services.manual_upload_package_service import ManualUploadPackageService
-
-        service = ManualUploadPackageService()
-        return await service.create_package(
-            files=files,
-            mode=mode,
-            repository_id=repository_id,
-            package_name=package_name,
-            intended_use=intended_use,
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
