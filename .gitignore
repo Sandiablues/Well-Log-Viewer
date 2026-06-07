@@ -2,3 +2,9 @@
 # WL-BUILD source review cloned dependency repos
 reports/source_review/videx-wellog/
 reports/source_review/webviz-subsurface-components/
+
+# Python cache/runtime files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
