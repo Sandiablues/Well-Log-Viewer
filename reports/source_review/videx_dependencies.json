@@ -1,0 +1,10 @@
+{
+  "@equinor/videx-math": "^1.1.4",
+  "d3-array": "^3.2.4",
+  "d3-color": "^3.1.0",
+  "d3-scale": "^4.0.2",
+  "d3-selection": "^3.0.0",
+  "d3-shape": "^3.2.0",
+  "d3-zoom": "^3.0.0",
+  "yaml": "^2.8.1"
+}
