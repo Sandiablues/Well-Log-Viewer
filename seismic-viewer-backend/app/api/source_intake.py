@@ -31,9 +31,6 @@ from app.services.source_staging_service import (
 )
 from app.services.external_registry_submitted_view_service import build_submitted_external_registry_view
 from app.services.managed_representation_request_service import ManagedRepresentationRequestService
-from app.services.source_intake_workbench_v2_service import SourceIntakeWorkbenchV2Service
-from app.services.source_intake_stage_workbench_service import SourceIntakeStageWorkbenchService
-from app.services.source_intake_session_service import SourceIntakeSessionService
 from app.services.source_intake_repository_summary_service import build_repository_scan_summary, decorate_repository
 from app.services.source_intake_index_service import (
     build_source_intake_candidate_index as build_source_intake_candidate_index_service,
@@ -95,9 +92,6 @@ def _source_intake_rows_from_payload(payload: Any) -> List[Dict[str, Any]]:
 
 
 _managed_representation_request_service = ManagedRepresentationRequestService()
-_source_intake_workbench_v2_service = SourceIntakeWorkbenchV2Service()
-_source_intake_stage_workbench_service = SourceIntakeStageWorkbenchService(_source_intake_workbench_v2_service)
-_source_intake_session_service = SourceIntakeSessionService(_source_intake_workbench_v2_service, _source_intake_stage_workbench_service)
 _rebuild_promotion_service = RebuildPromotionService()
 
 
@@ -129,10 +123,6 @@ class SourceIntakeSubmitRequest(BaseModel):
     mode: str = "2d"
 
 
-class SourceIntakeStageWorkbenchRequest(BaseModel):
-    mode: str = "2d"
-
-
 class SourceIntakeRebuildRequest(BaseModel):
     mode: str = "2d"
 
@@ -154,21 +144,6 @@ class SourceIntakeSaveAsNewRebuildRequest(BaseModel):
 class SourceIntakeOverwriteRebuildRequest(BaseModel):
     mode: str = "2d"
     job_id: Optional[str] = None
-
-
-
-
-class SourceIntakeWorkbenchV2UseRepositoryRequest(BaseModel):
-    mode: str = "3d"
-    repository_id: str
-
-
-class SourceIntakeWorkbenchV2ClearSelectedRequest(BaseModel):
-    mode: str = "3d"
-    repository_id: str
-    candidate_ids: List[str] = Field(default_factory=list)
-
-
 
 
 
@@ -1188,16 +1163,6 @@ def _with_repository_folder_summaries(payload: Dict[str, Any]) -> Dict[str, Any]
 
 
 
-@router.get("/session")
-def get_source_intake_session(mode: str = Query(...)) -> Dict[str, Any]:
-    try:
-        return _source_intake_session_service.get_session(mode=mode)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Build Source Intake session failed: {exc}")
-
-
 @router.get("/repositories")
 def list_source_intake_repositories(mode: Optional[str] = Query(None)) -> Dict[str, Any]:
     # MANUAL_UPLOAD_STAGING_2: manual-upload repositories store mode in backend notes;
@@ -1281,21 +1246,6 @@ def get_source_intake_repository(repository_id: str, mode: Optional[str] = Query
     return {"repository": _repository_with_single_source_summary(repo, mode=mode)}
 
 
-@router.post("/repositories/{repository_id}/stage-workbench")
-def stage_source_intake_repository_workbench(repository_id: str, request: SourceIntakeStageWorkbenchRequest) -> Dict[str, Any]:
-    try:
-        return _source_intake_session_service.stage_repository_workbench(
-            repository_id=repository_id,
-            mode=request.mode,
-        )
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Stage Source Intake repository to workbench failed: {exc}")
-
-
 @router.get("/repositories/{repository_id}/load-sheet")
 def get_source_intake_load_sheet(repository_id: str) -> Dict[str, Any]:
     try:
@@ -1357,125 +1307,6 @@ def list_source_intake_repository_candidates(repository_id: str) -> Dict[str, An
     files = list_segy_files(repository_id=repository_id)
     return {"candidates": [_normalize_candidate(item) for item in files]}
 
-
-
-@router.get("/workbench")
-def get_source_intake_workbench(
-    mode: str = Query(...),
-    repository_id: str = Query(...),
-) -> Dict[str, Any]:
-    """Canonical public Source Intake Workbench contract.
-
-    The backend implementation currently uses the Workbench V2 service/schema,
-    but the public API remains version-neutral so callers do not chase internal
-    implementation names.
-    """
-    try:
-        payload = _source_intake_workbench_v2_service.get_workbench(
-            mode=mode,
-            repository_id=repository_id,
-        )
-        payload["public_contract"] = "source_intake.workbench"
-        payload["implementation_schema_version"] = payload.get("schema_version")
-        return payload
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Build Source Intake Workbench failed: {exc}")
-
-
-@router.post("/workbench/use-repository")
-def use_repository_in_source_intake_workbench(request: SourceIntakeWorkbenchV2UseRepositoryRequest) -> Dict[str, Any]:
-    """Populate the canonical public Source Intake Workbench active set."""
-    try:
-        payload = _source_intake_workbench_v2_service.use_repository(
-            mode=request.mode,
-            repository_id=request.repository_id,
-        )
-        payload["public_contract"] = "source_intake.workbench"
-        payload["implementation_schema_version"] = payload.get("schema_version")
-        return payload
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Use repository in Source Intake Workbench failed: {exc}")
-
-
-@router.post("/workbench/clear-selected")
-def clear_selected_source_intake_workbench(request: SourceIntakeWorkbenchV2ClearSelectedRequest) -> Dict[str, Any]:
-    """Clear rows from the canonical public Source Intake Workbench active set.
-
-    This is non-destructive and only mutates the backend-owned workbench active
-    set for the supplied mode/repository scope.
-    """
-    try:
-        payload = _source_intake_workbench_v2_service.clear_selected(
-            mode=request.mode,
-            repository_id=request.repository_id,
-            candidate_ids=request.candidate_ids,
-        )
-        payload["public_contract"] = "source_intake.workbench"
-        payload["implementation_schema_version"] = payload.get("schema_version")
-        return payload
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Clear selected Source Intake Workbench rows failed: {exc}")
-
-
-@router.get("/workbench-v2")
-def get_source_intake_workbench_v2(
-    mode: str = Query(...),
-    repository_id: str = Query(...),
-) -> Dict[str, Any]:
-    try:
-        return _source_intake_workbench_v2_service.get_workbench(
-            mode=mode,
-            repository_id=repository_id,
-        )
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Build Source Intake Workbench V2 failed: {exc}")
-
-
-@router.post("/workbench-v2/use-repository")
-def use_repository_in_source_intake_workbench_v2(request: SourceIntakeWorkbenchV2UseRepositoryRequest) -> Dict[str, Any]:
-    try:
-        return _source_intake_workbench_v2_service.use_repository(
-            mode=request.mode,
-            repository_id=request.repository_id,
-        )
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Use repository in Source Intake Workbench V2 failed: {exc}")
-
-
-@router.post("/workbench-v2/clear-selected")
-def clear_selected_source_intake_workbench_v2(request: SourceIntakeWorkbenchV2ClearSelectedRequest) -> Dict[str, Any]:
-    try:
-        return _source_intake_workbench_v2_service.clear_selected(
-            mode=request.mode,
-            repository_id=request.repository_id,
-            candidate_ids=request.candidate_ids,
-        )
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Clear selected Source Intake Workbench V2 rows failed: {exc}")
 
 
 @router.get("/repositories/{repository_id}/submitted-view")
