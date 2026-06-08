@@ -1,4 +1,4 @@
-export type TrackType = 'depth' | 'curve' | 'raster' | 'marker' | 'interval';
+export type TrackType = 'depth' | 'curve' | 'lithology' | 'raster' | 'marker' | 'interval';
 export type ActiveTrackType = 'depth' | 'curve';
 export type DepthBasis = 'MD' | 'TVD' | 'TVDSS';
 export type CurveLattice = 'linear' | 'logarithmic';
@@ -68,12 +68,18 @@ export interface CurveTrack extends BaseTrack {
   curves: CurveAssignment[];
 }
 
+export interface LithologyTrack extends BaseTrack {
+  trackType: 'lithology';
+  sourceName: string;
+  wellName: string;
+}
+
 export interface ReservedTrack extends BaseTrack {
   trackType: 'raster' | 'marker' | 'interval';
   reservedReason: string;
 }
 
-export type WellLogTrack = DepthTrack | CurveTrack | ReservedTrack;
+export type WellLogTrack = DepthTrack | CurveTrack | LithologyTrack | ReservedTrack;
 
 export interface SelectedTrackRef {
   kind: 'track';

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import '../../styles/track-layout-prototype.css';
 import { curveCatalog, defaultDepthRange, depthUnitLabel, fullDepthRange, initialTracks, realCurveSamplesByCurveId, wellHeader } from './realLasTrackLayoutData';
+import { lithologyIntervals21_31, lithologySource } from './lithologyTrackData';
 import type {
   ActiveTrackType,
   CurveAssignment,
@@ -13,6 +14,7 @@ import type {
   DragCurvePayload,
   FillSide,
   LineStyle,
+  LithologyTrack,
   ScaleMode,
   SelectionRef,
   WellLogTrack,
@@ -296,21 +298,139 @@ function valueToX(value: number, assignment: CurveAssignment, lattice: CurveTrac
   const min = assignment.scaleMin;
   const max = assignment.scaleMax;
 
+  let t = 0.5;
+
   if (lattice === 'logarithmic' && min > 0 && max > 0 && max !== min) {
     const logMin = Math.log10(min);
     const logMax = Math.log10(max);
-    const safeValue = Math.max(Math.min(value, Math.max(min, max)), Math.min(min, max));
-    const t = (Math.log10(safeValue) - logMin) / (logMax - logMin);
-    return CURVE_VIEW_PADDING_X + Math.max(0, Math.min(1, t)) * drawableWidth;
+    const safeValue = clampValue(value, Math.min(min, max), Math.max(min, max));
+    t = (Math.log10(safeValue) - logMin) / (logMax - logMin);
+  } else {
+    const denominator = max - min;
+    if (denominator === 0) return safeTrackWidth / 2;
+    t = (value - min) / denominator;
   }
 
-  const denominator = max - min;
-  if (denominator === 0) return trackWidth / 2;
+  if (assignment.scaleDirection === 'reverse') {
+    t = 1 - t;
+  }
 
-  const t = (value - min) / denominator;
-  return CURVE_VIEW_PADDING_X + Math.max(0, Math.min(1, t)) * drawableWidth;
+  return CURVE_VIEW_PADDING_X + clampValue(t, 0, 1) * drawableWidth;
 }
 
+
+
+type LogGridLine = {
+  value: number;
+  x: number;
+  major: boolean;
+  powerOfTen: boolean;
+};
+
+function nearlyEqual(a: number, b: number): boolean {
+  return Math.abs(a - b) <= Math.max(1e-9, Math.abs(b) * 1e-9);
+}
+
+function logValueToX(value: number, scaleMin: number, scaleMax: number, trackWidth: number): number {
+  const safeTrackWidth = Math.max(CURVE_TRACK_MIN_WIDTH, trackWidth);
+  const drawableWidth = safeTrackWidth - CURVE_VIEW_PADDING_X * 2;
+  const safeValue = clampValue(value, Math.min(scaleMin, scaleMax), Math.max(scaleMin, scaleMax));
+  const logMin = Math.log10(scaleMin);
+  const logMax = Math.log10(scaleMax);
+  const t = (Math.log10(safeValue) - logMin) / (logMax - logMin);
+
+  return CURVE_VIEW_PADDING_X + clampValue(t, 0, 1) * drawableWidth;
+}
+
+function logGridRangeForTrack(track: CurveTrack): { min: number; max: number } | null {
+  const positiveAssignments = orderedCurves(track).filter(
+    (assignment) => assignment.scaleMin > 0 && assignment.scaleMax > 0 && assignment.scaleMin !== assignment.scaleMax,
+  );
+
+  if (positiveAssignments.length === 0) return null;
+
+  const min = Math.min(...positiveAssignments.map((assignment) => Math.min(assignment.scaleMin, assignment.scaleMax)));
+  const max = Math.max(...positiveAssignments.map((assignment) => Math.max(assignment.scaleMin, assignment.scaleMax)));
+
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max <= min) return null;
+
+  return { min, max };
+}
+
+function logGridMajorValues(scaleMin: number, scaleMax: number): number[] {
+  const values: number[] = [];
+  let value = scaleMin;
+  let guard = 0;
+
+  while (value <= scaleMax * (1 + 1e-9) && guard < 12) {
+    values.push(value);
+    value *= 10;
+    guard += 1;
+  }
+
+  if (!values.some((candidate) => nearlyEqual(candidate, scaleMax))) {
+    values.push(scaleMax);
+  }
+
+  return values;
+}
+
+function logGridLines(scaleMin: number, scaleMax: number, trackWidth: number): LogGridLine[] {
+  const majorValues = logGridMajorValues(scaleMin, scaleMax);
+  const startPower = Math.floor(Math.log10(scaleMin)) - 1;
+  const endPower = Math.ceil(Math.log10(scaleMax)) + 1;
+  const lines = new Map<string, LogGridLine>();
+
+  const addLine = (value: number, major: boolean, powerOfTen: boolean) => {
+    if (value < scaleMin * (1 - 1e-9) || value > scaleMax * (1 + 1e-9)) return;
+    const roundedKey = value.toPrecision(12);
+    const existing = lines.get(roundedKey);
+    const x = logValueToX(value, scaleMin, scaleMax, trackWidth);
+    lines.set(roundedKey, {
+      value,
+      x,
+      major: major || existing?.major || false,
+      powerOfTen: powerOfTen || existing?.powerOfTen || false,
+    });
+  };
+
+  majorValues.forEach((value) => addLine(value, true, false));
+
+  for (let power = startPower; power <= endPower; power += 1) {
+    const decade = 10 ** power;
+    for (let multiplier = 1; multiplier < 10; multiplier += 1) {
+      const value = multiplier * decade;
+      const isPowerOfTen = multiplier === 1;
+      const isMajor = majorValues.some((majorValue) => nearlyEqual(majorValue, value));
+      addLine(value, isMajor, isPowerOfTen);
+    }
+  }
+
+  return [...lines.values()].sort((a, b) => a.value - b.value);
+}
+
+function renderLogarithmicGrid(track: CurveTrack, trackWidth: number) {
+  const range = logGridRangeForTrack(track);
+  if (!range) return null;
+
+  const lines = logGridLines(range.min, range.max, trackWidth);
+
+  return (
+    <g className="wlv-log-grid" aria-hidden="true">
+      {lines.map((line) => (
+        <line
+          key={`log-grid-${track.trackId}-${line.value}`}
+          className={`wlv-log-grid-line ${line.major ? 'major' : line.powerOfTen ? 'power' : 'minor'}`}
+          x1={line.x}
+          x2={line.x}
+          y1="0"
+          y2={CURVE_VIEW_HEIGHT}
+          vectorEffect="non-scaling-stroke"
+        />
+      ))}
+    </g>
+  );
+}
 
 function makeMockCurveSamples(
   curve: CurveCatalogItem,
@@ -393,6 +513,28 @@ function curvePath(
 function serialiseCurveDrag(payload: DragCurvePayload): string {
   return JSON.stringify(payload);
 }
+
+function lithologyPattern(unit: string): string {
+  switch (unit) {
+    case 'QTs':
+      return 'radial-gradient(rgba(80, 55, 20, 0.16) 18%, transparent 19%) 0 0 / 8px 8px';
+    case 'Tba':
+      return 'repeating-linear-gradient(135deg, rgba(32, 74, 44, 0.20) 0 4px, transparent 4px 9px)';
+    case 'Trd':
+      return 'repeating-linear-gradient(45deg, rgba(95, 50, 98, 0.18) 0 3px, transparent 3px 8px), repeating-linear-gradient(-45deg, rgba(95, 50, 98, 0.10) 0 3px, transparent 3px 8px)';
+    case 'Mza':
+      return 'repeating-linear-gradient(135deg, rgba(20, 63, 50, 0.26) 0 5px, transparent 5px 10px)';
+    case 'Mzr':
+      return 'repeating-linear-gradient(0deg, rgba(86, 61, 130, 0.15) 0 2px, transparent 2px 7px), repeating-linear-gradient(90deg, rgba(86, 61, 130, 0.10) 0 2px, transparent 2px 9px)';
+    case 'Mzp':
+      return 'repeating-linear-gradient(0deg, rgba(56, 76, 104, 0.22) 0 2px, transparent 2px 6px)';
+    case 'Mzq':
+      return 'repeating-linear-gradient(90deg, rgba(130, 112, 40, 0.18) 0 3px, transparent 3px 11px), repeating-linear-gradient(0deg, rgba(130, 112, 40, 0.12) 0 3px, transparent 3px 11px)';
+    default:
+      return 'none';
+  }
+}
+
 
 type CurveInventoryTab = 'all' | 'selected' | 'aliases';
 
@@ -1172,22 +1314,75 @@ function DepthTrackView({ track, depthTicks, viewDepthRange }: { track: DepthTra
   );
 }
 
+
+function LithologyTrackView({ track, viewDepthRange }: { track: LithologyTrack; viewDepthRange: DepthViewRange }) {
+  const visibleIntervals = lithologyIntervals21_31.filter((interval) => (
+    interval.baseFt >= viewDepthRange.min && interval.topFt <= viewDepthRange.max
+  ));
+
+  return (
+    <div className="wlv-lithology-track-body" aria-label={`${track.title} intervals for ${track.wellName}`}>
+      {visibleIntervals.map((interval) => {
+        const clippedTop = Math.max(interval.topFt, viewDepthRange.min);
+        const clippedBase = Math.min(interval.baseFt, viewDepthRange.max);
+        const top = depthToY(clippedTop, viewDepthRange);
+        const base = depthToY(clippedBase, viewDepthRange);
+        const height = Math.max(2, base - top);
+
+        const showCode = height >= 16;
+        const showName = height >= 40;
+        const showTopDepth = height >= 26 && clippedTop === interval.topFt;
+        const showBaseDepth = height >= 34 && clippedBase === interval.baseFt;
+
+        return (
+          <div
+            key={interval.intervalId}
+            className={`wlv-lithology-interval lith-${interval.unit.toLowerCase()}`}
+            style={{
+              top,
+              height,
+              backgroundColor: interval.color,
+              backgroundImage: lithologyPattern(interval.unit),
+            }}
+            title={`${interval.unit}: ${interval.unitName} (${interval.topFt}–${interval.baseFt} ft MD)`}
+          >
+            {showTopDepth && <div className="wlv-lithology-depth-label top">{interval.topFt.toFixed(0)}</div>}
+            <div className="wlv-lithology-interval-content">
+              {showCode && <strong>{interval.unit}</strong>}
+              {showName && <span>{interval.unitName}</span>}
+            </div>
+            {showBaseDepth && <div className="wlv-lithology-depth-label base">{interval.baseFt.toFixed(0)}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function CurveTrackView({ track, depthTicks, viewDepthRange }: { track: CurveTrack; depthTicks: number[]; viewDepthRange: DepthViewRange }) {
   const ordered = orderedCurves(track);
   const backToFront = [...ordered].reverse();
   const lattice = resolveTrackLattice(track, curveCatalog);
   const trackWidth = clampCurveTrackWidth(track.widthPx);
-  const gridWidth = lattice.lattice === 'logarithmic' ? 30 : 24;
   const fillAnchorX = trackWidth / 2;
 
   return (
     <svg className={`wlv-curve-track-svg ${lattice.lattice}`} viewBox={`0 0 ${trackWidth} ${CURVE_VIEW_HEIGHT}`} preserveAspectRatio="none">
-      <defs>
-        <pattern id={`grid-${track.trackId}`} width={gridWidth} height="30" patternUnits="userSpaceOnUse">
-          <path d={`M ${gridWidth} 0 L 0 0 0 30`} fill="none" stroke="#e0e6ed" strokeWidth="1" />
-        </pattern>
-      </defs>
-      <rect x="0" y="0" width={trackWidth} height={CURVE_VIEW_HEIGHT} fill={`url(#grid-${track.trackId})`} />
+      {lattice.lattice === 'logarithmic' ? (
+        <>
+          <rect className="wlv-log-grid-background" x="0" y="0" width={trackWidth} height={CURVE_VIEW_HEIGHT} />
+          {renderLogarithmicGrid(track, trackWidth)}
+        </>
+      ) : (
+        <>
+          <defs>
+            <pattern id={`grid-${track.trackId}`} width="24" height="30" patternUnits="userSpaceOnUse">
+              <path d="M 24 0 L 0 0 0 30" fill="none" stroke="#e0e6ed" strokeWidth="1" />
+            </pattern>
+          </defs>
+          <rect x="0" y="0" width={trackWidth} height={CURVE_VIEW_HEIGHT} fill={`url(#grid-${track.trackId})`} />
+        </>
+      )}
       {depthTicks.map((depth) => {
         const y = depthToY(depth, viewDepthRange);
         return <line key={depth} x1="0" x2={trackWidth} y1={y} y2={y} stroke="#aeb8c5" strokeWidth="1" />;
@@ -1294,6 +1489,9 @@ function TrackView({
         {track.trackType === 'depth' && (
           <div className="wlv-depth-header">{track.depthBasis} · {track.unit}</div>
         )}
+        {track.trackType === 'lithology' && (
+          <div className="wlv-lithology-header">{lithologySource.name} · {track.wellName}</div>
+        )}
         {track.trackType === 'curve' && (
           <>
             <div className="wlv-lattice-badge">
@@ -1315,6 +1513,7 @@ function TrackView({
       </header>
       <div className="wlv-track-body">
         {track.trackType === 'depth' ? <DepthTrackView track={track} depthTicks={depthTicks} viewDepthRange={viewDepthRange} /> : null}
+        {track.trackType === 'lithology' ? <LithologyTrackView track={track} viewDepthRange={viewDepthRange} /> : null}
         {track.trackType === 'curve' ? <CurveTrackView track={track} depthTicks={depthTicks} viewDepthRange={viewDepthRange} /> : null}
       </div>
     </section>
@@ -1769,7 +1968,7 @@ function RightPanel({
 
 export function TrackLayoutPrototype() {
   const [tracks, setTracks] = useState<WellLogTrack[]>(() => reindexTracks(initialTracks));
-  const [selection, setSelection] = useState<SelectionRef>({ kind: 'track', trackId: initialTracks[1].trackId });
+  const [selection, setSelection] = useState<SelectionRef>({ kind: 'track', trackId: 'track-gr-sp' });
   const [selectedInventoryCurveIds, setSelectedInventoryCurveIds] = useState<string[]>([]);
   const [addTrackCurveSelectionMode, setAddTrackCurveSelectionMode] = useState(false);
   const [pendingAddTrackCurveIds, setPendingAddTrackCurveIds] = useState<string[]>([]);

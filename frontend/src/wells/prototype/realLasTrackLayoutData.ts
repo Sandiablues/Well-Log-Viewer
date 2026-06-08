@@ -5,7 +5,7 @@ import type { CurveCatalogItem, WellHeader, WellLogTrack } from './trackLayoutMo
 // Do not hand-edit large sample arrays; regenerate from LAS instead.
 
 export const fullDepthRange = { min: 300.5, max: 6076.0 };
-export const defaultDepthRange = { min: 300.5, max: 900.5 };
+export const defaultDepthRange = { min: 5300, max: 6076 };
 export const depthUnitLabel = "ft";
 
 export const wellHeader = {
@@ -751,8 +751,8 @@ export const curveCatalog = [
     "unit": "MV",
     "curveClass": "sp",
     "defaultLattice": "linear",
-    "defaultMin": -150,
-    "defaultMax": 50,
+    "defaultMin": -700,
+    "defaultMax": -480,
     "defaultColor": "#27ae60",
     "recognised": true
   },
@@ -842,8 +842,18 @@ export const initialTracks = [
     "visible": true
   },
   {
-    "trackId": "track-gr-sp",
+    "trackId": "track-lithology",
     "trackIndex": 1,
+    "trackType": "lithology",
+    "title": "Lithology",
+    "widthPx": 136,
+    "visible": true,
+    "sourceName": "FORGE Well Lithology Logs 2018",
+    "wellName": "21-31"
+  },
+  {
+    "trackId": "track-gr-sp",
+    "trackIndex": 2,
     "trackType": "curve",
     "title": "GR / SP",
     "widthPx": 220,
@@ -871,8 +881,8 @@ export const initialTracks = [
         "assignmentId": "assign-demo-track-gr-sp-SP-1",
         "curveId": "SP",
         "stackIndex": 1,
-        "scaleMin": -150,
-        "scaleMax": 50,
+        "scaleMin": -700,
+        "scaleMax": -480,
         "scaleDirection": "normal",
         "color": "#27ae60",
         "lineStyle": "solid",
@@ -885,22 +895,22 @@ export const initialTracks = [
   },
   {
     "trackId": "track-resistivity",
-    "trackIndex": 2,
+    "trackIndex": 3,
     "trackType": "curve",
-    "title": "Resistivity",
+    "title": "Resistivity (0.2\u2013200 OHMM)",
     "widthPx": 220,
     "visible": true,
     "lattice": "logarithmic",
-    "latticeSource": "front_curve_default",
-    "latticeOverride": false,
-    "scaleMode": "per_curve",
+    "latticeSource": "template",
+    "latticeOverride": true,
+    "scaleMode": "shared",
     "curves": [
       {
         "assignmentId": "assign-demo-track-resistivity-AT90-0",
         "curveId": "AT90",
         "stackIndex": 0,
-        "scaleMin": 0.4468,
-        "scaleMax": 1726.0271,
+        "scaleMin": 0.2,
+        "scaleMax": 200,
         "scaleDirection": "normal",
         "color": "#eb5757",
         "lineStyle": "solid",
@@ -913,8 +923,8 @@ export const initialTracks = [
         "assignmentId": "assign-demo-track-resistivity-AT10-1",
         "curveId": "AT10",
         "stackIndex": 1,
-        "scaleMin": 0.4925,
-        "scaleMax": 1950.0,
+        "scaleMin": 0.2,
+        "scaleMax": 200,
         "scaleDirection": "normal",
         "color": "#7f8c8d",
         "lineStyle": "solid",
@@ -927,7 +937,7 @@ export const initialTracks = [
   },
   {
     "trackId": "track-density-neutron",
-    "trackIndex": 3,
+    "trackIndex": 4,
     "trackType": "curve",
     "title": "Density / Neutron",
     "widthPx": 220,
@@ -969,7 +979,7 @@ export const initialTracks = [
   },
   {
     "trackId": "track-sonic",
-    "trackIndex": 4,
+    "trackIndex": 5,
     "trackType": "curve",
     "title": "Sonic",
     "widthPx": 220,
@@ -1011,7 +1021,7 @@ export const initialTracks = [
   },
   {
     "trackId": "track-caliper-pef",
-    "trackIndex": 5,
+    "trackIndex": 6,
     "trackType": "curve",
     "title": "Caliper / PEF",
     "widthPx": 220,
