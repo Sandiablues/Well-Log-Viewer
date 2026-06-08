@@ -17,7 +17,7 @@
 body {
   margin: 0;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #e9eef3;
+  background: #111111;
   color: var(--wlv-text);
 }
 
@@ -34,34 +34,167 @@ button:disabled {
   opacity: 0.48;
 }
 
-.wlv-prototype-root {
+
+.wlv-demo-shell {
   height: 100vh;
+  min-width: 1180px;
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  overflow: hidden;
+  background: #111111;
+  color: #e5e7eb;
+}
+
+.wlv-demo-left-rail {
+  position: relative;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+  background: #0d0d0f;
+  border-right: 1px solid #2d2d2d;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
+}
+
+.wlv-demo-rail-brand {
+  height: 62px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 2px;
+  color: #60a5fa;
+  border-bottom: 1px solid #222222;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.05;
+  text-align: center;
+}
+
+.wlv-demo-rail-brand span,
+.wlv-demo-rail-brand strong {
+  display: block;
+}
+
+.wlv-demo-nav-top,
+.wlv-demo-nav-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.wlv-demo-nav-top {
+  padding-top: 18px;
+}
+
+.wlv-demo-nav-bottom {
+  margin-top: auto;
+  padding-bottom: 24px;
+}
+
+.wlv-demo-nav-item {
+  position: relative;
+  width: 100%;
+  min-height: 66px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #8f949d;
+  font-size: 11px;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.wlv-demo-nav-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: transparent;
+}
+
+.wlv-demo-nav-item:hover {
+  background: #151515;
+  color: #d4d4d8;
+}
+
+.wlv-demo-nav-item.active {
+  background: #1d1d1f;
+  color: #60a5fa;
+}
+
+.wlv-demo-nav-item.active::before {
+  background: #4a9eff;
+}
+
+.wlv-demo-nav-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  color: currentColor;
+  font-size: 15px;
+}
+
+.wlv-demo-nav-item.active .wlv-demo-nav-icon {
+  border-color: #4a9eff;
+  box-shadow: 0 0 0 1px rgba(74, 158, 255, 0.16);
+}
+
+.wlv-demo-nav-label {
+  max-width: 72px;
+}
+
+.wlv-demo-main {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #141414;
+}
+
+.wlv-prototype-root {
+  height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
 .wlv-app-header {
-  height: 48px;
+  height: 58px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 14px;
-  color: #ffffff;
-  background: linear-gradient(180deg, var(--wlv-green), var(--wlv-green-dark));
-  border-bottom: 1px solid #00351f;
+  padding: 0 28px;
+  color: #e5e7eb;
+  background: #1f1f1f;
+  border-bottom: 1px solid #2d2d2d;
 }
 
-.wlv-app-header span {
-  margin-right: 14px;
-  opacity: 0.82;
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
-  font-size: 12px;
+.wlv-app-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
 }
 
-.wlv-app-header strong {
-  font-weight: 800;
+.wlv-app-title strong {
+  color: #e5e5e5;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0;
 }
 
 .wlv-loaded-context {
@@ -71,41 +204,66 @@ button:disabled {
 }
 
 .wlv-track-toolbar {
-  height: 44px;
+  min-height: 52px;
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 0 10px;
-  background: #ffffff;
-  border-bottom: 1px solid var(--wlv-border);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  align-items: stretch;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #181818;
+  border-bottom: 1px solid #2d2d2d;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+  overflow-x: auto;
+  overflow-y: visible;
 }
 
 .wlv-toolbar-group {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px 8px 4px;
+  border: 1px solid #333842;
+  border-radius: 5px;
+  background: #202124;
+  flex: 0 0 auto;
 }
 
 .wlv-toolbar-group > span {
-  color: var(--wlv-muted);
-  font-size: 12px;
+  color: #a1a1aa;
+  font-size: 10px;
   font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.wlv-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
 }
 
 .wlv-toolbar-group button,
 .wlv-toolbar-group select {
-  height: 28px;
-  padding: 0 9px;
-  border: 1px solid #aeb8c5;
-  background: #ffffff;
-  color: var(--wlv-text);
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid #4b5563;
+  background: transparent;
+  color: #e5e7eb;
   border-radius: 3px;
+  font-size: 12px;
 }
 
 .wlv-toolbar-group button:hover:not(:disabled) {
   border-color: var(--wlv-blue);
   color: var(--wlv-blue);
+}
+
+.wlv-toolbar-group button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .wlv-toolbar-spacer { flex: 1; }
@@ -159,7 +317,7 @@ button:disabled {
   border: 1px solid var(--wlv-border);
   border-radius: 999px;
   font-size: 12px;
-  color: var(--wlv-muted);
+  color: #a1a1aa;
 }
 
 .wlv-search-row {
@@ -190,7 +348,7 @@ button:disabled {
   border: none;
   border-bottom: 2px solid var(--wlv-border);
   background: transparent;
-  color: var(--wlv-muted);
+  color: #a1a1aa;
 }
 
 .wlv-inventory-tabs .active {
@@ -209,7 +367,7 @@ button:disabled {
 
 .wlv-curve-group-title {
   padding: 5px 6px;
-  color: var(--wlv-muted);
+  color: #a1a1aa;
   font-size: 11px;
   font-weight: 900;
   text-transform: uppercase;
@@ -219,7 +377,7 @@ button:disabled {
 .wlv-curve-row {
   width: 100%;
   display: grid;
-  grid-template-columns: 22px 52px 1fr 48px;
+  grid-template-columns: 22px 52px 1fr 44px 24px;
   align-items: center;
   gap: 6px;
   min-height: 30px;
@@ -262,13 +420,14 @@ button:disabled {
   margin: 10px;
   padding: 12px;
   border: 1px dashed #aeb8c5;
-  color: var(--wlv-muted);
+  color: #a1a1aa;
   background: #ffffff;
   font-size: 12px;
   line-height: 1.45;
 }
 
 .wlv-track-canvas {
+  position: relative;
   min-width: 0;
   overflow: auto;
   background: #dce3ea;
@@ -284,7 +443,7 @@ button:disabled {
 .wlv-track {
   display: flex;
   flex-direction: column;
-  height: 760px;
+  height: 758px;
   margin-right: 0;
   border: 1px solid #9faabb;
   border-left: none;
@@ -302,9 +461,12 @@ button:disabled {
 }
 
 .wlv-track-header {
+  height: 108px;
   min-height: 108px;
+  flex: 0 0 108px;
   background: #f7fafc;
   border-bottom: 1px solid #9faabb;
+  overflow: hidden;
 }
 
 .wlv-track-title-row {
@@ -326,13 +488,13 @@ button:disabled {
 
 .wlv-track-title-row span {
   font-size: 11px;
-  color: var(--wlv-muted);
+  color: #a1a1aa;
 }
 
 .wlv-depth-header,
 .wlv-lattice-badge {
   padding: 5px 6px;
-  color: var(--wlv-muted);
+  color: #a1a1aa;
   font-size: 11px;
   border-bottom: 1px solid #d9e1ea;
 }
@@ -366,7 +528,7 @@ button:disabled {
 
 .wlv-curve-header span,
 .wlv-curve-header em {
-  color: var(--wlv-muted);
+  color: #a1a1aa;
   font-style: normal;
 }
 
@@ -378,24 +540,37 @@ button:disabled {
 }
 
 .wlv-track-body {
-  flex: 1;
-  min-height: 0;
+  position: relative;
+  height: 650px;
+  min-height: 650px;
+  flex: 0 0 650px;
   overflow: hidden;
 }
 
 .wlv-depth-track-body {
-  height: 100%;
+  position: relative;
+  height: 650px;
   background: #ffffff;
 }
 
 .wlv-depth-tick {
-  height: 56px;
+  position: absolute;
+  left: 0;
+  right: 0;
   display: flex;
   justify-content: flex-end;
-  padding: 2px 8px 0 0;
+  padding: 0 8px 0 0;
   border-top: 1px solid #aeb8c5;
   color: #334155;
   font-size: 11px;
+  line-height: 1;
+  transform: translateY(-0.5px);
+}
+
+.wlv-depth-tick span {
+  transform: translateY(-11px);
+  background: #ffffff;
+  padding-left: 2px;
 }
 
 .wlv-curve-track-svg {
@@ -414,7 +589,7 @@ button:disabled {
   gap: 4px;
   margin-bottom: 9px;
   font-size: 12px;
-  color: var(--wlv-muted);
+  color: #a1a1aa;
 }
 
 .wlv-right-panel input,
@@ -447,7 +622,7 @@ button:disabled {
   margin-top: 8px;
   padding: 8px;
   border: 1px dashed #aeb8c5;
-  color: var(--wlv-muted);
+  color: #a1a1aa;
   font-size: 12px;
   line-height: 1.4;
 }
@@ -469,7 +644,7 @@ button:disabled {
 }
 
 .well-header dt {
-  color: var(--wlv-muted);
+  color: #a1a1aa;
 }
 
 .well-header dd {
@@ -485,7 +660,7 @@ button:disabled {
   padding: 0 12px;
   border-top: 1px solid var(--wlv-border);
   background: #ffffff;
-  color: var(--wlv-muted);
+  color: #a1a1aa;
   font-size: 11px;
 }
 
@@ -507,16 +682,20 @@ button:disabled {
 }
 
 .wlv-add-track-builder {
-  position: absolute;
-  top: 34px;
-  left: 0;
-  z-index: 40;
-  width: 360px;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
   padding: 10px;
+  overflow: auto;
   border: 1px solid #8fa1b5;
-  border-radius: 5px;
+  border-radius: 6px;
   background: #ffffff;
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.22);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.26);
+}
+
+.wlv-add-track-builder-floating {
+  position: fixed;
+  z-index: 5000;
 }
 
 .builder-heading,
@@ -549,7 +728,7 @@ button:disabled {
 
 .builder-label {
   margin-bottom: 5px;
-  color: var(--wlv-muted);
+  color: #a1a1aa;
   font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.08em;
@@ -585,7 +764,7 @@ button:disabled {
 
 .builder-note {
   margin: 6px 0 0;
-  color: var(--wlv-muted);
+  color: #a1a1aa;
   font-size: 11px;
   line-height: 1.35;
 }
@@ -666,4 +845,771 @@ button:disabled {
   height: 1px;
   margin: 5px 0;
   background: #d7dee6;
+}
+
+
+/* WL-PROTOTYPE-003/009D — Depth View / Zoom Toolbar */
+.wlv-toolbar-group-view button {
+  min-width: 30px;
+}
+
+.wlv-toolbar-group-view button.active {
+  border-color: var(--wlv-green);
+  background: transparent;
+  color: var(--wlv-green);
+  font-weight: 800;
+}
+
+.wlv-depth-readout {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid #f59e0b;
+  border-radius: 3px;
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.wlv-toolbar-group-view input,
+.wlv-go-to-depth-input {
+  width: 92px;
+  height: 28px;
+  border: 1px solid #22c55e;
+  border-radius: 3px;
+  background: transparent;
+  padding: 0 8px;
+  color: #e5e7eb;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.wlv-go-to-depth-input::placeholder {
+  color: #a7f3d0;
+  opacity: 0.75;
+}
+
+.wlv-toolbar-group-view .wlv-go-to-depth-button {
+  width: 30px;
+  min-width: 30px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #475569;
+  border-radius: 3px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.wlv-toolbar-group-view .wlv-go-to-depth-button.ready {
+  border-color: #22c55e;
+  color: #22c55e;
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.18);
+}
+
+.wlv-toolbar-group-view .wlv-go-to-depth-button.ready:hover {
+  border-color: #4ade80;
+  color: #4ade80;
+}
+
+.wlv-track-canvas.interval-zoom-active {
+  cursor: crosshair;
+  box-shadow: inset 0 0 0 3px rgba(183, 121, 31, 0.35);
+}
+
+.wlv-track-canvas.interval-zoom-active::before {
+  content: "Interval zoom mode active";
+  position: sticky;
+  top: 10px;
+  left: 10px;
+  z-index: 20;
+  display: inline-flex;
+  margin: 10px;
+  padding: 5px 8px;
+  border: 1px solid var(--wlv-amber);
+  border-radius: 4px;
+  background: #fff8e8;
+  color: var(--wlv-amber);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+
+/* WL-PROTOTYPE-003C — Interval zoom selection */
+.wlv-track-canvas.interval-zoom-active {
+  cursor: crosshair;
+  user-select: none;
+}
+
+.wlv-interval-selection-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 80;
+  pointer-events: none;
+  border-top: 2px solid rgba(31, 95, 159, 0.95);
+  border-bottom: 2px solid rgba(31, 95, 159, 0.95);
+  background: rgba(31, 95, 159, 0.16);
+}
+
+.wlv-interval-selection-band.armed {
+  border-bottom: 0;
+  background: rgba(31, 95, 159, 0.24);
+}
+
+.wlv-interval-selection-band span {
+  position: absolute;
+  top: 4px;
+  left: 12px;
+  padding: 4px 7px;
+  border: 1px solid rgba(31, 95, 159, 0.75);
+  border-radius: 4px;
+  background: #ffffff;
+  color: #1f5f9f;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+/* WL-PROTOTYPE-004A — Global MB1 drag-pan */
+.wlv-track-body {
+  cursor: default;
+}
+
+.wlv-track-canvas.drag-pan-active,
+.wlv-track-canvas.drag-pan-active .wlv-track-body {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.wlv-track-canvas.drag-pan-active {
+  box-shadow: inset 0 0 0 3px rgba(11, 94, 168, 0.22);
+}
+
+.wlv-track-canvas.interval-zoom-active .wlv-track-body {
+  cursor: crosshair;
+}
+
+
+/* WL-PROTOTYPE-005 — curve inventory assignment semantics */
+.wlv-curve-assignment-hint {
+  margin: 8px 10px 10px;
+  padding: 8px 10px;
+  border: 1px dashed #aeb8c5;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #a1a1aa;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.wlv-curve-row.checked-in-track {
+  box-shadow: inset 3px 0 0 var(--wlv-green);
+}
+
+.wlv-checkbox {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.wlv-checkbox.checked {
+  background: var(--wlv-green);
+  border-color: var(--wlv-green);
+  color: #ffffff;
+}
+
+.wlv-checkbox:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.wlv-curve-count {
+  min-width: 20px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.wlv-curve-row.assigned .wlv-curve-count {
+  color: #ffffff;
+}
+
+/* WL-PROTOTYPE-005C — draggable floating Add Track panel */
+.wlv-add-track-builder-draggable {
+  position: fixed;
+  z-index: 7000;
+  width: 420px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  resize: none;
+}
+
+.wlv-add-track-builder-draggable .builder-drag-handle {
+  margin: -10px -10px 8px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--wlv-border);
+  border-radius: 6px 6px 0 0;
+  background: #eef4fa;
+  cursor: move;
+  user-select: none;
+}
+
+.wlv-add-track-builder-draggable .builder-drag-handle button {
+  cursor: pointer;
+}
+
+/* WL-PROTOTYPE-007 — curve track width controls + Shift-MB1 resize */
+.wlv-track.curve.resizing {
+  outline: 3px solid rgba(31, 95, 159, 0.75);
+  outline-offset: -3px;
+}
+
+.wlv-track-canvas.curve-resize-active,
+.wlv-track-canvas.curve-resize-active .wlv-track.curve .wlv-track-body {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.wlv-track.curve .wlv-track-body {
+  cursor: default;
+}
+
+.wlv-track.curve .wlv-track-body:hover::after {
+  content: "Shift + drag to resize";
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 30;
+  padding: 3px 6px;
+  border: 1px solid #aeb8c5;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #334155;
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.wlv-track.curve .wlv-track-body {
+  position: relative;
+}
+
+/* WL-PROTOTYPE-009C — inline SVG rail icons */
+.wlv-demo-nav-icon svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+  color: currentColor;
+}
+
+
+/* WL-PROTOTYPE-010B — single shared depth ruler overlay */
+.wlv-shared-depth-grid-overlay {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.wlv-shared-depth-grid-line {
+  display: none;
+}
+
+/* WL-PROTOTYPE-010B — single shared Go To MD marker overlay */
+.wlv-shared-go-to-depth-marker {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  z-index: 96;
+  pointer-events: none;
+  border-top: 1px solid rgba(220, 38, 38, 0.72);
+}
+
+.wlv-shared-go-to-depth-marker span {
+  position: absolute;
+  top: -8px;
+  left: 4px;
+  padding: 1px 4px;
+  border: 1px solid rgba(220, 38, 38, 0.72);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #b91c1c;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Pan cursor override — must appear after curve-track cursor rules. */
+.wlv-track-canvas.drag-pan-active,
+.wlv-track-canvas.drag-pan-active *,
+.wlv-track-canvas.drag-pan-active .wlv-track,
+.wlv-track-canvas.drag-pan-active .wlv-track-body,
+.wlv-track-canvas.drag-pan-active .wlv-track.curve .wlv-track-body {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+/* WL-PROTOTYPE-011 — Seismic-style side panels and backdrop toggle */
+.wlv-prototype-workspace {
+  background: #111111;
+}
+
+.wlv-track-backdrop-light .wlv-track-canvas {
+  background: #dce3ea;
+}
+
+.wlv-track-backdrop-dark .wlv-track-canvas {
+  background: #101010;
+}
+
+.wlv-track-backdrop-dark .wlv-track-strip {
+  background: #101010;
+}
+
+.wlv-toolbar-group-backdrop {
+  margin-left: auto;
+}
+
+.wlv-toolbar-group-backdrop button.active {
+  border-color: #60a5fa;
+  color: #60a5fa;
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.18);
+  font-weight: 800;
+}
+
+.wlv-curve-inventory,
+.wlv-right-panel {
+  background: #111111;
+  color: #e5e7eb;
+}
+
+.wlv-curve-inventory {
+  border-right: 1px solid #2d2d2d;
+}
+
+.wlv-right-panel {
+  border-left: 1px solid #2d2d2d;
+}
+
+.wlv-curve-inventory .wlv-panel-heading,
+.wlv-right-panel .wlv-panel-heading {
+  background: #1e1e1e;
+  border-bottom: 1px solid #2d2d2d;
+  color: #e5e7eb;
+}
+
+.wlv-curve-inventory .wlv-panel-heading h2,
+.wlv-right-panel .wlv-panel-heading h2 {
+  color: #e5e7eb;
+}
+
+.wlv-curve-inventory .wlv-panel-heading span,
+.wlv-right-panel .wlv-panel-heading span {
+  border-color: #3f3f46;
+  background: #171717;
+  color: #a1a1aa;
+}
+
+.wlv-search-row input,
+.wlv-search-row button,
+.wlv-right-panel input,
+.wlv-right-panel select,
+.wlv-right-panel button {
+  border: 1px solid #3f3f46;
+  background: #171717;
+  color: #e5e7eb;
+}
+
+.wlv-search-row input::placeholder,
+.wlv-right-panel input::placeholder {
+  color: #71717a;
+}
+
+.wlv-search-row button:hover:not(:disabled),
+.wlv-right-panel button:hover:not(:disabled) {
+  border-color: #60a5fa;
+  color: #60a5fa;
+}
+
+.wlv-inventory-tabs button {
+  border-bottom-color: #303030;
+  color: #a1a1aa;
+}
+
+.wlv-inventory-tabs .active {
+  color: #22c55e;
+  border-bottom-color: #22c55e;
+}
+
+.wlv-curve-group-title {
+  color: #a1a1aa;
+}
+
+.wlv-curve-row {
+  border-color: #303030;
+  background: #191919;
+  color: #d4d4d8;
+}
+
+.wlv-curve-row:hover {
+  border-color: #4b5563;
+  background: #202124;
+}
+
+.wlv-curve-row.assigned {
+  background: #17324e;
+  border-color: #2b6ea6;
+  color: #f4f8ff;
+}
+
+.wlv-curve-row.checked-in-track {
+  box-shadow: inset 3px 0 0 #22c55e;
+}
+
+.wlv-curve-row.inventory-selected {
+  outline: 1px solid #60a5fa;
+  outline-offset: -1px;
+}
+
+.wlv-checkbox.checked {
+  background: transparent;
+  border-color: #22c55e;
+  color: #22c55e;
+}
+
+.wlv-curve-assignment-hint,
+.wlv-drop-help,
+.wlv-property-note {
+  border-color: #3f3f46;
+  background: #171717;
+  color: #a1a1aa;
+}
+
+.wlv-property-section {
+  border: 1px solid #303030;
+  background: #171717;
+  color: #e5e7eb;
+}
+
+.wlv-property-section h3 {
+  color: #e5e7eb;
+}
+
+.wlv-right-panel label,
+.well-header dt {
+  color: #a1a1aa;
+}
+
+.well-header dd {
+  color: #e5e7eb;
+}
+
+.wlv-status-footer {
+  border-top: 1px solid #2d2d2d;
+  background: #151515;
+  color: #8b8b8b;
+}
+
+.wlv-track-backdrop-dark .wlv-shared-go-to-depth-marker span {
+  background: #111111;
+}
+
+/* WL-PROTOTYPE-011B — SDV panel typography + unified track canvas */
+.wlv-prototype-workspace {
+  background: #111111;
+}
+
+.wlv-track-backdrop-light .wlv-track-canvas,
+.wlv-track-backdrop-light .wlv-track-strip {
+  background: #dce3ea;
+}
+
+.wlv-track-backdrop-dark .wlv-track-canvas,
+.wlv-track-backdrop-dark .wlv-track-strip {
+  background: #101010;
+}
+
+.wlv-curve-inventory,
+.wlv-right-panel {
+  background: #111111;
+  color: #d4d4d8;
+  font-size: 12px;
+}
+
+.wlv-curve-inventory {
+  border-right: 1px solid #2d2d2d;
+}
+
+.wlv-right-panel {
+  border-left: 1px solid #2d2d2d;
+}
+
+.wlv-curve-inventory .wlv-panel-heading,
+.wlv-right-panel .wlv-panel-heading {
+  height: 38px;
+  padding: 0 12px;
+  background: #1e1e1e;
+  border-bottom: 1px solid #2d2d2d;
+  color: #e5e7eb;
+}
+
+.wlv-curve-inventory .wlv-panel-heading h2,
+.wlv-right-panel .wlv-panel-heading h2 {
+  margin: 0;
+  color: #e5e7eb;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.wlv-curve-inventory .wlv-panel-heading span,
+.wlv-right-panel .wlv-panel-heading span {
+  min-width: 22px;
+  height: 20px;
+  border-color: #3f3f46;
+  background: #171717;
+  color: #a1a1aa;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.wlv-search-row {
+  gap: 6px;
+  padding: 9px 10px 7px;
+}
+
+.wlv-search-row input,
+.wlv-search-row button,
+.wlv-right-panel input,
+.wlv-right-panel select,
+.wlv-right-panel button {
+  height: 29px;
+  border: 1px solid #3f3f46;
+  border-radius: 4px;
+  background: #171717;
+  color: #e5e7eb;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.wlv-search-row input::placeholder,
+.wlv-right-panel input::placeholder {
+  color: #71717a;
+}
+
+.wlv-search-row button,
+.wlv-right-panel button {
+  background: transparent;
+}
+
+.wlv-inventory-tabs {
+  padding: 0 10px 6px;
+}
+
+.wlv-inventory-tabs button {
+  height: 25px;
+  color: #a1a1aa;
+  border-bottom-color: #3f3f46;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.wlv-inventory-tabs .active {
+  color: #22c55e;
+  border-bottom-color: #22c55e;
+  font-weight: 700;
+}
+
+.wlv-inventory-list {
+  padding: 0 8px 10px;
+}
+
+.wlv-curve-group {
+  margin-bottom: 9px;
+}
+
+.wlv-curve-group-title {
+  padding: 4px 5px 5px;
+  color: #a1a1aa;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.wlv-curve-row {
+  min-height: 27px;
+  margin-bottom: 2px;
+  padding: 2px 5px;
+  border-color: #2f3338;
+  background: #171717;
+  color: #d4d4d8;
+}
+
+.wlv-curve-row.assigned {
+  background: #123452;
+  border-color: #1f5f9f;
+  color: #e5e7eb;
+}
+
+.wlv-curve-row.checked-in-track {
+  box-shadow: inset 2px 0 0 #22c55e;
+}
+
+.wlv-curve-row.inventory-selected {
+  outline: 1px solid #b7791f;
+  outline-offset: -1px;
+}
+
+.wlv-curve-row strong {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.wlv-curve-row span,
+.wlv-curve-row em {
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.05;
+}
+
+.wlv-checkbox {
+  width: 15px;
+  height: 15px;
+  border-radius: 2px;
+  font-size: 10px;
+}
+
+.wlv-checkbox.checked {
+  background: transparent;
+  border-color: #22c55e;
+  color: #22c55e;
+}
+
+.wlv-drop-help,
+.wlv-curve-assignment-hint {
+  margin: 9px 10px;
+  padding: 9px 10px;
+  border-color: #3f3f46;
+  background: #171717;
+  color: #a1a1aa;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.wlv-right-panel .wlv-panel-heading span {
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 10px;
+  text-transform: lowercase;
+}
+
+.wlv-property-section {
+  margin: 10px;
+  padding: 11px 12px;
+  border: 1px solid #2d2d2d;
+  border-radius: 6px;
+  background: #171717;
+  color: #d4d4d8;
+}
+
+.wlv-property-section h3 {
+  margin: 0 0 10px;
+  color: #e5e7eb;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.wlv-right-panel label {
+  gap: 4px;
+  margin-bottom: 8px;
+  color: #a1a1aa;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.wlv-right-panel input,
+.wlv-right-panel select {
+  min-height: 29px;
+  padding: 0 8px;
+}
+
+.wlv-property-note {
+  margin-top: 8px;
+  padding: 8px;
+  border-color: #3f3f46;
+  background: #141414;
+  color: #a1a1aa;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.wlv-selected-curve-title {
+  grid-template-columns: 11px 48px 1fr;
+  gap: 7px;
+  margin-bottom: 9px;
+  font-size: 12px;
+}
+
+.wlv-selected-curve-title strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.wlv-selected-curve-title span {
+  color: #d4d4d8;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.well-header dl {
+  grid-template-columns: 74px 1fr;
+  gap: 5px 9px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.well-header dt {
+  color: #a1a1aa;
+  font-weight: 400;
+}
+
+.well-header dd {
+  color: #d4d4d8;
+  font-weight: 400;
+}
+
+.wlv-track-canvas {
+  border-left: 1px solid #2d2d2d;
+  border-right: 1px solid #2d2d2d;
+}
+
+.wlv-track-backdrop-light .wlv-track-canvas,
+.wlv-track-backdrop-light .wlv-track-strip {
+  background: #dce3ea;
+}
+
+.wlv-track-backdrop-dark .wlv-track-canvas,
+.wlv-track-backdrop-dark .wlv-track-strip {
+  background: #101010;
 }

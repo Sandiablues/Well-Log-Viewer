@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import '../../styles/track-layout-prototype.css';
 import { curveCatalog, initialTracks, wellHeader } from './mockTrackLayoutData';
 import type {
@@ -24,7 +26,188 @@ import {
   resolveTrackLattice,
 } from './trackLayoutModel';
 
-const depthTicks = [2400, 2600, 2800, 3000, 3200, 3400, 3600, 3800, 4000, 4200, 4400];
+type DepthViewRange = {
+  min: number;
+  max: number;
+};
+
+type IntervalSelectionState = {
+  startDepth: number;
+  currentDepth: number;
+  startY: number;
+  currentY: number;
+  dragging: boolean;
+};
+
+type DragPanState = {
+  startY: number;
+  startRange: DepthViewRange;
+};
+
+type TrackResizeState = {
+  trackId: string;
+  startX: number;
+  startWidth: number;
+};
+
+const FULL_DEPTH_RANGE: DepthViewRange = { min: 2400, max: 4400 };
+const DEFAULT_DEPTH_RANGE: DepthViewRange = FULL_DEPTH_RANGE;
+const CURVE_TRACK_MIN_WIDTH = 120;
+const CURVE_TRACK_MAX_WIDTH = 420;
+const CURVE_TRACK_WIDTH_STEP = 24;
+const CURVE_TRACK_RESET_WIDTH = 220;
+const GO_TO_REVIEW_WINDOW_M = 600;
+
+function clampDepthRange(range: DepthViewRange, fullRange: DepthViewRange = FULL_DEPTH_RANGE): DepthViewRange {
+  const span = Math.max(50, range.max - range.min);
+  let min = range.min;
+  let max = range.max;
+
+  if (min < fullRange.min) {
+    min = fullRange.min;
+    max = Math.min(fullRange.max, min + span);
+  }
+
+  if (max > fullRange.max) {
+    max = fullRange.max;
+    min = Math.max(fullRange.min, max - span);
+  }
+
+  if (min >= max) {
+    return { ...fullRange };
+  }
+
+  return {
+    min: Math.round(min),
+    max: Math.round(max),
+  };
+}
+
+function makeDepthTicks(range: DepthViewRange, count = 11): number[] {
+  const safeCount = Math.max(2, count);
+  const step = (range.max - range.min) / (safeCount - 1);
+  return Array.from({ length: safeCount }, (_, index) => Math.round(range.min + step * index));
+}
+
+function depthRangeLabel(range: DepthViewRange): string {
+  return `${range.min}–${range.max} m MD`;
+}
+
+type DemoNavIconKey = 'log-viewer' | 'data' | 'sources' | 'toolbox' | 'settings';
+
+type DemoNavItem = {
+  label: string;
+  icon: DemoNavIconKey;
+  active?: boolean;
+};
+
+function DemoRailIcon({ icon }: { icon: DemoNavIconKey }) {
+  const commonProps = {
+    width: 22,
+    height: 22,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    focusable: false,
+  };
+
+  if (icon === 'log-viewer') {
+    return (
+      <svg {...commonProps} aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <circle cx="8.5" cy="9" r="1.5" />
+        <path d="M21 15l-5-5L5 21" />
+      </svg>
+    );
+  }
+
+  if (icon === 'data') {
+    return (
+      <svg {...commonProps} aria-hidden="true">
+        <ellipse cx="12" cy="5" rx="9" ry="3" />
+        <path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5" />
+        <path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3" />
+      </svg>
+    );
+  }
+
+  if (icon === 'sources') {
+    return (
+      <svg {...commonProps} aria-hidden="true">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="17 8 12 3 7 8" />
+        <line x1="12" y1="3" x2="12" y2="15" />
+      </svg>
+    );
+  }
+
+  if (icon === 'toolbox') {
+    return (
+      <svg {...commonProps} aria-hidden="true">
+        <path d="M14.7 6.3a4 4 0 0 0-5.66 5.66L3.4 17.6a2 2 0 1 0 2.83 2.83l5.64-5.64a4 4 0 0 0 5.66-5.66l-2.83 2.83-2.83-2.83 2.83-2.83z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...commonProps} aria-hidden="true">
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function DemoShellNavItem({ item }: { item: DemoNavItem }) {
+  return (
+    <button
+      type="button"
+      className={`wlv-demo-nav-item ${item.active ? 'active' : ''}`}
+      aria-current={item.active ? 'page' : undefined}
+      onClick={(event) => event.preventDefault()}
+      title={item.label}
+    >
+      <span className="wlv-demo-nav-icon" aria-hidden="true"><DemoRailIcon icon={item.icon} /></span>
+      <span className="wlv-demo-nav-label">{item.label}</span>
+    </button>
+  );
+}
+
+function DemoShellRail() {
+  const topItems: DemoNavItem[] = [
+    { label: 'Log Viewer', icon: 'log-viewer', active: true },
+    { label: 'Data', icon: 'data' },
+  ];
+
+  const bottomItems: DemoNavItem[] = [
+    { label: 'Sources', icon: 'sources' },
+    { label: 'Toolbox', icon: 'toolbox' },
+    { label: 'Settings', icon: 'settings' },
+  ];
+
+  return (
+    <aside className="wlv-demo-left-rail" aria-label="Well Log Viewer navigation">
+      <div className="wlv-demo-rail-brand">
+        <span>Well Log</span>
+        <strong>Viewer</strong>
+      </div>
+
+      <div className="wlv-demo-nav-top">
+        {topItems.map((item) => <DemoShellNavItem key={item.label} item={item} />)}
+      </div>
+
+      <div className="wlv-demo-nav-bottom">
+        {bottomItems.map((item) => <DemoShellNavItem key={item.label} item={item} />)}
+      </div>
+    </aside>
+  );
+}
+
+function rangesEqual(a: DepthViewRange, b: DepthViewRange): boolean {
+  return a.min === b.min && a.max === b.max;
+}
 
 function sortTracks(tracks: WellLogTrack[]): WellLogTrack[] {
   return [...tracks].sort((a, b) => a.trackIndex - b.trackIndex);
@@ -34,29 +217,150 @@ function reindexTracks(tracks: WellLogTrack[]): WellLogTrack[] {
   return sortTracks(tracks).map((track, index) => ({ ...track, trackIndex: index }));
 }
 
+function reindexTracksInCurrentOrder(tracks: WellLogTrack[]): WellLogTrack[] {
+  return tracks.map((track, index) => ({ ...track, trackIndex: index }));
+}
+
+function moveTrackById(tracks: WellLogTrack[], trackId: string, direction: -1 | 1): WellLogTrack[] {
+  const ordered = sortTracks(tracks);
+  const fromIndex = ordered.findIndex((track) => track.trackId === trackId);
+
+  if (fromIndex < 0) return tracks;
+
+  const toIndex = fromIndex + direction;
+  if (toIndex < 0 || toIndex >= ordered.length) return tracks;
+
+  const next = [...ordered];
+  const [movingTrack] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, movingTrack);
+
+  return reindexTracksInCurrentOrder(next);
+}
+
 function nextTrackId(trackType: ActiveTrackType): string {
   return `track-${trackType}-${Date.now()}-${Math.round(Math.random() * 100000)}`;
 }
 
-function curvePath(curve: CurveCatalogItem, assignment: CurveAssignment, trackPosition: number): string {
-  const phase = curve.mnemonic.length * 0.61 + trackPosition * 0.47;
-  const points: string[] = [];
-  const width = 220;
-  const mid = width / 2;
-  const amplitude = curve.defaultLattice === 'logarithmic' ? 62 : 48;
-  const styleOffset = assignment.lineStyle === 'dot' ? 15 : assignment.lineStyle === 'dash' ? -12 : 0;
+const TRACK_STRIP_PADDING_PX = 10;
+const TRACK_HEADER_HEIGHT_PX = 108;
+const TRACK_BODY_HEIGHT_PX = 650;
+const TRACK_HEADER_TITLE_HEIGHT_PX = 24;
+const TRACK_HEADER_SUBTITLE_HEIGHT_PX = 28;
+const TRACK_CURVE_HEADER_ROW_HEIGHT_PX = 24;
+const TRACK_HEADER_BOTTOM_PADDING_PX = 8;
+const CURVE_VIEW_HEIGHT = TRACK_BODY_HEIGHT_PX;
+const CURVE_VIEW_PADDING_Y = 0;
+const CURVE_VIEW_PADDING_X = 10;
 
-  for (let i = 0; i <= 58; i += 1) {
-    const t = i / 58;
-    const y = 16 + t * 560;
-    const wiggle =
-      Math.sin(t * Math.PI * (7 + curve.mnemonic.length) + phase) * amplitude +
-      Math.sin(t * Math.PI * 31 + phase * 0.3) * amplitude * 0.26;
-    const x = Math.max(8, Math.min(width - 8, mid + wiggle + styleOffset));
-    points.push(`${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`);
+type MockCurveSample = {
+  depth: number;
+  value: number;
+};
+
+function depthToY(depth: number, viewRange: DepthViewRange): number {
+  const span = Math.max(1, viewRange.max - viewRange.min);
+  const t = (depth - viewRange.min) / span;
+  return clampValue(t, 0, 1) * TRACK_BODY_HEIGHT_PX;
+}
+
+function yToDepth(y: number, viewRange: DepthViewRange, bodyHeight = TRACK_BODY_HEIGHT_PX): number {
+  const ratio = bodyHeight <= 0 ? 0 : clampValue(y / bodyHeight, 0, 1);
+  return viewRange.min + (viewRange.max - viewRange.min) * ratio;
+}
+
+function clampValue(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function clampCurveTrackWidth(width: number): number {
+  return Math.round(clampValue(width, CURVE_TRACK_MIN_WIDTH, CURVE_TRACK_MAX_WIDTH));
+}
+
+function sharedTrackHeaderHeightPx(tracks: WellLogTrack[]): number {
+  const maxCurveRows = tracks.reduce((maxRows, track) => (
+    track.trackType === 'curve' ? Math.max(maxRows, orderedCurves(track).length) : maxRows
+  ), 0);
+
+  const requiredCurveHeaderHeight =
+    TRACK_HEADER_TITLE_HEIGHT_PX +
+    TRACK_HEADER_SUBTITLE_HEIGHT_PX +
+    maxCurveRows * TRACK_CURVE_HEADER_ROW_HEIGHT_PX +
+    TRACK_HEADER_BOTTOM_PADDING_PX;
+
+  return Math.max(TRACK_HEADER_HEIGHT_PX, requiredCurveHeaderHeight);
+}
+
+function valueToX(value: number, assignment: CurveAssignment, lattice: CurveTrack['lattice'], trackWidth: number): number {
+  const safeTrackWidth = Math.max(CURVE_TRACK_MIN_WIDTH, trackWidth);
+  const drawableWidth = safeTrackWidth - CURVE_VIEW_PADDING_X * 2;
+  const min = assignment.scaleMin;
+  const max = assignment.scaleMax;
+
+  if (lattice === 'logarithmic' && min > 0 && max > 0 && max !== min) {
+    const logMin = Math.log10(min);
+    const logMax = Math.log10(max);
+    const safeValue = Math.max(Math.min(value, Math.max(min, max)), Math.min(min, max));
+    const t = (Math.log10(safeValue) - logMin) / (logMax - logMin);
+    return CURVE_VIEW_PADDING_X + Math.max(0, Math.min(1, t)) * drawableWidth;
   }
 
-  return points.join(' ');
+  const denominator = max - min;
+  if (denominator === 0) return trackWidth / 2;
+
+  const t = (value - min) / denominator;
+  return CURVE_VIEW_PADDING_X + Math.max(0, Math.min(1, t)) * drawableWidth;
+}
+
+function makeMockCurveSamples(curve: CurveCatalogItem, assignment: CurveAssignment, trackPosition: number): MockCurveSample[] {
+  const samples: MockCurveSample[] = [];
+  const phase = curve.mnemonic.length * 0.61 + trackPosition * 0.47;
+  const minValue = Math.min(assignment.scaleMin, assignment.scaleMax);
+  const maxValue = Math.max(assignment.scaleMin, assignment.scaleMax);
+  const valueMid = (assignment.scaleMin + assignment.scaleMax) / 2;
+  const valueAmp = Math.max(0.0001, Math.abs(assignment.scaleMax - assignment.scaleMin) * 0.28);
+  const depthSpan = FULL_DEPTH_RANGE.max - FULL_DEPTH_RANGE.min;
+
+  for (let i = 0; i <= 260; i += 1) {
+    const t = i / 260;
+    const depth = FULL_DEPTH_RANGE.min + depthSpan * t;
+    const wiggle =
+      Math.sin(t * Math.PI * (8 + curve.mnemonic.length) + phase) * valueAmp +
+      Math.sin(t * Math.PI * 31 + phase * 0.3) * valueAmp * 0.28;
+    const styleOffset = assignment.lineStyle === 'dot' ? valueAmp * 0.18 : assignment.lineStyle === 'dash' ? -valueAmp * 0.14 : 0;
+    const value = Math.max(minValue, Math.min(maxValue, valueMid + wiggle + styleOffset));
+    samples.push({ depth, value });
+  }
+
+  return samples;
+}
+
+function visibleCurveSamples(
+  curve: CurveCatalogItem,
+  assignment: CurveAssignment,
+  trackPosition: number,
+  viewRange: DepthViewRange,
+): MockCurveSample[] {
+  const padding = Math.max(10, (viewRange.max - viewRange.min) * 0.03);
+  return makeMockCurveSamples(curve, assignment, trackPosition).filter((sample) => (
+    sample.depth >= viewRange.min - padding && sample.depth <= viewRange.max + padding
+  ));
+}
+
+function curvePath(
+  curve: CurveCatalogItem,
+  assignment: CurveAssignment,
+  trackPosition: number,
+  viewRange: DepthViewRange,
+  lattice: CurveTrack['lattice'],
+  trackWidth: number,
+): string {
+  const samples = visibleCurveSamples(curve, assignment, trackPosition, viewRange);
+
+  return samples.map((sample, index) => {
+    const x = valueToX(sample.value, assignment, lattice, trackWidth);
+    const y = depthToY(sample.depth, viewRange);
+    return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(' ');
 }
 
 function serialiseCurveDrag(payload: DragCurvePayload): string {
@@ -64,13 +368,19 @@ function serialiseCurveDrag(payload: DragCurvePayload): string {
 }
 
 function CurveInventory({
-  assignedCurveIds,
+  curveUsageCounts,
+  selectedTrackCurveIds,
   selectedCurveIds,
+  assignmentEnabled,
   onSelectCurve,
+  onToggleCurveInSelectedTrack,
 }: {
-  assignedCurveIds: Set<string>;
+  curveUsageCounts: Map<string, number>;
+  selectedTrackCurveIds: Set<string>;
   selectedCurveIds: Set<string>;
+  assignmentEnabled: boolean;
   onSelectCurve: (curveId: string) => void;
+  onToggleCurveInSelectedTrack: (curveId: string, checked: boolean) => void;
 }) {
   const groups = useMemo(
     () => Array.from(new Set(curveCatalog.map((curve) => curve.curveClass))).filter((group) => group !== 'depth'),
@@ -92,29 +402,58 @@ function CurveInventory({
         <button type="button">Selected</button>
         <button type="button">Aliases</button>
       </div>
+      {!assignmentEnabled && (
+        <div className="wlv-curve-assignment-hint">
+          Select a curve track to assign curves. Highlighted rows are already used elsewhere in the layout.
+        </div>
+      )}
       <div className="wlv-inventory-list">
         {groups.map((group) => (
           <section key={group} className="wlv-curve-group">
             <div className="wlv-curve-group-title">{group}</div>
             {curveCatalog.filter((curve) => curve.curveClass === group).map((curve) => {
-              const assigned = assignedCurveIds.has(curve.curveId);
+              const usageCount = curveUsageCounts.get(curve.curveId) ?? 0;
+              const usedAnywhere = usageCount > 0;
+              const checkedInSelectedTrack = selectedTrackCurveIds.has(curve.curveId);
+
               return (
-                <button
+                <div
                   key={curve.curveId}
-                  type="button"
-                  className={`wlv-curve-row ${assigned ? 'assigned' : ''} ${selectedCurveIds.has(curve.curveId) ? 'inventory-selected' : ''} ${curve.recognised ? '' : 'unrecognised'}`}
+                  role="button"
+                  tabIndex={0}
+                  className={`wlv-curve-row ${usedAnywhere ? 'assigned' : ''} ${checkedInSelectedTrack ? 'checked-in-track' : ''} ${selectedCurveIds.has(curve.curveId) ? 'inventory-selected' : ''} ${curve.recognised ? '' : 'unrecognised'}`}
                   draggable
                   onClick={() => onSelectCurve(curve.curveId)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onSelectCurve(curve.curveId);
+                    }
+                  }}
                   onDragStart={(event) => {
                     event.dataTransfer.setData('application/json', serialiseCurveDrag({ dragType: 'curve', curveId: curve.curveId }));
                     event.dataTransfer.effectAllowed = 'move';
                   }}
                 >
-                  <span className="wlv-checkbox">{assigned ? '✓' : ''}</span>
+                  <button
+                    type="button"
+                    className={`wlv-checkbox ${checkedInSelectedTrack ? 'checked' : ''}`}
+                    disabled={!assignmentEnabled}
+                    aria-label={`${checkedInSelectedTrack ? 'Remove' : 'Add'} ${curve.mnemonic} ${checkedInSelectedTrack ? 'from' : 'to'} selected track`}
+                    title={assignmentEnabled ? 'Assign/remove curve for selected track' : 'Select a curve track to assign curves'}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (!assignmentEnabled) return;
+                      onToggleCurveInSelectedTrack(curve.curveId, !checkedInSelectedTrack);
+                    }}
+                  >
+                    {checkedInSelectedTrack ? '✓' : ''}
+                  </button>
                   <strong>{curve.mnemonic}</strong>
                   <span>{curve.description}</span>
                   <em>{curve.unit}</em>
-                </button>
+                  {usageCount > 1 && <span className="wlv-curve-count" title="Curve is used in multiple tracks">{usageCount}</span>}
+                </div>
               );
             })}
           </section>
@@ -145,188 +484,443 @@ const defaultAddTrackDraft: AddTrackDraft = {
   scaleMode: 'per_curve',
 };
 
+type TrackBackdropMode = 'light' | 'dark';
+
 function Toolbar({
   selectedTrack,
-  selectedInventoryCount,
+  pendingAddTrackCurveCount,
+  viewDepthRange,
+  fullDepthRange,
+  intervalZoomActive,
+  goToDepthValue,
+  onGoToDepthValueChange,
+  trackBackdropMode,
+  onTrackBackdropModeChange,
   onAddTrack,
   onDeleteTrack,
   onMoveSelectedTrack,
+  canMoveSelectedTrackLeft,
+  canMoveSelectedTrackRight,
+  canAdjustSelectedCurveTrackWidthDown,
+  canAdjustSelectedCurveTrackWidthUp,
+  onAdjustSelectedCurveTrackWidth,
+  onResetCurveTrackWidths,
+  onZoomIn,
+  onZoomOut,
+  onPreviousView,
+  onFitDepth,
+  onResetView,
+  onToggleIntervalZoom,
+  onGoToDepth,
+  onAddTrackCurveSelectionModeChange,
 }: {
   selectedTrack: WellLogTrack | null;
-  selectedInventoryCount: number;
+  pendingAddTrackCurveCount: number;
+  viewDepthRange: DepthViewRange;
+  fullDepthRange: DepthViewRange;
+  intervalZoomActive: boolean;
+  goToDepthValue: string;
+  onGoToDepthValueChange: (value: string) => void;
+  trackBackdropMode: TrackBackdropMode;
+  onTrackBackdropModeChange: (mode: TrackBackdropMode) => void;
   onAddTrack: (draft: AddTrackDraft) => void;
   onDeleteTrack: () => void;
   onMoveSelectedTrack: (direction: -1 | 1) => void;
+  canMoveSelectedTrackLeft: boolean;
+  canMoveSelectedTrackRight: boolean;
+  canAdjustSelectedCurveTrackWidthDown: boolean;
+  canAdjustSelectedCurveTrackWidthUp: boolean;
+  onAdjustSelectedCurveTrackWidth: (delta: number) => void;
+  onResetCurveTrackWidths: () => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onPreviousView: () => void;
+  onFitDepth: () => void;
+  onResetView: () => void;
+  onToggleIntervalZoom: () => void;
+  onGoToDepth: () => void;
+  onAddTrackCurveSelectionModeChange: (active: boolean) => void;
 }) {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [draft, setDraft] = useState<AddTrackDraft>(defaultAddTrackDraft);
+  const [panelPosition, setPanelPosition] = useState({ top: 128, left: 360 });
+  const dragStateRef = useRef<{
+    startClientX: number;
+    startClientY: number;
+    startLeft: number;
+    startTop: number;
+  } | null>(null);
 
   const updateDraft = (patch: Partial<AddTrackDraft>) => {
     setDraft((current) => ({ ...current, ...patch }));
   };
 
-  const addTrackLabel = draft.trackType === 'depth'
-    ? `Add ${draft.depthBasis} Depth Track`
-    : draft.curveSource === 'selected' && selectedInventoryCount > 0
-      ? `Add Curve Track from ${selectedInventoryCount} selected`
-      : 'Add Empty Curve Track';
+  const clampPanelPosition = (position: { top: number; left: number }) => {
+    const margin = 12;
+    const panelWidth = 420;
+    return {
+      top: Math.max(margin, Math.min(position.top, window.innerHeight - margin - 80)),
+      left: Math.max(margin, Math.min(position.left, window.innerWidth - panelWidth - margin)),
+    };
+  };
 
-  return (
-    <div className="wlv-track-toolbar">
-      <div className="wlv-toolbar-group add-track-group">
-        <span>Track</span>
-        <div className="wlv-add-track-control">
+  const openAddTrackBuilder = () => {
+    setPanelPosition(clampPanelPosition({
+      top: 118,
+      left: Math.max(280, Math.round(window.innerWidth * 0.32)),
+    }));
+    setBuilderOpen(true);
+  };
+
+  const closeAddTrackBuilder = () => {
+    setBuilderOpen(false);
+    dragStateRef.current = null;
+    onAddTrackCurveSelectionModeChange(false);
+  };
+
+  const toggleAddTrackBuilder = () => {
+    if (builderOpen) {
+      closeAddTrackBuilder();
+      return;
+    }
+
+    openAddTrackBuilder();
+  };
+
+  const selectTrackType = (trackType: ActiveTrackType) => {
+    updateDraft({ trackType });
+    onAddTrackCurveSelectionModeChange(trackType === 'curve' && draft.curveSource === 'selected');
+  };
+
+  const selectCurveSource = (curveSource: AddTrackDraft['curveSource']) => {
+    updateDraft({ curveSource });
+    onAddTrackCurveSelectionModeChange(curveSource === 'selected');
+  };
+
+  const startPanelDrag = (event: ReactMouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    dragStateRef.current = {
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startLeft: panelPosition.left,
+      startTop: panelPosition.top,
+    };
+  };
+
+  useEffect(() => {
+    if (!builderOpen) return undefined;
+
+    const onMouseMove = (event: MouseEvent) => {
+      const dragState = dragStateRef.current;
+      if (!dragState) return;
+
+      setPanelPosition(clampPanelPosition({
+        top: dragState.startTop + event.clientY - dragState.startClientY,
+        left: dragState.startLeft + event.clientX - dragState.startClientX,
+      }));
+    };
+
+    const onMouseUp = () => {
+      dragStateRef.current = null;
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeAddTrackBuilder();
+      }
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    document.addEventListener('keydown', onKeyDown, true);
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [builderOpen, panelPosition.left, panelPosition.top]);
+
+  const addTrackLabel = 'Add track';
+
+  const addTrackBuilder = builderOpen ? createPortal(
+    <div
+      className="wlv-add-track-builder wlv-add-track-builder-draggable"
+      role="dialog"
+      aria-label="Add Track Builder"
+      style={{ top: panelPosition.top, left: panelPosition.left }}
+    >
+      <div className="builder-heading builder-drag-handle" onMouseDown={startPanelDrag}>
+        <strong>Add Track</strong>
+        <button
+          type="button"
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={closeAddTrackBuilder}
+          aria-label="Close Add Track Builder"
+        >
+          ×
+        </button>
+      </div>
+
+      <section className="builder-section">
+        <div className="builder-label">Track type</div>
+        <div className="builder-choice-grid">
           <button
             type="button"
-            className="wlv-add-track-button"
-            onClick={() => setBuilderOpen((open) => !open)}
-            aria-expanded={builderOpen}
+            className={draft.trackType === 'depth' ? 'active' : ''}
+            onClick={() => selectTrackType('depth')}
           >
-            + Add Track ▾
+            Depth
           </button>
-          {builderOpen && (
-            <div className="wlv-add-track-builder" role="dialog" aria-label="Add Track Builder">
-              <div className="builder-heading">
-                <strong>Add Track</strong>
-                <button type="button" onClick={() => setBuilderOpen(false)} aria-label="Close Add Track Builder">×</button>
-              </div>
-
-              <section className="builder-section">
-                <div className="builder-label">Track type</div>
-                <div className="builder-choice-grid">
-                  <button
-                    type="button"
-                    className={draft.trackType === 'depth' ? 'active' : ''}
-                    onClick={() => updateDraft({ trackType: 'depth' })}
-                  >
-                    Depth
-                  </button>
-                  <button
-                    type="button"
-                    className={draft.trackType === 'curve' ? 'active' : ''}
-                    onClick={() => updateDraft({ trackType: 'curve' })}
-                  >
-                    Curve
-                  </button>
-                  <button type="button" disabled title="Reserved for raster/core/lithology artifacts">Raster</button>
-                  <button type="button" disabled title="Reserved for marker datasets">Marker</button>
-                  <button type="button" disabled title="Reserved for interval datasets">Interval</button>
-                </div>
-              </section>
-
-              {draft.trackType === 'depth' && (
-                <section className="builder-section">
-                  <div className="builder-label">Depth subtype</div>
-                  <div className="builder-choice-grid three">
-                    {(['MD', 'TVD', 'TVDSS'] as DepthBasis[]).map((basis) => (
-                      <button
-                        key={basis}
-                        type="button"
-                        className={draft.depthBasis === basis ? 'active' : ''}
-                        onClick={() => updateDraft({ depthBasis: basis })}
-                      >
-                        {basis}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="builder-note">TVD/TVDSS are mock-enabled here; backend validation will eventually decide availability.</p>
-                </section>
-              )}
-
-              {draft.trackType === 'curve' && (
-                <>
-                  <section className="builder-section">
-                    <div className="builder-label">Curve source</div>
-                    <div className="builder-choice-grid two">
-                      <button
-                        type="button"
-                        className={draft.curveSource === 'empty' ? 'active' : ''}
-                        onClick={() => updateDraft({ curveSource: 'empty' })}
-                      >
-                        Empty
-                      </button>
-                      <button
-                        type="button"
-                        className={draft.curveSource === 'selected' ? 'active' : ''}
-                        disabled={selectedInventoryCount === 0}
-                        onClick={() => updateDraft({ curveSource: 'selected' })}
-                      >
-                        From selected ({selectedInventoryCount})
-                      </button>
-                    </div>
-                  </section>
-
-                  <section className="builder-section">
-                    <div className="builder-label">Lattice</div>
-                    <select
-                      value={draft.latticeMode}
-                      onChange={(event) => updateDraft({ latticeMode: event.target.value as AddTrackDraft['latticeMode'] })}
-                    >
-                      <option value="auto">Auto from front curve</option>
-                      <option value="linear">Linear override</option>
-                      <option value="logarithmic">Logarithmic override</option>
-                    </select>
-                  </section>
-
-                  <section className="builder-section">
-                    <div className="builder-label">Scale mode</div>
-                    <select value={draft.scaleMode} onChange={(event) => updateDraft({ scaleMode: event.target.value as ScaleMode })}>
-                      <option value="shared">Shared</option>
-                      <option value="per_curve">Per curve</option>
-                      <option value="dual">Dual</option>
-                    </select>
-                  </section>
-                </>
-              )}
-
-              <section className="builder-section">
-                <div className="builder-label">Insert position</div>
-                <select
-                  value={draft.insertMode}
-                  onChange={(event) => updateDraft({ insertMode: event.target.value as AddTrackDraft['insertMode'] })}
-                >
-                  <option value="before_selected">Before selected track</option>
-                  <option value="after_selected">After selected track</option>
-                  <option value="far_right">Far right</option>
-                </select>
-              </section>
-
-              <div className="builder-actions">
-                <button type="button" onClick={() => setBuilderOpen(false)}>Cancel</button>
-                <button
-                  type="button"
-                  className="builder-primary"
-                  onClick={() => {
-                    onAddTrack(draft);
-                    setBuilderOpen(false);
-                  }}
-                >
-                  {addTrackLabel}
-                </button>
-              </div>
-            </div>
-          )}
+          <button
+            type="button"
+            className={draft.trackType === 'curve' ? 'active' : ''}
+            onClick={() => selectTrackType('curve')}
+          >
+            Curve
+          </button>
+          <button type="button" disabled title="Reserved for raster/core/lithology artifacts">Raster</button>
+          <button type="button" disabled title="Reserved for marker datasets">Marker</button>
+          <button type="button" disabled title="Reserved for interval datasets">Interval</button>
         </div>
-        <button type="button" disabled={!selectedTrack} onClick={onDeleteTrack}>Delete Track</button>
-        <button type="button" disabled={!selectedTrack} onClick={() => onMoveSelectedTrack(-1)}>Move Left</button>
-        <button type="button" disabled={!selectedTrack} onClick={() => onMoveSelectedTrack(1)}>Move Right</button>
-      </div>
-      <div className="wlv-toolbar-spacer" />
-      <div className="wlv-toolbar-group">
-        <span>Template</span>
-        <select aria-label="Template">
-          <option>dbMap-style QAQC Layout</option>
-          <option>Corporate Triple Combo</option>
-          <option>Blank Layout</option>
+      </section>
+
+      {draft.trackType === 'depth' && (
+        <section className="builder-section">
+          <div className="builder-label">Depth subtype</div>
+          <div className="builder-choice-grid three">
+            {(['MD', 'TVD', 'TVDSS'] as DepthBasis[]).map((basis) => (
+              <button
+                key={basis}
+                type="button"
+                className={draft.depthBasis === basis ? 'active' : ''}
+                onClick={() => updateDraft({ depthBasis: basis })}
+              >
+                {basis}
+              </button>
+            ))}
+          </div>
+          <p className="builder-note">TVD/TVDSS are mock-enabled here; backend validation will eventually decide availability.</p>
+        </section>
+      )}
+
+      {draft.trackType === 'curve' && (
+        <>
+          <section className="builder-section">
+            <div className="builder-label">Curve source</div>
+            <div className="builder-choice-grid two">
+              <button
+                type="button"
+                className={draft.curveSource === 'empty' ? 'active' : ''}
+                onClick={() => selectCurveSource('empty')}
+              >
+                Empty
+              </button>
+              <button
+                type="button"
+                className={draft.curveSource === 'selected' ? 'active' : ''}
+                onClick={() => selectCurveSource('selected')}
+              >
+                From selected ({pendingAddTrackCurveCount})
+              </button>
+            </div>
+          </section>
+
+          <section className="builder-section">
+            <div className="builder-label">Lattice</div>
+            <select
+              value={draft.latticeMode}
+              onChange={(event) => updateDraft({ latticeMode: event.target.value as AddTrackDraft['latticeMode'] })}
+            >
+              <option value="auto">Auto from front curve</option>
+              <option value="linear">Linear override</option>
+              <option value="logarithmic">Logarithmic override</option>
+            </select>
+          </section>
+
+          <section className="builder-section">
+            <div className="builder-label">Scale mode</div>
+            <select value={draft.scaleMode} onChange={(event) => updateDraft({ scaleMode: event.target.value as ScaleMode })}>
+              <option value="shared">Shared</option>
+              <option value="per_curve">Per curve</option>
+              <option value="dual">Dual</option>
+            </select>
+          </section>
+        </>
+      )}
+
+      <section className="builder-section">
+        <div className="builder-label">Insert position</div>
+        <select
+          value={draft.insertMode}
+          onChange={(event) => updateDraft({ insertMode: event.target.value as AddTrackDraft['insertMode'] })}
+        >
+          <option value="before_selected">Before selected track</option>
+          <option value="after_selected">After selected track</option>
+          <option value="far_right">Far right</option>
         </select>
-        <button type="button">Save Layout</button>
-        <button type="button">Reset</button>
+      </section>
+
+      <div className="builder-actions">
+        <button type="button" onClick={closeAddTrackBuilder}>Cancel</button>
+        <button
+          type="button"
+          className="builder-primary"
+          onClick={() => {
+            onAddTrack(draft);
+            closeAddTrackBuilder();
+          }}
+        >
+          {addTrackLabel}
+        </button>
       </div>
-      <div className="wlv-toolbar-group">
-        <span>View</span>
-        <button type="button">Zoom +</button>
-        <button type="button">Zoom −</button>
-        <button type="button">Fit Depth</button>
+    </div>,
+    document.body,
+  ) : null;
+
+  return (
+    <div className="wlv-track-toolbar" aria-label="Well log viewer toolbar">
+      <div className="wlv-toolbar-group wlv-toolbar-group-track">
+        <span>Add / Delete Tracks</span>
+        <div className="wlv-toolbar-actions">
+          <div className="wlv-add-track-control">
+            <button
+              type="button"
+              className="wlv-add-track-button"
+              onClick={toggleAddTrackBuilder}
+              aria-expanded={builderOpen}
+            >
+              + Add Track ▾
+            </button>
+          </div>
+          {addTrackBuilder}
+          <button type="button" disabled={!selectedTrack} onClick={onDeleteTrack}>Delete</button>
+        </div>
+      </div>
+
+      <div className="wlv-toolbar-group wlv-toolbar-group-arrange">
+        <span>Move / Resize Tracks</span>
+        <div className="wlv-toolbar-actions">
+          <button
+            type="button"
+            disabled={!canMoveSelectedTrackLeft}
+            title={selectedTrack ? 'Move selected track left' : 'Select a track first'}
+            onClick={() => onMoveSelectedTrack(-1)}
+          >
+            Move ←
+          </button>
+          <button
+            type="button"
+            disabled={!canMoveSelectedTrackRight}
+            title={selectedTrack ? 'Move selected track right' : 'Select a track first'}
+            onClick={() => onMoveSelectedTrack(1)}
+          >
+            Move →
+          </button>
+          <button
+            type="button"
+            disabled={!canAdjustSelectedCurveTrackWidthDown}
+            title={selectedTrack?.trackType === 'curve' ? 'Contract selected curve track' : 'Select a curve track first'}
+            onClick={() => onAdjustSelectedCurveTrackWidth(-CURVE_TRACK_WIDTH_STEP)}
+          >
+            Width −
+          </button>
+          <button
+            type="button"
+            disabled={!canAdjustSelectedCurveTrackWidthUp}
+            title={selectedTrack?.trackType === 'curve' ? 'Widen selected curve track' : 'Select a curve track first'}
+            onClick={() => onAdjustSelectedCurveTrackWidth(CURVE_TRACK_WIDTH_STEP)}
+          >
+            Width +
+          </button>
+          <button
+            type="button"
+            onClick={onResetCurveTrackWidths}
+            title="Reset all curve tracks to uniform width; depth tracks remain unchanged"
+          >
+            Reset Widths
+          </button>
+        </div>
+      </div>
+
+      <div className="wlv-toolbar-group wlv-toolbar-group-view">
+        <span>Zoom / View</span>
+        <div className="wlv-toolbar-actions">
+          <button type="button" title="Zoom Out" aria-label="Zoom Out" onClick={onZoomOut}>−</button>
+          <button type="button" title="Zoom In" aria-label="Zoom In" onClick={onZoomIn}>+</button>
+          <button
+            type="button"
+            className={intervalZoomActive ? 'active' : ''}
+            title="Toggle interval zoom mode"
+            onClick={onToggleIntervalZoom}
+          >
+            Interval
+          </button>
+          <button type="button" onClick={onPreviousView}>Previous</button>
+          <button type="button" onClick={onFitDepth}>Fit</button>
+          <button type="button" onClick={onResetView}>Reset</button>
+          <strong className="wlv-depth-readout" title={`Full range ${depthRangeLabel(fullDepthRange)}`}>
+            View: {depthRangeLabel(viewDepthRange)}
+          </strong>
+          <input
+            className="wlv-go-to-depth-input"
+            aria-label="Go to depth"
+            value={goToDepthValue}
+            placeholder="Go to MD"
+            onChange={(event) => onGoToDepthValueChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') onGoToDepth();
+            }}
+          />
+          <button
+            type="button"
+            className={`wlv-go-to-depth-button ${goToDepthValue.trim() ? 'ready' : ''}`}
+            onClick={onGoToDepth}
+            title="Go to entered measured depth"
+            aria-label="Go to entered measured depth"
+          >
+            ✓
+          </button>
+        </div>
+      </div>
+
+      <div className="wlv-toolbar-group wlv-toolbar-group-template">
+        <span>Template / Presets</span>
+        <div className="wlv-toolbar-actions">
+          <select aria-label="Template preset">
+            <option>Standard QAQC Layout</option>
+            <option>Corporate Triple Combo</option>
+            <option>Blank Layout</option>
+          </select>
+          <button type="button">Save</button>
+          <button type="button">Reset Layout</button>
+        </div>
+      </div>
+
+      <div className="wlv-toolbar-spacer" />
+
+      <div className="wlv-toolbar-group wlv-toolbar-group-backdrop">
+        <span>Backdrop</span>
+        <div className="wlv-toolbar-actions">
+          <button
+            type="button"
+            className={trackBackdropMode === 'light' ? 'active' : ''}
+            onClick={() => onTrackBackdropModeChange('light')}
+            aria-pressed={trackBackdropMode === 'light'}
+            title="Use light grey track workspace backdrop"
+          >
+            Light
+          </button>
+          <button
+            type="button"
+            className={trackBackdropMode === 'dark' ? 'active' : ''}
+            onClick={() => onTrackBackdropModeChange('dark')}
+            aria-pressed={trackBackdropMode === 'dark'}
+            title="Use dark Seismic Viewer-style track workspace backdrop"
+          >
+            Dark
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -481,41 +1075,52 @@ function CurveHeaderStack({
   );
 }
 
-function DepthTrackView({ track }: { track: DepthTrack }) {
+function DepthTrackView({ track, depthTicks, viewDepthRange }: { track: DepthTrack; depthTicks: number[]; viewDepthRange: DepthViewRange }) {
   return (
     <div className="wlv-depth-track-body">
-      {depthTicks.map((depth) => (
-        <div key={`${track.trackId}-${depth}`} className="wlv-depth-tick">
-          <span>{depth}</span>
-        </div>
-      ))}
+      {depthTicks.map((depth) => {
+        const y = depthToY(depth, viewDepthRange);
+        return (
+          <div
+            key={`${track.trackId}-${depth}`}
+            className="wlv-depth-tick"
+            style={{ top: y }}
+          >
+            <span>{depth}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function CurveTrackView({ track }: { track: CurveTrack }) {
+function CurveTrackView({ track, depthTicks, viewDepthRange }: { track: CurveTrack; depthTicks: number[]; viewDepthRange: DepthViewRange }) {
   const ordered = orderedCurves(track);
   const backToFront = [...ordered].reverse();
   const lattice = resolveTrackLattice(track, curveCatalog);
+  const trackWidth = clampCurveTrackWidth(track.widthPx);
+  const gridWidth = lattice.lattice === 'logarithmic' ? 30 : 24;
+  const fillAnchorX = trackWidth / 2;
 
   return (
-    <svg className={`wlv-curve-track-svg ${lattice.lattice}`} viewBox="0 0 240 610" preserveAspectRatio="none">
+    <svg className={`wlv-curve-track-svg ${lattice.lattice}`} viewBox={`0 0 ${trackWidth} ${CURVE_VIEW_HEIGHT}`} preserveAspectRatio="none">
       <defs>
-        <pattern id={`grid-${track.trackId}`} width={lattice.lattice === 'logarithmic' ? '30' : '24'} height="30" patternUnits="userSpaceOnUse">
-          <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#e0e6ed" strokeWidth="1" />
+        <pattern id={`grid-${track.trackId}`} width={gridWidth} height="30" patternUnits="userSpaceOnUse">
+          <path d={`M ${gridWidth} 0 L 0 0 0 30`} fill="none" stroke="#e0e6ed" strokeWidth="1" />
         </pattern>
       </defs>
-      <rect x="0" y="0" width="240" height="610" fill={`url(#grid-${track.trackId})`} />
-      {depthTicks.map((_, index) => (
-        <line key={index} x1="0" x2="240" y1={20 + index * 55} y2={20 + index * 55} stroke="#aeb8c5" strokeWidth="1" />
-      ))}
+      <rect x="0" y="0" width={trackWidth} height={CURVE_VIEW_HEIGHT} fill={`url(#grid-${track.trackId})`} />
+      {depthTicks.map((depth) => {
+        const y = depthToY(depth, viewDepthRange);
+        return <line key={depth} x1="0" x2={trackWidth} y1={y} y2={y} stroke="#aeb8c5" strokeWidth="1" />;
+      })}
       {backToFront.map((assignment, index) => {
         const curve = curveById(curveCatalog, assignment.curveId);
-        const path = curvePath(curve, assignment, index);
+        const path = curvePath(curve, assignment, index, viewDepthRange, lattice.lattice, trackWidth);
         return (
           <g key={assignment.assignmentId}>
             {assignment.fillSide !== 'none' && (
-              <path d={`${path} L 120 590 L 120 20 Z`} fill={assignment.fillColor} stroke="none" opacity="0.55" />
+              <path d={`${path} L ${fillAnchorX} ${CURVE_VIEW_HEIGHT - CURVE_VIEW_PADDING_Y} L ${fillAnchorX} ${CURVE_VIEW_PADDING_Y} Z`} fill={assignment.fillColor} stroke="none" opacity="0.55" />
             )}
             <path
               d={path}
@@ -535,9 +1140,12 @@ function CurveTrackView({ track }: { track: CurveTrack }) {
 
 function TrackView({
   track,
+  sharedHeaderHeightPx,
   selected,
   selectedAssignmentId,
   openCurveMenu,
+  depthTicks,
+  viewDepthRange,
   onSelectTrack,
   onSelectCurve,
   onReorderCurve,
@@ -545,11 +1153,16 @@ function TrackView({
   onOpenCurveMenu,
   onCloseCurveMenu,
   onRemoveCurveFromTrack,
+  onStartCurveTrackResize,
+  resizingTrackId,
 }: {
   track: WellLogTrack;
+  sharedHeaderHeightPx: number;
   selected: boolean;
   selectedAssignmentId: string | null;
   openCurveMenu: { trackId: string; assignmentId: string } | null;
+  depthTicks: number[];
+  viewDepthRange: DepthViewRange;
   onSelectTrack: (trackId: string) => void;
   onSelectCurve: (trackId: string, assignmentId: string) => void;
   onReorderCurve: (trackId: string, assignmentId: string, toIndex: number) => void;
@@ -557,15 +1170,27 @@ function TrackView({
   onOpenCurveMenu: (trackId: string, assignmentId: string) => void;
   onCloseCurveMenu: () => void;
   onRemoveCurveFromTrack: (trackId: string, assignmentId: string) => void;
+  onStartCurveTrackResize: (trackId: string, startX: number, startWidth: number) => void;
+  resizingTrackId: string | null;
 }) {
-  const width = `${track.widthPx}px`;
+  const widthPx = track.trackType === 'curve' ? clampCurveTrackWidth(track.widthPx) : track.widthPx;
+  const width = `${widthPx}px`;
   const isCurveTrack = track.trackType === 'curve';
   const lattice = isCurveTrack ? resolveTrackLattice(track, curveCatalog) : null;
-
   return (
     <section
-      className={`wlv-track ${track.trackType} ${selected ? 'selected' : ''}`}
-      style={{ width, minWidth: width }}
+      className={`wlv-track ${track.trackType} ${selected ? 'selected' : ''} ${resizingTrackId === track.trackId ? 'resizing' : ''}`}
+      style={{ width, minWidth: width, height: `${sharedHeaderHeightPx + TRACK_BODY_HEIGHT_PX}px` }}
+      onMouseDownCapture={(event) => {
+        if (track.trackType !== 'curve' || !event.shiftKey || event.button !== 0) return;
+        const target = event.target;
+        if (!(target instanceof Element) || !target.closest('.wlv-track-body')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onCloseCurveMenu();
+        onSelectTrack(track.trackId);
+        onStartCurveTrackResize(track.trackId, event.clientX, widthPx);
+      }}
       onClick={() => {
         onCloseCurveMenu();
         onSelectTrack(track.trackId);
@@ -580,7 +1205,10 @@ function TrackView({
         if (payload) onMoveCurveToTrack(payload, track.trackId);
       }}
     >
-      <header className="wlv-track-header">
+      <header
+        className="wlv-track-header"
+        style={{ height: `${sharedHeaderHeightPx}px`, minHeight: `${sharedHeaderHeightPx}px`, flexBasis: `${sharedHeaderHeightPx}px` }}
+      >
         <div className="wlv-track-title-row">
           <strong>{track.title}</strong>
           <span>T{track.trackIndex + 1}</span>
@@ -591,12 +1219,12 @@ function TrackView({
         {track.trackType === 'curve' && (
           <>
             <div className="wlv-lattice-badge">
-              {lattice?.lattice} · {lattice?.source === 'user_override' ? 'override' : `front ${lattice?.frontCurve?.mnemonic ?? 'none'}`}
+              {lattice?.lattice} · {lattice?.source === 'user_override' ? 'override' : `front ${lattice?.frontCurve?.mnemonic ?? 'none'}`} · {widthPx}px
             </div>
             <CurveHeaderStack
               track={track}
               selectedAssignmentId={selectedAssignmentId}
-              openMenuAssignmentId={openCurveMenu?.trackId === track.trackId ? openCurveMenu.assignmentId : null}
+              openMenuAssignmentId={openCurveMenu?.trackId === track.trackId ? openCurveMenu?.assignmentId ?? null : null}
               onSelectCurve={onSelectCurve}
               onReorderCurve={onReorderCurve}
               onMoveCurveToTrack={onMoveCurveToTrack}
@@ -608,8 +1236,8 @@ function TrackView({
         )}
       </header>
       <div className="wlv-track-body">
-        {track.trackType === 'depth' ? <DepthTrackView track={track} /> : null}
-        {track.trackType === 'curve' ? <CurveTrackView track={track} /> : null}
+        {track.trackType === 'depth' ? <DepthTrackView track={track} depthTicks={depthTicks} viewDepthRange={viewDepthRange} /> : null}
+        {track.trackType === 'curve' ? <CurveTrackView track={track} depthTicks={depthTicks} viewDepthRange={viewDepthRange} /> : null}
       </div>
     </section>
   );
@@ -619,6 +1247,12 @@ function TrackCanvas({
   tracks,
   selection,
   openCurveMenu,
+  depthTicks,
+  viewDepthRange,
+  goToDepthMarker,
+  intervalZoomActive,
+  intervalSelection,
+  dragPanActive,
   onSelectTrack,
   onSelectCurve,
   onReorderCurve,
@@ -626,10 +1260,25 @@ function TrackCanvas({
   onOpenCurveMenu,
   onCloseCurveMenu,
   onRemoveCurveFromTrack,
+  onStartIntervalSelection,
+  onUpdateIntervalSelection,
+  onArmIntervalSelection,
+  onCompleteIntervalSelection,
+  onStartDragPan,
+  onUpdateDragPan,
+  onEndDragPan,
+  onStartCurveTrackResize,
+  resizingTrackId,
 }: {
   tracks: WellLogTrack[];
   selection: SelectionRef;
   openCurveMenu: { trackId: string; assignmentId: string } | null;
+  depthTicks: number[];
+  viewDepthRange: DepthViewRange;
+  goToDepthMarker: number | null;
+  intervalZoomActive: boolean;
+  intervalSelection: IntervalSelectionState | null;
+  dragPanActive: boolean;
   onSelectTrack: (trackId: string) => void;
   onSelectCurve: (trackId: string, assignmentId: string) => void;
   onReorderCurve: (trackId: string, assignmentId: string, toIndex: number) => void;
@@ -637,17 +1286,191 @@ function TrackCanvas({
   onOpenCurveMenu: (trackId: string, assignmentId: string) => void;
   onCloseCurveMenu: () => void;
   onRemoveCurveFromTrack: (trackId: string, assignmentId: string) => void;
+  onStartIntervalSelection: (depth: number, y: number) => void;
+  onUpdateIntervalSelection: (depth: number, y: number) => void;
+  onArmIntervalSelection: (depth: number, y: number) => void;
+  onCompleteIntervalSelection: (depth: number, y: number) => void;
+  onStartDragPan: (startY: number) => void;
+  onUpdateDragPan: (currentY: number, canvasHeight: number) => void;
+  onEndDragPan: () => void;
+  onStartCurveTrackResize: (trackId: string, startX: number, startWidth: number) => void;
+  resizingTrackId: string | null;
 }) {
+  const canvasRef = useRef<HTMLElement | null>(null);
+  const orderedTracks = sortTracks(tracks);
+  const sharedHeaderHeight = sharedTrackHeaderHeightPx(orderedTracks);
+
+  const canvasRectFromCanvas = () => canvasRef.current?.getBoundingClientRect() ?? null;
+
+  const bodyRectFromCanvas = () => {
+    return canvasRef.current?.querySelector('.wlv-track-body')?.getBoundingClientRect() ?? null;
+  };
+
+  const sharedBodyTopOffset = () => {
+    const canvasRect = canvasRectFromCanvas();
+    const bodyRect = bodyRectFromCanvas();
+    if (canvasRect && bodyRect) return bodyRect.top - canvasRect.top;
+    return TRACK_STRIP_PADDING_PX + sharedHeaderHeight;
+  };
+
+  const pointFromClientY = (clientY: number) => {
+    const rect = bodyRectFromCanvas() ?? canvasRectFromCanvas();
+    const height = rect?.height ?? TRACK_BODY_HEIGHT_PX;
+    const top = rect?.top ?? 0;
+    const y = clampValue(clientY - top, 0, height);
+    const depth = yToDepth(y, viewDepthRange, height);
+    return { depth, y, height };
+  };
+
+  const pointFromEvent = (event: ReactMouseEvent<HTMLElement>) => {
+    return pointFromClientY(event.clientY);
+  };
+
+  const shouldStartDragPan = (event: ReactMouseEvent<HTMLElement>) => {
+    if (intervalZoomActive || event.shiftKey || event.button !== 0) return false;
+    const target = event.target;
+    if (!(target instanceof Element)) return false;
+    return Boolean(target.closest('.wlv-track-body'));
+  };
+
+  useEffect(() => {
+    if (!dragPanActive) return undefined;
+
+    const handleDocumentMouseMove = (event: MouseEvent) => {
+      event.preventDefault();
+      const point = pointFromClientY(event.clientY);
+      onUpdateDragPan(point.y, point.height);
+    };
+
+    const handleDocumentMouseUp = (event: MouseEvent) => {
+      event.preventDefault();
+      onEndDragPan();
+    };
+
+    document.addEventListener('mousemove', handleDocumentMouseMove);
+    document.addEventListener('mouseup', handleDocumentMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleDocumentMouseMove);
+      document.removeEventListener('mouseup', handleDocumentMouseUp);
+    };
+  }, [dragPanActive, onEndDragPan, onUpdateDragPan, viewDepthRange]);
+
+  const intervalBand = intervalSelection
+    ? {
+        top: Math.min(intervalSelection.startY, intervalSelection.currentY),
+        height: Math.max(2, Math.abs(intervalSelection.currentY - intervalSelection.startY)),
+        startDepth: Math.min(intervalSelection.startDepth, intervalSelection.currentDepth),
+        endDepth: Math.max(intervalSelection.startDepth, intervalSelection.currentDepth),
+      }
+    : null;
+
+  const bodyTopOffset = sharedBodyTopOffset();
+
+  const sharedGoToMarkerY = typeof goToDepthMarker === 'number'
+    && goToDepthMarker >= viewDepthRange.min
+    && goToDepthMarker <= viewDepthRange.max
+    ? bodyTopOffset + depthToY(goToDepthMarker, viewDepthRange)
+    : null;
+
+  const sharedDepthGridLines = depthTicks.map((depth) => ({
+    depth,
+    y: bodyTopOffset + depthToY(depth, viewDepthRange),
+  }));
+
   return (
-    <main className="wlv-track-canvas">
+    <main
+      ref={canvasRef}
+      className={`wlv-track-canvas ${intervalZoomActive ? 'interval-zoom-active' : ''} ${dragPanActive ? 'drag-pan-active' : ''} ${resizingTrackId ? 'curve-resize-active' : ''}`}
+      onMouseDownCapture={(event) => {
+        if (intervalZoomActive) {
+          event.preventDefault();
+          event.stopPropagation();
+          const point = pointFromEvent(event);
+
+          if (intervalSelection && !intervalSelection.dragging) {
+            onCompleteIntervalSelection(point.depth, point.y);
+            return;
+          }
+
+          onStartIntervalSelection(point.depth, point.y);
+          return;
+        }
+
+        if (!shouldStartDragPan(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const { y } = pointFromEvent(event);
+        onStartDragPan(y);
+      }}
+      onMouseMoveCapture={(event) => {
+        if (intervalZoomActive && intervalSelection?.dragging) {
+          event.preventDefault();
+          event.stopPropagation();
+          const point = pointFromEvent(event);
+          onUpdateIntervalSelection(point.depth, point.y);
+          return;
+        }
+
+        // Drag-pan movement is handled by document-level listeners once MB1 drag starts.
+      }}
+      onMouseUpCapture={(event) => {
+        if (intervalZoomActive && intervalSelection?.dragging) {
+          event.preventDefault();
+          event.stopPropagation();
+          const point = pointFromEvent(event);
+
+          if (Math.abs(point.y - intervalSelection.startY) >= 8) {
+            onCompleteIntervalSelection(point.depth, point.y);
+            return;
+          }
+
+          onArmIntervalSelection(point.depth, point.y);
+          return;
+        }
+
+        // Drag-pan mouseup is handled by document-level listeners once MB1 drag starts.
+      }}
+    >
+      {intervalBand && (
+        <div
+          className={`wlv-interval-selection-band ${intervalSelection?.dragging ? 'dragging' : 'armed'}`}
+          style={{ top: bodyTopOffset + intervalBand.top, height: intervalBand.height }}
+        >
+          <span>
+            {intervalSelection?.dragging
+              ? `${Math.round(intervalBand.startDepth)}–${Math.round(intervalBand.endDepth)} m`
+              : intervalSelection
+                ? `Start ${Math.round(intervalSelection.startDepth)} m — click end depth`
+                : 'Click first depth to start interval'}
+          </span>
+        </div>
+      )}
+      <div className="wlv-shared-depth-grid-overlay" aria-hidden="true">
+        {sharedDepthGridLines.map(({ depth, y }) => (
+          <div key={`shared-grid-${depth}`} className="wlv-shared-depth-grid-line" style={{ top: y }} />
+        ))}
+      </div>
+      {sharedGoToMarkerY !== null && (
+        <div
+          className="wlv-shared-go-to-depth-marker"
+          style={{ top: sharedGoToMarkerY }}
+          aria-hidden="true"
+        >
+          <span>{Math.round(goToDepthMarker as number)} m</span>
+        </div>
+      )}
       <div className="wlv-track-strip">
-        {sortTracks(tracks).map((track) => (
+        {orderedTracks.map((track) => (
           <TrackView
             key={track.trackId}
             track={track}
+            sharedHeaderHeightPx={sharedHeaderHeight}
             selected={selection.kind === 'track' && selection.trackId === track.trackId || selection.kind === 'curve' && selection.trackId === track.trackId}
             selectedAssignmentId={selection.kind === 'curve' && selection.trackId === track.trackId ? selection.assignmentId : null}
             openCurveMenu={openCurveMenu}
+            depthTicks={depthTicks}
+            viewDepthRange={viewDepthRange}
             onSelectTrack={onSelectTrack}
             onSelectCurve={onSelectCurve}
             onReorderCurve={onReorderCurve}
@@ -655,6 +1478,8 @@ function TrackCanvas({
             onOpenCurveMenu={onOpenCurveMenu}
             onCloseCurveMenu={onCloseCurveMenu}
             onRemoveCurveFromTrack={onRemoveCurveFromTrack}
+            onStartCurveTrackResize={onStartCurveTrackResize}
+            resizingTrackId={resizingTrackId}
           />
         ))}
       </div>
@@ -688,10 +1513,9 @@ function TrackProperties({
             <option value="TVDSS">TVDSS</option>
           </select>
         </label>
-        <label>
-          Width
-          <input type="number" value={track.widthPx} onChange={(event) => updateTrack(track.trackId, { widthPx: Number(event.target.value) })} />
-        </label>
+        <div className="wlv-property-note">
+          Depth track width is fixed in this prototype. Curve tracks can be resized with Width − / Width + or Shift + MB1 drag.
+        </div>
       </div>
     );
   }
@@ -740,7 +1564,7 @@ function TrackProperties({
         </label>
         <label>
           Width
-          <input type="number" value={track.widthPx} onChange={(event) => updateTrack(track.trackId, { widthPx: Number(event.target.value) })} />
+          <input type="number" min={CURVE_TRACK_MIN_WIDTH} max={CURVE_TRACK_MAX_WIDTH} value={track.widthPx} onChange={(event) => updateTrack(track.trackId, { widthPx: clampCurveTrackWidth(Number(event.target.value)) })} />
         </label>
         <div className="wlv-property-note">
           Top curve header controls default lattice and front-most overpost order.
@@ -869,19 +1693,88 @@ export function TrackLayoutPrototype() {
   const [tracks, setTracks] = useState<WellLogTrack[]>(() => reindexTracks(initialTracks));
   const [selection, setSelection] = useState<SelectionRef>({ kind: 'track', trackId: initialTracks[1].trackId });
   const [selectedInventoryCurveIds, setSelectedInventoryCurveIds] = useState<string[]>([]);
+  const [addTrackCurveSelectionMode, setAddTrackCurveSelectionMode] = useState(false);
+  const [pendingAddTrackCurveIds, setPendingAddTrackCurveIds] = useState<string[]>([]);
   const [openCurveMenu, setOpenCurveMenu] = useState<{ trackId: string; assignmentId: string } | null>(null);
+  const [viewDepthRange, setViewDepthRange] = useState<DepthViewRange>(DEFAULT_DEPTH_RANGE);
+  const [, setViewHistory] = useState<DepthViewRange[]>([]);
+  const [goToDepthValue, setGoToDepthValue] = useState('');
+  const [goToDepthMarker, setGoToDepthMarker] = useState<number | null>(null);
+  const [intervalZoomActive, setIntervalZoomActive] = useState(false);
+  const [intervalSelection, setIntervalSelection] = useState<IntervalSelectionState | null>(null);
+  const [dragPanState, setDragPanState] = useState<DragPanState | null>(null);
+  const [trackResizeState, setTrackResizeState] = useState<TrackResizeState | null>(null);
+  const [trackBackdropMode, setTrackBackdropMode] = useState<TrackBackdropMode>('light');
 
-  const assignedCurveIds = useMemo(() => {
-    const ids = new Set<string>();
-    tracks.forEach((track) => {
-      if (track.trackType === 'curve') {
-        track.curves.forEach((assignment) => ids.add(assignment.curveId));
-      }
-    });
-    return ids;
-  }, [tracks]);
+  const visibleDepthTicks = useMemo(() => makeDepthTicks(viewDepthRange), [viewDepthRange]);
+
+  useEffect(() => {
+    if (!trackResizeState) return undefined;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const delta = event.clientX - trackResizeState.startX;
+      const nextWidth = clampCurveTrackWidth(trackResizeState.startWidth + delta);
+      setTracks((current) => current.map((track) => (
+        track.trackId === trackResizeState.trackId && track.trackType === 'curve'
+          ? { ...track, widthPx: nextWidth }
+          : track
+      )));
+    };
+
+    const handleMouseUp = () => {
+      setTrackResizeState(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [trackResizeState]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setIntervalZoomActive(false);
+      setIntervalSelection(null);
+      setDragPanState(null);
+      setTrackResizeState(null);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const selectedTrack = tracks.find((track) => track.trackId === selection.trackId) ?? null;
+  const orderedTracks = useMemo(() => sortTracks(tracks), [tracks]);
+  const selectedTrackIndex = selectedTrack
+    ? orderedTracks.findIndex((track) => track.trackId === selectedTrack.trackId)
+    : -1;
+  const canMoveSelectedTrackLeft = selectedTrackIndex > 0;
+  const canMoveSelectedTrackRight = selectedTrackIndex >= 0 && selectedTrackIndex < orderedTracks.length - 1;
+  const selectedCurveTrack = selectedTrack?.trackType === 'curve' ? selectedTrack : null;
+  const canAdjustSelectedCurveTrackWidthDown = Boolean(selectedCurveTrack && selectedCurveTrack.widthPx > CURVE_TRACK_MIN_WIDTH);
+  const canAdjustSelectedCurveTrackWidthUp = Boolean(selectedCurveTrack && selectedCurveTrack.widthPx < CURVE_TRACK_MAX_WIDTH);
+
+  const curveUsageCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    tracks.forEach((track) => {
+      if (track.trackType !== 'curve') return;
+      track.curves.forEach((assignment) => {
+        counts.set(assignment.curveId, (counts.get(assignment.curveId) ?? 0) + 1);
+      });
+    });
+
+    return counts;
+  }, [tracks]);
+
+  const selectedTrackCurveIds = useMemo(() => {
+    if (!selectedTrack || selectedTrack.trackType !== 'curve') return new Set<string>();
+    return new Set(selectedTrack.curves.map((assignment) => assignment.curveId));
+  }, [selectedTrack]);
 
   const updateTrack = (trackId: string, patch: Partial<WellLogTrack>) => {
     setTracks((current) => current.map((track) => (track.trackId === trackId ? { ...track, ...patch } as WellLogTrack : track)));
@@ -913,7 +1806,7 @@ export function TrackLayoutPrototype() {
         track.trackIndex >= insertionIndex ? { ...track, trackIndex: track.trackIndex + 1 } : track
       ));
 
-      const selectedCurves = selectedInventoryCurveIds
+      const selectedCurves = pendingAddTrackCurveIds
         .map((curveId) => curveCatalog.find((curve) => curve.curveId === curveId))
         .filter((curve): curve is CurveCatalogItem => Boolean(curve));
 
@@ -960,7 +1853,8 @@ export function TrackLayoutPrototype() {
           };
       setSelection({ kind: 'track', trackId: newTrack.trackId });
       if (draft.trackType === 'curve' && draft.curveSource === 'selected') {
-        setSelectedInventoryCurveIds([]);
+        setPendingAddTrackCurveIds([]);
+        setAddTrackCurveSelectionMode(false);
       }
       return reindexTracks([...shifted, newTrack]);
     });
@@ -977,17 +1871,222 @@ export function TrackLayoutPrototype() {
   };
 
   const moveSelectedTrack = (direction: -1 | 1) => {
-    if (!selectedTrack) return;
-    setTracks((current) => {
-      const ordered = sortTracks(current);
-      const index = ordered.findIndex((track) => track.trackId === selectedTrack.trackId);
-      const target = index + direction;
-      if (target < 0 || target >= ordered.length) return current;
-      const copy = [...ordered];
-      const [item] = copy.splice(index, 1);
-      copy.splice(target, 0, item);
-      return reindexTracks(copy);
+    const trackId = selection.trackId;
+    if (!trackId) return;
+
+    setTracks((current) => moveTrackById(current, trackId, direction));
+
+    setSelection((current) => (
+      current.trackId === trackId ? current : { kind: 'track', trackId }
+    ));
+  };
+
+
+  const adjustCurveTrackWidth = (trackId: string, delta: number) => {
+    setTracks((current) => current.map((track) => {
+      if (track.trackId !== trackId || track.trackType !== 'curve') return track;
+      return { ...track, widthPx: clampCurveTrackWidth(track.widthPx + delta) };
+    }));
+  };
+
+  const adjustSelectedCurveTrackWidth = (delta: number) => {
+    if (!selectedCurveTrack) return;
+    adjustCurveTrackWidth(selectedCurveTrack.trackId, delta);
+  };
+
+  const resetCurveTrackWidths = () => {
+    setTracks((current) => current.map((track) => (
+      track.trackType === 'curve'
+        ? { ...track, widthPx: CURVE_TRACK_RESET_WIDTH }
+        : track
+    )));
+  };
+
+  const startCurveTrackResize = (trackId: string, startX: number, startWidth: number) => {
+    setOpenCurveMenu(null);
+    setDragPanState(null);
+    setIntervalZoomActive(false);
+    setIntervalSelection(null);
+    setTrackResizeState({ trackId, startX, startWidth: clampCurveTrackWidth(startWidth) });
+  };
+
+  const setDepthView = (nextRange: DepthViewRange, recordHistory = true) => {
+    setViewDepthRange((current) => {
+      const clipped = clampDepthRange(nextRange);
+
+      if (rangesEqual(current, clipped)) {
+        return current;
+      }
+
+      if (recordHistory) {
+        setViewHistory((history) => [...history.slice(-9), current]);
+      }
+
+      return clipped;
     });
+  };
+
+  const zoomDepth = (factor: number) => {
+    const center = (viewDepthRange.min + viewDepthRange.max) / 2;
+    const nextSpan = Math.max(80, Math.min(FULL_DEPTH_RANGE.max - FULL_DEPTH_RANGE.min, (viewDepthRange.max - viewDepthRange.min) * factor));
+    setDepthView({
+      min: center - nextSpan / 2,
+      max: center + nextSpan / 2,
+    });
+  };
+
+  const previousDepthView = () => {
+    setViewHistory((history) => {
+      const previous = history[history.length - 1];
+      if (!previous) return history;
+      setViewDepthRange(previous);
+      return history.slice(0, -1);
+    });
+  };
+
+  const fitDepth = () => {
+    setDepthView(FULL_DEPTH_RANGE);
+  };
+
+  const resetDepthView = () => {
+    setViewDepthRange(DEFAULT_DEPTH_RANGE);
+    setViewHistory([]);
+    setIntervalZoomActive(false);
+    setIntervalSelection(null);
+    setDragPanState(null);
+    setGoToDepthMarker(null);
+    setGoToDepthValue('');
+  };
+
+  const goToDepth = () => {
+    const target = Number.parseFloat(goToDepthValue);
+    if (!Number.isFinite(target)) return;
+
+    const clampedTarget = clampValue(target, FULL_DEPTH_RANGE.min, FULL_DEPTH_RANGE.max);
+    const currentSpan = viewDepthRange.max - viewDepthRange.min;
+    const reviewSpan = currentSpan > GO_TO_REVIEW_WINDOW_M
+      ? GO_TO_REVIEW_WINDOW_M
+      : currentSpan;
+
+    setDepthView({
+      min: clampedTarget - reviewSpan / 2,
+      max: clampedTarget + reviewSpan / 2,
+    });
+    setGoToDepthMarker(clampedTarget);
+  };
+
+  const startDragPan = (startY: number) => {
+    setOpenCurveMenu(null);
+    setIntervalZoomActive(false);
+    setIntervalSelection(null);
+    setViewHistory((history) => [...history.slice(-9), viewDepthRange]);
+    setDragPanState({ startY, startRange: viewDepthRange });
+  };
+
+  const updateDragPan = (currentY: number, canvasHeight: number) => {
+    if (!dragPanState) return;
+    const safeHeight = Math.max(1, canvasHeight);
+    const span = dragPanState.startRange.max - dragPanState.startRange.min;
+    const pixelDelta = currentY - dragPanState.startY;
+    const depthShift = -(pixelDelta / safeHeight) * span;
+
+    setViewDepthRange(clampDepthRange({
+      min: dragPanState.startRange.min + depthShift,
+      max: dragPanState.startRange.max + depthShift,
+    }));
+  };
+
+  const endDragPan = () => {
+    setDragPanState(null);
+  };
+
+  const startIntervalSelection = (depth: number, y: number) => {
+    setDragPanState(null);
+    setOpenCurveMenu(null);
+    setIntervalSelection({
+      startDepth: depth,
+      currentDepth: depth,
+      startY: y,
+      currentY: y,
+      dragging: true,
+    });
+  };
+
+  const updateIntervalSelection = (depth: number, y: number) => {
+    setIntervalSelection((current) => current
+      ? { ...current, currentDepth: depth, currentY: y }
+      : current);
+  };
+
+  const armIntervalSelection = (depth: number, y: number) => {
+    setIntervalSelection((current) => current
+      ? { ...current, currentDepth: depth, currentY: y, dragging: false }
+      : {
+          startDepth: depth,
+          currentDepth: depth,
+          startY: y,
+          currentY: y,
+          dragging: false,
+        });
+  };
+
+  const completeIntervalSelection = (depth: number, y: number) => {
+    if (!intervalSelection) return;
+
+    const nextMin = Math.min(intervalSelection.startDepth, depth);
+    const nextMax = Math.max(intervalSelection.startDepth, depth);
+
+    if (nextMax - nextMin < 25) {
+      setIntervalSelection({
+        ...intervalSelection,
+        currentDepth: depth,
+        currentY: y,
+        dragging: false,
+      });
+      return;
+    }
+
+    setDepthView({ min: nextMin, max: nextMax });
+    setIntervalZoomActive(false);
+    setIntervalSelection(null);
+  };
+
+  const toggleCurveForSelectedTrack = (curveId: string, checked: boolean) => {
+    if (!selectedTrack || selectedTrack.trackType !== 'curve') return;
+    const trackId = selectedTrack.trackId;
+
+    setOpenCurveMenu(null);
+
+    if (checked) {
+      const curve = curveById(curveCatalog, curveId);
+      const newAssignment = makeCurveAssignment(curve, selectedTrack.curves.length);
+
+      setTracks((current) => current.map((track) => {
+        if (track.trackId !== trackId || track.trackType !== 'curve') return track;
+        if (track.curves.some((assignment) => assignment.curveId === curveId)) return track;
+
+        const nextCurves = renumberCurveStack([...orderedCurves(track), newAssignment]);
+        return {
+          ...track,
+          curves: nextCurves,
+          latticeSource: track.latticeOverride ? track.latticeSource : 'front_curve_default',
+        };
+      }));
+
+      setSelection({ kind: 'curve', trackId, assignmentId: newAssignment.assignmentId });
+      return;
+    }
+
+    setTracks((current) => current.map((track) => {
+      if (track.trackId !== trackId || track.trackType !== 'curve') return track;
+      return {
+        ...track,
+        curves: renumberCurveStack(track.curves.filter((assignment) => assignment.curveId !== curveId)),
+        latticeSource: track.latticeOverride ? track.latticeSource : 'front_curve_default',
+      };
+    }));
+
+    setSelection({ kind: 'track', trackId });
   };
 
   const moveCurveToTrack = (payload: DragCurvePayload, toTrackId: string, toIndex?: number) => {
@@ -1035,11 +2134,6 @@ export function TrackLayoutPrototype() {
   };
 
   const removeCurveFromTrack = (trackId: string, assignmentId: string) => {
-    const sourceTrack = tracks.find((track) => track.trackId === trackId) ?? null;
-    const removedCurveId = sourceTrack?.trackType === 'curve'
-      ? sourceTrack.curves.find((assignment) => assignment.assignmentId === assignmentId)?.curveId ?? null
-      : null;
-
     setTracks((current) => current.map((track) => {
       if (track.trackId !== trackId || track.trackType !== 'curve') return track;
       return {
@@ -1049,18 +2143,17 @@ export function TrackLayoutPrototype() {
       };
     }));
 
-    if (removedCurveId) {
-      setSelectedInventoryCurveIds((current) => current.filter((curveId) => curveId !== removedCurveId));
-    }
     setOpenCurveMenu(null);
     setSelection({ kind: 'track', trackId });
   };
 
   return (
-    <div className="wlv-prototype-root">
+    <div className="wlv-demo-shell">
+      <DemoShellRail />
+      <main className="wlv-demo-main" aria-label="Well Log Viewer workspace">
+        <div className="wlv-prototype-root">
       <header className="wlv-app-header">
-        <div>
-          <span>MultiViewer</span>
+        <div className="wlv-app-title">
           <strong>Well Log Viewer</strong>
         </div>
         <div className="wlv-loaded-context">
@@ -1072,16 +2165,61 @@ export function TrackLayoutPrototype() {
 
       <Toolbar
         selectedTrack={selectedTrack}
-        selectedInventoryCount={selectedInventoryCurveIds.length}
+        pendingAddTrackCurveCount={pendingAddTrackCurveIds.length}
+        viewDepthRange={viewDepthRange}
+        fullDepthRange={FULL_DEPTH_RANGE}
+        intervalZoomActive={intervalZoomActive}
+        goToDepthValue={goToDepthValue}
+        onGoToDepthValueChange={setGoToDepthValue}
+        trackBackdropMode={trackBackdropMode}
+        onTrackBackdropModeChange={setTrackBackdropMode}
         onAddTrack={addTrack}
         onDeleteTrack={deleteSelectedTrack}
         onMoveSelectedTrack={moveSelectedTrack}
+        canMoveSelectedTrackLeft={canMoveSelectedTrackLeft}
+        canMoveSelectedTrackRight={canMoveSelectedTrackRight}
+        canAdjustSelectedCurveTrackWidthDown={canAdjustSelectedCurveTrackWidthDown}
+        canAdjustSelectedCurveTrackWidthUp={canAdjustSelectedCurveTrackWidthUp}
+        onAdjustSelectedCurveTrackWidth={adjustSelectedCurveTrackWidth}
+        onResetCurveTrackWidths={resetCurveTrackWidths}
+        onZoomIn={() => zoomDepth(0.75)}
+        onZoomOut={() => zoomDepth(1.33)}
+        onPreviousView={previousDepthView}
+        onFitDepth={fitDepth}
+        onResetView={resetDepthView}
+        onToggleIntervalZoom={() => {
+          setOpenCurveMenu(null);
+          setIntervalSelection(null);
+          setDragPanState(null);
+          setIntervalZoomActive((active) => !active);
+        }}
+        onGoToDepth={goToDepth}
+        onAddTrackCurveSelectionModeChange={(active) => {
+          setAddTrackCurveSelectionMode(active);
+          if (active) {
+            setPendingAddTrackCurveIds([]);
+          }
+        }}
       />
 
-      <div className="wlv-prototype-workspace">
+      <div className={`wlv-prototype-workspace wlv-track-backdrop-${trackBackdropMode}`}>
         <CurveInventory
-          assignedCurveIds={assignedCurveIds}
+          curveUsageCounts={curveUsageCounts}
+          selectedTrackCurveIds={addTrackCurveSelectionMode ? new Set(pendingAddTrackCurveIds) : selectedTrackCurveIds}
           selectedCurveIds={new Set(selectedInventoryCurveIds)}
+          assignmentEnabled={addTrackCurveSelectionMode || selectedTrack?.trackType === 'curve'}
+          onToggleCurveInSelectedTrack={(curveId, checked) => {
+            if (addTrackCurveSelectionMode) {
+              setPendingAddTrackCurveIds((current) => (
+                checked
+                  ? Array.from(new Set([...current, curveId]))
+                  : current.filter((item) => item !== curveId)
+              ));
+              return;
+            }
+
+            toggleCurveForSelectedTrack(curveId, checked);
+          }}
           onSelectCurve={(curveId) => {
             setOpenCurveMenu(null);
             setSelectedInventoryCurveIds((current) => (
@@ -1089,9 +2227,11 @@ export function TrackLayoutPrototype() {
                 ? current.filter((item) => item !== curveId)
                 : [...current, curveId]
             ));
-            const containingTrack = tracks.find((track) => (
-              track.trackType === 'curve' && track.curves.some((assignment) => assignment.curveId === curveId)
-            ));
+            const containingTrack = selectedTrack?.trackType === 'curve' && selectedTrack.curves.some((assignment) => assignment.curveId === curveId)
+              ? selectedTrack
+              : tracks.find((track) => (
+                  track.trackType === 'curve' && track.curves.some((assignment) => assignment.curveId === curveId)
+                ));
             if (containingTrack?.trackType === 'curve') {
               const assignment = containingTrack.curves.find((item) => item.curveId === curveId);
               if (assignment) setSelection({ kind: 'curve', trackId: containingTrack.trackId, assignmentId: assignment.assignmentId });
@@ -1102,6 +2242,12 @@ export function TrackLayoutPrototype() {
           tracks={tracks}
           selection={selection}
           openCurveMenu={openCurveMenu}
+          depthTicks={visibleDepthTicks}
+          viewDepthRange={viewDepthRange}
+          goToDepthMarker={goToDepthMarker}
+          intervalZoomActive={intervalZoomActive}
+          intervalSelection={intervalSelection}
+          dragPanActive={Boolean(dragPanState)}
           onSelectTrack={(trackId) => setSelection({ kind: 'track', trackId })}
           onSelectCurve={(trackId, assignmentId) => setSelection({ kind: 'curve', trackId, assignmentId })}
           onReorderCurve={reorderCurve}
@@ -1109,6 +2255,15 @@ export function TrackLayoutPrototype() {
           onOpenCurveMenu={(trackId, assignmentId) => setOpenCurveMenu({ trackId, assignmentId })}
           onCloseCurveMenu={() => setOpenCurveMenu(null)}
           onRemoveCurveFromTrack={removeCurveFromTrack}
+          onStartIntervalSelection={startIntervalSelection}
+          onUpdateIntervalSelection={updateIntervalSelection}
+          onArmIntervalSelection={armIntervalSelection}
+          onCompleteIntervalSelection={completeIntervalSelection}
+          onStartDragPan={startDragPan}
+          onUpdateDragPan={updateDragPan}
+          onEndDragPan={endDragPan}
+          onStartCurveTrackResize={startCurveTrackResize}
+          resizingTrackId={trackResizeState?.trackId ?? null}
         />
         <RightPanel
           tracks={tracks}
@@ -1119,10 +2274,12 @@ export function TrackLayoutPrototype() {
       </div>
 
       <footer className="wlv-status-footer">
-        <span>WL-PROTOTYPE-001 working template</span>
+        <span>WL-PROTOTYPE-010B shared depth ruler geometry</span>
         <span>Track terminology only</span>
         <span>Mock frontend layout draft — no LAS parsing or MSI persistence</span>
       </footer>
+        </div>
+      </main>
     </div>
   );
 }
