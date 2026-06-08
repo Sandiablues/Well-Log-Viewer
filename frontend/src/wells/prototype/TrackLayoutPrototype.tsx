@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import '../../styles/track-layout-prototype.css';
-import { curveCatalog, initialTracks, wellHeader } from './mockTrackLayoutData';
+import { curveCatalog, defaultDepthRange, depthUnitLabel, fullDepthRange, initialTracks, realCurveSamplesByCurveId, wellHeader } from './realLasTrackLayoutData';
 import type {
   ActiveTrackType,
   CurveAssignment,
@@ -50,8 +50,8 @@ type TrackResizeState = {
   startWidth: number;
 };
 
-const FULL_DEPTH_RANGE: DepthViewRange = { min: 2400, max: 4400 };
-const DEFAULT_DEPTH_RANGE: DepthViewRange = FULL_DEPTH_RANGE;
+const FULL_DEPTH_RANGE: DepthViewRange = fullDepthRange;
+const DEFAULT_DEPTH_RANGE: DepthViewRange = defaultDepthRange;
 const CURVE_TRACK_MIN_WIDTH = 120;
 const CURVE_TRACK_MAX_WIDTH = 420;
 const CURVE_TRACK_WIDTH_STEP = 24;
@@ -90,7 +90,7 @@ function makeDepthTicks(range: DepthViewRange, count = 11): number[] {
 }
 
 function depthRangeLabel(range: DepthViewRange): string {
-  return `${range.min}–${range.max} m MD`;
+  return `${range.min}–${range.max} ${depthUnitLabel} MD`;
 }
 
 type DemoNavIconKey = 'log-viewer' | 'data' | 'sources' | 'toolbox' | 'settings';
@@ -311,28 +311,55 @@ function valueToX(value: number, assignment: CurveAssignment, lattice: CurveTrac
   return CURVE_VIEW_PADDING_X + Math.max(0, Math.min(1, t)) * drawableWidth;
 }
 
-function makeMockCurveSamples(curve: CurveCatalogItem, assignment: CurveAssignment, trackPosition: number): MockCurveSample[] {
-  const samples: MockCurveSample[] = [];
-  const phase = curve.mnemonic.length * 0.61 + trackPosition * 0.47;
-  const minValue = Math.min(assignment.scaleMin, assignment.scaleMax);
-  const maxValue = Math.max(assignment.scaleMin, assignment.scaleMax);
-  const valueMid = (assignment.scaleMin + assignment.scaleMax) / 2;
-  const valueAmp = Math.max(0.0001, Math.abs(assignment.scaleMax - assignment.scaleMin) * 0.28);
-  const depthSpan = FULL_DEPTH_RANGE.max - FULL_DEPTH_RANGE.min;
 
-  for (let i = 0; i <= 260; i += 1) {
-    const t = i / 260;
-    const depth = FULL_DEPTH_RANGE.min + depthSpan * t;
-    const wiggle =
-      Math.sin(t * Math.PI * (8 + curve.mnemonic.length) + phase) * valueAmp +
-      Math.sin(t * Math.PI * 31 + phase * 0.3) * valueAmp * 0.28;
-    const styleOffset = assignment.lineStyle === 'dot' ? valueAmp * 0.18 : assignment.lineStyle === 'dash' ? -valueAmp * 0.14 : 0;
-    const value = Math.max(minValue, Math.min(maxValue, valueMid + wiggle + styleOffset));
-    samples.push({ depth, value });
+function makeMockCurveSamples(
+  curve: CurveCatalogItem,
+  _assignment: CurveAssignment,
+  _trackPosition: number,
+): MockCurveSample[] {
+  const samples = realCurveSamplesByCurveId[curve.curveId] ?? [];
+  const output: MockCurveSample[] = [];
+
+  for (const sample of samples as unknown[]) {
+    let depthValue: unknown;
+    let curveValue: unknown;
+
+    if (Array.isArray(sample)) {
+      depthValue = sample[0];
+      curveValue = sample[1];
+    } else if (sample && typeof sample === 'object') {
+      const sampleRecord = sample as {
+        depth?: unknown;
+        value?: unknown;
+        values?: Record<string, unknown>;
+      };
+
+      depthValue =
+        sampleRecord.depth ??
+        sampleRecord.values?.DEPT ??
+        sampleRecord.values?.DEPTH ??
+        sampleRecord.values?.MD ??
+        sampleRecord.values?.TDEP;
+
+      curveValue = sampleRecord.value ?? sampleRecord.values?.[curve.curveId];
+    }
+
+    if (
+      typeof depthValue === 'number' &&
+      Number.isFinite(depthValue) &&
+      typeof curveValue === 'number' &&
+      Number.isFinite(curveValue)
+    ) {
+      output.push({
+        depth: depthValue,
+        value: curveValue,
+      });
+    }
   }
 
-  return samples;
+  return output;
 }
+
 
 function visibleCurveSamples(
   curve: CurveCatalogItem,
@@ -367,6 +394,8 @@ function serialiseCurveDrag(payload: DragCurvePayload): string {
   return JSON.stringify(payload);
 }
 
+type CurveInventoryTab = 'all' | 'selected' | 'aliases';
+
 function CurveInventory({
   curveUsageCounts,
   selectedTrackCurveIds,
@@ -382,36 +411,85 @@ function CurveInventory({
   onSelectCurve: (curveId: string) => void;
   onToggleCurveInSelectedTrack: (curveId: string, checked: boolean) => void;
 }) {
+  const [activeInventoryTab, setActiveInventoryTab] = useState<CurveInventoryTab>('all');
+
+  const displayedCurves = useMemo(() => {
+    if (activeInventoryTab === 'selected') {
+      return curveCatalog.filter((curve) => (curveUsageCounts.get(curve.curveId) ?? 0) > 0);
+    }
+
+    if (activeInventoryTab === 'aliases') {
+      return [];
+    }
+
+    return curveCatalog;
+  }, [activeInventoryTab, curveUsageCounts]);
+
   const groups = useMemo(
-    () => Array.from(new Set(curveCatalog.map((curve) => curve.curveClass))).filter((group) => group !== 'depth'),
-    [],
+    () => Array.from(new Set(displayedCurves.map((curve) => curve.curveClass))).filter((group) => group !== 'depth'),
+    [displayedCurves],
   );
+
+  const selectedCurveCount = useMemo(
+    () => curveCatalog.filter((curve) => (curveUsageCounts.get(curve.curveId) ?? 0) > 0).length,
+    [curveUsageCounts],
+  );
+
+  const inventoryCount = activeInventoryTab === 'selected' ? selectedCurveCount : curveCatalog.length;
 
   return (
     <aside className="wlv-curve-inventory">
       <div className="wlv-panel-heading">
         <h2>Curve Inventory</h2>
-        <span>{curveCatalog.length}</span>
+        <span>{inventoryCount}</span>
       </div>
       <div className="wlv-search-row">
         <input aria-label="Search curves" placeholder="Search curves..." />
         <button type="button" title="Filter curves">Filter</button>
       </div>
       <div className="wlv-inventory-tabs">
-        <button type="button" className="active">All Curves</button>
-        <button type="button">Selected</button>
-        <button type="button">Aliases</button>
+        <button
+          type="button"
+          className={activeInventoryTab === 'all' ? 'active' : ''}
+          onClick={() => setActiveInventoryTab('all')}
+        >
+          All Curves
+        </button>
+        <button
+          type="button"
+          className={activeInventoryTab === 'selected' ? 'active' : ''}
+          onClick={() => setActiveInventoryTab('selected')}
+        >
+          Selected <span className="wlv-tab-count">{selectedCurveCount}</span>
+        </button>
+        <button
+          type="button"
+          className={activeInventoryTab === 'aliases' ? 'active' : ''}
+          onClick={() => setActiveInventoryTab('aliases')}
+        >
+          Aliases
+        </button>
       </div>
       {!assignmentEnabled && (
         <div className="wlv-curve-assignment-hint">
           Select a curve track to assign curves. Highlighted rows are already used elsewhere in the layout.
         </div>
       )}
+      {activeInventoryTab === 'selected' && selectedCurveCount === 0 && (
+        <div className="wlv-curve-assignment-hint">
+          No curves are currently assigned to visible curve tracks.
+        </div>
+      )}
+      {activeInventoryTab === 'aliases' && (
+        <div className="wlv-curve-assignment-hint">
+          Alias grouping is not available in this prototype fixture yet.
+        </div>
+      )}
       <div className="wlv-inventory-list">
         {groups.map((group) => (
           <section key={group} className="wlv-curve-group">
             <div className="wlv-curve-group-title">{group}</div>
-            {curveCatalog.filter((curve) => curve.curveClass === group).map((curve) => {
+            {displayedCurves.filter((curve) => curve.curveClass === group).map((curve) => {
               const usageCount = curveUsageCounts.get(curve.curveId) ?? 0;
               const usedAnywhere = usageCount > 0;
               const checkedInSelectedTrack = selectedTrackCurveIds.has(curve.curveId);
