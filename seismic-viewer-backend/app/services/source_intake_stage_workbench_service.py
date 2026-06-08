@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
+import inspect
 
 from app.services.repository_registry_service import get_repository
 from app.services.source_repository_mode_service import repository_matches_mode
@@ -32,7 +33,13 @@ class SourceIntakeStageWorkbenchService:
     def __init__(self, workbench_service: Optional[SourceIntakeWorkbenchV2Service] = None) -> None:
         self.workbench_service = workbench_service or SourceIntakeWorkbenchV2Service()
 
-    def stage_repository_workbench(self, *, repository_id: str, mode: str) -> Dict[str, Any]:
+    def stage_repository_workbench(
+        self,
+        *,
+        repository_id: str,
+        mode: str,
+        include_subfolders: Optional[bool] = None,
+    ) -> Dict[str, Any]:
         clean_repo = _clean(repository_id)
         clean_mode = _clean_mode(mode)
         if not clean_repo:
@@ -44,7 +51,10 @@ class SourceIntakeStageWorkbenchService:
         if not repository_matches_mode(repo, clean_mode):
             raise ValueError(f"Repository {clean_repo} does not match requested mode={clean_mode}.")
 
-        scan_summary = build_repository_scan_summary(clean_repo, mode=clean_mode)
+        summary_kwargs: Dict[str, Any] = {"mode": clean_mode}
+        if "include_subfolders" in inspect.signature(build_repository_scan_summary).parameters:
+            summary_kwargs["include_subfolders"] = include_subfolders
+        scan_summary = build_repository_scan_summary(clean_repo, **summary_kwargs)
         repository = decorate_repository(repo, mode=clean_mode)
         workbench = self.workbench_service.use_repository(mode=clean_mode, repository_id=clean_repo)
 
@@ -63,6 +73,7 @@ class SourceIntakeStageWorkbenchService:
             "schema_version": SCHEMA_VERSION,
             "mode": clean_mode,
             "repository_id": clean_repo,
+            "include_subfolders": include_subfolders,
             "repository": repository,
             "scan_summary": scan_summary,
             "workbench": workbench,

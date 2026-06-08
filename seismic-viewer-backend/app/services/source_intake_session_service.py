@@ -89,12 +89,19 @@ class SourceIntakeSessionService:
         self.workbench_service = workbench_service or SourceIntakeWorkbenchV2Service()
         self.stage_service = stage_service or SourceIntakeStageWorkbenchService(self.workbench_service)
 
-    def stage_repository_workbench(self, *, repository_id: str, mode: str) -> Dict[str, Any]:
+    def stage_repository_workbench(
+        self,
+        *,
+        repository_id: str,
+        mode: str,
+        include_subfolders: Optional[bool] = None,
+    ) -> Dict[str, Any]:
         clean_mode = _clean_mode(mode)
         clean_repo = self._require_repository(repository_id)
         result = self.stage_service.stage_repository_workbench(
             repository_id=clean_repo,
             mode=clean_mode,
+            include_subfolders=include_subfolders,
         )
         self._set_active_repository(clean_mode, clean_repo)
         result = dict(result)
