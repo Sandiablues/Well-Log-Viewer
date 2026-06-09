@@ -107,6 +107,58 @@ export interface WellHeader {
   sourceFile: string;
   msiIdentity: string;
   tvdStatus: string;
+
+  lasVersion?: string;
+  lasWrap?: string;
+  lasProducer?: string;
+  lasProgram?: string;
+  lasCreationDate?: string;
+  dlisCreationDate?: string;
+  dlisSourceName?: string;
+
+  companyName?: string;
+  wellNameRaw?: string;
+  fieldNameRaw?: string;
+  fieldLocation?: string;
+  fieldLocationLine1?: string;
+  county?: string;
+  state?: string;
+  apiNumber?: string;
+  uniqueWellId?: string;
+  latitude?: string;
+  longitude?: string;
+  logDate?: string;
+
+  drillingMeasuredFrom?: string;
+  loggingMeasuredFrom?: string;
+  permanentDatum?: string;
+  kbElevation?: string;
+  groundElevation?: string;
+  permanentDatumElevation?: string;
+  depthReferenceAbovePermanentDatum?: string;
+
+  serviceCompany?: string;
+  loggingUnitLocation?: string;
+  loggingUnitNumber?: string;
+  runNumber?: string;
+  serviceOrderNumber?: string;
+
+  startDepth?: string;
+  stopDepth?: string;
+  step?: string;
+  nullValue?: string;
+  topLogInterval?: string;
+  bottomLogInterval?: string;
+  drillerTotalDepth?: string;
+  loggerTotalDepth?: string;
+
+  engineer?: string;
+  witness?: string;
+  bitSize?: string;
+  bottomHoleTemperature?: string;
+  drillingFluidType?: string;
+  drillingFluidDensity?: string;
+  drillingFluidPH?: string;
 }
 
 export interface DragCurvePayload {

@@ -9,18 +9,70 @@ export const defaultDepthRange = { min: 5300, max: 6076 };
 export const depthUnitLabel = "ft";
 
 export const wellHeader = {
-  "wellName": "Fallon Forge 21-31",
+  "wellName": "Forge 21-31",
   "wellboreName": "Main Bore",
-  "field": "Fallon Forge",
-  "operator": "Ormat Nevada",
+  "field": "Carson Field",
+  "operator": "Ormat Nevada, Inc.",
   "country": "USA",
-  "kb": "Not supplied in LAS fixture",
-  "gl": "Not supplied in LAS fixture",
-  "logStart": "300.5 ft",
-  "logEnd": "6076.0 ft",
+  "kb": "3949.99976 ft",
+  "gl": "3928.00000 ft",
+  "logStart": "300.5000 ft",
+  "logEnd": "6076.0000 ft",
   "sourceFile": "DWM5-00038_Ormat Nevada_Forge 21-31_Pr_Composite1_Main_-GenericV12.las",
   "tvdStatus": "MD only in current fixture",
-  "msiIdentity": "Prototype fixture \u2014 not yet MSI registered"
+  "msiIdentity": "Prototype fixture — not yet MSI registered",
+
+  "lasVersion": "1.2",
+  "lasWrap": "NO",
+  "lasProducer": "Schlumberger",
+  "lasProgram": "DLIS to ASCII 2.3",
+  "lasCreationDate": "2018/03/25 20:55",
+  "dlisCreationDate": "2018-Feb-26 00:29",
+  "dlisSourceName": "15759a09-cd53-435e-9747-d98f17455737",
+
+  "companyName": "Ormat Nevada, Inc.",
+  "wellNameRaw": "Forge 21-31",
+  "fieldNameRaw": "Carson Field",
+  "fieldLocation": "SEC 20:T18N;R30E",
+  "fieldLocationLine1": "4361006N 356461E",
+  "county": "Churchill",
+  "state": "Nevada",
+  "apiNumber": "2700190539",
+  "uniqueWellId": "Not supplied",
+  "latitude": "39.386616 degrees",
+  "longitude": "-118.66657 degrees",
+  "logDate": "25-Feb-2018",
+
+  "drillingMeasuredFrom": "KB",
+  "loggingMeasuredFrom": "KB",
+  "permanentDatum": "GL",
+  "kbElevation": "3949.99976 ft",
+  "groundElevation": "3928.00000 ft",
+  "permanentDatumElevation": "3928.000000 ft above mean sea level",
+  "depthReferenceAbovePermanentDatum": "22.000000 ft",
+
+  "serviceCompany": "Schlumberger",
+  "loggingUnitLocation": "USEV",
+  "loggingUnitNumber": "3108",
+  "runNumber": "ONE",
+  "serviceOrderNumber": "Not supplied",
+
+  "startDepth": "300.5000 ft",
+  "stopDepth": "6076.0000 ft",
+  "step": "0.5000 ft",
+  "nullValue": "-999.25",
+  "topLogInterval": "300.00000 ft",
+  "bottomLogInterval": "6062.00000 ft",
+  "drillerTotalDepth": "6058.00000 ft",
+  "loggerTotalDepth": "6062.00000 ft",
+
+  "engineer": "Mauricio Castaneda",
+  "witness": "Randy Baldwin",
+  "bitSize": "12.25000 in",
+  "bottomHoleTemperature": "232.12000 degF",
+  "drillingFluidType": "WBM",
+  "drillingFluidDensity": "9.60000 lb/gal",
+  "drillingFluidPH": "10.10000"
 } as WellHeader;
 
 export const curveCatalog = [

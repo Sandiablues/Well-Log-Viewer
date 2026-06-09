@@ -4,6 +4,8 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import '../../styles/track-layout-prototype.css';
 import { curveCatalog, defaultDepthRange, depthUnitLabel, fullDepthRange, initialTracks, realCurveSamplesByCurveId, wellHeader } from './realLasTrackLayoutData';
 import { lithologyIntervals21_31, lithologySource } from './lithologyTrackData';
+import { WellLogPropertiesPanelSlot } from './WellLogPropertiesPanelSlot';
+import { useTrackBodyGeometry } from './useTrackBodyGeometry';
 import type {
   ActiveTrackType,
   CurveAssignment,
@@ -245,12 +247,14 @@ function nextTrackId(trackType: ActiveTrackType): string {
 
 const TRACK_STRIP_PADDING_PX = 10;
 const TRACK_HEADER_HEIGHT_PX = 108;
-const TRACK_BODY_HEIGHT_PX = 650;
+const TRACK_BODY_HEIGHT_PX = 900;
+const TRACK_BODY_MIN_HEIGHT_PX = 650;
+const TRACK_BODY_MAX_HEIGHT_PX = 900;
+const TRACK_FOOTER_CLEARANCE_PX = 48;
 const TRACK_HEADER_TITLE_HEIGHT_PX = 24;
 const TRACK_HEADER_SUBTITLE_HEIGHT_PX = 28;
 const TRACK_CURVE_HEADER_ROW_HEIGHT_PX = 24;
 const TRACK_HEADER_BOTTOM_PADDING_PX = 8;
-const CURVE_VIEW_HEIGHT = TRACK_BODY_HEIGHT_PX;
 const CURVE_VIEW_PADDING_Y = 0;
 const CURVE_VIEW_PADDING_X = 10;
 
@@ -259,10 +263,10 @@ type MockCurveSample = {
   value: number;
 };
 
-function depthToY(depth: number, viewRange: DepthViewRange): number {
+function depthToY(depth: number, viewRange: DepthViewRange, bodyHeightPx = TRACK_BODY_HEIGHT_PX): number {
   const span = Math.max(1, viewRange.max - viewRange.min);
   const t = (depth - viewRange.min) / span;
-  return clampValue(t, 0, 1) * TRACK_BODY_HEIGHT_PX;
+  return clampValue(t, 0, 1) * bodyHeightPx;
 }
 
 function yToDepth(y: number, viewRange: DepthViewRange, bodyHeight = TRACK_BODY_HEIGHT_PX): number {
@@ -409,7 +413,7 @@ function logGridLines(scaleMin: number, scaleMax: number, trackWidth: number): L
   return [...lines.values()].sort((a, b) => a.value - b.value);
 }
 
-function renderLogarithmicGrid(track: CurveTrack, trackWidth: number) {
+function renderLogarithmicGrid(track: CurveTrack, trackWidth: number, bodyHeightPx: number) {
   const range = logGridRangeForTrack(track);
   if (!range) return null;
 
@@ -424,7 +428,7 @@ function renderLogarithmicGrid(track: CurveTrack, trackWidth: number) {
           x1={line.x}
           x2={line.x}
           y1="0"
-          y2={CURVE_VIEW_HEIGHT}
+          y2={bodyHeightPx}
           vectorEffect="non-scaling-stroke"
         />
       ))}
@@ -500,12 +504,13 @@ function curvePath(
   viewRange: DepthViewRange,
   lattice: CurveTrack['lattice'],
   trackWidth: number,
+  bodyHeightPx: number,
 ): string {
   const samples = visibleCurveSamples(curve, assignment, trackPosition, viewRange);
 
   return samples.map((sample, index) => {
     const x = valueToX(sample.value, assignment, lattice, trackWidth);
-    const y = depthToY(sample.depth, viewRange);
+    const y = depthToY(sample.depth, viewRange, bodyHeightPx);
     return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
   }).join(' ');
 }
@@ -553,7 +558,7 @@ function CurveInventory({
   onSelectCurve: (curveId: string) => void;
   onToggleCurveInSelectedTrack: (curveId: string, checked: boolean) => void;
 }) {
-  const [activeInventoryTab, setActiveInventoryTab] = useState<CurveInventoryTab>('all');
+  const [activeInventoryTab, setActiveInventoryTab] = useState<CurveInventoryTab>('selected');
 
   const displayedCurves = useMemo(() => {
     if (activeInventoryTab === 'selected') {
@@ -1295,11 +1300,21 @@ function CurveHeaderStack({
   );
 }
 
-function DepthTrackView({ track, depthTicks, viewDepthRange }: { track: DepthTrack; depthTicks: number[]; viewDepthRange: DepthViewRange }) {
+function DepthTrackView({
+  track,
+  depthTicks,
+  viewDepthRange,
+  trackBodyHeightPx,
+}: {
+  track: DepthTrack;
+  depthTicks: number[];
+  viewDepthRange: DepthViewRange;
+  trackBodyHeightPx: number;
+}) {
   return (
     <div className="wlv-depth-track-body">
       {depthTicks.map((depth) => {
-        const y = depthToY(depth, viewDepthRange);
+        const y = depthToY(depth, viewDepthRange, trackBodyHeightPx);
         return (
           <div
             key={`${track.trackId}-${depth}`}
@@ -1315,7 +1330,15 @@ function DepthTrackView({ track, depthTicks, viewDepthRange }: { track: DepthTra
 }
 
 
-function LithologyTrackView({ track, viewDepthRange }: { track: LithologyTrack; viewDepthRange: DepthViewRange }) {
+function LithologyTrackView({
+  track,
+  viewDepthRange,
+  trackBodyHeightPx,
+}: {
+  track: LithologyTrack;
+  viewDepthRange: DepthViewRange;
+  trackBodyHeightPx: number;
+}) {
   const visibleIntervals = lithologyIntervals21_31.filter((interval) => (
     interval.baseFt >= viewDepthRange.min && interval.topFt <= viewDepthRange.max
   ));
@@ -1325,8 +1348,8 @@ function LithologyTrackView({ track, viewDepthRange }: { track: LithologyTrack; 
       {visibleIntervals.map((interval) => {
         const clippedTop = Math.max(interval.topFt, viewDepthRange.min);
         const clippedBase = Math.min(interval.baseFt, viewDepthRange.max);
-        const top = depthToY(clippedTop, viewDepthRange);
-        const base = depthToY(clippedBase, viewDepthRange);
+        const top = depthToY(clippedTop, viewDepthRange, trackBodyHeightPx);
+        const base = depthToY(clippedBase, viewDepthRange, trackBodyHeightPx);
         const height = Math.max(2, base - top);
 
         const showCode = height >= 16;
@@ -1359,7 +1382,17 @@ function LithologyTrackView({ track, viewDepthRange }: { track: LithologyTrack; 
   );
 }
 
-function CurveTrackView({ track, depthTicks, viewDepthRange }: { track: CurveTrack; depthTicks: number[]; viewDepthRange: DepthViewRange }) {
+function CurveTrackView({
+  track,
+  depthTicks,
+  viewDepthRange,
+  trackBodyHeightPx,
+}: {
+  track: CurveTrack;
+  depthTicks: number[];
+  viewDepthRange: DepthViewRange;
+  trackBodyHeightPx: number;
+}) {
   const ordered = orderedCurves(track);
   const backToFront = [...ordered].reverse();
   const lattice = resolveTrackLattice(track, curveCatalog);
@@ -1367,11 +1400,11 @@ function CurveTrackView({ track, depthTicks, viewDepthRange }: { track: CurveTra
   const fillAnchorX = trackWidth / 2;
 
   return (
-    <svg className={`wlv-curve-track-svg ${lattice.lattice}`} viewBox={`0 0 ${trackWidth} ${CURVE_VIEW_HEIGHT}`} preserveAspectRatio="none">
+    <svg className={`wlv-curve-track-svg ${lattice.lattice}`} viewBox={`0 0 ${trackWidth} ${trackBodyHeightPx}`} preserveAspectRatio="none">
       {lattice.lattice === 'logarithmic' ? (
         <>
-          <rect className="wlv-log-grid-background" x="0" y="0" width={trackWidth} height={CURVE_VIEW_HEIGHT} />
-          {renderLogarithmicGrid(track, trackWidth)}
+          <rect className="wlv-log-grid-background" x="0" y="0" width={trackWidth} height={trackBodyHeightPx} />
+          {renderLogarithmicGrid(track, trackWidth, trackBodyHeightPx)}
         </>
       ) : (
         <>
@@ -1380,20 +1413,20 @@ function CurveTrackView({ track, depthTicks, viewDepthRange }: { track: CurveTra
               <path d="M 24 0 L 0 0 0 30" fill="none" stroke="#e0e6ed" strokeWidth="1" />
             </pattern>
           </defs>
-          <rect x="0" y="0" width={trackWidth} height={CURVE_VIEW_HEIGHT} fill={`url(#grid-${track.trackId})`} />
+          <rect x="0" y="0" width={trackWidth} height={trackBodyHeightPx} fill={`url(#grid-${track.trackId})`} />
         </>
       )}
       {depthTicks.map((depth) => {
-        const y = depthToY(depth, viewDepthRange);
+        const y = depthToY(depth, viewDepthRange, trackBodyHeightPx);
         return <line key={depth} x1="0" x2={trackWidth} y1={y} y2={y} stroke="#aeb8c5" strokeWidth="1" />;
       })}
       {backToFront.map((assignment, index) => {
         const curve = curveById(curveCatalog, assignment.curveId);
-        const path = curvePath(curve, assignment, index, viewDepthRange, lattice.lattice, trackWidth);
+        const path = curvePath(curve, assignment, index, viewDepthRange, lattice.lattice, trackWidth, trackBodyHeightPx);
         return (
           <g key={assignment.assignmentId}>
             {assignment.fillSide !== 'none' && (
-              <path d={`${path} L ${fillAnchorX} ${CURVE_VIEW_HEIGHT - CURVE_VIEW_PADDING_Y} L ${fillAnchorX} ${CURVE_VIEW_PADDING_Y} Z`} fill={assignment.fillColor} stroke="none" opacity="0.55" />
+              <path d={`${path} L ${fillAnchorX} ${trackBodyHeightPx - CURVE_VIEW_PADDING_Y} L ${fillAnchorX} ${CURVE_VIEW_PADDING_Y} Z`} fill={assignment.fillColor} stroke="none" opacity="0.55" />
             )}
             <path
               d={path}
@@ -1428,6 +1461,7 @@ function TrackView({
   onRemoveCurveFromTrack,
   onStartCurveTrackResize,
   resizingTrackId,
+  trackBodyHeightPx,
 }: {
   track: WellLogTrack;
   sharedHeaderHeightPx: number;
@@ -1445,6 +1479,7 @@ function TrackView({
   onRemoveCurveFromTrack: (trackId: string, assignmentId: string) => void;
   onStartCurveTrackResize: (trackId: string, startX: number, startWidth: number) => void;
   resizingTrackId: string | null;
+  trackBodyHeightPx: number;
 }) {
   const widthPx = track.trackType === 'curve' ? clampCurveTrackWidth(track.widthPx) : track.widthPx;
   const width = `${widthPx}px`;
@@ -1453,7 +1488,7 @@ function TrackView({
   return (
     <section
       className={`wlv-track ${track.trackType} ${selected ? 'selected' : ''} ${resizingTrackId === track.trackId ? 'resizing' : ''}`}
-      style={{ width, minWidth: width, height: `${sharedHeaderHeightPx + TRACK_BODY_HEIGHT_PX}px` }}
+      style={{ width, minWidth: width, height: `${sharedHeaderHeightPx + trackBodyHeightPx}px` }}
       onMouseDownCapture={(event) => {
         if (track.trackType !== 'curve' || !event.shiftKey || event.button !== 0) return;
         const target = event.target;
@@ -1511,10 +1546,10 @@ function TrackView({
           </>
         )}
       </header>
-      <div className="wlv-track-body">
-        {track.trackType === 'depth' ? <DepthTrackView track={track} depthTicks={depthTicks} viewDepthRange={viewDepthRange} /> : null}
-        {track.trackType === 'lithology' ? <LithologyTrackView track={track} viewDepthRange={viewDepthRange} /> : null}
-        {track.trackType === 'curve' ? <CurveTrackView track={track} depthTicks={depthTicks} viewDepthRange={viewDepthRange} /> : null}
+      <div className="wlv-track-body" style={{ height: `${trackBodyHeightPx}px`, minHeight: `${trackBodyHeightPx}px`, flexBasis: `${trackBodyHeightPx}px` }}>
+        {track.trackType === 'depth' ? <DepthTrackView track={track} depthTicks={depthTicks} viewDepthRange={viewDepthRange} trackBodyHeightPx={trackBodyHeightPx} /> : null}
+        {track.trackType === 'lithology' ? <LithologyTrackView track={track} viewDepthRange={viewDepthRange} trackBodyHeightPx={trackBodyHeightPx} /> : null}
+        {track.trackType === 'curve' ? <CurveTrackView track={track} depthTicks={depthTicks} viewDepthRange={viewDepthRange} trackBodyHeightPx={trackBodyHeightPx} /> : null}
       </div>
     </section>
   );
@@ -1576,6 +1611,14 @@ function TrackCanvas({
   const canvasRef = useRef<HTMLElement | null>(null);
   const orderedTracks = sortTracks(tracks);
   const sharedHeaderHeight = sharedTrackHeaderHeightPx(orderedTracks);
+  const { setContainerRef, trackBodyHeightPx } = useTrackBodyGeometry({
+    headerHeightPx: sharedHeaderHeight,
+    fallbackBodyHeightPx: TRACK_BODY_HEIGHT_PX,
+    minBodyHeightPx: TRACK_BODY_MIN_HEIGHT_PX,
+    maxBodyHeightPx: TRACK_BODY_MAX_HEIGHT_PX,
+    footerClearancePx: TRACK_FOOTER_CLEARANCE_PX,
+    stripPaddingPx: TRACK_STRIP_PADDING_PX,
+  });
 
   const canvasRectFromCanvas = () => canvasRef.current?.getBoundingClientRect() ?? null;
 
@@ -1592,7 +1635,7 @@ function TrackCanvas({
 
   const pointFromClientY = (clientY: number) => {
     const rect = bodyRectFromCanvas() ?? canvasRectFromCanvas();
-    const height = rect?.height ?? TRACK_BODY_HEIGHT_PX;
+    const height = rect?.height ?? trackBodyHeightPx;
     const top = rect?.top ?? 0;
     const y = clampValue(clientY - top, 0, height);
     const depth = yToDepth(y, viewDepthRange, height);
@@ -1647,17 +1690,20 @@ function TrackCanvas({
   const sharedGoToMarkerY = typeof goToDepthMarker === 'number'
     && goToDepthMarker >= viewDepthRange.min
     && goToDepthMarker <= viewDepthRange.max
-    ? bodyTopOffset + depthToY(goToDepthMarker, viewDepthRange)
+    ? bodyTopOffset + depthToY(goToDepthMarker, viewDepthRange, trackBodyHeightPx)
     : null;
 
   const sharedDepthGridLines = depthTicks.map((depth) => ({
     depth,
-    y: bodyTopOffset + depthToY(depth, viewDepthRange),
+    y: bodyTopOffset + depthToY(depth, viewDepthRange, trackBodyHeightPx),
   }));
 
   return (
     <main
-      ref={canvasRef}
+      ref={(node) => {
+        canvasRef.current = node;
+        setContainerRef(node);
+      }}
       className={`wlv-track-canvas ${intervalZoomActive ? 'interval-zoom-active' : ''} ${dragPanActive ? 'drag-pan-active' : ''} ${resizingTrackId ? 'curve-resize-active' : ''}`}
       onMouseDownCapture={(event) => {
         if (intervalZoomActive) {
@@ -1757,6 +1803,7 @@ function TrackCanvas({
             onRemoveCurveFromTrack={onRemoveCurveFromTrack}
             onStartCurveTrackResize={onStartCurveTrackResize}
             resizingTrackId={resizingTrackId}
+            trackBodyHeightPx={trackBodyHeightPx}
           />
         ))}
       </div>
@@ -2542,11 +2589,19 @@ export function TrackLayoutPrototype() {
           onStartCurveTrackResize={startCurveTrackResize}
           resizingTrackId={trackResizeState?.trackId ?? null}
         />
-        <RightPanel
+        <WellLogPropertiesPanelSlot
           tracks={tracks}
           selection={selection}
           updateTrack={updateTrack}
           updateCurveAssignment={updateCurveAssignment}
+          legacyPanel={(
+            <RightPanel
+              tracks={tracks}
+              selection={selection}
+              updateTrack={updateTrack}
+              updateCurveAssignment={updateCurveAssignment}
+            />
+          )}
         />
       </div>
 
