@@ -35,6 +35,48 @@ type DepthViewRange = {
   max: number;
 };
 
+
+type DemoNavView = 'log-viewer' | 'data';
+
+type ManagedInventorySourceReference = {
+  source_id: string;
+  source_kind: string;
+  display_name: string;
+  path?: string | null;
+  uri?: string | null;
+  status: string;
+};
+
+type ManagedInventoryViewerPackageReference = {
+  viewer_package_id: string;
+  package_kind: string;
+  display_name: string;
+  status: string;
+};
+
+type ManagedInventoryWellRecord = {
+  managed_well_id: string;
+  well_id: string;
+  display_name: string;
+  operator?: string | null;
+  field?: string | null;
+  country?: string | null;
+  status: string;
+  source_references: ManagedInventorySourceReference[];
+  viewer_packages: ManagedInventoryViewerPackageReference[];
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type ManagedInventoryStatusPayload = {
+  ok: boolean;
+  service: string;
+  scope: string;
+  managed_well_count: number;
+  viewer_package_count: number;
+  repository_path?: string | null;
+};
+
 type IntervalSelectionState = {
   startDepth: number;
   currentDepth: number;
@@ -97,12 +139,203 @@ function depthRangeLabel(range: DepthViewRange): string {
   return `${range.min}–${range.max} ${depthUnitLabel} MD`;
 }
 
+
+function wlvApiBaseUrl(): string {
+  const runtimeConfig = window as unknown as { __WLV_API_BASE_URL__?: string };
+  if (runtimeConfig.__WLV_API_BASE_URL__) {
+    return runtimeConfig.__WLV_API_BASE_URL__.replace(/\/$/, '');
+  }
+
+  if (window.location.port === '8000') {
+    return '';
+  }
+
+  return 'http://127.0.0.1:8000';
+}
+
+async function fetchWlvJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${wlvApiBaseUrl()}${path}`, {
+    ...init,
+    headers: {
+      Accept: 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+function statusLabel(value: string): string {
+  return value.replace(/_/g, ' ');
+}
+
+function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => void }) {
+  const [status, setStatus] = useState<ManagedInventoryStatusPayload | null>(null);
+  const [wells, setWells] = useState<ManagedInventoryWellRecord[]>([]);
+  const [selectedWellId, setSelectedWellId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [registering, setRegistering] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const selectedWell = useMemo(() => (
+    wells.find((well) => well.managed_well_id === selectedWellId) ?? wells[0] ?? null
+  ), [selectedWellId, wells]);
+
+  const loadInventory = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [nextStatus, nextWells] = await Promise.all([
+        fetchWlvJson<ManagedInventoryStatusPayload>('/api/wlv/inventory/status'),
+        fetchWlvJson<ManagedInventoryWellRecord[]>('/api/wlv/inventory/wells'),
+      ]);
+      setStatus(nextStatus);
+      setWells(nextWells);
+      setSelectedWellId((current) => (
+        current && nextWells.some((well) => well.managed_well_id === current)
+          ? current
+          : nextWells[0]?.managed_well_id ?? null
+      ));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to load managed well inventory');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadInventory();
+  }, []);
+
+  const registerSeedWell = async () => {
+    setRegistering(true);
+    setError(null);
+    try {
+      const result = await fetchWlvJson<{ record: ManagedInventoryWellRecord }>('/api/wlv/inventory/wells/register-seed', {
+        method: 'POST',
+      });
+      await loadInventory();
+      setSelectedWellId(result.record.managed_well_id);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to register seed well');
+    } finally {
+      setRegistering(false);
+    }
+  };
+
+  return (
+    <section className="wlv-managed-inventory-page" aria-label="Managed Well Inventory">
+      <header className="wlv-managed-inventory-header">
+        <div>
+          <span className="wlv-page-kicker">Data</span>
+          <h1>Managed Well Inventory</h1>
+          <p>Backend-owned WLV MSI-equivalent for wells, source references, and viewer packages.</p>
+        </div>
+        <div className="wlv-managed-inventory-actions">
+          <button type="button" onClick={loadInventory} disabled={loading || registering}>Refresh</button>
+          <button type="button" onClick={registerSeedWell} disabled={loading || registering}>Register Seed Well</button>
+          <button type="button" onClick={onBackToViewer}>Open Log Viewer</button>
+        </div>
+      </header>
+
+      {status ? (
+        <div className="wlv-managed-inventory-summary" aria-label="Managed inventory summary">
+          <div><span>Service</span><strong>{status.service}</strong></div>
+          <div><span>Managed Wells</span><strong>{status.managed_well_count}</strong></div>
+          <div><span>Viewer Packages</span><strong>{status.viewer_package_count}</strong></div>
+          <div><span>Scope</span><strong>{status.scope}</strong></div>
+        </div>
+      ) : null}
+
+      {error ? <div className="wlv-managed-inventory-error" role="alert">{error}</div> : null}
+
+      {loading ? (
+        <div className="wlv-managed-inventory-empty">Loading managed inventory from backend...</div>
+      ) : wells.length === 0 ? (
+        <div className="wlv-managed-inventory-empty">
+          <strong>No managed wells registered.</strong>
+          <span>Use Register Seed Well to register the current backend seed well into the managed inventory.</span>
+        </div>
+      ) : (
+        <div className="wlv-managed-inventory-layout">
+          <aside className="wlv-managed-inventory-list" aria-label="Managed wells">
+            {wells.map((well) => (
+              <button
+                type="button"
+                key={well.managed_well_id}
+                className={`wlv-managed-well-card ${selectedWell?.managed_well_id === well.managed_well_id ? 'active' : ''}`}
+                onClick={() => setSelectedWellId(well.managed_well_id)}
+              >
+                <strong>{well.display_name}</strong>
+                <span>{well.managed_well_id}</span>
+                <em>{statusLabel(well.status)}</em>
+              </button>
+            ))}
+          </aside>
+
+          {selectedWell ? (
+            <article className="wlv-managed-inventory-detail" aria-label="Managed well detail">
+              <header>
+                <span className="wlv-page-kicker">Managed Well</span>
+                <h2>{selectedWell.display_name}</h2>
+                <p>{selectedWell.managed_well_id}</p>
+              </header>
+
+              <div className="wlv-managed-detail-grid">
+                <div><span>Well ID</span><strong>{selectedWell.well_id}</strong></div>
+                <div><span>Status</span><strong>{statusLabel(selectedWell.status)}</strong></div>
+                <div><span>Operator</span><strong>{selectedWell.operator ?? '—'}</strong></div>
+                <div><span>Field</span><strong>{selectedWell.field ?? '—'}</strong></div>
+                <div><span>Country</span><strong>{selectedWell.country ?? '—'}</strong></div>
+              </div>
+
+              <section className="wlv-managed-section">
+                <h3>Source References</h3>
+                {selectedWell.source_references.length === 0 ? (
+                  <p>No source references registered.</p>
+                ) : selectedWell.source_references.map((source) => (
+                  <div className="wlv-managed-reference-row" key={source.source_id}>
+                    <div>
+                      <strong>{source.display_name}</strong>
+                      <span>{source.source_id}</span>
+                    </div>
+                    <em>{statusLabel(source.source_kind)} · {statusLabel(source.status)}</em>
+                  </div>
+                ))}
+              </section>
+
+              <section className="wlv-managed-section">
+                <h3>Viewer Packages</h3>
+                {selectedWell.viewer_packages.length === 0 ? (
+                  <p>No viewer packages registered.</p>
+                ) : selectedWell.viewer_packages.map((viewerPackage) => (
+                  <div className="wlv-managed-reference-row" key={viewerPackage.viewer_package_id}>
+                    <div>
+                      <strong>{viewerPackage.display_name}</strong>
+                      <span>{viewerPackage.viewer_package_id}</span>
+                    </div>
+                    <em>{statusLabel(viewerPackage.package_kind)} · {statusLabel(viewerPackage.status)}</em>
+                  </div>
+                ))}
+              </section>
+            </article>
+          ) : null}
+        </div>
+      )}
+    </section>
+  );
+}
+
 type DemoNavIconKey = 'log-viewer' | 'data' | 'sources' | 'toolbox' | 'settings';
 
 type DemoNavItem = {
   label: string;
   icon: DemoNavIconKey;
-  active?: boolean;
+  view?: DemoNavView;
 };
 
 function DemoRailIcon({ icon }: { icon: DemoNavIconKey }) {
@@ -164,14 +397,28 @@ function DemoRailIcon({ icon }: { icon: DemoNavIconKey }) {
   );
 }
 
-function DemoShellNavItem({ item }: { item: DemoNavItem }) {
+function DemoShellNavItem({
+  item,
+  activeView,
+  onNavigate,
+}: {
+  item: DemoNavItem;
+  activeView: DemoNavView;
+  onNavigate: (view: DemoNavView) => void;
+}) {
+  const active = item.view === activeView;
+  const navigable = Boolean(item.view);
+
   return (
     <button
       type="button"
-      className={`wlv-demo-nav-item ${item.active ? 'active' : ''}`}
-      aria-current={item.active ? 'page' : undefined}
-      onClick={(event) => event.preventDefault()}
-      title={item.label}
+      className={`wlv-demo-nav-item ${active ? 'active' : ''}`}
+      aria-current={active ? 'page' : undefined}
+      onClick={() => {
+        if (item.view) onNavigate(item.view);
+      }}
+      disabled={!navigable}
+      title={item.view === 'data' ? 'Open Managed Well Inventory' : item.label}
     >
       <span className="wlv-demo-nav-icon" aria-hidden="true"><DemoRailIcon icon={item.icon} /></span>
       <span className="wlv-demo-nav-label">{item.label}</span>
@@ -179,10 +426,16 @@ function DemoShellNavItem({ item }: { item: DemoNavItem }) {
   );
 }
 
-function DemoShellRail() {
+function DemoShellRail({
+  activeView,
+  onNavigate,
+}: {
+  activeView: DemoNavView;
+  onNavigate: (view: DemoNavView) => void;
+}) {
   const topItems: DemoNavItem[] = [
-    { label: 'Log Viewer', icon: 'log-viewer', active: true },
-    { label: 'Data', icon: 'data' },
+    { label: 'Log Viewer', icon: 'log-viewer', view: 'log-viewer' },
+    { label: 'Data', icon: 'data', view: 'data' },
   ];
 
   const bottomItems: DemoNavItem[] = [
@@ -199,11 +452,15 @@ function DemoShellRail() {
       </div>
 
       <div className="wlv-demo-nav-top">
-        {topItems.map((item) => <DemoShellNavItem key={item.label} item={item} />)}
+        {topItems.map((item) => (
+          <DemoShellNavItem key={item.label} item={item} activeView={activeView} onNavigate={onNavigate} />
+        ))}
       </div>
 
       <div className="wlv-demo-nav-bottom">
-        {bottomItems.map((item) => <DemoShellNavItem key={item.label} item={item} />)}
+        {bottomItems.map((item) => (
+          <DemoShellNavItem key={item.label} item={item} activeView={activeView} onNavigate={onNavigate} />
+        ))}
       </div>
     </aside>
   );
@@ -2293,6 +2550,7 @@ function RightPanel({
 }
 
 export function TrackLayoutPrototype() {
+  const [activeView, setActiveView] = useState<DemoNavView>('log-viewer');
   const [tracks, setTracks] = useState<WellLogTrack[]>(() => reindexTracks(initialTracks));
   const [selection, setSelection] = useState<SelectionRef>({ kind: 'track', trackId: 'track-gr-sp' });
   const [selectedInventoryCurveIds, setSelectedInventoryCurveIds] = useState<string[]>([]);
@@ -2752,8 +3010,11 @@ export function TrackLayoutPrototype() {
 
   return (
     <div className="wlv-demo-shell">
-      <DemoShellRail />
+      <DemoShellRail activeView={activeView} onNavigate={setActiveView} />
       <main className="wlv-demo-main" aria-label="Well Log Viewer workspace">
+        {activeView === 'data' ? (
+          <ManagedWellInventoryPage onBackToViewer={() => setActiveView('log-viewer')} />
+        ) : (
         <div className="wlv-prototype-root">
       <header className="wlv-app-header">
         <div className="wlv-app-title">
@@ -2897,6 +3158,7 @@ export function TrackLayoutPrototype() {
         <span>Mock frontend layout draft — no LAS parsing or MSI persistence</span>
       </footer>
         </div>
+        )}
       </main>
     </div>
   );

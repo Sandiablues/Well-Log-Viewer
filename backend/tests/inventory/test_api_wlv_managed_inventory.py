@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from backend.app.inventory.repository import ManagedWellInventoryRepository
+from backend.app.inventory.service import ManagedWellInventoryService
+from backend.app.inventory import api_inventory
+from backend.app.main import app
+
+
+def _install_temp_inventory(tmp_path: Path) -> None:
+    repository = ManagedWellInventoryRepository(tmp_path / "managed_wells.json")
+    api_inventory._service = ManagedWellInventoryService(repository=repository)
+
+
+def test_inventory_health_and_empty_status(tmp_path: Path) -> None:
+    _install_temp_inventory(tmp_path)
+    client = TestClient(app)
+
+    health = client.get("/api/wlv/inventory/health")
+    assert health.status_code == 200
+    assert health.json()["ok"] is True
+    assert health.json()["service"] == "wlv-managed-inventory"
+
+    status = client.get("/api/wlv/inventory/status")
+    assert status.status_code == 200
+    payload = status.json()
+    assert payload["ok"] is True
+    assert payload["managed_well_count"] == 0
+    assert payload["viewer_package_count"] == 0
+
+
+def test_register_seed_well_is_idempotent_and_persistent(tmp_path: Path) -> None:
+    _install_temp_inventory(tmp_path)
+    client = TestClient(app)
+
+    first = client.post("/api/wlv/inventory/wells/register-seed")
+    assert first.status_code == 200
+    first_payload = first.json()
+    assert first_payload["ok"] is True
+    assert first_payload["action"] == "created"
+    assert first_payload["record"]["managed_well_id"] == "managed-well:forge-21-31"
+    assert first_payload["record"]["well_name"] == "Forge 21-31"
+    assert len(first_payload["record"]["source_references"]) == 1
+    assert len(first_payload["record"]["viewer_packages"]) == 1
+
+    second = client.post("/api/wlv/inventory/wells/register-seed")
+    assert second.status_code == 200
+    assert second.json()["action"] == "updated"
+
+    wells = client.get("/api/wlv/inventory/wells")
+    assert wells.status_code == 200
+    assert len(wells.json()) == 1
+
+    detail = client.get("/api/wlv/inventory/wells/managed-well:forge-21-31")
+    assert detail.status_code == 200
+    assert detail.json()["well_id"] == "forge-21-31"
+
+    packages = client.get("/api/wlv/inventory/viewer-packages")
+    assert packages.status_code == 200
+    assert len(packages.json()) == 1
+    assert packages.json()[0]["endpoint"] == "/api/wlv/wells/forge-21-31/viewer-package"
+
+
+def test_missing_managed_well_returns_404(tmp_path: Path) -> None:
+    _install_temp_inventory(tmp_path)
+    client = TestClient(app)
+
+    response = client.get("/api/wlv/inventory/wells/not-present")
+    assert response.status_code == 404

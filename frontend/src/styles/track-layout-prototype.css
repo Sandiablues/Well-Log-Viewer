@@ -2751,3 +2751,228 @@ button.wlv-view-range-readout,
   font-weight: 700 !important;
   letter-spacing: 0.01em !important;
 }
+
+/* WLV-BE/FE-004 — Data icon Managed Well Inventory access. */
+.wlv-demo-nav-item:disabled {
+  cursor: default;
+  opacity: 0.56;
+}
+
+.wlv-managed-inventory-page {
+  min-height: 100%;
+  padding: 18px;
+  color: #e5edf7;
+  background: #07111f;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+.wlv-managed-inventory-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px;
+  border: 1px solid #253348;
+  border-radius: 14px;
+  background: #0b1626;
+}
+
+.wlv-managed-inventory-header h1,
+.wlv-managed-inventory-detail h2 {
+  margin: 2px 0 4px;
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+.wlv-managed-inventory-header p,
+.wlv-managed-inventory-detail p {
+  margin: 0;
+  color: #91a1b8;
+  font-size: 12px;
+}
+
+.wlv-page-kicker {
+  color: #7dd3fc;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.wlv-managed-inventory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.wlv-managed-inventory-actions button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid #3b82f6;
+  border-radius: 8px;
+  background: transparent;
+  color: #bfdbfe;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.wlv-managed-inventory-actions button:disabled {
+  border-color: #334155;
+  color: #64748b;
+}
+
+.wlv-managed-inventory-summary,
+.wlv-managed-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.wlv-managed-inventory-summary div,
+.wlv-managed-detail-grid div {
+  padding: 10px;
+  border: 1px solid #1f2b3d;
+  border-radius: 10px;
+  background: #0d1a2b;
+}
+
+.wlv-managed-inventory-summary span,
+.wlv-managed-detail-grid span {
+  display: block;
+  margin-bottom: 4px;
+  color: #8aa0ba;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.wlv-managed-inventory-summary strong,
+.wlv-managed-detail-grid strong {
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.wlv-managed-inventory-error,
+.wlv-managed-inventory-empty {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid #475569;
+  border-radius: 12px;
+  background: #101b2a;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.wlv-managed-inventory-error {
+  border-color: #ef4444;
+  color: #fecaca;
+}
+
+.wlv-managed-inventory-empty strong,
+.wlv-managed-inventory-empty span {
+  display: block;
+}
+
+.wlv-managed-inventory-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+  min-height: 0;
+}
+
+.wlv-managed-inventory-list,
+.wlv-managed-inventory-detail {
+  border: 1px solid #253348;
+  border-radius: 14px;
+  background: #0b1626;
+}
+
+.wlv-managed-inventory-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 10px;
+}
+
+.wlv-managed-well-card {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #243348;
+  border-radius: 10px;
+  background: transparent;
+  color: #cbd5e1;
+  text-align: left;
+}
+
+.wlv-managed-well-card.active {
+  border-color: #38bdf8;
+  color: #e0f2fe;
+}
+
+.wlv-managed-well-card strong {
+  font-size: 12px;
+}
+
+.wlv-managed-well-card span,
+.wlv-managed-well-card em {
+  color: #8aa0ba;
+  font-size: 10px;
+  font-style: normal;
+}
+
+.wlv-managed-inventory-detail {
+  padding: 14px;
+}
+
+.wlv-managed-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #1f2b3d;
+}
+
+.wlv-managed-section h3 {
+  margin: 0 0 8px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.wlv-managed-section p {
+  color: #8aa0ba;
+  font-size: 12px;
+}
+
+.wlv-managed-reference-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid #172235;
+}
+
+.wlv-managed-reference-row:first-of-type {
+  border-top: 0;
+}
+
+.wlv-managed-reference-row div {
+  display: grid;
+  gap: 3px;
+}
+
+.wlv-managed-reference-row strong {
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.wlv-managed-reference-row span,
+.wlv-managed-reference-row em {
+  color: #8aa0ba;
+  font-size: 10px;
+  font-style: normal;
+}

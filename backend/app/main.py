@@ -12,6 +12,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .wells.api_wlv import router as wlv_router
+from .system.api_system import router as system_router
+from .inventory.api_inventory import router as inventory_router
 
 app = FastAPI(
     title="MultiViewer Well Log Viewer Backend",
@@ -36,4 +38,6 @@ def health() -> dict[str, object]:
     return {"ok": True, "service": "wlv-backend", "scope": "backend_foundation"}
 
 
+app.include_router(system_router)
+app.include_router(inventory_router)
 app.include_router(wlv_router)
