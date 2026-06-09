@@ -147,11 +147,11 @@ function wlvApiBaseUrl(): string {
     return runtimeConfig.__WLV_API_BASE_URL__.replace(/\/$/, '');
   }
 
-  if (window.location.port === '8000') {
+  if (window.location.port === '8010') {
     return '';
   }
 
-  return 'http://127.0.0.1:8000';
+  return 'http://127.0.0.1:8010';
 }
 
 async function fetchWlvJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -170,8 +170,8 @@ async function fetchWlvJson<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-function statusLabel(value: string): string {
-  return value.replace(/_/g, ' ');
+function statusLabel(status?: string | null): string {
+  return (status ?? 'unknown').replace(/_/g, ' ');
 }
 
 function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => void }) {
