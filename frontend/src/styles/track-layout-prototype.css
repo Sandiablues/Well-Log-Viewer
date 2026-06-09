@@ -3696,3 +3696,843 @@ button.wlv-view-range-readout,
 
 /* WLV-SIDE-RAIL-ICON-SEISMIC-ALIGNMENT-END */
 
+/* WLV-WMDP-TABLE-SHELL-V2-START */
+
+/* WMDP table shell conversion v2. Structure only; uses the accepted warm ash CSS palette. */
+.wlv-wmdp-page-header {
+  margin-bottom: 12px;
+}
+
+.wlv-wmdp-panel {
+  border: 1px solid var(--mdp-border, #3a3430);
+  border-radius: 12px;
+  background: var(--mdp-panel-bg, #24211f);
+  overflow: hidden;
+}
+
+.wlv-wmdp-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--mdp-border, #3a3430);
+  background: var(--mdp-panel-soft, #2b2724);
+}
+
+.wlv-wmdp-panel-header h2 {
+  margin: 0 0 4px;
+  color: var(--mdp-text-primary, #e3ddd6);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.wlv-wmdp-panel-header p {
+  margin: 0;
+  color: var(--mdp-text-muted, #9b9289);
+  font-size: 11.5px;
+}
+
+.wlv-wmdp-panel-actions,
+.wlv-wmdp-toolbar-left,
+.wlv-wmdp-toolbar-right,
+.wlv-wmdp-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wlv-wmdp-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--mdp-border, #3a3430);
+  background: var(--mdp-toolbar-bg, #171a22);
+}
+
+.wlv-wmdp-toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mdp-text-muted, #9b9289);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.wlv-wmdp-toolbar input[type="search"],
+.wlv-wmdp-toolbar select {
+  height: 30px;
+  border-radius: 7px;
+  border: 1px solid var(--mdp-blue-border, #5d7391);
+  background: transparent;
+  color: var(--mdp-text-secondary, #c9c1b8);
+  font-size: 12px;
+  outline: none;
+}
+
+.wlv-wmdp-toolbar input[type="search"] {
+  min-width: 260px;
+  padding: 0 10px;
+}
+
+.wlv-wmdp-toolbar select {
+  padding: 0 8px;
+}
+
+.wlv-wmdp-toolbar input[type="search"]:focus,
+.wlv-wmdp-toolbar select:focus {
+  border-color: var(--mdp-accent-blue, #4f84c4);
+}
+
+.wlv-wmdp-panel button,
+.wlv-wmdp-panel-actions button,
+.wlv-wmdp-toolbar button,
+.wlv-wmdp-row-actions button,
+.wlv-wmdp-expand-btn {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid var(--mdp-blue-border, #5d7391);
+  background: transparent;
+  color: var(--mdp-text-secondary, #c9c1b8);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wlv-wmdp-panel button:hover:not(:disabled),
+.wlv-wmdp-toolbar button:hover:not(:disabled),
+.wlv-wmdp-row-actions button:hover:not(:disabled),
+.wlv-wmdp-expand-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--mdp-accent-blue, #4f84c4);
+  color: var(--mdp-text-primary, #e3ddd6);
+}
+
+.wlv-wmdp-panel button:disabled,
+.wlv-wmdp-toolbar button:disabled,
+.wlv-wmdp-row-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.wlv-wmdp-page-readout,
+.wlv-wmdp-selected-readout {
+  color: var(--mdp-text-muted, #9b9289);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.wlv-wmdp-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  background: var(--mdp-panel-bg, #24211f);
+}
+
+.wlv-wmdp-table {
+  width: 100%;
+  min-width: 1180px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+
+.wlv-wmdp-table th {
+  height: 34px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--mdp-border, #3a3430);
+  background: var(--mdp-panel-soft, #2b2724);
+  color: var(--mdp-text-muted, #9b9289);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.055em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.wlv-wmdp-table td {
+  height: 38px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--mdp-border, #3a3430);
+  background: var(--mdp-row-bg, #211f1d);
+  color: var(--mdp-text-secondary, #c9c1b8);
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-wmdp-table tbody tr:hover td {
+  background: var(--mdp-row-hover, #292623);
+}
+
+.wlv-wmdp-table tbody tr.is-selected td {
+  background: var(--mdp-row-selected, #302c29);
+}
+
+.wlv-wmdp-col-select,
+.wlv-wmdp-col-expand {
+  width: 36px;
+  text-align: center;
+}
+
+.wlv-wmdp-col-select input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--mdp-accent-blue, #4f84c4);
+}
+
+.wlv-wmdp-expand-btn {
+  min-width: 26px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
+.wlv-wmdp-name-cell button {
+  width: 100%;
+  min-height: 0;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.wlv-wmdp-name-cell strong {
+  max-width: 100%;
+  color: var(--mdp-text-primary, #e3ddd6);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-wmdp-name-cell span {
+  max-width: 100%;
+  color: var(--mdp-text-muted, #9b9289);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-wmdp-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--mdp-border-strong, #4a433e);
+  color: var(--mdp-text-secondary, #c9c1b8);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-wmdp-row-actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+.wlv-wmdp-row-actions button {
+  min-width: 42px;
+  height: 26px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.wlv-wmdp-empty-cell {
+  height: 54px !important;
+  color: var(--mdp-text-muted, #9b9289) !important;
+  text-align: center;
+}
+
+.wlv-wmdp-expanded-row td {
+  height: auto;
+  padding: 0;
+  white-space: normal;
+  background: #1f1c1a;
+}
+
+.wlv-wmdp-expanded-content {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px 12px 12px 78px;
+  border-bottom: 1px solid var(--mdp-border, #3a3430);
+}
+
+.wlv-wmdp-expanded-content section {
+  border: 1px solid var(--mdp-border, #3a3430);
+  border-radius: 9px;
+  background: var(--mdp-panel-bg, #24211f);
+  overflow: hidden;
+}
+
+.wlv-wmdp-expanded-content h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--mdp-border, #3a3430);
+  background: var(--mdp-panel-soft, #2b2724);
+  color: var(--mdp-text-primary, #e3ddd6);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wlv-wmdp-expanded-content h3 span {
+  color: var(--mdp-text-muted, #9b9289);
+  font-size: 11px;
+}
+
+.wlv-wmdp-expanded-content p {
+  margin: 0;
+  padding: 9px 10px;
+  color: var(--mdp-text-muted, #9b9289);
+  font-size: 12px;
+}
+
+.wlv-wmdp-expanded-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--mdp-border, #3a3430);
+  background: var(--mdp-row-bg, #211f1d);
+}
+
+.wlv-wmdp-expanded-item:last-child {
+  border-bottom: 0;
+}
+
+.wlv-wmdp-expanded-item strong {
+  display: block;
+  color: var(--mdp-text-primary, #e3ddd6);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-wmdp-expanded-item span,
+.wlv-wmdp-expanded-item em {
+  color: var(--mdp-text-muted, #9b9289);
+  font-size: 10.5px;
+  font-style: normal;
+}
+/* WLV-WMDP-TABLE-SHELL-V2-END */
+
+
+/* WLV-WMDP-CONTROL-LAYOUT-ALIGNMENT-START */
+
+/*
+  WMDP control layout alignment.
+  Scope: CSS only.
+  Target: match SMDP control row order exactly:
+  1) header: title/subtitle left, Sort by + Refresh + Collapse right
+  2) controls: Search Managed Wells, Page size, Previous, Next, Showing x-y of n
+  3) controls: Selected n, Action dropdown, Apply
+*/
+
+.wlv-mdp-control-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.wlv-mdp-control-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 20px;
+}
+
+.wlv-mdp-control-header > div:first-child {
+  min-width: 0;
+}
+
+.wlv-mdp-control-header > div:first-child h2 {
+  margin: 0 0 6px;
+}
+
+.wlv-mdp-control-header > div:first-child p {
+  margin: 0;
+}
+
+.wlv-mdp-sort-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.wlv-mdp-sort-actions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.wlv-mdp-sort-actions label span {
+  white-space: nowrap;
+}
+
+.wlv-mdp-sort-actions select {
+  min-width: 150px;
+}
+
+.wlv-mdp-control-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px;
+  padding: 14px 16px;
+}
+
+.wlv-mdp-search-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  flex-wrap: nowrap;
+  width: 100%;
+  margin: 0;
+}
+
+.wlv-mdp-search-row input[type="search"],
+.wlv-mdp-search-row input[type="text"],
+.wlv-mdp-search-row input:not([type]) {
+  flex: 0 1 620px;
+  min-width: 320px;
+  max-width: 760px;
+}
+
+.wlv-mdp-search-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.wlv-mdp-search-row label span {
+  white-space: nowrap;
+}
+
+.wlv-mdp-search-row button {
+  flex: 0 0 auto;
+}
+
+.wlv-mdp-search-row > span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.wlv-mdp-bulk-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  flex-wrap: nowrap;
+  width: 100%;
+  margin: 0;
+}
+
+.wlv-mdp-bulk-row > span {
+  flex: 0 0 auto;
+  min-width: 125px;
+  white-space: nowrap;
+}
+
+.wlv-mdp-bulk-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.wlv-mdp-bulk-row label span {
+  white-space: nowrap;
+}
+
+.wlv-mdp-bulk-row select {
+  min-width: 300px;
+}
+
+.wlv-mdp-bulk-row button {
+  flex: 0 0 auto;
+}
+
+/* Keep the two lower control rows visually inside one SMDP-style blue-black band. */
+.wlv-mdp-search-row + .wlv-mdp-bulk-row {
+  margin-top: 0;
+}
+
+/* Responsive fallback: preserve order, allow wrap only on smaller widths. */
+@media (max-width: 1200px) {
+  .wlv-mdp-control-header,
+  .wlv-mdp-sort-actions,
+  .wlv-mdp-search-row,
+  .wlv-mdp-bulk-row {
+    flex-wrap: wrap;
+  }
+
+  .wlv-mdp-search-row input[type="search"],
+  .wlv-mdp-search-row input[type="text"],
+  .wlv-mdp-search-row input:not([type]) {
+    flex: 1 1 320px;
+  }
+}
+
+/* WLV-WMDP-CONTROL-LAYOUT-ALIGNMENT-END */
+
+
+/* WLV-WMDP-CONTROL-ROWS-EXACT-SMDP-START */
+
+/*
+  WMDP control rows exact SMDP alignment.
+  Scope: WMDP header/control layout only.
+  Required order:
+  1) header: title/subtitle left; Sort by + Refresh + Collapse right
+  2) first control row: Search, Page size, Previous, Next, Showing count
+  3) second control row: Selected count, Action dropdown, Apply
+*/
+
+.wlv-wmdp-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+}
+
+.wlv-wmdp-panel-header > div:first-child {
+  min-width: 0;
+}
+
+.wlv-wmdp-panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-left: auto;
+  white-space: nowrap;
+  flex-wrap: nowrap;
+}
+
+.wlv-wmdp-sort-control,
+.wlv-wmdp-page-size-control,
+.wlv-wmdp-action-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--mdp-text-secondary, #c9c1b8);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.wlv-wmdp-sort-control span,
+.wlv-wmdp-page-size-control span,
+.wlv-wmdp-action-control span {
+  white-space: nowrap;
+}
+
+.wlv-wmdp-panel-actions select {
+  min-width: 150px;
+}
+
+.wlv-wmdp-control-band {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--mdp-blue-border, #5d7391);
+  border-radius: 9px;
+  background: var(--mdp-toolbar-bg, #171a22);
+}
+
+.wlv-wmdp-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  flex-wrap: nowrap;
+  width: 100%;
+}
+
+.wlv-wmdp-control-row-paging input[type="search"] {
+  flex: 0 1 620px;
+  min-width: 320px;
+  max-width: 760px;
+}
+
+.wlv-wmdp-control-row button,
+.wlv-wmdp-panel-actions button,
+.wlv-wmdp-control-row select,
+.wlv-wmdp-panel-actions select,
+.wlv-wmdp-control-row input[type="search"] {
+  height: 30px;
+  border-radius: 7px;
+  border: 1px solid var(--mdp-blue-border, #5d7391);
+  background: transparent;
+  color: var(--mdp-text-secondary, #c9c1b8);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.wlv-wmdp-control-row input[type="search"] {
+  padding: 0 10px;
+  font-weight: 400;
+}
+
+.wlv-wmdp-control-row select,
+.wlv-wmdp-panel-actions select {
+  padding: 0 28px 0 9px;
+}
+
+.wlv-wmdp-control-row button,
+.wlv-wmdp-panel-actions button {
+  padding: 0 10px;
+}
+
+.wlv-wmdp-control-row button:hover:not(:disabled),
+.wlv-wmdp-panel-actions button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--mdp-accent-blue, #4f84c4);
+  color: var(--mdp-text-primary, #e3ddd6);
+}
+
+.wlv-wmdp-control-row button:disabled,
+.wlv-wmdp-panel-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.wlv-wmdp-page-readout,
+.wlv-wmdp-selected-readout {
+  color: var(--mdp-text-secondary, #c9c1b8);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.wlv-wmdp-selected-readout {
+  min-width: 125px;
+}
+
+.wlv-wmdp-action-control select {
+  min-width: 300px;
+}
+
+.wlv-wmdp-control-row-bulk button:last-child {
+  border-color: var(--mdp-accent-green, #3ca765);
+  color: var(--mdp-accent-green, #3ca765);
+}
+
+@media (max-width: 1200px) {
+  .wlv-wmdp-panel-header,
+  .wlv-wmdp-panel-actions,
+  .wlv-wmdp-control-row {
+    flex-wrap: wrap;
+  }
+
+  .wlv-wmdp-control-row-paging input[type="search"] {
+    flex: 1 1 320px;
+  }
+}
+
+/* WLV-WMDP-CONTROL-ROWS-EXACT-SMDP-END */
+
+
+/* WLV-WMDP-CONTROL-DENSITY-STRONG-START */
+
+/*
+  WMDP strong density normalization.
+  Scope: CSS sizing only.
+  Purpose: visually reduce WMDP header, action bars, buttons, and table
+  density to match the compact Seismic MDP pattern.
+*/
+
+.wlv-wmdp-panel-header {
+  padding: 8px 10px !important;
+  gap: 10px !important;
+  min-height: 0 !important;
+}
+
+.wlv-wmdp-panel-header h2 {
+  margin: 0 0 2px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.15 !important;
+}
+
+.wlv-wmdp-panel-header p {
+  margin: 0 !important;
+  font-size: 10.75px !important;
+  line-height: 1.2 !important;
+}
+
+.wlv-wmdp-panel-actions {
+  gap: 6px !important;
+}
+
+.wlv-wmdp-control-band {
+  margin: 8px 10px 10px !important;
+  padding: 8px 10px !important;
+  gap: 6px !important;
+  border-radius: 7px !important;
+}
+
+.wlv-wmdp-control-row {
+  gap: 6px !important;
+  min-height: 26px !important;
+}
+
+.wlv-wmdp-sort-control,
+.wlv-wmdp-page-size-control,
+.wlv-wmdp-action-control {
+  gap: 5px !important;
+  font-size: 11.5px !important;
+  line-height: 1 !important;
+}
+
+.wlv-wmdp-sort-control span,
+.wlv-wmdp-page-size-control span,
+.wlv-wmdp-action-control span {
+  font-size: 11.25px !important;
+  font-weight: 500 !important;
+}
+
+.wlv-wmdp-control-row button,
+.wlv-wmdp-panel-actions button,
+.wlv-wmdp-control-row select,
+.wlv-wmdp-panel-actions select,
+.wlv-wmdp-control-row input[type="search"] {
+  height: 26px !important;
+  min-height: 26px !important;
+  border-radius: 6px !important;
+  font-size: 11.5px !important;
+  line-height: 1 !important;
+}
+
+.wlv-wmdp-control-row button,
+.wlv-wmdp-panel-actions button {
+  padding: 0 7px !important;
+  font-weight: 500 !important;
+}
+
+.wlv-wmdp-control-row select,
+.wlv-wmdp-panel-actions select {
+  padding: 0 22px 0 7px !important;
+  font-weight: 500 !important;
+}
+
+.wlv-wmdp-control-row input[type="search"] {
+  padding: 0 8px !important;
+  font-weight: 400 !important;
+}
+
+.wlv-wmdp-control-row-paging input[type="search"] {
+  flex-basis: 500px !important;
+  min-width: 260px !important;
+  max-width: 600px !important;
+}
+
+.wlv-wmdp-panel-actions select {
+  min-width: 126px !important;
+}
+
+.wlv-wmdp-action-control select {
+  min-width: 238px !important;
+}
+
+.wlv-wmdp-page-readout,
+.wlv-wmdp-selected-readout {
+  font-size: 11.5px !important;
+  line-height: 1 !important;
+}
+
+.wlv-wmdp-selected-readout {
+  min-width: 92px !important;
+}
+
+.wlv-wmdp-table th {
+  height: 28px !important;
+  padding: 0 7px !important;
+  font-size: 10.75px !important;
+  line-height: 1.1 !important;
+}
+
+.wlv-wmdp-table td {
+  height: 32px !important;
+  padding: 0 7px !important;
+  font-size: 11.5px !important;
+  line-height: 1.15 !important;
+}
+
+.wlv-wmdp-name-cell button strong {
+  font-size: 11.5px !important;
+  line-height: 1.1 !important;
+}
+
+.wlv-wmdp-name-cell button span {
+  font-size: 9.75px !important;
+  line-height: 1.1 !important;
+}
+
+.wlv-wmdp-row-actions {
+  gap: 4px !important;
+}
+
+.wlv-wmdp-row-actions button {
+  min-height: 24px !important;
+  height: 24px !important;
+  padding: 0 6px !important;
+  border-radius: 6px !important;
+  font-size: 10.75px !important;
+  font-weight: 500 !important;
+  line-height: 1 !important;
+}
+
+.wlv-wmdp-badge {
+  height: 20px !important;
+  padding: 0 6px !important;
+  border-radius: 999px !important;
+  font-size: 10.75px !important;
+  font-weight: 500 !important;
+  line-height: 20px !important;
+}
+
+.wlv-wmdp-empty-cell {
+  height: 44px !important;
+  font-size: 11.5px !important;
+}
+
+/* WLV-WMDP-CONTROL-DENSITY-STRONG-END */
+

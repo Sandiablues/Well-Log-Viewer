@@ -228,24 +228,58 @@ function viewerPackageKind(viewerPackage: ManagedInventoryViewerPackageReference
   return viewerPackage.package_kind || viewerPackage.viewer_package_version || 'viewer_package';
 }
 
-function developmentSeedAlreadyRegistered(wells: ManagedInventoryWellRecord[]): boolean {
-  return wells.some((well) => well.managed_well_id === 'managed-well:forge-21-31' || well.well_id === 'forge-21-31');
-}
+type WmdpSortKey = 'wellName' | 'wellId' | 'field' | 'operator' | 'status' | 'updated';
+type WmdpBulkAction = 'load' | 'unload' | 'remove';
 
 function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (managedWellId?: string | null) => void }) {
   const [status, setStatus] = useState<ManagedInventoryStatusPayload | null>(null);
   const [wells, setWells] = useState<ManagedInventoryWellRecord[]>([]);
   const [selectedWellId, setSelectedWellId] = useState<string | null>(null);
+  const [selectedWellIds, setSelectedWellIds] = useState<Set<string>>(new Set());
+  const [expandedWellIds, setExpandedWellIds] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortKey, setSortKey] = useState<WmdpSortKey>('wellName');
+  const [pageSize, setPageSize] = useState(25);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [bulkAction, setBulkAction] = useState<WmdpBulkAction>('load');
   const [loading, setLoading] = useState(true);
-  const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const selectedWell = useMemo(() => (
-    wells.find((well) => well.managed_well_id === selectedWellId) ?? wells[0] ?? null
-  ), [selectedWellId, wells]);
-
-  const seedAlreadyRegistered = developmentSeedAlreadyRegistered(wells);
   const backendConnected = Boolean(status?.ok && !error);
+
+  const filteredWells = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const matchesSearch = (well: ManagedInventoryWellRecord) => {
+      if (!query) return true;
+      return [
+        wellDisplayName(well),
+        well.managed_well_id,
+        well.well_id,
+        well.field,
+        well.operator,
+        well.country,
+        wellStatus(well),
+      ].some((value) => safeText(value, '').toLowerCase().includes(query));
+    };
+
+    const sortValue = (well: ManagedInventoryWellRecord): string => {
+      if (sortKey === 'wellId') return safeText(well.well_id, '').toLowerCase();
+      if (sortKey === 'field') return safeText(well.field, '').toLowerCase();
+      if (sortKey === 'operator') return safeText(well.operator, '').toLowerCase();
+      if (sortKey === 'status') return statusLabel(wellStatus(well)).toLowerCase();
+      if (sortKey === 'updated') return safeText(well.updated_at ?? well.created_at, '').toLowerCase();
+      return wellDisplayName(well).toLowerCase();
+    };
+
+    return wells.filter(matchesSearch).sort((a, b) => sortValue(a).localeCompare(sortValue(b)));
+  }, [searchQuery, sortKey, wells]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredWells.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStartIndex = filteredWells.length === 0 ? 0 : (safeCurrentPage - 1) * pageSize;
+  const pageEndIndex = Math.min(pageStartIndex + pageSize, filteredWells.length);
+  const pagedWells = filteredWells.slice(pageStartIndex, pageEndIndex);
+  const allVisibleSelected = pagedWells.length > 0 && pagedWells.every((well) => selectedWellIds.has(well.managed_well_id));
 
   const loadInventory = async () => {
     setLoading(true);
@@ -262,11 +296,21 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
           ? current
           : nextWells[0]?.managed_well_id ?? null
       ));
+      setSelectedWellIds((current) => {
+        const validIds = new Set(nextWells.map((well) => well.managed_well_id));
+        return new Set([...current].filter((id) => validIds.has(id)));
+      });
+      setExpandedWellIds((current) => {
+        const validIds = new Set(nextWells.map((well) => well.managed_well_id));
+        return new Set([...current].filter((id) => validIds.has(id)));
+      });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to load managed well inventory');
       setStatus(null);
       setWells([]);
       setSelectedWellId(null);
+      setSelectedWellIds(new Set());
+      setExpandedWellIds(new Set());
     } finally {
       setLoading(false);
     }
@@ -276,160 +320,247 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
     void loadInventory();
   }, []);
 
-  const registerSeedWell = async () => {
-    if (seedAlreadyRegistered) {
-      setError('Development seed well is already registered. Use Refresh to reload the managed inventory.');
-      return;
-    }
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [pageSize, searchQuery, sortKey, wells.length]);
 
-    setRegistering(true);
-    setError(null);
-    try {
-      const result = await fetchWlvJson<{ record: ManagedInventoryWellRecord }>('/api/wlv/inventory/wells/register-seed', {
-        method: 'POST',
-      });
-      await loadInventory();
-      setSelectedWellId(result.record.managed_well_id);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Unable to register development seed well');
-    } finally {
-      setRegistering(false);
+  const toggleWellSelected = (managedWellId: string) => {
+    setSelectedWellIds((current) => {
+      const next = new Set(current);
+      if (next.has(managedWellId)) {
+        next.delete(managedWellId);
+      } else {
+        next.add(managedWellId);
+      }
+      return next;
+    });
+    setSelectedWellId(managedWellId);
+  };
+
+  const toggleVisibleSelection = () => {
+    setSelectedWellIds((current) => {
+      const next = new Set(current);
+      if (allVisibleSelected) {
+        pagedWells.forEach((well) => next.delete(well.managed_well_id));
+      } else {
+        pagedWells.forEach((well) => next.add(well.managed_well_id));
+      }
+      return next;
+    });
+  };
+
+  const toggleWellExpanded = (managedWellId: string) => {
+    setExpandedWellIds((current) => {
+      const next = new Set(current);
+      if (next.has(managedWellId)) {
+        next.delete(managedWellId);
+      } else {
+        next.add(managedWellId);
+      }
+      return next;
+    });
+    setSelectedWellId(managedWellId);
+  };
+
+  const applyBulkAction = () => {
+    if (bulkAction !== 'load') return;
+    const managedWellId = [...selectedWellIds][0] ?? selectedWellId;
+    if (managedWellId) {
+      onOpenLogViewer(managedWellId);
     }
   };
 
-  const sourceReferences = selectedWell?.source_references ?? [];
-  const viewerPackages = selectedWell?.viewer_packages ?? [];
-
   return (
-    <section className="wlv-managed-inventory-page" aria-label="Managed Well Inventory">
-      <header className="wlv-managed-inventory-header">
+    <section className="wlv-managed-inventory-page wlv-wmdp-page" aria-label="Managed Well Data">
+      <header className="wlv-managed-inventory-header wlv-wmdp-page-header">
         <div>
           <span className="wlv-page-kicker">Data</span>
-          <h1>Managed Well Inventory</h1>
-          <p>Backend-owned WLV MSI-equivalent for wells, source references, and viewer packages.</p>
-        </div>
-        <div className="wlv-managed-inventory-actions">
-          <button type="button" onClick={loadInventory} disabled={loading || registering}>Refresh</button>
-          <button
-            type="button"
-            onClick={registerSeedWell}
-            disabled={loading || registering || seedAlreadyRegistered}
-            title="Development bootstrap action for the Forge 21-31 seed well"
-          >
-            {seedAlreadyRegistered ? 'Seed Well Registered' : 'Register Development Seed Well'}
-          </button>
-          <button
-            type="button"
-            onClick={() => onOpenLogViewer(selectedWell?.managed_well_id ?? null)}
-            title="Open the log viewer using the selected managed well viewer-package contract"
-          >
-            Open Log Viewer
-          </button>
+          <h1>Managed Data</h1>
+          <p>Manage registered wells and data made available to the Well Data Viewer.</p>
         </div>
       </header>
 
-      <div className="wlv-managed-inventory-readiness" aria-label="Managed inventory readiness">
-        <div className={backendConnected ? 'connected' : 'unavailable'}>
-          <span>Backend</span>
-          <strong>{backendConnected ? 'Connected' : 'Unavailable'}</strong>
-        </div>
-        <div>
-          <span>Inventory State</span>
-          <strong>{loading ? 'Loading' : wells.length > 0 ? 'Ready' : 'Empty'}</strong>
-        </div>
-        <div>
-          <span>Development Seed</span>
-          <strong>{seedAlreadyRegistered ? 'Registered' : 'Available'}</strong>
-        </div>
-      </div>
-
-      {status ? (
-        <div className="wlv-managed-inventory-summary" aria-label="Managed inventory summary">
-          <div><span>Service</span><strong>{safeText(status.service)}</strong></div>
-          <div><span>Managed Wells</span><strong>{status.managed_well_count}</strong></div>
-          <div><span>Viewer Packages</span><strong>{status.viewer_package_count}</strong></div>
-          <div><span>Storage</span><strong>{safeText(status.storage_backend ?? status.scope, 'local')}</strong></div>
-        </div>
-      ) : null}
-
       {error ? <div className="wlv-managed-inventory-error" role="alert">{error}</div> : null}
 
-      {!error && !loading && wells.length === 0 ? (
-        <div className="wlv-managed-inventory-note">
-          <strong>No managed wells registered.</strong>
-          <span>The backend seed repository is available, but runtime managed inventory is empty. Use the development seed action to bootstrap Forge 21-31 for inventory testing.</span>
+      <section className="wlv-wmdp-panel" aria-label="Managed well data table">
+        <header className="wlv-wmdp-panel-header">
+          <div>
+            <h2>Managed Well Data</h2>
+            <p>{backendConnected ? 'Connected' : 'Backend unavailable'} · {safeText(status?.service, 'inventory')} · {wells.length} managed wells</p>
+          </div>
+          <div className="wlv-wmdp-panel-actions">
+            <label className="wlv-wmdp-sort-control">
+              <span>Sort by</span>
+              <select value={sortKey} onChange={(event) => setSortKey(event.target.value as WmdpSortKey)}>
+                <option value="wellName">Well name</option>
+                <option value="wellId">Well ID</option>
+                <option value="field">Field</option>
+                <option value="operator">Operator</option>
+                <option value="status">Status</option>
+                <option value="updated">Updated</option>
+              </select>
+            </label>
+            <button type="button" onClick={loadInventory} disabled={loading}>Refresh</button>
+            <button type="button" onClick={() => setExpandedWellIds(new Set())} disabled={expandedWellIds.size === 0}>Collapse</button>
+          </div>
+        </header>
+
+        <div className="wlv-wmdp-control-band" aria-label="Managed data controls">
+          <div className="wlv-wmdp-control-row wlv-wmdp-control-row-paging">
+            <input
+              type="search"
+              placeholder="Search Managed Wells..."
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              aria-label="Search Managed Wells"
+            />
+            <label className="wlv-wmdp-page-size-control">
+              <span>Page size</span>
+              <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </label>
+            <button type="button" onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={safeCurrentPage <= 1}>Previous</button>
+            <button type="button" onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={safeCurrentPage >= totalPages}>Next</button>
+            <span className="wlv-wmdp-page-readout">Showing {filteredWells.length === 0 ? '0' : `${pageStartIndex + 1}–${pageEndIndex}`} of {filteredWells.length}</span>
+          </div>
+
+          <div className="wlv-wmdp-control-row wlv-wmdp-control-row-bulk">
+            <span className="wlv-wmdp-selected-readout">Selected {selectedWellIds.size}</span>
+            <label className="wlv-wmdp-action-control">
+              <span>Action</span>
+              <select value={bulkAction} onChange={(event) => setBulkAction(event.target.value as WmdpBulkAction)}>
+                <option value="load">Load selected to Data Viewer</option>
+                <option value="unload">Unload selected from Data Viewer</option>
+                <option value="remove">Remove selected from MDP</option>
+              </select>
+            </label>
+            <button type="button" onClick={applyBulkAction} disabled={selectedWellIds.size === 0 || bulkAction !== 'load'}>Apply</button>
+          </div>
         </div>
-      ) : null}
 
-      {loading ? (
-        <div className="wlv-managed-inventory-empty">Loading managed inventory from backend...</div>
-      ) : wells.length === 0 ? null : (
-        <div className="wlv-managed-inventory-layout">
-          <aside className="wlv-managed-inventory-list" aria-label="Managed wells">
-            {wells.map((well) => (
-              <button
-                type="button"
-                key={well.managed_well_id}
-                className={`wlv-managed-well-card ${selectedWell?.managed_well_id === well.managed_well_id ? 'active' : ''}`}
-                onClick={() => setSelectedWellId(well.managed_well_id)}
-              >
-                <strong>{wellDisplayName(well)}</strong>
-                <span>{well.managed_well_id}</span>
-                <em>{statusLabel(wellStatus(well))}</em>
-              </button>
-            ))}
-          </aside>
-
-          {selectedWell ? (
-            <article className="wlv-managed-inventory-detail" aria-label="Managed well detail">
-              <header>
-                <span className="wlv-page-kicker">Managed Well</span>
-                <h2>{wellDisplayName(selectedWell)}</h2>
-                <p>{selectedWell.managed_well_id}</p>
-              </header>
-
-              <div className="wlv-managed-detail-grid">
-                <div><span>Well ID</span><strong>{safeText(selectedWell.well_id)}</strong></div>
-                <div><span>Status</span><strong>{statusLabel(wellStatus(selectedWell))}</strong></div>
-                <div><span>Operator</span><strong>{safeText(selectedWell.operator)}</strong></div>
-                <div><span>Field</span><strong>{safeText(selectedWell.field)}</strong></div>
-                <div><span>Country</span><strong>{safeText(selectedWell.country)}</strong></div>
-                <div><span>Depth Range</span><strong>{selectedWell.top_depth != null && selectedWell.base_depth != null ? `${selectedWell.top_depth}–${selectedWell.base_depth} ${selectedWell.depth_unit ?? ''}` : '—'}</strong></div>
-              </div>
-
-              <section className="wlv-managed-section">
-                <h3>Source References</h3>
-                {sourceReferences.length === 0 ? (
-                  <p>No source references registered.</p>
-                ) : sourceReferences.map((source) => (
-                  <div className="wlv-managed-reference-row" key={source.source_id}>
-                    <div>
-                      <strong>{sourceDisplayName(source)}</strong>
-                      <span>{source.source_id}</span>
-                    </div>
-                    <em>{statusLabel(source.source_kind)} · {statusLabel(sourceStatus(source))}</em>
-                  </div>
-                ))}
-              </section>
-
-              <section className="wlv-managed-section">
-                <h3>Viewer Packages</h3>
-                {viewerPackages.length === 0 ? (
-                  <p>No viewer packages registered.</p>
-                ) : viewerPackages.map((viewerPackage) => (
-                  <div className="wlv-managed-reference-row" key={viewerPackage.viewer_package_id}>
-                    <div>
-                      <strong>{viewerPackageDisplayName(viewerPackage)}</strong>
-                      <span>{viewerPackage.viewer_package_id}</span>
-                    </div>
-                    <em>{statusLabel(viewerPackageKind(viewerPackage))} · {statusLabel(viewerPackage.status)}</em>
-                  </div>
-                ))}
-              </section>
-            </article>
-          ) : null}
+        <div className="wlv-wmdp-table-wrap">
+          <table className="wlv-wmdp-table">
+            <thead>
+              <tr>
+                <th className="wlv-wmdp-col-select">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    disabled={pagedWells.length === 0}
+                    onChange={toggleVisibleSelection}
+                    aria-label="Select visible managed wells"
+                  />
+                </th>
+                <th className="wlv-wmdp-col-expand" aria-label="Expand" />
+                <th>Well Name</th>
+                <th>Well ID</th>
+                <th>Field</th>
+                <th>Operator</th>
+                <th>Status</th>
+                <th>Sources</th>
+                <th>Packages</th>
+                <th>Updated</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={11} className="wlv-wmdp-empty-cell">Loading managed inventory from backend...</td></tr>
+              ) : pagedWells.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="wlv-wmdp-empty-cell">
+                    {wells.length === 0 ? 'No managed wells registered.' : 'No managed wells match the current search.'}
+                  </td>
+                </tr>
+              ) : pagedWells.map((well) => {
+                const expanded = expandedWellIds.has(well.managed_well_id);
+                const rowSelected = selectedWellIds.has(well.managed_well_id);
+                const sourceReferences = well.source_references ?? [];
+                const viewerPackages = well.viewer_packages ?? [];
+                return (
+                  <>
+                    <tr className={rowSelected || selectedWellId === well.managed_well_id ? 'is-selected' : ''} key={well.managed_well_id}>
+                      <td className="wlv-wmdp-col-select">
+                        <input
+                          type="checkbox"
+                          checked={rowSelected}
+                          onChange={() => toggleWellSelected(well.managed_well_id)}
+                          aria-label={`Select ${wellDisplayName(well)}`}
+                        />
+                      </td>
+                      <td className="wlv-wmdp-col-expand">
+                        <button
+                          type="button"
+                          className="wlv-wmdp-expand-btn"
+                          onClick={() => toggleWellExpanded(well.managed_well_id)}
+                          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${wellDisplayName(well)}`}
+                          aria-expanded={expanded}
+                        >
+                          {expanded ? '▾' : '▸'}
+                        </button>
+                      </td>
+                      <td className="wlv-wmdp-name-cell">
+                        <button type="button" onClick={() => setSelectedWellId(well.managed_well_id)}>
+                          <strong>{wellDisplayName(well)}</strong>
+                          <span>{well.managed_well_id}</span>
+                        </button>
+                      </td>
+                      <td>{safeText(well.well_id)}</td>
+                      <td>{safeText(well.field)}</td>
+                      <td>{safeText(well.operator)}</td>
+                      <td><span className="wlv-wmdp-badge">{statusLabel(wellStatus(well))}</span></td>
+                      <td>{sourceReferences.length}</td>
+                      <td>{viewerPackages.length}</td>
+                      <td>{safeText(well.updated_at ?? well.created_at)}</td>
+                      <td>
+                        <div className="wlv-wmdp-row-actions">
+                          <button type="button" onClick={() => onOpenLogViewer(well.managed_well_id)}>Load</button>
+                          <button type="button" onClick={() => setSelectedWellId(well.managed_well_id)}>Info</button>
+                          <button type="button" disabled title="Remove from MDP requires a backend lifecycle endpoint">Remove</button>
+                        </div>
+                      </td>
+                    </tr>
+                    {expanded ? (
+                      <tr className="wlv-wmdp-expanded-row" key={`${well.managed_well_id}-expanded`}>
+                        <td colSpan={11}>
+                          <div className="wlv-wmdp-expanded-content">
+                            <section>
+                              <h3>Source References <span>{sourceReferences.length}</span></h3>
+                              {sourceReferences.length === 0 ? (
+                                <p>No source references registered.</p>
+                              ) : sourceReferences.map((source) => (
+                                <div className="wlv-wmdp-expanded-item" key={source.source_id}>
+                                  <div><strong>{sourceDisplayName(source)}</strong><span>{source.source_id}</span></div>
+                                  <em>{statusLabel(source.source_kind)} · {statusLabel(sourceStatus(source))}</em>
+                                </div>
+                              ))}
+                            </section>
+                            <section>
+                              <h3>Viewer Packages <span>{viewerPackages.length}</span></h3>
+                              {viewerPackages.length === 0 ? (
+                                <p>No viewer packages registered.</p>
+                              ) : viewerPackages.map((viewerPackage) => (
+                                <div className="wlv-wmdp-expanded-item" key={viewerPackage.viewer_package_id}>
+                                  <div><strong>{viewerPackageDisplayName(viewerPackage)}</strong><span>{viewerPackage.viewer_package_id}</span></div>
+                                  <em>{statusLabel(viewerPackageKind(viewerPackage))} · {statusLabel(viewerPackage.status)}</em>
+                                </div>
+                              ))}
+                            </section>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      )}
+      </section>
     </section>
   );
 }
