@@ -5,6 +5,7 @@ import '../../styles/track-layout-prototype.css';
 import { curveCatalog, defaultDepthRange, depthUnitLabel, fullDepthRange, initialTracks, realCurveSamplesByCurveId, wellHeader } from './realLasTrackLayoutData';
 import { lithologyIntervals21_31, lithologySource } from './lithologyTrackData';
 import { WellLogPropertiesPanelSlot } from './WellLogPropertiesPanelSlot';
+import { loadBackendViewerPackageWithFallback } from './backendViewerPackageAdapter';
 import { useTrackBodyGeometry } from './useTrackBodyGeometry';
 import type {
   ActiveTrackType,
@@ -2551,6 +2552,11 @@ function RightPanel({
 
 export function TrackLayoutPrototype() {
   const [activeView, setActiveView] = useState<DemoNavView>('log-viewer');
+
+  useEffect(() => {
+    if (activeView !== 'log-viewer') return;
+    void loadBackendViewerPackageWithFallback().catch(() => undefined);
+  }, [activeView]);
   const [tracks, setTracks] = useState<WellLogTrack[]>(() => reindexTracks(initialTracks));
   const [selection, setSelection] = useState<SelectionRef>({ kind: 'track', trackId: 'track-gr-sp' });
   const [selectedInventoryCurveIds, setSelectedInventoryCurveIds] = useState<string[]>([]);

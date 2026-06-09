@@ -6,6 +6,8 @@ service/repository layer, mirroring the SDV backend ownership pattern.
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, status
 
 from .models import (
@@ -77,6 +79,22 @@ def get_well(managed_well_id: str) -> ManagedWellRecord:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Managed well not found: {exc.args[0]}",
+        )
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+@router.get(
+    "/wells/{managed_well_id}/viewer-package",
+    response_model=dict[str, Any],
+    summary="Fetch backend-owned viewer package contract for managed WLV well",
+)
+def get_managed_well_viewer_package(managed_well_id: str) -> dict[str, Any]:
+    try:
+        return _service.get_viewer_package_contract(managed_well_id)
+    except ManagedWellNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Managed well viewer package not found: {exc.args[0]}",
         )
     except ManagedInventoryStoreError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))

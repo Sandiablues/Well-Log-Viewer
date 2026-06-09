@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime, timezone
+from typing import Any
 
 from backend.app.wells.models import WellMultitrackV1
 from backend.app.wells.seed_repository import SeedWellRepository
@@ -78,6 +79,19 @@ class ManagedWellInventoryService:
         for record in self.repository.list_records():
             packages.extend(record.viewer_packages)
         return packages
+
+    def get_viewer_package_contract(self, managed_well_id: str) -> dict[str, Any]:
+        """Return the backend-owned viewer package contract for a managed well.
+
+        Managed Inventory remains the lookup authority. The full viewer package
+        contract is stored in record metadata by registration/ingestion services,
+        while viewer_packages holds lightweight package references for lists.
+        """
+        record = self.repository.get_record(managed_well_id)
+        contract = record.metadata.get("viewer_package_contract")
+        if isinstance(contract, dict):
+            return contract
+        raise ManagedWellNotFoundError(f"{managed_well_id}/viewer-package")
 
     def upsert_managed_record(self, record: ManagedWellRecord) -> tuple[str, ManagedWellRecord]:
         """Upsert a managed well record built by another backend service.

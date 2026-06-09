@@ -70,3 +70,27 @@ def test_missing_managed_well_returns_404(tmp_path: Path) -> None:
 
     response = client.get("/api/wlv/inventory/wells/not-present")
     assert response.status_code == 404
+
+def test_managed_well_viewer_package_endpoint_returns_contract(tmp_path: Path) -> None:
+    _install_temp_inventory(tmp_path)
+    client = TestClient(app)
+
+    register = client.post("/api/wlv/inventory/wells/register-seed")
+    assert register.status_code == 200
+
+    response = client.get("/api/wlv/inventory/wells/managed-well:forge-21-31/viewer-package")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["viewer_package_version"] == "well_multitrack_v1"
+    assert payload["well_id"] == "forge-21-31"
+    assert payload["dataset_id"] == "seed-dataset-forge-21-31"
+    assert len(payload["tracks"]) >= 1
+
+
+def test_managed_well_viewer_package_endpoint_returns_404_when_missing(tmp_path: Path) -> None:
+    _install_temp_inventory(tmp_path)
+    client = TestClient(app)
+
+    response = client.get("/api/wlv/inventory/wells/not-present/viewer-package")
+    assert response.status_code == 404
+
