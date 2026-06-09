@@ -12,11 +12,17 @@ import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from .models import ManagedInventorySnapshot, ManagedWellRecord
+from pydantic import ValidationError
+
+from .models import ManagedInventorySnapshot, ManagedWellRecord, utc_now_iso
 
 
 class ManagedWellNotFoundError(KeyError):
     """Raised when an inventory record cannot be found."""
+
+
+class ManagedInventoryStoreError(RuntimeError):
+    """Raised when the local inventory store cannot be read or validated."""
 
 
 class ManagedWellInventoryRepository:
@@ -36,6 +42,9 @@ class ManagedWellInventoryRepository:
             "storage_backend": "local_json",
             "storage_path": str(self.storage_path),
         }
+
+    def snapshot(self) -> ManagedInventorySnapshot:
+        return self._read_snapshot()
 
     def list_records(self) -> list[ManagedWellRecord]:
         return self._read_snapshot().records
@@ -60,15 +69,21 @@ class ManagedWellInventoryRepository:
                 records.append(existing)
         if not replaced:
             records.append(record)
-        self._write_snapshot(ManagedInventorySnapshot(records=records))
+        self._write_snapshot(ManagedInventorySnapshot(records=records, updated_at=utc_now_iso()))
         return action, record
+
+    def write_snapshot(self, snapshot: ManagedInventorySnapshot) -> None:
+        self._write_snapshot(snapshot)
 
     def _read_snapshot(self) -> ManagedInventorySnapshot:
         if not self.storage_path.exists():
             return ManagedInventorySnapshot()
-        with self.storage_path.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-        return ManagedInventorySnapshot.model_validate(payload)
+        try:
+            with self.storage_path.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            return ManagedInventorySnapshot.model_validate(payload)
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            raise ManagedInventoryStoreError(f"Invalid managed inventory store: {self.storage_path}") from exc
 
     def _write_snapshot(self, snapshot: ManagedInventorySnapshot) -> None:
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)

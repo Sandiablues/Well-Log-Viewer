@@ -51,3 +51,42 @@ the API contract.
 - No destructive delete/cleanup action in this block.
 - No LAS upload/import workflow in this block.
 - No launcher changes in this block.
+
+## BE-005 persistence and lifecycle hardening
+
+The Managed Well Inventory now treats lifecycle state as a first-class backend
+contract. Each managed well record carries both the legacy `status` field and
+the explicit `lifecycle_state` field. They should remain aligned until a later
+migration removes the legacy status naming from downstream consumers.
+
+Current lifecycle states:
+
+- `registered` — known to the inventory but not yet checked for availability.
+- `available` — source references are present and the record can be used by
+  backend workflows.
+- `viewer_ready` — at least one backend viewer-package reference is registered.
+- `stale` — record requires refresh because source or derived state changed.
+- `invalid` — record failed integrity checks or cannot be trusted.
+- `archived` — retained but not normally active.
+- `review_required` — record requires manual review before use.
+- `error` — operational error state.
+
+The local JSON repository remains the single-node persistence implementation,
+but it is isolated behind `ManagedWellInventoryRepository` so it can later be
+replaced by SQLite, Postgres, or object/catalog storage without changing the
+API contract.
+
+Non-destructive maintenance endpoints:
+
+- `GET /api/wlv/inventory/validate` validates inventory integrity without
+  mutating records.
+- `GET /api/wlv/inventory/maintenance/status` reports maintenance readiness and
+  explicitly states that destructive actions are disabled.
+
+Validation checks include duplicate managed ids, duplicate well ids, duplicate
+viewer-package ids, missing required identifiers, invalid depth ranges, source
+reference gaps, viewer-ready records without viewer packages, and status /
+lifecycle mismatches.
+
+No delete, remove, archive, or destructive repair endpoint is enabled in this
+block.

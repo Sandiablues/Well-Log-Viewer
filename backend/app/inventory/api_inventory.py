@@ -10,12 +10,14 @@ from fastapi import APIRouter, HTTPException, status
 
 from .models import (
     ManagedInventoryHealth,
+    ManagedInventoryMaintenanceStatus,
     ManagedInventoryStatus,
+    ManagedInventoryValidationResult,
     ManagedWellRecord,
     RegisterSeedWellResponse,
     ViewerPackageReference,
 )
-from .repository import ManagedWellNotFoundError
+from .repository import ManagedInventoryStoreError, ManagedWellNotFoundError
 from .service import ManagedWellInventoryService
 
 router = APIRouter(prefix="/api/wlv/inventory", tags=["wlv-inventory"])
@@ -29,12 +31,38 @@ def health() -> ManagedInventoryHealth:
 
 @router.get("/status", response_model=ManagedInventoryStatus, summary="Managed Well Inventory status")
 def status_summary() -> ManagedInventoryStatus:
-    return _service.status()
+    try:
+        return _service.status()
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.get("/validate", response_model=ManagedInventoryValidationResult, summary="Validate managed inventory integrity")
+def validate_inventory() -> ManagedInventoryValidationResult:
+    try:
+        return _service.validate_inventory()
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
+@router.get(
+    "/maintenance/status",
+    response_model=ManagedInventoryMaintenanceStatus,
+    summary="Managed inventory maintenance status",
+)
+def maintenance_status() -> ManagedInventoryMaintenanceStatus:
+    try:
+        return _service.maintenance_status()
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 
 @router.get("/wells", response_model=list[ManagedWellRecord], summary="List managed WLV wells")
 def list_wells() -> list[ManagedWellRecord]:
-    return _service.list_wells()
+    try:
+        return _service.list_wells()
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 
 @router.get(
@@ -50,6 +78,8 @@ def get_well(managed_well_id: str) -> ManagedWellRecord:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Managed well not found: {exc.args[0]}",
         )
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 
 @router.post(
@@ -67,4 +97,7 @@ def register_seed_well() -> RegisterSeedWellResponse:
     summary="List viewer-package references registered in managed inventory",
 )
 def list_viewer_packages() -> list[ViewerPackageReference]:
-    return _service.list_viewer_packages()
+    try:
+        return _service.list_viewer_packages()
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))

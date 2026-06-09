@@ -14,6 +14,10 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 class ManagedInventoryHealth(BaseModel):
     ok: bool = True
     service: str = "wlv-managed-inventory"
@@ -21,11 +25,21 @@ class ManagedInventoryHealth(BaseModel):
     storage_backend: str = "local_json"
 
 
-class ManagedWellStatus(str, Enum):
+class ManagedInventoryLifecycleState(str, Enum):
     REGISTERED = "registered"
     AVAILABLE = "available"
+    VIEWER_READY = "viewer_ready"
+    STALE = "stale"
+    INVALID = "invalid"
+    ARCHIVED = "archived"
     REVIEW_REQUIRED = "review_required"
     ERROR = "error"
+
+
+# Backward-compatible alias for the BE-003 contract name. Keep API payloads as
+# lifecycle-state strings while avoiding a breaking import for existing services
+# and tests that still refer to ManagedWellStatus.
+ManagedWellStatus = ManagedInventoryLifecycleState
 
 
 class ManagedSourceKind(str, Enum):
@@ -55,7 +69,7 @@ class ViewerPackageReference(BaseModel):
     representation_id: str
     well_id: str
     endpoint: str
-    status: ManagedWellStatus = ManagedWellStatus.AVAILABLE
+    status: ManagedInventoryLifecycleState = ManagedInventoryLifecycleState.VIEWER_READY
 
 
 class ManagedWellRecord(BaseModel):
@@ -70,18 +84,21 @@ class ManagedWellRecord(BaseModel):
     depth_unit: str = "ft"
     top_depth: Optional[float] = None
     base_depth: Optional[float] = None
-    status: ManagedWellStatus = ManagedWellStatus.REGISTERED
+    status: ManagedInventoryLifecycleState = ManagedInventoryLifecycleState.REGISTERED
+    lifecycle_state: ManagedInventoryLifecycleState = ManagedInventoryLifecycleState.REGISTERED
     source_references: list[ManagedSourceReference] = Field(default_factory=list)
     viewer_packages: list[ViewerPackageReference] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    lifecycle_notes: list[str] = Field(default_factory=list)
+    created_at: str = Field(default_factory=utc_now_iso)
+    updated_at: str = Field(default_factory=utc_now_iso)
 
 
 class ManagedInventorySnapshot(BaseModel):
-    schema_version: str = "wlv_managed_inventory_v1"
+    schema_version: str = "wlv_managed_inventory_v2"
     records: list[ManagedWellRecord] = Field(default_factory=list)
+    updated_at: str = Field(default_factory=utc_now_iso)
 
 
 class ManagedInventoryStatus(BaseModel):
@@ -89,12 +106,60 @@ class ManagedInventoryStatus(BaseModel):
     service: str = "wlv-managed-inventory"
     storage_backend: str
     storage_path: str
+    schema_version: str
     managed_well_count: int
     viewer_package_count: int
     source_reference_count: int
+    lifecycle_counts: dict[str, int] = Field(default_factory=dict)
+    last_checked_at: str = Field(default_factory=utc_now_iso)
 
 
 class RegisterSeedWellResponse(BaseModel):
     ok: bool
     action: str
     record: ManagedWellRecord
+
+
+class InventoryValidationSeverity(str, Enum):
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+
+
+class ManagedInventoryValidationIssue(BaseModel):
+    severity: InventoryValidationSeverity
+    code: str
+    message: str
+    managed_well_id: Optional[str] = None
+    field: Optional[str] = None
+
+
+class ManagedInventoryValidationResult(BaseModel):
+    ok: bool
+    service: str = "wlv-managed-inventory"
+    scope: str = "inventory_integrity"
+    storage_backend: str
+    storage_path: str
+    schema_version: str
+    checked_at: str = Field(default_factory=utc_now_iso)
+    managed_well_count: int
+    viewer_package_count: int
+    source_reference_count: int
+    lifecycle_counts: dict[str, int] = Field(default_factory=dict)
+    issue_count: int
+    error_count: int
+    warning_count: int
+    issues: list[ManagedInventoryValidationIssue] = Field(default_factory=list)
+
+
+class ManagedInventoryMaintenanceStatus(BaseModel):
+    ok: bool
+    service: str = "wlv-managed-inventory"
+    scope: str = "maintenance_status"
+    destructive_actions_enabled: bool = False
+    validate_endpoint: str = "/api/wlv/inventory/validate"
+    storage_backend: str
+    storage_path: str
+    managed_well_count: int
+    lifecycle_counts: dict[str, int] = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)
