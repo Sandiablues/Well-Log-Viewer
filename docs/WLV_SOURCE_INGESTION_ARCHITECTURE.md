@@ -44,3 +44,24 @@ The service boundary is independent of local files, future object storage,
 database-backed inventory, and distributed workers. Later adapters can write
 normalized outputs into the Managed Well Inventory without changing the public
 format-detection contract.
+## BE-007 LAS adapter implementation
+
+The first concrete adapter is LAS, but the ingestion architecture remains
+format-neutral. LAS registration now flows through:
+
+```text
+/api/wlv/ingestion/sources/register
+  -> WellLogSourceIngestionService
+  -> LasSourceAdapter
+  -> NormalizedWellLogPackage
+  -> ManagedWellInventoryService
+```
+
+The LAS adapter extracts well metadata, depth range, null value, curve/channel
+inventory, source fingerprint, and a normalized ingestion package. The managed
+inventory record is registered with lifecycle state `available` because viewer
+package generation remains a separate backend boundary. `viewer_ready` remains
+reserved for records with backend viewer-package references.
+
+DLIS, CGM, TIFF, PDF, and UNKNOWN remain first-class detection/contract cases.
+They are not parsed in this block and must not be forced into a LAS-only model.

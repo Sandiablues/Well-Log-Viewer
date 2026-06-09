@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 
-from .models import FormatDetectionRequest, FormatDetectionResult, IngestionHealth, SupportedIngestionFormat
-from .service import WellLogSourceIngestionService
+from .models import (
+    FormatDetectionRequest,
+    FormatDetectionResult,
+    IngestionHealth,
+    SourceRegistrationRequest,
+    SourceRegistrationResponse,
+    SupportedIngestionFormat,
+)
+from .service import SourceRegistrationError, WellLogSourceIngestionService
 
 router = APIRouter(prefix="/api/wlv/ingestion", tags=["wlv-ingestion"])
 _service = WellLogSourceIngestionService()
@@ -32,3 +39,15 @@ def supported_formats() -> list[SupportedIngestionFormat]:
 )
 def detect_format(request: FormatDetectionRequest) -> FormatDetectionResult:
     return _service.detect_format(request)
+
+
+@router.post(
+    "/sources/register",
+    response_model=SourceRegistrationResponse,
+    summary="Register a well log source through the format-neutral ingestion service",
+)
+def register_source(request: SourceRegistrationRequest) -> SourceRegistrationResponse:
+    try:
+        return _service.register_source(request)
+    except SourceRegistrationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))

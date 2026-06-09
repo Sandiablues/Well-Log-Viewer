@@ -79,6 +79,15 @@ class ManagedWellInventoryService:
             packages.extend(record.viewer_packages)
         return packages
 
+    def upsert_managed_record(self, record: ManagedWellRecord) -> tuple[str, ManagedWellRecord]:
+        """Upsert a managed well record built by another backend service.
+
+        This preserves the inventory service as the write boundary while keeping
+        ingestion/import logic outside the API route layer.
+        """
+        record.updated_at = utc_now_iso()
+        return self.repository.upsert_record(record)
+
     def register_seed_well(self, well_id: str = SeedWellRepository.WELL_ID) -> RegisterSeedWellResponse:
         well = self.seed_repository.get_well(well_id)
         viewer_package = self.seed_repository.get_viewer_package(well_id)

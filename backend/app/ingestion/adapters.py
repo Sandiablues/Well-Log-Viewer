@@ -1,9 +1,4 @@
-"""Well Log Source Ingestion adapter registry.
-
-Adapters are deterministic and lightweight in this block. They define the
-contract shape for future LAS/DLIS/CGM/TIFF/PDF import work without performing
-full parsing or viewer-package creation yet.
-"""
+"""Well Log Source Ingestion adapter registry."""
 
 from __future__ import annotations
 
@@ -77,10 +72,10 @@ ADAPTERS: tuple[IngestionAdapter, ...] = (
         source_format=WellLogSourceFormat.LAS,
         source_category=WellLogSourceCategory.NUMERIC_CURVE,
         extensions=("las",),
-        status=IngestionAdapterStatus.STUB,
+        status=IngestionAdapterStatus.ACTIVE,
         capabilities=BASE_DETECTION_CAPABILITY
         + (IngestionCapability.EXTRACT_METADATA, IngestionCapability.EXTRACT_CURVE_INVENTORY),
-        notes=("First concrete import adapter target; full LAS parsing is deferred to a later block.",),
+        notes=("First concrete numeric-curve adapter. Parses LAS headers and curve inventory through backend-owned ingestion services.",),
     ),
     IngestionAdapter(
         adapter_id="dlis_frame_channel_adapter_v1",

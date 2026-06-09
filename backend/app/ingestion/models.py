@@ -1,9 +1,9 @@
 """Format-neutral Well Log Source Ingestion contracts.
 
-This module defines backend-owned contracts for registering and detecting well
-log source files before any format-specific import work is performed. LAS is the
-first concrete numeric-log adapter target, but the model is deliberately neutral
-across LAS, DLIS, CGM, TIFF, PDF, and unknown sources.
+These contracts keep the ingestion layer independent from any single well-log
+format. LAS is the first implemented numeric-curve adapter, while DLIS, CGM,
+TIFF, PDF, and unknown sources remain first-class contract cases for later
+adapters.
 """
 
 from __future__ import annotations
@@ -123,6 +123,24 @@ class NormalizedWellLogPackage(BaseModel):
     raster_artifacts: list[RasterLogArtifact] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     qaqc_findings: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SourceRegistrationRequest(BaseModel):
+    original_path: str
+    display_name: Optional[str] = None
+    declared_format: Optional[WellLogSourceFormat] = None
+    register_to_inventory: bool = True
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SourceRegistrationResponse(BaseModel):
+    ok: bool
+    action: str
+    detected_format: WellLogSourceFormat
+    source_file: SourceFileRegistration
+    normalized_package: NormalizedWellLogPackage
+    managed_record: Optional[dict[str, Any]] = None
+    notes: list[str] = Field(default_factory=list)
 
 
 class IngestionHealth(BaseModel):
