@@ -14,3 +14,10 @@ frontend/node_modules/
 frontend/dist/
 
 backups/
+
+# WLV runtime/generated artifacts
+.wlv_vite.pid
+backend/.wlv_backend.pid
+logs/
+backend/runtime/
+backend/well_log_viewer_backend.egg-info/
