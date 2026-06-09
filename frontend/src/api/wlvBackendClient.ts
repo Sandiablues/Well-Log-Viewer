@@ -4,11 +4,11 @@ export function wlvApiBaseUrl(): string {
     return runtimeConfig.__WLV_API_BASE_URL__.replace(/\/$/, '');
   }
 
-  if (window.location.port === '8000') {
+  if (window.location.port === '8010') {
     return '';
   }
 
-  return 'http://127.0.0.1:8000';
+  return 'http://127.0.0.1:8010';
 }
 
 export async function fetchWlvJson<T>(path: string, init?: RequestInit): Promise<T> {

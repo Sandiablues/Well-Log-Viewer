@@ -174,7 +174,13 @@ function statusLabel(value: string): string {
   return value.replace(/_/g, ' ');
 }
 
-function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => void }) {
+function ManagedWellInventoryPage({
+  onBackToViewer,
+  onOpenManagedWellViewer,
+}: {
+  onBackToViewer: () => void;
+  onOpenManagedWellViewer: (managedWellId: string) => void;
+}) {
   const [status, setStatus] = useState<ManagedInventoryStatusPayload | null>(null);
   const [wells, setWells] = useState<ManagedInventoryWellRecord[]>([]);
   const [selectedWellId, setSelectedWellId] = useState<string | null>(null);
@@ -228,6 +234,11 @@ function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => vo
     }
   };
 
+  const openSelectedWellViewer = () => {
+    if (!selectedWell) return;
+    onOpenManagedWellViewer(selectedWell.managed_well_id);
+  };
+
   return (
     <section className="wlv-managed-inventory-page" aria-label="Managed Well Inventory">
       <header className="wlv-managed-inventory-header">
@@ -239,6 +250,13 @@ function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => vo
         <div className="wlv-managed-inventory-actions">
           <button type="button" onClick={loadInventory} disabled={loading || registering}>Refresh</button>
           <button type="button" onClick={registerSeedWell} disabled={loading || registering}>Register Seed Well</button>
+          <button
+            type="button"
+            onClick={openSelectedWellViewer}
+            disabled={!selectedWell || selectedWell.viewer_packages.length === 0}
+          >
+            View Logs
+          </button>
           <button type="button" onClick={onBackToViewer}>Open Log Viewer</button>
         </div>
       </header>
@@ -2552,11 +2570,12 @@ function RightPanel({
 
 export function TrackLayoutPrototype() {
   const [activeView, setActiveView] = useState<DemoNavView>('log-viewer');
+  const [managedViewerWellId, setManagedViewerWellId] = useState('managed-well:forge-21-31');
 
   useEffect(() => {
     if (activeView !== 'log-viewer') return;
-    void loadBackendViewerPackageWithFallback().catch(() => undefined);
-  }, [activeView]);
+    void loadBackendViewerPackageWithFallback(managedViewerWellId).catch(() => undefined);
+  }, [activeView, managedViewerWellId]);
   const [tracks, setTracks] = useState<WellLogTrack[]>(() => reindexTracks(initialTracks));
   const [selection, setSelection] = useState<SelectionRef>({ kind: 'track', trackId: 'track-gr-sp' });
   const [selectedInventoryCurveIds, setSelectedInventoryCurveIds] = useState<string[]>([]);
@@ -3014,12 +3033,20 @@ export function TrackLayoutPrototype() {
     setSelection({ kind: 'track', trackId });
   };
 
+  const openManagedWellViewer = (managedWellId: string) => {
+    setManagedViewerWellId(managedWellId);
+    setActiveView('log-viewer');
+  };
+
   return (
     <div className="wlv-demo-shell">
       <DemoShellRail activeView={activeView} onNavigate={setActiveView} />
       <main className="wlv-demo-main" aria-label="Well Log Viewer workspace">
         {activeView === 'data' ? (
-          <ManagedWellInventoryPage onBackToViewer={() => setActiveView('log-viewer')} />
+          <ManagedWellInventoryPage
+            onBackToViewer={() => setActiveView('log-viewer')}
+            onOpenManagedWellViewer={openManagedWellViewer}
+          />
         ) : (
         <div className="wlv-prototype-root">
       <header className="wlv-app-header">
