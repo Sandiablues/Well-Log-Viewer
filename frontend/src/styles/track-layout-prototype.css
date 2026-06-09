@@ -2976,3 +2976,60 @@ button.wlv-view-range-readout,
   font-size: 10px;
   font-style: normal;
 }
+
+/* WLV-013-DATA-INVENTORY-HARDENING-START */
+.wlv-managed-inventory-readiness {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.wlv-managed-inventory-readiness div,
+.wlv-managed-inventory-note {
+  padding: 10px;
+  border: 1px solid #1f2b3d;
+  border-radius: 10px;
+  background: #0d1a2b;
+}
+
+.wlv-managed-inventory-readiness div.connected {
+  border-color: #2563eb;
+}
+
+.wlv-managed-inventory-readiness div.unavailable {
+  border-color: #ef4444;
+}
+
+.wlv-managed-inventory-readiness span {
+  display: block;
+  margin-bottom: 4px;
+  color: #8aa0ba;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.wlv-managed-inventory-readiness strong,
+.wlv-managed-inventory-note strong {
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.wlv-managed-inventory-note {
+  margin-top: 12px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.wlv-managed-inventory-note strong,
+.wlv-managed-inventory-note span {
+  display: block;
+}
+
+.wlv-managed-inventory-note span {
+  margin-top: 4px;
+  color: #91a1b8;
+}
+/* WLV-013-DATA-INVENTORY-HARDENING-END */

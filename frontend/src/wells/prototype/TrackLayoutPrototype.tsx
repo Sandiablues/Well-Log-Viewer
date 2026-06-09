@@ -41,30 +41,46 @@ type DemoNavView = 'log-viewer' | 'data';
 
 type ManagedInventorySourceReference = {
   source_id: string;
-  source_kind: string;
-  display_name: string;
+  source_kind?: string | null;
+  display_name?: string | null;
+  original_path?: string | null;
+  file_name?: string | null;
+  file_format?: string | null;
+  checksum?: string | null;
   path?: string | null;
   uri?: string | null;
-  status: string;
+  status?: string | null;
 };
 
 type ManagedInventoryViewerPackageReference = {
   viewer_package_id: string;
-  package_kind: string;
-  display_name: string;
-  status: string;
+  viewer_package_version?: string | null;
+  package_kind?: string | null;
+  display_name?: string | null;
+  dataset_id?: string | null;
+  representation_id?: string | null;
+  endpoint?: string | null;
+  status?: string | null;
 };
 
 type ManagedInventoryWellRecord = {
   managed_well_id: string;
   well_id: string;
-  display_name: string;
+  well_name?: string | null;
+  display_name?: string | null;
+  wellbore_id?: string | null;
+  wellbore_name?: string | null;
   operator?: string | null;
   field?: string | null;
   country?: string | null;
-  status: string;
-  source_references: ManagedInventorySourceReference[];
-  viewer_packages: ManagedInventoryViewerPackageReference[];
+  depth_unit?: string | null;
+  top_depth?: number | null;
+  base_depth?: number | null;
+  status?: string | null;
+  lifecycle_state?: string | null;
+  source_references?: ManagedInventorySourceReference[];
+  viewer_packages?: ManagedInventoryViewerPackageReference[];
+  tags?: string[];
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -72,10 +88,16 @@ type ManagedInventoryWellRecord = {
 type ManagedInventoryStatusPayload = {
   ok: boolean;
   service: string;
-  scope: string;
+  scope?: string | null;
+  storage_backend?: string | null;
+  schema_version?: string | null;
   managed_well_count: number;
   viewer_package_count: number;
+  source_reference_count?: number;
+  lifecycle_counts?: Record<string, number>;
   repository_path?: string | null;
+  storage_path?: string | null;
+  last_checked_at?: string | null;
 };
 
 type IntervalSelectionState = {
@@ -174,6 +196,42 @@ function statusLabel(status?: string | null): string {
   return (status ?? 'unknown').replace(/_/g, ' ');
 }
 
+
+function safeText(value: string | number | null | undefined, fallback = '—'): string {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+  return String(value);
+}
+
+function wellDisplayName(well: ManagedInventoryWellRecord): string {
+  return well.display_name || well.well_name || well.well_id || well.managed_well_id;
+}
+
+function wellStatus(well: ManagedInventoryWellRecord): string {
+  return well.lifecycle_state || well.status || 'unknown';
+}
+
+function sourceDisplayName(source: ManagedInventorySourceReference): string {
+  return source.display_name || source.file_name || source.source_id;
+}
+
+function sourceStatus(source: ManagedInventorySourceReference): string {
+  return source.status || source.source_kind || source.file_format || 'source';
+}
+
+function viewerPackageDisplayName(viewerPackage: ManagedInventoryViewerPackageReference): string {
+  return viewerPackage.display_name || viewerPackage.viewer_package_version || viewerPackage.representation_id || viewerPackage.viewer_package_id;
+}
+
+function viewerPackageKind(viewerPackage: ManagedInventoryViewerPackageReference): string {
+  return viewerPackage.package_kind || viewerPackage.viewer_package_version || 'viewer_package';
+}
+
+function developmentSeedAlreadyRegistered(wells: ManagedInventoryWellRecord[]): boolean {
+  return wells.some((well) => well.managed_well_id === 'managed-well:forge-21-31' || well.well_id === 'forge-21-31');
+}
+
 function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => void }) {
   const [status, setStatus] = useState<ManagedInventoryStatusPayload | null>(null);
   const [wells, setWells] = useState<ManagedInventoryWellRecord[]>([]);
@@ -185,6 +243,9 @@ function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => vo
   const selectedWell = useMemo(() => (
     wells.find((well) => well.managed_well_id === selectedWellId) ?? wells[0] ?? null
   ), [selectedWellId, wells]);
+
+  const seedAlreadyRegistered = developmentSeedAlreadyRegistered(wells);
+  const backendConnected = Boolean(status?.ok && !error);
 
   const loadInventory = async () => {
     setLoading(true);
@@ -203,6 +264,9 @@ function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => vo
       ));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to load managed well inventory');
+      setStatus(null);
+      setWells([]);
+      setSelectedWellId(null);
     } finally {
       setLoading(false);
     }
@@ -213,6 +277,11 @@ function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => vo
   }, []);
 
   const registerSeedWell = async () => {
+    if (seedAlreadyRegistered) {
+      setError('Development seed well is already registered. Use Refresh to reload the managed inventory.');
+      return;
+    }
+
     setRegistering(true);
     setError(null);
     try {
@@ -222,11 +291,14 @@ function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => vo
       await loadInventory();
       setSelectedWellId(result.record.managed_well_id);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Unable to register seed well');
+      setError(caught instanceof Error ? caught.message : 'Unable to register development seed well');
     } finally {
       setRegistering(false);
     }
   };
+
+  const sourceReferences = selectedWell?.source_references ?? [];
+  const viewerPackages = selectedWell?.viewer_packages ?? [];
 
   return (
     <section className="wlv-managed-inventory-page" aria-label="Managed Well Inventory">
@@ -238,30 +310,54 @@ function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => vo
         </div>
         <div className="wlv-managed-inventory-actions">
           <button type="button" onClick={loadInventory} disabled={loading || registering}>Refresh</button>
-          <button type="button" onClick={registerSeedWell} disabled={loading || registering}>Register Seed Well</button>
+          <button
+            type="button"
+            onClick={registerSeedWell}
+            disabled={loading || registering || seedAlreadyRegistered}
+            title="Development bootstrap action for the Forge 21-31 seed well"
+          >
+            {seedAlreadyRegistered ? 'Seed Well Registered' : 'Register Development Seed Well'}
+          </button>
           <button type="button" onClick={onBackToViewer}>Open Log Viewer</button>
         </div>
       </header>
 
+      <div className="wlv-managed-inventory-readiness" aria-label="Managed inventory readiness">
+        <div className={backendConnected ? 'connected' : 'unavailable'}>
+          <span>Backend</span>
+          <strong>{backendConnected ? 'Connected' : 'Unavailable'}</strong>
+        </div>
+        <div>
+          <span>Inventory State</span>
+          <strong>{loading ? 'Loading' : wells.length > 0 ? 'Ready' : 'Empty'}</strong>
+        </div>
+        <div>
+          <span>Development Seed</span>
+          <strong>{seedAlreadyRegistered ? 'Registered' : 'Available'}</strong>
+        </div>
+      </div>
+
       {status ? (
         <div className="wlv-managed-inventory-summary" aria-label="Managed inventory summary">
-          <div><span>Service</span><strong>{status.service}</strong></div>
+          <div><span>Service</span><strong>{safeText(status.service)}</strong></div>
           <div><span>Managed Wells</span><strong>{status.managed_well_count}</strong></div>
           <div><span>Viewer Packages</span><strong>{status.viewer_package_count}</strong></div>
-          <div><span>Scope</span><strong>{status.scope}</strong></div>
+          <div><span>Storage</span><strong>{safeText(status.storage_backend ?? status.scope, 'local')}</strong></div>
         </div>
       ) : null}
 
       {error ? <div className="wlv-managed-inventory-error" role="alert">{error}</div> : null}
 
+      {!error && !loading && wells.length === 0 ? (
+        <div className="wlv-managed-inventory-note">
+          <strong>No managed wells registered.</strong>
+          <span>The backend seed repository is available, but runtime managed inventory is empty. Use the development seed action to bootstrap Forge 21-31 for inventory testing.</span>
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="wlv-managed-inventory-empty">Loading managed inventory from backend...</div>
-      ) : wells.length === 0 ? (
-        <div className="wlv-managed-inventory-empty">
-          <strong>No managed wells registered.</strong>
-          <span>Use Register Seed Well to register the current backend seed well into the managed inventory.</span>
-        </div>
-      ) : (
+      ) : wells.length === 0 ? null : (
         <div className="wlv-managed-inventory-layout">
           <aside className="wlv-managed-inventory-list" aria-label="Managed wells">
             {wells.map((well) => (
@@ -271,9 +367,9 @@ function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => vo
                 className={`wlv-managed-well-card ${selectedWell?.managed_well_id === well.managed_well_id ? 'active' : ''}`}
                 onClick={() => setSelectedWellId(well.managed_well_id)}
               >
-                <strong>{well.display_name}</strong>
+                <strong>{wellDisplayName(well)}</strong>
                 <span>{well.managed_well_id}</span>
-                <em>{statusLabel(well.status)}</em>
+                <em>{statusLabel(wellStatus(well))}</em>
               </button>
             ))}
           </aside>
@@ -282,44 +378,45 @@ function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => vo
             <article className="wlv-managed-inventory-detail" aria-label="Managed well detail">
               <header>
                 <span className="wlv-page-kicker">Managed Well</span>
-                <h2>{selectedWell.display_name}</h2>
+                <h2>{wellDisplayName(selectedWell)}</h2>
                 <p>{selectedWell.managed_well_id}</p>
               </header>
 
               <div className="wlv-managed-detail-grid">
-                <div><span>Well ID</span><strong>{selectedWell.well_id}</strong></div>
-                <div><span>Status</span><strong>{statusLabel(selectedWell.status)}</strong></div>
-                <div><span>Operator</span><strong>{selectedWell.operator ?? '—'}</strong></div>
-                <div><span>Field</span><strong>{selectedWell.field ?? '—'}</strong></div>
-                <div><span>Country</span><strong>{selectedWell.country ?? '—'}</strong></div>
+                <div><span>Well ID</span><strong>{safeText(selectedWell.well_id)}</strong></div>
+                <div><span>Status</span><strong>{statusLabel(wellStatus(selectedWell))}</strong></div>
+                <div><span>Operator</span><strong>{safeText(selectedWell.operator)}</strong></div>
+                <div><span>Field</span><strong>{safeText(selectedWell.field)}</strong></div>
+                <div><span>Country</span><strong>{safeText(selectedWell.country)}</strong></div>
+                <div><span>Depth Range</span><strong>{selectedWell.top_depth != null && selectedWell.base_depth != null ? `${selectedWell.top_depth}–${selectedWell.base_depth} ${selectedWell.depth_unit ?? ''}` : '—'}</strong></div>
               </div>
 
               <section className="wlv-managed-section">
                 <h3>Source References</h3>
-                {selectedWell.source_references.length === 0 ? (
+                {sourceReferences.length === 0 ? (
                   <p>No source references registered.</p>
-                ) : selectedWell.source_references.map((source) => (
+                ) : sourceReferences.map((source) => (
                   <div className="wlv-managed-reference-row" key={source.source_id}>
                     <div>
-                      <strong>{source.display_name}</strong>
+                      <strong>{sourceDisplayName(source)}</strong>
                       <span>{source.source_id}</span>
                     </div>
-                    <em>{statusLabel(source.source_kind)} · {statusLabel(source.status)}</em>
+                    <em>{statusLabel(source.source_kind)} · {statusLabel(sourceStatus(source))}</em>
                   </div>
                 ))}
               </section>
 
               <section className="wlv-managed-section">
                 <h3>Viewer Packages</h3>
-                {selectedWell.viewer_packages.length === 0 ? (
+                {viewerPackages.length === 0 ? (
                   <p>No viewer packages registered.</p>
-                ) : selectedWell.viewer_packages.map((viewerPackage) => (
+                ) : viewerPackages.map((viewerPackage) => (
                   <div className="wlv-managed-reference-row" key={viewerPackage.viewer_package_id}>
                     <div>
-                      <strong>{viewerPackage.display_name}</strong>
+                      <strong>{viewerPackageDisplayName(viewerPackage)}</strong>
                       <span>{viewerPackage.viewer_package_id}</span>
                     </div>
-                    <em>{statusLabel(viewerPackage.package_kind)} · {statusLabel(viewerPackage.status)}</em>
+                    <em>{statusLabel(viewerPackageKind(viewerPackage))} · {statusLabel(viewerPackage.status)}</em>
                   </div>
                 ))}
               </section>
