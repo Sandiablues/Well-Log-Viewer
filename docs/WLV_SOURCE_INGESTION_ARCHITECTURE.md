@@ -65,3 +65,43 @@ reserved for records with backend viewer-package references.
 
 DLIS, CGM, TIFF, PDF, and UNKNOWN remain first-class detection/contract cases.
 They are not parsed in this block and must not be forced into a LAS-only model.
+
+## BE-008 LAS ingestion QAQC and evidence
+
+LAS ingestion now returns backend-owned extraction evidence and QAQC summary
+alongside the normalized package. Evidence is format-neutral so future DLIS,
+CGM, TIFF, PDF, and UNKNOWN adapters can use the same concepts.
+
+Captured evidence includes:
+
+- source SHA-256 fingerprint evidence
+- LAS well-header metadata evidence
+- depth mnemonic and depth-range evidence
+- NULL-value evidence when declared
+- curve inventory evidence
+- parsed section-count evidence
+
+LAS ingestion QAQC currently checks:
+
+- source fingerprint availability
+- missing well name in the LAS well section
+- missing explicit depth curve mnemonic
+- missing or invalid depth range
+- missing non-depth curve inventory
+- duplicate non-depth curve mnemonics
+- missing curve units
+- missing LAS NULL declaration
+
+When a LAS source is registered into Managed Well Inventory, the managed record
+retains:
+
+- `metadata.source_fingerprint`
+- `metadata.ingestion_evidence`
+- `metadata.ingestion_qaqc_summary`
+- `metadata.qaqc_findings`
+- `metadata.normalized_package`
+
+This keeps the inventory service backend-authoritative while preserving an
+enterprise path where evidence and QAQC can later be persisted in a database,
+audit table, or object-storage-backed evidence store without changing the public
+source-ingestion contract.

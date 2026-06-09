@@ -29,7 +29,7 @@ def test_supported_formats_include_numeric_frame_and_raster_categories() -> None
     assert by_format["dlis"]["source_category"] == "frame_channel"
     assert by_format["cgm"]["source_category"] == "vector_log"
     assert by_format["tiff"]["source_category"] == "raster_log"
-    assert by_format["las"]["adapter_status"] == "stub"
+    assert by_format["las"]["adapter_status"] == "active"
 
 
 def test_detect_format_for_las_source_file() -> None:

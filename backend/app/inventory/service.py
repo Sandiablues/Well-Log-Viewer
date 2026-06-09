@@ -240,6 +240,15 @@ class ManagedWellInventoryService:
                 issues.append(self._issue("error", "missing_source_id", "Source reference id is required.", record.managed_well_id, "source_id"))
             if not source.display_name.strip():
                 issues.append(self._issue("warning", "missing_source_display_name", "Source display name is empty.", record.managed_well_id, "source_references.display_name"))
+            if source.source_kind == ManagedSourceKind.LAS and not source.checksum:
+                issues.append(self._issue("warning", "las_source_missing_checksum", "LAS source references should retain a source fingerprint/checksum.", record.managed_well_id, "source_references.checksum"))
+        if "ingested-source" in record.tags or record.metadata.get("source_format") == "las":
+            if not record.metadata.get("source_fingerprint"):
+                issues.append(self._issue("warning", "ingested_source_missing_fingerprint", "Ingested sources should retain source fingerprint evidence.", record.managed_well_id, "metadata.source_fingerprint"))
+            if not record.metadata.get("ingestion_evidence"):
+                issues.append(self._issue("warning", "ingested_source_missing_evidence", "Ingested sources should retain extraction evidence records.", record.managed_well_id, "metadata.ingestion_evidence"))
+            if not record.metadata.get("ingestion_qaqc_summary"):
+                issues.append(self._issue("warning", "ingested_source_missing_qaqc_summary", "Ingested sources should retain an ingestion QAQC summary.", record.managed_well_id, "metadata.ingestion_qaqc_summary"))
         for package in record.viewer_packages:
             if not package.viewer_package_id.strip():
                 issues.append(self._issue("error", "missing_viewer_package_id", "Viewer package id is required.", record.managed_well_id, "viewer_package_id"))

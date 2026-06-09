@@ -91,6 +91,8 @@ class WellLogSourceIngestionService:
             source_file=package.source_file,
             normalized_package=package,
             managed_record=managed_record,
+            evidence=package.evidence,
+            qaqc_summary=package.qaqc_summary,
             notes=notes,
         )
 
@@ -113,6 +115,11 @@ class WellLogSourceIngestionService:
                 "sample_count": package.metadata.get("sample_count"),
                 "null_value": package.metadata.get("null_value"),
                 "normalized_package_id": package.package_id,
+                "source_fingerprint_evidence": package.qaqc_summary.source_fingerprint_available,
+                "ingestion_evidence_count": package.qaqc_summary.evidence_count,
+                "ingestion_qaqc_error_count": package.qaqc_summary.error_count,
+                "ingestion_qaqc_warning_count": package.qaqc_summary.warning_count,
+                "ingestion_qaqc_summary": package.qaqc_summary.model_dump(mode="json"),
             },
         )
         record = ManagedWellRecord(
@@ -132,7 +139,9 @@ class WellLogSourceIngestionService:
                 "source_fingerprint": package.metadata.get("source_fingerprint"),
                 "curve_count": package.metadata.get("curve_count"),
                 "curve_mnemonics": [curve.mnemonic for curve in package.curve_channels],
-                "qaqc_findings": package.qaqc_findings,
+                "qaqc_findings": [finding.model_dump(mode="json") for finding in package.qaqc_findings],
+                "ingestion_evidence": [item.model_dump(mode="json") for item in package.evidence],
+                "ingestion_qaqc_summary": package.qaqc_summary.model_dump(mode="json"),
                 "normalized_package": package.model_dump(mode="json"),
             },
             lifecycle_notes=["Registered from LAS ingestion adapter. Viewer package generation is deferred."],

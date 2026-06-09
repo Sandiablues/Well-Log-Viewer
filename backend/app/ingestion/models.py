@@ -47,6 +47,58 @@ class IngestionAdapterStatus(str, Enum):
     PLANNED = "planned"
 
 
+class IngestionEvidenceKind(str, Enum):
+    SOURCE_FINGERPRINT = "source_fingerprint"
+    FORMAT_DETECTION = "format_detection"
+    METADATA_HEADER = "metadata_header"
+    CURVE_INVENTORY = "curve_inventory"
+    DEPTH_SAMPLES = "depth_samples"
+    NULL_VALUE = "null_value"
+    UNIT = "unit"
+    QAQC_CHECK = "qaqc_check"
+    VIEWER_PACKAGE_REFERENCE = "viewer_package_reference"
+
+
+class IngestionEvidenceRecord(BaseModel):
+    evidence_id: str
+    evidence_kind: IngestionEvidenceKind
+    source: str
+    field_path: Optional[str] = None
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    value: Optional[Any] = None
+    message: Optional[str] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class IngestionQaqcSeverity(str, Enum):
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+
+
+class IngestionQaqcFinding(BaseModel):
+    finding_id: str
+    severity: IngestionQaqcSeverity
+    code: str
+    message: str
+    field_path: Optional[str] = None
+    evidence_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class IngestionQaqcSummary(BaseModel):
+    ok: bool = True
+    evidence_count: int = 0
+    finding_count: int = 0
+    error_count: int = 0
+    warning_count: int = 0
+    info_count: int = 0
+    source_fingerprint_available: bool = False
+    depth_range_available: bool = False
+    curve_inventory_available: bool = False
+    viewer_package_available: bool = False
+
+
 class SourceFileRegistration(BaseModel):
     source_file_id: str
     display_name: str
@@ -122,7 +174,9 @@ class NormalizedWellLogPackage(BaseModel):
     curve_channels: list[CurveChannelArtifact] = Field(default_factory=list)
     raster_artifacts: list[RasterLogArtifact] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
-    qaqc_findings: list[dict[str, Any]] = Field(default_factory=list)
+    evidence: list[IngestionEvidenceRecord] = Field(default_factory=list)
+    qaqc_findings: list[IngestionQaqcFinding] = Field(default_factory=list)
+    qaqc_summary: IngestionQaqcSummary = Field(default_factory=IngestionQaqcSummary)
 
 
 class SourceRegistrationRequest(BaseModel):
@@ -140,6 +194,8 @@ class SourceRegistrationResponse(BaseModel):
     source_file: SourceFileRegistration
     normalized_package: NormalizedWellLogPackage
     managed_record: Optional[dict[str, Any]] = None
+    evidence: list[IngestionEvidenceRecord] = Field(default_factory=list)
+    qaqc_summary: IngestionQaqcSummary = Field(default_factory=IngestionQaqcSummary)
     notes: list[str] = Field(default_factory=list)
 
 
