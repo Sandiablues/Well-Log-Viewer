@@ -193,6 +193,112 @@ class DepthRange(BaseModel):
     max: float = 0.0
 
 
+
+
+# ---------------------------------------------------------------------------
+# Backend API / repository models
+# ---------------------------------------------------------------------------
+
+
+class LogFile(BaseModel):
+    """Backend-owned source log file metadata."""
+    log_file_id: str
+    filename: str
+    file_type: str = "LAS"
+    service_company: Optional[str] = None
+    run_number: Optional[str] = None
+    depth_range: DepthRange = Field(default_factory=DepthRange)
+    depth_unit: DepthUnit = DepthUnit.FEET
+
+
+class WellSummary(BaseModel):
+    """Compact well row for WLV well lists."""
+    well_id: str
+    well_name: str
+    field: Optional[str] = None
+    operator: Optional[str] = None
+    country: Optional[str] = None
+    depth_range: DepthRange = Field(default_factory=DepthRange)
+    depth_unit: DepthUnit = DepthUnit.FEET
+    curve_count: int = 0
+    interval_column_count: int = 0
+
+
+class WellDetail(WellSummary):
+    """Detailed well metadata for the WLV well page/info panel."""
+    wellbore_id: str
+    wellbore_name: str
+    api_number: Optional[str] = None
+    state: Optional[str] = None
+    county: Optional[str] = None
+    latitude: Optional[str] = None
+    longitude: Optional[str] = None
+    datum: Optional[str] = None
+    kb_elevation: Optional[str] = None
+    ground_elevation: Optional[str] = None
+    source_file: Optional[str] = None
+    log_files: List[LogFile] = Field(default_factory=list)
+
+
+class IntervalColumnType(str, Enum):
+    LITHOLOGY = "lithology"
+    BIOSTRATIGRAPHY = "biostratigraphy"
+    FORMATION = "formation"
+    FACIES = "facies"
+    SHOWS = "shows"
+    USER_DEFINED = "user-defined"
+
+
+class IntervalRecord(BaseModel):
+    """One categorical interval tied to measured depth."""
+    interval_id: str
+    top_md: float
+    base_md: float
+    code: str
+    label: str
+    color: Optional[str] = None
+    pattern_id: Optional[str] = None
+    source: Optional[str] = None
+    confidence: Optional[float] = None
+
+
+class IntervalColumn(BaseModel):
+    """Generic interval column: lithology, biostrat, formation, facies, etc."""
+    column_id: str
+    name: str
+    column_type: IntervalColumnType
+    depth_unit: DepthUnit = DepthUnit.FEET
+    intervals: List[IntervalRecord] = Field(default_factory=list)
+
+
+class CurveDisplayParameters(BaseModel):
+    """First-pass backend-owned curve display/parameter contract."""
+    scale_type: ScaleType = ScaleType.LINEAR
+    range_mode: str = "fixed"
+    scale_min: Optional[float] = None
+    scale_max: Optional[float] = None
+    reverse_scale: bool = False
+    line_visible: bool = True
+    line_color: Optional[str] = None
+    line_width: float = 1.4
+    line_style: str = "solid"
+    line_opacity: int = 100
+    position_anchor: str = "center"
+    horizontal_offset_pct: float = 0.0
+    clip_to_track: bool = True
+    infill_mode: str = "off"
+    infill_source: str = "solid"
+    infill_color: Optional[str] = None
+    infill_pattern_id: Optional[str] = None
+    infill_interval_column_id: Optional[str] = None
+    infill_paired_curve_id: Optional[str] = None
+    infill_opacity: int = 35
+    display_priority: str = "normal"
+    show_qaqc_warnings: bool = True
+    show_null_gaps: bool = True
+    show_out_of_range: bool = True
+
+
 class WellMultitrackV1(BaseModel):
     """
     Canonical backend-owned viewer package.
