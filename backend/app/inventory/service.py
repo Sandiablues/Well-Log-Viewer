@@ -133,6 +133,7 @@ class ManagedWellInventoryService:
                 "datum": well.datum,
                 "kb_elevation": well.kb_elevation,
                 "ground_elevation": well.ground_elevation,
+                "viewer_package_contract": viewer_package.model_dump(mode="json"),
             },
             lifecycle_notes=["Registered from deterministic seed repository."],
             created_at=existing_created_at,
