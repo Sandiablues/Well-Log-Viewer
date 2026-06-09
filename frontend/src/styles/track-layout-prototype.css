@@ -210,7 +210,7 @@ button:disabled {
   align-items: stretch;
   gap: 8px;
   padding: 6px 10px;
-  background: #181818;
+  background: #1f1c1a;
   border-bottom: 1px solid #2d2d2d;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
   overflow-x: auto;
@@ -3033,3 +3033,666 @@ button.wlv-view-range-readout,
   color: #91a1b8;
 }
 /* WLV-013-DATA-INVENTORY-HARDENING-END */
+
+
+/* WLV-MDP-CSS-ONLY-SEISMIC-STYLE-START */
+
+/*
+  WLV Managed Data Page — CSS-only Seismic Viewer MDP visual alignment.
+  Scope: aesthetics only.
+  No TSX, behavior, backend, lifecycle, or destructive-action changes.
+*/
+
+.wlv-managed-inventory-page {
+  --sv-bg-page: #07101a;
+  --sv-bg-panel: #0b1622;
+  --sv-bg-panel-soft: #0f1c2a;
+  --sv-bg-row: #0d1824;
+  --sv-bg-row-hover: #132235;
+  --sv-border-subtle: #1d2f42;
+  --sv-border-strong: #2d465f;
+  --sv-border-active: #4b7195;
+  --sv-text-primary: #e6edf3;
+  --sv-text-secondary: #aebdca;
+  --sv-text-muted: #7f8f9f;
+  --sv-accent-blue: #5aa9e6;
+  --sv-accent-green: #72c37a;
+  --sv-accent-yellow: #d8b85a;
+  --sv-accent-red: #d96a6a;
+
+  min-height: 100%;
+  padding: 18px 22px 24px;
+  background: var(--sv-bg-page);
+  color: var(--sv-text-primary);
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+.wlv-managed-inventory-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.wlv-managed-inventory-header h1,
+.wlv-managed-inventory-detail h2 {
+  margin: 2px 0 4px;
+  color: var(--sv-text-primary);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.wlv-managed-inventory-header p,
+.wlv-managed-inventory-detail p {
+  margin: 0;
+  color: var(--sv-text-muted);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+.wlv-page-kicker {
+  color: var(--sv-accent-blue);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Hide stabilization/readiness cards from the production-style MDP view. */
+.wlv-managed-inventory-readiness,
+.wlv-managed-inventory-summary {
+  display: none;
+}
+
+.wlv-managed-inventory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--sv-border-subtle);
+  border-radius: 10px;
+  background: var(--sv-bg-panel);
+}
+
+.wlv-managed-inventory-actions button,
+.wlv-managed-inventory-note button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid var(--sv-border-strong);
+  background: transparent;
+  color: var(--sv-text-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wlv-managed-inventory-actions button:hover:not(:disabled),
+.wlv-managed-inventory-note button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--sv-border-active);
+  color: var(--sv-text-primary);
+}
+
+.wlv-managed-inventory-actions button:first-child {
+  border-color: var(--sv-accent-blue);
+  color: var(--sv-accent-blue);
+}
+
+.wlv-managed-inventory-actions button:nth-child(2) {
+  border-color: var(--sv-accent-green);
+  color: var(--sv-accent-green);
+}
+
+.wlv-managed-inventory-actions button:nth-child(3) {
+  border-color: var(--sv-accent-blue);
+  color: var(--sv-accent-blue);
+}
+
+.wlv-managed-inventory-actions button:disabled,
+.wlv-managed-inventory-note button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  border-color: var(--sv-border-strong);
+  color: #536270;
+}
+
+.wlv-managed-inventory-error,
+.wlv-managed-inventory-empty,
+.wlv-managed-inventory-note {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--sv-border-subtle);
+  border-radius: 10px;
+  background: var(--sv-bg-panel);
+  color: var(--sv-text-secondary);
+  font-size: 12.5px;
+}
+
+.wlv-managed-inventory-error {
+  border-color: var(--sv-accent-red);
+  color: #f0b8b8;
+}
+
+.wlv-managed-inventory-note strong,
+.wlv-managed-inventory-empty strong {
+  color: var(--sv-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.wlv-managed-inventory-note span,
+.wlv-managed-inventory-empty span {
+  margin-top: 5px;
+  color: var(--sv-text-muted);
+  font-size: 12.5px;
+}
+
+.wlv-managed-inventory-layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+  min-height: 0;
+}
+
+.wlv-managed-inventory-list,
+.wlv-managed-inventory-detail {
+  border: 1px solid var(--sv-border-subtle);
+  border-radius: 12px;
+  background: var(--sv-bg-panel);
+  overflow: hidden;
+}
+
+.wlv-managed-inventory-list {
+  display: grid;
+  align-content: start;
+  gap: 0;
+  padding: 0;
+}
+
+.wlv-managed-well-card {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid rgba(29, 47, 66, 0.75);
+  border-radius: 0;
+  background: var(--sv-bg-row);
+  color: var(--sv-text-secondary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.wlv-managed-well-card:hover {
+  background: var(--sv-bg-row-hover);
+}
+
+.wlv-managed-well-card.active {
+  background: #152a3e;
+  color: var(--sv-text-primary);
+  box-shadow: inset 3px 0 0 var(--sv-accent-blue);
+}
+
+.wlv-managed-well-card strong {
+  color: var(--sv-text-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-managed-well-card span,
+.wlv-managed-well-card em {
+  color: var(--sv-text-muted);
+  font-size: 10.5px;
+  font-style: normal;
+}
+
+.wlv-managed-inventory-detail {
+  padding: 0;
+}
+
+.wlv-managed-inventory-detail > header {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--sv-border-subtle);
+  background: var(--sv-bg-panel-soft);
+}
+
+.wlv-managed-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  border-bottom: 1px solid var(--sv-border-subtle);
+}
+
+.wlv-managed-detail-grid div {
+  padding: 9px 10px;
+  border: 0;
+  border-right: 1px solid rgba(29, 47, 66, 0.75);
+  border-bottom: 1px solid rgba(29, 47, 66, 0.55);
+  border-radius: 0;
+  background: transparent;
+}
+
+.wlv-managed-detail-grid div:nth-child(3n) {
+  border-right: 0;
+}
+
+.wlv-managed-detail-grid span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--sv-text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.wlv-managed-detail-grid strong {
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.wlv-managed-section {
+  margin: 0;
+  padding: 0;
+  border-top: 0;
+}
+
+.wlv-managed-section h3 {
+  margin: 0;
+  padding: 9px 12px;
+  border-top: 1px solid var(--sv-border-subtle);
+  border-bottom: 1px solid var(--sv-border-subtle);
+  background: #091522;
+  color: var(--sv-text-primary);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.wlv-managed-section p {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--sv-text-muted);
+  font-size: 12px;
+}
+
+.wlv-managed-reference-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-top: 1px solid rgba(29, 47, 66, 0.55);
+  background: var(--sv-bg-row);
+}
+
+.wlv-managed-reference-row:first-of-type {
+  border-top: 0;
+}
+
+.wlv-managed-reference-row:hover {
+  background: var(--sv-bg-row-hover);
+}
+
+.wlv-managed-reference-row div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.wlv-managed-reference-row strong {
+  color: var(--sv-text-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-managed-reference-row span,
+.wlv-managed-reference-row em {
+  color: var(--sv-text-muted);
+  font-size: 10.5px;
+  font-style: normal;
+}
+
+@media (max-width: 1200px) {
+  .wlv-managed-inventory-page {
+    padding: 14px 16px 20px;
+  }
+
+  .wlv-managed-inventory-layout {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+
+  .wlv-managed-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wlv-managed-detail-grid div:nth-child(3n) {
+    border-right: 1px solid rgba(29, 47, 66, 0.75);
+  }
+
+  .wlv-managed-detail-grid div:nth-child(2n) {
+    border-right: 0;
+  }
+}
+
+/* WLV-MDP-CSS-ONLY-SEISMIC-STYLE-END */
+
+
+/* WLV-MDP-CHARCOAL-COLOR-NORMALIZATION-START */
+
+/*
+  WLV MDP charcoal color normalization.
+  Scope: CSS colors only.
+  Target: actual Seismic Viewer Managed Data screenshot:
+  charcoal/near-black canvas, neutral dark table panels,
+  restrained blue outlines and active accents.
+*/
+
+.wlv-managed-inventory-page {
+  --mdp-page-bg: #151413;
+  --mdp-panel-bg: #24211f;
+  --mdp-panel-soft: #2b2724;
+  --mdp-row-bg: #211f1d;
+  --mdp-row-hover: #292623;
+  --mdp-row-selected: #302c29;
+  --mdp-toolbar-bg: #171a22;
+
+  --mdp-border: #3a3430;
+  --mdp-border-strong: #4a433e;
+  --mdp-blue-border: #5d7391;
+
+  --mdp-text-primary: #e3ddd6;
+  --mdp-text-secondary: #c9c1b8;
+  --mdp-text-muted: #9b9289;
+
+  --mdp-accent-blue: #4f84c4;
+  --mdp-accent-green: #3ca765;
+  --mdp-accent-yellow: #b69a45;
+  --mdp-accent-red: #d34d4d;
+
+  background: var(--mdp-page-bg);
+  color: var(--mdp-text-primary);
+}
+
+.wlv-managed-inventory-header,
+.wlv-managed-inventory-header h1,
+.wlv-managed-inventory-detail h2 {
+  color: var(--mdp-text-primary);
+}
+
+.wlv-managed-inventory-header p,
+.wlv-managed-inventory-detail p,
+.wlv-managed-well-card span,
+.wlv-managed-well-card em,
+.wlv-managed-reference-row span,
+.wlv-managed-reference-row em,
+.wlv-managed-section p {
+  color: var(--mdp-text-muted);
+}
+
+.wlv-page-kicker {
+  color: var(--mdp-accent-blue);
+}
+
+.wlv-managed-inventory-actions,
+.wlv-managed-inventory-list,
+.wlv-managed-inventory-detail,
+.wlv-managed-inventory-empty,
+.wlv-managed-inventory-note {
+  background: var(--mdp-panel-bg);
+  border-color: var(--mdp-border);
+  color: var(--mdp-text-secondary);
+  box-shadow: none;
+}
+
+.wlv-managed-inventory-error {
+  background: var(--mdp-panel-bg);
+  border-color: var(--mdp-accent-red);
+  color: #e2b0b0;
+}
+
+.wlv-managed-inventory-actions button,
+.wlv-managed-inventory-note button {
+  background: transparent;
+  border-color: var(--mdp-blue-border);
+  color: var(--mdp-text-secondary);
+}
+
+.wlv-managed-inventory-actions button:hover:not(:disabled),
+.wlv-managed-inventory-note button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--mdp-accent-blue);
+  color: var(--mdp-text-primary);
+}
+
+.wlv-managed-inventory-actions button:first-child,
+.wlv-managed-inventory-actions button:nth-child(3) {
+  border-color: var(--mdp-blue-border);
+  color: var(--mdp-text-primary);
+}
+
+.wlv-managed-inventory-actions button:nth-child(2) {
+  border-color: var(--mdp-accent-green);
+  color: var(--mdp-text-primary);
+}
+
+.wlv-managed-inventory-actions button:disabled,
+.wlv-managed-inventory-note button:disabled {
+  border-color: var(--mdp-border-strong);
+  color: #666;
+}
+
+.wlv-managed-inventory-detail > header,
+.wlv-managed-section h3 {
+  background: var(--mdp-panel-soft);
+  border-color: var(--mdp-border);
+  color: var(--mdp-text-secondary);
+}
+
+.wlv-managed-detail-grid,
+.wlv-managed-detail-grid div {
+  border-color: var(--mdp-border);
+}
+
+.wlv-managed-detail-grid span {
+  color: var(--mdp-text-muted);
+}
+
+.wlv-managed-detail-grid strong {
+  color: var(--mdp-text-secondary);
+}
+
+.wlv-managed-well-card,
+.wlv-managed-reference-row {
+  background: var(--mdp-row-bg);
+  border-color: var(--mdp-border);
+  color: var(--mdp-text-secondary);
+}
+
+.wlv-managed-well-card:hover,
+.wlv-managed-reference-row:hover {
+  background: var(--mdp-row-hover);
+}
+
+.wlv-managed-well-card.active {
+  background: var(--mdp-row-selected);
+  color: var(--mdp-text-primary);
+  box-shadow: inset 3px 0 0 var(--mdp-accent-blue);
+}
+
+.wlv-managed-well-card strong,
+.wlv-managed-reference-row strong,
+.wlv-managed-inventory-note strong,
+.wlv-managed-inventory-empty strong {
+  color: var(--mdp-text-primary);
+}
+
+/* Future/accepted MDP table-style selectors, harmless if absent. */
+.wlv-mdp-control-card,
+.wlv-mdp-table,
+.wlv-mdp-selected-info {
+  background: var(--mdp-panel-bg);
+  border-color: var(--mdp-border);
+  box-shadow: none;
+}
+
+.wlv-mdp-control-header {
+  background: var(--mdp-panel-bg);
+  border-color: var(--mdp-border);
+}
+
+.wlv-mdp-control-body {
+  background: var(--mdp-toolbar-bg);
+  border-color: var(--mdp-blue-border);
+}
+
+.wlv-mdp-header-row,
+.wlv-mdp-child-header,
+.wlv-mdp-category h3 {
+  background: var(--mdp-panel-soft);
+  border-color: var(--mdp-border);
+  color: var(--mdp-text-secondary);
+}
+
+.wlv-mdp-well-row,
+.wlv-mdp-child-row {
+  background: var(--mdp-row-bg);
+  border-color: var(--mdp-border);
+  color: var(--mdp-text-secondary);
+}
+
+.wlv-mdp-row-group.selected .wlv-mdp-well-row {
+  background: var(--mdp-row-selected);
+}
+
+.wlv-mdp-expanded-panel {
+  background: #1f1c1a;
+  border-color: var(--mdp-border);
+}
+
+.wlv-mdp-category {
+  background: var(--mdp-panel-bg);
+  border-color: var(--mdp-border);
+}
+
+.wlv-mdp-control-card button,
+.wlv-mdp-control-card select,
+.wlv-mdp-control-card input,
+.wlv-mdp-row-actions button,
+.wlv-mdp-expand-button {
+  background: transparent;
+  border-color: var(--mdp-blue-border);
+  color: var(--mdp-text-secondary);
+}
+
+.wlv-mdp-control-card button:hover:not(:disabled),
+.wlv-mdp-row-actions button:hover:not(:disabled),
+.wlv-mdp-expand-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--mdp-accent-blue);
+  color: var(--mdp-text-primary);
+}
+
+.wlv-mdp-viewer-state.loaded {
+  background: rgba(60, 167, 101, 0.18);
+  border-color: rgba(60, 167, 101, 0.45);
+  color: #b8e4c7;
+}
+
+.wlv-mdp-viewer-state.unloaded {
+  background: #312d29;
+  border-color: #544d48;
+  color: #c9c1b8;
+}
+
+/* WLV-MDP-CHARCOAL-COLOR-NORMALIZATION-END */
+
+
+/* WLV-SIDE-RAIL-ICON-SEISMIC-ALIGNMENT-START */
+
+/*
+  WLV side rail icon alignment.
+  Scope: CSS only.
+  Target: Seismic Viewer left-rail icon treatment:
+  simple unboxed line icons, muted gray inactive, blue active.
+*/
+
+.wlv-demo-nav-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: currentColor;
+}
+
+.wlv-demo-nav-icon svg {
+  width: 25px;
+  height: 25px;
+  display: block;
+  color: currentColor;
+  stroke-width: 2.25;
+}
+
+.wlv-demo-nav-item.active .wlv-demo-nav-icon {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #4a9eff;
+}
+
+.wlv-demo-nav-item:not(.active) .wlv-demo-nav-icon {
+  color: #8f949d;
+}
+
+.wlv-demo-nav-item:hover:not(.active) .wlv-demo-nav-icon {
+  color: #b6bac2;
+}
+
+/* Keep icon frame removed even if earlier icon rules reapply. */
+.wlv-demo-nav-item .wlv-demo-nav-icon,
+.wlv-demo-nav-item.active .wlv-demo-nav-icon {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* WLV-SIDE-RAIL-ICON-SEISMIC-ALIGNMENT-END */
+
