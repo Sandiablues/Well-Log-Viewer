@@ -77,3 +77,64 @@ def test_service_contract_is_format_neutral() -> None:
     assert WellLogSourceFormat.CGM in formats
     assert WellLogSourceFormat.TIFF in formats
     assert WellLogSourceFormat.PDF in formats
+
+
+
+def test_scan_well_folder_classifies_candidate_files(tmp_path) -> None:
+    (tmp_path / "curves").mkdir()
+    (tmp_path / "images").mkdir()
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "curves" / "forge_21_31.las").write_text("~Version\n", encoding="utf-8")
+    (tmp_path / "curves" / "run_01.dlis").write_text("dlis placeholder", encoding="utf-8")
+    (tmp_path / "images" / "fmi.tiff").write_bytes(b"tiff placeholder")
+    (tmp_path / "reports" / "final_report.pdf").write_bytes(b"pdf placeholder")
+    (tmp_path / "notes.txt").write_text("unknown", encoding="utf-8")
+
+    response = client.post(
+        "/api/wlv/ingestion/well-folders/scan",
+        json={"parent_path": str(tmp_path), "include_subfolders": True},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["action"] == "scanned"
+    assert payload["summary"]["candidate_count"] == 5
+    assert payload["summary"]["las_count"] == 1
+    assert payload["summary"]["dlis_count"] == 1
+    assert payload["summary"]["raster_log_count"] == 1
+    assert payload["summary"]["document_count"] == 1
+    assert payload["summary"]["unknown_count"] == 1
+    roles = {candidate["candidate_role"] for candidate in payload["candidates"]}
+    assert "numeric_curve_las" in roles
+    assert "frame_channel_dlis" in roles
+    assert "raster_log_tiff" in roles
+    assert "pdf_document_or_field_print" in roles
+    assert "review_required_unknown" in roles
+    assert payload["notes"][0].startswith("Backend-owned folder scan only")
+
+
+def test_scan_well_folder_root_only_excludes_subfolders(tmp_path) -> None:
+    (tmp_path / "root.las").write_text("~Version\n", encoding="utf-8")
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "nested.las").write_text("~Version\n", encoding="utf-8")
+
+    response = client.post(
+        "/api/wlv/ingestion/well-folders/scan",
+        json={"parent_path": str(tmp_path), "include_subfolders": False},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["candidate_count"] == 1
+    assert payload["candidates"][0]["relative_path"] == "root.las"
+
+
+def test_scan_well_folder_rejects_missing_folder(tmp_path) -> None:
+    response = client.post(
+        "/api/wlv/ingestion/well-folders/scan",
+        json={"parent_path": str(tmp_path / "missing")},
+    )
+
+    assert response.status_code == 400
+    assert "does not exist" in response.json()["detail"]

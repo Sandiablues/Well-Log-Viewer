@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from backend.app.inventory.models import (
@@ -23,6 +24,10 @@ from .models import (
     SourceRegistrationResponse,
     SupportedIngestionFormat,
     WellLogSourceFormat,
+    WellFolderCandidate,
+    WellFolderScanRequest,
+    WellFolderScanResponse,
+    WellFolderScanSummary,
 )
 
 
@@ -95,6 +100,117 @@ class WellLogSourceIngestionService:
             qaqc_summary=package.qaqc_summary,
             notes=notes,
         )
+
+
+    def scan_well_folder(self, request: WellFolderScanRequest) -> WellFolderScanResponse:
+        parent_path = Path(request.parent_path).expanduser().resolve()
+        if not parent_path.exists():
+            raise SourceRegistrationError(f"Well folder does not exist: {parent_path}")
+        if not parent_path.is_dir():
+            raise SourceRegistrationError(f"Well folder path is not a directory: {parent_path}")
+
+        files = self._iter_well_folder_files(parent_path, request.include_subfolders)
+        summary = WellFolderScanSummary(total_files_seen=len(files))
+        candidates: list[WellFolderCandidate] = []
+
+        for file_path in files[: request.max_files]:
+            detection = self.detect_format(
+                FormatDetectionRequest(
+                    file_name=file_path.name,
+                    original_path=str(file_path),
+                    metadata=request.metadata,
+                )
+            )
+            candidate = self._build_folder_candidate(parent_path, file_path, detection)
+            candidates.append(candidate)
+            self._add_candidate_to_summary(summary, candidate)
+
+        if len(files) > request.max_files:
+            summary.skipped_count = len(files) - request.max_files
+
+        summary.candidate_count = len(candidates)
+        notes = [
+            "Backend-owned folder scan only; no managed inventory records were created.",
+            "Review and approval are required before registration/indexing/viewer-package generation.",
+        ]
+        if summary.skipped_count:
+            notes.append(f"Scan stopped at max_files={request.max_files}; {summary.skipped_count} files were skipped.")
+
+        return WellFolderScanResponse(
+            parent_path=str(parent_path),
+            include_subfolders=request.include_subfolders,
+            summary=summary,
+            candidates=candidates,
+            notes=notes,
+        )
+
+    def _iter_well_folder_files(self, parent_path: Path, include_subfolders: bool) -> list[Path]:
+        iterator = parent_path.rglob("*") if include_subfolders else parent_path.iterdir()
+        files: list[Path] = []
+        for item in iterator:
+            if not item.is_file():
+                continue
+            if any(part.startswith(".") for part in item.relative_to(parent_path).parts):
+                continue
+            files.append(item)
+        return sorted(files, key=lambda item: item.relative_to(parent_path).as_posix().lower())
+
+    def _build_folder_candidate(
+        self,
+        parent_path: Path,
+        file_path: Path,
+        detection: FormatDetectionResult,
+    ) -> WellFolderCandidate:
+        relative_path = file_path.relative_to(parent_path).as_posix()
+        candidate_kind, candidate_role, review_required, reasons = self._classify_folder_candidate(detection)
+        digest = hashlib.sha256(str(file_path).encode("utf-8")).hexdigest()[:16]
+        return WellFolderCandidate(
+            candidate_id=f"well-folder-candidate:{digest}",
+            relative_path=relative_path,
+            file_name=file_path.name,
+            original_path=str(file_path),
+            byte_size=file_path.stat().st_size,
+            detected_format=detection.detected_format,
+            source_category=detection.source_category,
+            confidence=detection.confidence,
+            adapter_id=detection.adapter_id,
+            adapter_status=detection.adapter_status,
+            is_supported=detection.is_supported,
+            candidate_kind=candidate_kind,
+            candidate_role=candidate_role,
+            classification_source="backend_ingestion_adapter_registry",
+            classification_reasons=[*detection.reasons, *reasons],
+            review_required=review_required,
+            metadata={"parent_folder_relative_path": str(Path(relative_path).parent)},
+        )
+
+    def _classify_folder_candidate(self, detection: FormatDetectionResult) -> tuple[str, str, bool, list[str]]:
+        source_format = detection.detected_format
+        if source_format == WellLogSourceFormat.LAS:
+            return "digital_log_source", "numeric_curve_las", False, ["LAS can be parsed as a numeric curve source."]
+        if source_format == WellLogSourceFormat.DLIS:
+            return "digital_log_source", "frame_channel_dlis", True, ["DLIS is identified but adapter implementation is planned."]
+        if source_format == WellLogSourceFormat.CGM:
+            return "raster_or_vector_log", "vector_log_cgm", True, ["CGM is identified as a future vector/raster log artifact."]
+        if source_format == WellLogSourceFormat.TIFF:
+            return "raster_log_artifact", "raster_log_tiff", True, ["TIFF is identified as a raster log/image artifact candidate."]
+        if source_format == WellLogSourceFormat.PDF:
+            return "supporting_document_or_raster_log", "pdf_document_or_field_print", True, ["PDF requires review to separate reports from raster log field prints."]
+        return "unknown", "review_required_unknown", True, ["No supported well-log source adapter matched this file."]
+
+    def _add_candidate_to_summary(self, summary: WellFolderScanSummary, candidate: WellFolderCandidate) -> None:
+        if candidate.detected_format == WellLogSourceFormat.LAS:
+            summary.las_count += 1
+        elif candidate.detected_format == WellLogSourceFormat.DLIS:
+            summary.dlis_count += 1
+        elif candidate.detected_format in {WellLogSourceFormat.CGM, WellLogSourceFormat.TIFF}:
+            summary.raster_log_count += 1
+        elif candidate.detected_format == WellLogSourceFormat.PDF:
+            summary.document_count += 1
+        else:
+            summary.unknown_count += 1
+        if candidate.review_required:
+            summary.review_required_count += 1
 
     def _register_package_in_inventory(self, package: NormalizedWellLogPackage) -> tuple[str, ManagedWellRecord]:
         checksum = package.source_file.checksum or package.source_file.source_file_id.replace("source:sha256:", "")

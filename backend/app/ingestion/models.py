@@ -199,6 +199,55 @@ class SourceRegistrationResponse(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class WellFolderScanRequest(BaseModel):
+    parent_path: str
+    include_subfolders: bool = True
+    max_files: int = Field(default=5000, ge=1, le=50000)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class WellFolderCandidate(BaseModel):
+    candidate_id: str
+    relative_path: str
+    file_name: str
+    original_path: str
+    byte_size: int
+    detected_format: WellLogSourceFormat
+    source_category: WellLogSourceCategory
+    confidence: float = Field(ge=0.0, le=1.0)
+    adapter_id: str
+    adapter_status: IngestionAdapterStatus
+    is_supported: bool
+    candidate_kind: str
+    candidate_role: str
+    classification_source: str
+    classification_reasons: list[str] = Field(default_factory=list)
+    review_required: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class WellFolderScanSummary(BaseModel):
+    total_files_seen: int = 0
+    candidate_count: int = 0
+    las_count: int = 0
+    dlis_count: int = 0
+    raster_log_count: int = 0
+    document_count: int = 0
+    unknown_count: int = 0
+    review_required_count: int = 0
+    skipped_count: int = 0
+
+
+class WellFolderScanResponse(BaseModel):
+    ok: bool = True
+    action: str = "scanned"
+    parent_path: str
+    include_subfolders: bool
+    summary: WellFolderScanSummary
+    candidates: list[WellFolderCandidate] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class IngestionHealth(BaseModel):
     ok: bool = True
     service: str = "wlv-source-ingestion"
