@@ -2283,3 +2283,471 @@ button:disabled {
 .wlv-properties-panel-v2 .wlv-properties-contract-section.is-collapsed h3 {
   border-bottom: 0;
 }
+
+/* WLV Phase 1 curve-control grouping. */
+.wlv-curve-control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wlv-curve-control-group {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid #2f2f35;
+  border-radius: 6px;
+  background: #141414;
+}
+
+.wlv-curve-control-group h4 {
+  margin: 0 0 2px;
+  color: #f4f4f5;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.wlv-curve-control-group label {
+  margin: 0;
+}
+
+.wlv-checkbox-row {
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  color: #d4d4d8 !important;
+}
+
+.wlv-checkbox-row input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+}
+
+/* WLV toolbar cleanup — compact view/layout/backdrop controls. */
+.wlv-toolbar-group-arrange .wlv-toolbar-actions {
+  gap: 4px;
+}
+
+.wlv-toolbar-group-arrange button[aria-label="Move selected track left"],
+.wlv-toolbar-group-arrange button[aria-label="Move selected track right"] {
+  min-width: 30px;
+  padding: 0 8px;
+  font-weight: 800;
+}
+
+.wlv-layout-preset-select {
+  max-width: 132px;
+}
+
+.wlv-backdrop-toggle {
+  min-width: 34px;
+  padding: 0 8px;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.wlv-backdrop-toggle[aria-pressed="true"] {
+  border-color: #60a5fa;
+  color: #60a5fa;
+  box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.18);
+}
+
+/* WLV toolbar range/backdrop refinement. */
+.wlv-toolbar-group-view .wlv-toolbar-actions {
+  position: relative;
+}
+
+.wlv-specified-range-control {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.wlv-specified-range-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 2500;
+  min-width: 250px;
+  padding: 10px;
+  border: 1px solid #64748b;
+  border-radius: 8px;
+  background: #111827;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.34);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.wlv-specified-range-popover label {
+  display: grid;
+  gap: 4px;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wlv-specified-range-popover input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  border: 1px solid #64748b;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.wlv-specified-range-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.wlv-toolbar-icon-only {
+  min-width: 48px;
+  padding: 7px 8px;
+  justify-content: center;
+}
+
+.wlv-toolbar-icon-only .wlv-toolbar-actions {
+  justify-content: center;
+}
+
+.wlv-toolbar-icon-only .wlv-backdrop-toggle {
+  min-width: 42px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* WLV Specify Range popover placement fix.
+   The range editor must float below the toolbar without crowding or
+   overprinting adjacent toolbar controls. */
+.wlv-track-layout-toolbar,
+.wlv-toolbar-group,
+.wlv-toolbar-group-view,
+.wlv-toolbar-group-view .wlv-toolbar-actions {
+  overflow: visible;
+}
+
+.wlv-specified-range-control {
+  position: relative;
+  isolation: isolate;
+}
+
+.wlv-specified-range-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  left: auto;
+  z-index: 5000;
+  width: 236px;
+  min-width: 236px;
+  max-width: 236px;
+  padding: 10px;
+  border: 1px solid #64748b;
+  border-radius: 8px;
+  background: #111827;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.wlv-specified-range-popover::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  right: 18px;
+  width: 10px;
+  height: 10px;
+  background: #111827;
+  border-left: 1px solid #64748b;
+  border-top: 1px solid #64748b;
+  transform: rotate(45deg);
+}
+
+.wlv-specified-range-popover input {
+  box-sizing: border-box;
+}
+
+.wlv-specified-range-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* WLV toolbar popover stacking fix.
+   Toolbar popovers must render above the track grid/header/body. */
+.wlv-toolbar,
+.wlv-track-layout-toolbar,
+.wlv-track-layout-toolbar-row,
+.wlv-toolbar-group,
+.wlv-toolbar-group-view,
+.wlv-toolbar-group-view .wlv-toolbar-actions {
+  position: relative;
+  z-index: 9000;
+  overflow: visible;
+}
+
+.wlv-track-layout-main,
+.wlv-track-table,
+.wlv-track-grid,
+.wlv-track,
+.wlv-track-header,
+.wlv-track-body,
+.wlv-depth-track-body,
+.wlv-lithology-track-body {
+  position: relative;
+  z-index: 1;
+}
+
+.wlv-specified-range-control {
+  position: relative;
+  z-index: 9100;
+  overflow: visible;
+}
+
+.wlv-specified-range-popover {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  z-index: 99999;
+  width: 260px;
+  min-width: 260px;
+  max-width: 260px;
+  padding: 12px;
+  border: 1px solid #64748b;
+  border-radius: 8px;
+  background: #111827;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.55);
+}
+
+.wlv-specified-range-popover::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  right: 28px;
+  width: 10px;
+  height: 10px;
+  background: #111827;
+  border-left: 1px solid #64748b;
+  border-top: 1px solid #64748b;
+  transform: rotate(45deg);
+}
+
+/* WLV Specify Range portal pop-out rebuild.
+   The range editor is rendered through a React portal to document.body so it
+   cannot be clipped by track headers, grids, or toolbar stacking contexts. */
+.wlv-specified-range-popover-portal {
+  position: fixed !important;
+  z-index: 2147483000 !important;
+  width: 292px !important;
+  min-width: 292px !important;
+  max-width: 292px !important;
+  padding: 12px !important;
+  border: 1px solid #64748b !important;
+  border-radius: 9px !important;
+  background: #111827 !important;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.62) !important;
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  box-sizing: border-box;
+}
+
+.wlv-specified-range-popover-portal::before {
+  content: "";
+  position: absolute;
+  top: -6px;
+  left: 28px;
+  width: 10px;
+  height: 10px;
+  background: #111827;
+  border-left: 1px solid #64748b;
+  border-top: 1px solid #64748b;
+  transform: rotate(45deg);
+}
+
+.wlv-specified-range-popover-portal label {
+  display: grid;
+  gap: 4px;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wlv-specified-range-popover-portal input {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  border: 1px solid #64748b;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  box-sizing: border-box;
+}
+
+.wlv-specified-range-popover-portal .wlv-specified-range-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* WLV Specify Range pop-out typography normalization.
+   Keep the portal behavior, but match the rest of the application control
+   typography instead of using oversized/bold menu text. */
+.wlv-specified-range-portal,
+.wlv-specified-range-popout,
+.wlv-specified-range-popover {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
+}
+
+.wlv-specified-range-popout,
+.wlv-specified-range-popover {
+  padding: 12px 14px;
+  border-radius: 10px;
+}
+
+.wlv-specified-range-popout label,
+.wlv-specified-range-popover label {
+  display: grid;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.wlv-specified-range-popout input,
+.wlv-specified-range-popover input {
+  height: 34px;
+  min-height: 34px;
+  padding: 6px 9px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: normal;
+}
+
+.wlv-specified-range-actions {
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.wlv-specified-range-actions button,
+.wlv-specified-range-popout button,
+.wlv-specified-range-popover button {
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: normal;
+}
+
+/* WLV range number typography tuning.
+   Keep range numbers readable but aligned with the rest of the app controls. */
+.wlv-specified-range-popout input,
+.wlv-specified-range-popover input {
+  height: 32px;
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.wlv-specified-range-popout label,
+.wlv-specified-range-popover label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.wlv-specified-range-actions button,
+.wlv-specified-range-popout button,
+.wlv-specified-range-popover button {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wlv-toolbar-view-range,
+.wlv-current-view-range,
+.wlv-view-range-readout,
+button.wlv-view-range-readout,
+.wlv-toolbar button.wlv-view-range-readout {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+/* WLV real range font selector fix.
+   Active Specify Range pop-out uses the portal class, and the toolbar readout
+   uses .wlv-depth-readout. */
+.wlv-specified-range-popover-portal {
+  width: 260px !important;
+  min-width: 260px !important;
+  max-width: 260px !important;
+  padding: 10px !important;
+  gap: 7px !important;
+}
+
+.wlv-specified-range-popover-portal label {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+}
+
+.wlv-specified-range-popover-portal input {
+  height: 30px !important;
+  min-height: 30px !important;
+  padding: 4px 8px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+}
+
+.wlv-specified-range-popover-portal .wlv-specified-range-actions {
+  gap: 6px !important;
+  margin-top: 6px !important;
+}
+
+.wlv-specified-range-popover-portal .wlv-specified-range-actions button {
+  min-height: 28px !important;
+  padding: 4px 10px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+}
+
+.wlv-depth-readout {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.01em !important;
+}

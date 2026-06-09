@@ -255,7 +255,6 @@ const TRACK_HEADER_TITLE_HEIGHT_PX = 24;
 const TRACK_HEADER_SUBTITLE_HEIGHT_PX = 28;
 const TRACK_CURVE_HEADER_ROW_HEIGHT_PX = 24;
 const TRACK_HEADER_BOTTOM_PADDING_PX = 8;
-const CURVE_VIEW_PADDING_Y = 0;
 const CURVE_VIEW_PADDING_X = 10;
 
 type MockCurveSample = {
@@ -301,14 +300,18 @@ function valueToX(value: number, assignment: CurveAssignment, lattice: CurveTrac
   const drawableWidth = safeTrackWidth - CURVE_VIEW_PADDING_X * 2;
   const min = assignment.scaleMin;
   const max = assignment.scaleMax;
+  const scaleType = assignment.scaleType ?? (lattice === 'logarithmic' ? 'log' : 'linear');
+  const clipToTrack = assignment.clipToTrack ?? true;
 
   let t = 0.5;
 
-  if (lattice === 'logarithmic' && min > 0 && max > 0 && max !== min) {
+  if (scaleType === 'log' && min > 0 && max > 0 && max !== min) {
     const logMin = Math.log10(min);
     const logMax = Math.log10(max);
-    const safeValue = clampValue(value, Math.min(min, max), Math.max(min, max));
-    t = (Math.log10(safeValue) - logMin) / (logMax - logMin);
+    const boundedValue = clipToTrack
+      ? clampValue(value, Math.min(min, max), Math.max(min, max))
+      : Math.max(value, Number.MIN_VALUE);
+    t = (Math.log10(boundedValue) - logMin) / (logMax - logMin);
   } else {
     const denominator = max - min;
     if (denominator === 0) return safeTrackWidth / 2;
@@ -319,8 +322,20 @@ function valueToX(value: number, assignment: CurveAssignment, lattice: CurveTrac
     t = 1 - t;
   }
 
-  return CURVE_VIEW_PADDING_X + clampValue(t, 0, 1) * drawableWidth;
+  const anchorBias = assignment.positionAnchor === 'left'
+    ? -0.18
+    : assignment.positionAnchor === 'right'
+      ? 0.18
+      : 0;
+  const offset = ((assignment.horizontalOffsetPct ?? 0) / 100) * drawableWidth;
+  const scaledT = clipToTrack ? clampValue(t, 0, 1) : t;
+  const x = CURVE_VIEW_PADDING_X + scaledT * drawableWidth + anchorBias * drawableWidth + offset;
+
+  return clipToTrack
+    ? clampValue(x, CURVE_VIEW_PADDING_X, safeTrackWidth - CURVE_VIEW_PADDING_X)
+    : x;
 }
+
 
 
 
@@ -497,7 +512,13 @@ function visibleCurveSamples(
   ));
 }
 
-function curvePath(
+type CurveRenderPoint = {
+  depth: number;
+  x: number;
+  y: number;
+};
+
+function curveRenderPoints(
   curve: CurveCatalogItem,
   assignment: CurveAssignment,
   trackPosition: number,
@@ -505,15 +526,95 @@ function curvePath(
   lattice: CurveTrack['lattice'],
   trackWidth: number,
   bodyHeightPx: number,
-): string {
-  const samples = visibleCurveSamples(curve, assignment, trackPosition, viewRange);
-
-  return samples.map((sample, index) => {
-    const x = valueToX(sample.value, assignment, lattice, trackWidth);
-    const y = depthToY(sample.depth, viewRange, bodyHeightPx);
-    return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
-  }).join(' ');
+): CurveRenderPoint[] {
+  return visibleCurveSamples(curve, assignment, trackPosition, viewRange).map((sample) => ({
+    depth: sample.depth,
+    x: valueToX(sample.value, assignment, lattice, trackWidth),
+    y: depthToY(sample.depth, viewRange, bodyHeightPx),
+  }));
 }
+
+function pathFromCurvePoints(points: CurveRenderPoint[]): string {
+  return points.map((point, index) => (
+    `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)} ${point.y.toFixed(1)}`
+  )).join(' ');
+}
+
+function polygonToAnchor(points: CurveRenderPoint[], anchorX: number): string {
+  if (points.length < 2) return '';
+  const first = points[0];
+  const last = points[points.length - 1];
+  return `${pathFromCurvePoints(points)} L ${anchorX.toFixed(1)} ${last.y.toFixed(1)} L ${anchorX.toFixed(1)} ${first.y.toFixed(1)} Z`;
+}
+
+function interpolatePointAtDepth(points: CurveRenderPoint[], depth: number): CurveRenderPoint | null {
+  if (points.length === 0) return null;
+
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    const minDepth = Math.min(previous.depth, current.depth);
+    const maxDepth = Math.max(previous.depth, current.depth);
+
+    if (depth >= minDepth && depth <= maxDepth) {
+      const denominator = current.depth - previous.depth;
+      const t = denominator === 0 ? 0 : (depth - previous.depth) / denominator;
+      return {
+        depth,
+        x: previous.x + (current.x - previous.x) * t,
+        y: previous.y + (current.y - previous.y) * t,
+      };
+    }
+  }
+
+  const nearest = points.reduce((best, point) => (
+    Math.abs(point.depth - depth) < Math.abs(best.depth - depth) ? point : best
+  ), points[0]);
+
+  return Math.abs(nearest.depth - depth) <= 1 ? nearest : null;
+}
+
+function polygonBetweenCurves(primaryPoints: CurveRenderPoint[], pairedPoints: CurveRenderPoint[]): string {
+  const pairedAtPrimaryDepths = primaryPoints
+    .map((point) => interpolatePointAtDepth(pairedPoints, point.depth))
+    .filter((point): point is CurveRenderPoint => Boolean(point));
+
+  if (primaryPoints.length < 2 || pairedAtPrimaryDepths.length < 2) return '';
+
+  const pairedReversed = [...pairedAtPrimaryDepths].reverse();
+  return `${pathFromCurvePoints(primaryPoints)} ${pairedReversed.map((point) => `L${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ')} Z`;
+}
+
+function fillAnchorForAssignment(assignment: CurveAssignment, trackWidth: number): number {
+  if (assignment.fillSide === 'left') return CURVE_VIEW_PADDING_X;
+  if (assignment.fillSide === 'right') return trackWidth - CURVE_VIEW_PADDING_X;
+  return trackWidth / 2;
+}
+
+function svgFillForAssignment(assignment: CurveAssignment, intervalColor: string | null, trackId: string): string {
+  if (assignment.infillSource === 'interval-column' && intervalColor) return intervalColor;
+  if (assignment.infillSource === 'pattern') {
+    if (assignment.infillPattern === 'dots') return `url(#infill-dots-${trackId})`;
+    if (assignment.infillPattern === 'hatch') return `url(#infill-hatch-${trackId})`;
+  }
+  return assignment.fillColor;
+}
+
+function fillOpacityForAssignment(assignment: CurveAssignment): number {
+  return clampValue((assignment.fillOpacity ?? 55) / 100, 0.1, 1);
+}
+
+function curvePriorityWeight(assignment: CurveAssignment): number {
+  if (assignment.displayPriority === 'back') return 0;
+  if (assignment.displayPriority === 'front') return 2;
+  return 1;
+}
+
+function lineOpacityForAssignment(assignment: CurveAssignment): number {
+  const baseOpacity = assignment.visible ? 1 : 0.2;
+  return baseOpacity * clampValue((assignment.lineOpacity ?? 100) / 100, 0, 1);
+}
+
 
 function serialiseCurveDrag(payload: DragCurvePayload): string {
   return JSON.stringify(payload);
@@ -734,6 +835,7 @@ function Toolbar({
   onZoomOut,
   onPreviousView,
   onFitDepth,
+  onSpecifyDepthRange,
   onResetView,
   onToggleIntervalZoom,
   onGoToDepth,
@@ -761,6 +863,7 @@ function Toolbar({
   onZoomOut: () => void;
   onPreviousView: () => void;
   onFitDepth: () => void;
+  onSpecifyDepthRange: (range: DepthViewRange) => void;
   onResetView: () => void;
   onToggleIntervalZoom: () => void;
   onGoToDepth: () => void;
@@ -769,12 +872,95 @@ function Toolbar({
   const [builderOpen, setBuilderOpen] = useState(false);
   const [draft, setDraft] = useState<AddTrackDraft>(defaultAddTrackDraft);
   const [panelPosition, setPanelPosition] = useState({ top: 128, left: 360 });
+  const [rangeEditorOpen, setRangeEditorOpen] = useState(false);
+  const [rangeTopValue, setRangeTopValue] = useState(String(Math.round(viewDepthRange.min)));
+  const [rangeBaseValue, setRangeBaseValue] = useState(String(Math.round(viewDepthRange.max)));
+  const specifyRangeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const specifyRangePopoverRef = useRef<HTMLDivElement | null>(null);
+  const [rangePopoverPosition, setRangePopoverPosition] = useState({ top: 0, left: 0 });
   const dragStateRef = useRef<{
     startClientX: number;
     startClientY: number;
     startLeft: number;
     startTop: number;
   } | null>(null);
+
+  useEffect(() => {
+    if (rangeEditorOpen) return;
+    setRangeTopValue(String(Math.round(viewDepthRange.min)));
+    setRangeBaseValue(String(Math.round(viewDepthRange.max)));
+  }, [rangeEditorOpen, viewDepthRange.min, viewDepthRange.max]);
+
+  const updateSpecifiedRangePopoverPosition = () => {
+    const button = specifyRangeButtonRef.current;
+    if (!button) return;
+
+    const rect = button.getBoundingClientRect();
+    const popoverWidth = 292;
+    const margin = 12;
+    const preferredLeft = rect.left;
+    const maxLeft = Math.max(margin, window.innerWidth - popoverWidth - margin);
+
+    setRangePopoverPosition({
+      top: rect.bottom + 10,
+      left: clampValue(preferredLeft, margin, maxLeft),
+    });
+  };
+
+  const openSpecifiedRangeEditor = () => {
+    setRangeTopValue(String(Math.round(viewDepthRange.min)));
+    setRangeBaseValue(String(Math.round(viewDepthRange.max)));
+    setRangeEditorOpen((open) => {
+      const nextOpen = !open;
+      if (nextOpen) {
+        window.requestAnimationFrame(updateSpecifiedRangePopoverPosition);
+      }
+      return nextOpen;
+    });
+  };
+
+  const applySpecifiedRange = () => {
+    const top = Number.parseFloat(rangeTopValue);
+    const base = Number.parseFloat(rangeBaseValue);
+    if (!Number.isFinite(top) || !Number.isFinite(base) || top === base) return;
+
+    onSpecifyDepthRange({
+      min: Math.min(top, base),
+      max: Math.max(top, base),
+    });
+    setRangeEditorOpen(false);
+  };
+
+  useEffect(() => {
+    if (!rangeEditorOpen) return undefined;
+
+    const updatePosition = () => updateSpecifiedRangePopoverPosition();
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (specifyRangePopoverRef.current?.contains(target)) return;
+      if (specifyRangeButtonRef.current?.contains(target)) return;
+      setRangeEditorOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setRangeEditorOpen(false);
+      }
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition, true);
+    window.addEventListener('scroll', updatePosition, true);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKeyDown, true);
+
+    return () => {
+      window.removeEventListener('resize', updatePosition, true);
+      window.removeEventListener('scroll', updatePosition, true);
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [rangeEditorOpen, viewDepthRange.min, viewDepthRange.max]);
 
   const updateDraft = (patch: Partial<AddTrackDraft>) => {
     setDraft((current) => ({ ...current, ...patch }));
@@ -1024,23 +1210,25 @@ function Toolbar({
       </div>
 
       <div className="wlv-toolbar-group wlv-toolbar-group-arrange">
-        <span>Move / Resize Tracks</span>
+        <span>Track Layout</span>
         <div className="wlv-toolbar-actions">
           <button
             type="button"
             disabled={!canMoveSelectedTrackLeft}
             title={selectedTrack ? 'Move selected track left' : 'Select a track first'}
+            aria-label="Move selected track left"
             onClick={() => onMoveSelectedTrack(-1)}
           >
-            Move ←
+            ←
           </button>
           <button
             type="button"
             disabled={!canMoveSelectedTrackRight}
             title={selectedTrack ? 'Move selected track right' : 'Select a track first'}
+            aria-label="Move selected track right"
             onClick={() => onMoveSelectedTrack(1)}
           >
-            Move →
+            →
           </button>
           <button
             type="button"
@@ -1048,7 +1236,7 @@ function Toolbar({
             title={selectedTrack?.trackType === 'curve' ? 'Contract selected curve track' : 'Select a curve track first'}
             onClick={() => onAdjustSelectedCurveTrackWidth(-CURVE_TRACK_WIDTH_STEP)}
           >
-            Width −
+            − Width
           </button>
           <button
             type="button"
@@ -1056,15 +1244,21 @@ function Toolbar({
             title={selectedTrack?.trackType === 'curve' ? 'Widen selected curve track' : 'Select a curve track first'}
             onClick={() => onAdjustSelectedCurveTrackWidth(CURVE_TRACK_WIDTH_STEP)}
           >
-            Width +
+            + Width
           </button>
           <button
             type="button"
             onClick={onResetCurveTrackWidths}
             title="Reset all curve tracks to uniform width; depth tracks remain unchanged"
           >
-            Reset Widths
+            Reset
           </button>
+          <select aria-label="Layout preset" className="wlv-layout-preset-select" defaultValue="standard_qaqc">
+            <option value="standard_qaqc">Layout Preset ▾</option>
+            <option value="standard_qaqc_layout">Standard QAQC Layout</option>
+            <option value="corporate_triple_combo">Corporate Triple Combo</option>
+            <option value="blank_layout">Blank Layout</option>
+          </select>
         </div>
       </div>
 
@@ -1076,13 +1270,62 @@ function Toolbar({
           <button
             type="button"
             className={intervalZoomActive ? 'active' : ''}
-            title="Toggle interval zoom mode"
+            title="Drag on the log to zoom to a depth interval"
             onClick={onToggleIntervalZoom}
           >
-            Interval
+            Drag Zoom
           </button>
-          <button type="button" onClick={onPreviousView}>Previous</button>
-          <button type="button" onClick={onFitDepth}>Fit</button>
+          <div className="wlv-specified-range-control">
+            <button
+              ref={specifyRangeButtonRef}
+              type="button"
+              className={rangeEditorOpen ? 'active' : ''}
+              onClick={openSpecifiedRangeEditor}
+              title="Specify top and base measured depth range"
+            >
+              Specify Range
+            </button>
+            {rangeEditorOpen ? createPortal(
+              <div
+                ref={specifyRangePopoverRef}
+                className="wlv-specified-range-popover wlv-specified-range-popover-portal"
+                role="dialog"
+                aria-label="Specify drag zoom"
+                style={{ top: rangePopoverPosition.top, left: rangePopoverPosition.left }}
+              >
+                <label>
+                  <span>Top MD</span>
+                  <input
+                    autoFocus
+                    value={rangeTopValue}
+                    onChange={(event) => setRangeTopValue(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') applySpecifiedRange();
+                      if (event.key === 'Escape') setRangeEditorOpen(false);
+                    }}
+                  />
+                </label>
+                <label>
+                  <span>Base MD</span>
+                  <input
+                    value={rangeBaseValue}
+                    onChange={(event) => setRangeBaseValue(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') applySpecifiedRange();
+                      if (event.key === 'Escape') setRangeEditorOpen(false);
+                    }}
+                  />
+                </label>
+                <div className="wlv-specified-range-actions">
+                  <button type="button" onClick={applySpecifiedRange}>Apply</button>
+                  <button type="button" onClick={() => setRangeEditorOpen(false)}>Cancel</button>
+                </div>
+              </div>,
+              document.body,
+            ) : null}
+          </div>
+          <button type="button" onClick={onPreviousView}>Prev</button>
+          <button type="button" onClick={onFitDepth}>Full</button>
           <button type="button" onClick={onResetView}>Reset</button>
           <strong className="wlv-depth-readout" title={`Full range ${depthRangeLabel(fullDepthRange)}`}>
             View: {depthRangeLabel(viewDepthRange)}
@@ -1109,41 +1352,19 @@ function Toolbar({
         </div>
       </div>
 
-      <div className="wlv-toolbar-group wlv-toolbar-group-template">
-        <span>Template / Presets</span>
-        <div className="wlv-toolbar-actions">
-          <select aria-label="Template preset">
-            <option>Standard QAQC Layout</option>
-            <option>Corporate Triple Combo</option>
-            <option>Blank Layout</option>
-          </select>
-          <button type="button">Save</button>
-          <button type="button">Reset Layout</button>
-        </div>
-      </div>
-
       <div className="wlv-toolbar-spacer" />
 
-      <div className="wlv-toolbar-group wlv-toolbar-group-backdrop">
-        <span>Backdrop</span>
+      <div className="wlv-toolbar-group wlv-toolbar-group-backdrop wlv-toolbar-icon-only">
         <div className="wlv-toolbar-actions">
           <button
             type="button"
-            className={trackBackdropMode === 'light' ? 'active' : ''}
-            onClick={() => onTrackBackdropModeChange('light')}
-            aria-pressed={trackBackdropMode === 'light'}
-            title="Use light grey track workspace backdrop"
-          >
-            Light
-          </button>
-          <button
-            type="button"
-            className={trackBackdropMode === 'dark' ? 'active' : ''}
-            onClick={() => onTrackBackdropModeChange('dark')}
+            className="wlv-backdrop-toggle"
+            onClick={() => onTrackBackdropModeChange(trackBackdropMode === 'light' ? 'dark' : 'light')}
             aria-pressed={trackBackdropMode === 'dark'}
-            title="Use dark Seismic Viewer-style track workspace backdrop"
+            title={trackBackdropMode === 'light' ? 'Switch to dark backdrop' : 'Switch to light backdrop'}
+            aria-label={trackBackdropMode === 'light' ? 'Switch to dark backdrop' : 'Switch to light backdrop'}
           >
-            Dark
+            ◐
           </button>
         </div>
       </div>
@@ -1394,13 +1615,24 @@ function CurveTrackView({
   trackBodyHeightPx: number;
 }) {
   const ordered = orderedCurves(track);
-  const backToFront = [...ordered].reverse();
+  const backToFront = [...ordered].sort((a, b) => {
+    const priorityDelta = curvePriorityWeight(a) - curvePriorityWeight(b);
+    if (priorityDelta !== 0) return priorityDelta;
+    return b.stackIndex - a.stackIndex;
+  });
   const lattice = resolveTrackLattice(track, curveCatalog);
   const trackWidth = clampCurveTrackWidth(track.widthPx);
-  const fillAnchorX = trackWidth / 2;
 
   return (
     <svg className={`wlv-curve-track-svg ${lattice.lattice}`} viewBox={`0 0 ${trackWidth} ${trackBodyHeightPx}`} preserveAspectRatio="none">
+      <defs>
+        <pattern id={`infill-hatch-${track.trackId}`} width="8" height="8" patternUnits="userSpaceOnUse">
+          <path d="M -2 8 L 8 -2 M 0 10 L 10 0" stroke="currentColor" strokeWidth="1" opacity="0.55" />
+        </pattern>
+        <pattern id={`infill-dots-${track.trackId}`} width="8" height="8" patternUnits="userSpaceOnUse">
+          <circle cx="2" cy="2" r="1.2" fill="currentColor" opacity="0.5" />
+        </pattern>
+      </defs>
       {lattice.lattice === 'logarithmic' ? (
         <>
           <rect className="wlv-log-grid-background" x="0" y="0" width={trackWidth} height={trackBodyHeightPx} />
@@ -1422,21 +1654,68 @@ function CurveTrackView({
       })}
       {backToFront.map((assignment, index) => {
         const curve = curveById(curveCatalog, assignment.curveId);
-        const path = curvePath(curve, assignment, index, viewDepthRange, lattice.lattice, trackWidth, trackBodyHeightPx);
+        const points = curveRenderPoints(curve, assignment, index, viewDepthRange, lattice.lattice, trackWidth, trackBodyHeightPx);
+        const path = pathFromCurvePoints(points);
+        const pairedAssignment = assignment.pairedCurveId
+          ? ordered.find((candidate) => candidate.assignmentId === assignment.pairedCurveId)
+          : null;
+        const pairedCurve = pairedAssignment ? curveById(curveCatalog, pairedAssignment.curveId) : null;
+        const pairedPoints = pairedAssignment && pairedCurve
+          ? curveRenderPoints(pairedCurve, pairedAssignment, index, viewDepthRange, lattice.lattice, trackWidth, trackBodyHeightPx)
+          : [];
+        const anchorX = fillAnchorForAssignment(assignment, trackWidth);
+        const baseFillPath = assignment.fillSide === 'between' && pairedPoints.length > 0
+          ? polygonBetweenCurves(points, pairedPoints)
+          : polygonToAnchor(points, anchorX);
+        const intervalInfillActive = assignment.infillSource === 'interval-column'
+          && assignment.infillIntervalColumn === 'lithology'
+          && assignment.fillSide !== 'none';
+        const visibleLithologyIntervals = intervalInfillActive
+          ? lithologyIntervals21_31.filter((interval) => interval.baseFt >= viewDepthRange.min && interval.topFt <= viewDepthRange.max)
+          : [];
+
         return (
           <g key={assignment.assignmentId}>
-            {assignment.fillSide !== 'none' && (
-              <path d={`${path} L ${fillAnchorX} ${trackBodyHeightPx - CURVE_VIEW_PADDING_Y} L ${fillAnchorX} ${CURVE_VIEW_PADDING_Y} Z`} fill={assignment.fillColor} stroke="none" opacity="0.55" />
-            )}
-            <path
-              d={path}
-              fill="none"
-              stroke={assignment.color}
-              strokeWidth={assignment.lineWidth}
-              strokeDasharray={assignment.lineStyle === 'dash' ? '8 5' : assignment.lineStyle === 'dot' ? '2 6' : undefined}
-              vectorEffect="non-scaling-stroke"
-              opacity={assignment.visible ? 1 : 0.2}
-            />
+            {assignment.fillSide !== 'none' && baseFillPath && !intervalInfillActive ? (
+              <path
+                d={baseFillPath}
+                fill={svgFillForAssignment(assignment, null, track.trackId)}
+                stroke="none"
+                opacity={fillOpacityForAssignment(assignment)}
+              />
+            ) : null}
+            {intervalInfillActive ? visibleLithologyIntervals.map((interval) => {
+              const clippedTop = Math.max(interval.topFt, viewDepthRange.min);
+              const clippedBase = Math.min(interval.baseFt, viewDepthRange.max);
+              const topY = depthToY(clippedTop, viewDepthRange, trackBodyHeightPx);
+              const baseY = depthToY(clippedBase, viewDepthRange, trackBodyHeightPx);
+              return (
+                <g key={`${assignment.assignmentId}-${interval.intervalId}`} clipPath={`url(#interval-clip-${track.trackId}-${assignment.assignmentId}-${interval.intervalId})`}>
+                  <defs>
+                    <clipPath id={`interval-clip-${track.trackId}-${assignment.assignmentId}-${interval.intervalId}`}>
+                      <rect x="0" y={topY} width={trackWidth} height={Math.max(1, baseY - topY)} />
+                    </clipPath>
+                  </defs>
+                  <path
+                    d={baseFillPath}
+                    fill={svgFillForAssignment(assignment, interval.color, track.trackId)}
+                    stroke="none"
+                    opacity={fillOpacityForAssignment(assignment)}
+                  />
+                </g>
+              );
+            }) : null}
+            {(assignment.lineVisible ?? true) && path ? (
+              <path
+                d={path}
+                fill="none"
+                stroke={assignment.color}
+                strokeWidth={assignment.lineWidth}
+                strokeDasharray={assignment.lineStyle === 'dash' ? '8 5' : assignment.lineStyle === 'dot' ? '2 6' : undefined}
+                vectorEffect="non-scaling-stroke"
+                opacity={lineOpacityForAssignment(assignment)}
+              />
+            ) : null}
           </g>
         );
       })}
@@ -2510,6 +2789,13 @@ export function TrackLayoutPrototype() {
         onZoomOut={() => zoomDepth(1.33)}
         onPreviousView={previousDepthView}
         onFitDepth={fitDepth}
+        onSpecifyDepthRange={(range) => {
+          setOpenCurveMenu(null);
+          setIntervalZoomActive(false);
+          setIntervalSelection(null);
+          setDragPanState(null);
+          setDepthView(range);
+        }}
         onResetView={resetDepthView}
         onToggleIntervalZoom={() => {
           setOpenCurveMenu(null);

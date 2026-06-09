@@ -199,65 +199,306 @@ function CurveDesignControls({
   updateCurveAssignment: (trackId: string, assignmentId: string, patch: Partial<CurveAssignment>) => void;
 }) {
   const curve = curveById(curveCatalog, assignment.curveId);
+  const scaleType = assignment.scaleType ?? (curve.defaultLattice === 'logarithmic' ? 'log' : 'linear');
+  const rangeMode = assignment.rangeMode ?? 'fixed';
+  const lineVisible = assignment.lineVisible ?? true;
+  const lineOpacity = assignment.lineOpacity ?? 100;
+  const positionAnchor = assignment.positionAnchor ?? 'center';
+  const horizontalOffsetPct = assignment.horizontalOffsetPct ?? 0;
+  const clipToTrack = assignment.clipToTrack ?? true;
+  const infillSource = assignment.infillSource ?? 'solid';
+  const infillPattern = assignment.infillPattern ?? 'solid';
+  const infillIntervalColumn = assignment.infillIntervalColumn ?? 'lithology';
+  const fillOpacity = assignment.fillOpacity ?? 55;
+  const displayPriority = assignment.displayPriority ?? 'normal';
+  const showQaqcWarnings = assignment.showQaqcWarnings ?? true;
+  const showNullGaps = assignment.showNullGaps ?? true;
+  const showOutOfRange = assignment.showOutOfRange ?? true;
+
+  const update = (patch: Partial<CurveAssignment>) => {
+    updateCurveAssignment(track.trackId, assignment.assignmentId, patch);
+  };
 
   return (
-    <div className="wlv-property-section wlv-properties-dark-section">
+    <div className="wlv-property-section wlv-properties-dark-section wlv-curve-control-panel">
       <h3>Curve Controls</h3>
       <div className="wlv-selected-curve-title">
         <span className="wlv-curve-color" style={{ background: assignment.color }} />
         <strong>{curve.mnemonic}</strong>
         <span>{curve.description}</span>
       </div>
-      <label>
-        Range min
-        <input type="number" value={assignment.scaleMin} onChange={(event) => updateCurveAssignment(track.trackId, assignment.assignmentId, { scaleMin: Number(event.target.value) })} />
-      </label>
-      <label>
-        Range max
-        <input type="number" value={assignment.scaleMax} onChange={(event) => updateCurveAssignment(track.trackId, assignment.assignmentId, { scaleMax: Number(event.target.value) })} />
-      </label>
-      <label>
-        Color
-        <input type="color" value={assignment.color} onChange={(event) => updateCurveAssignment(track.trackId, assignment.assignmentId, { color: event.target.value })} />
-      </label>
-      <label>
-        Line style
-        <select
-          value={assignment.lineStyle}
-          onChange={(event) => updateCurveAssignment(track.trackId, assignment.assignmentId, { lineStyle: event.target.value as LineStyle })}
-        >
-          <option value="solid">Solid</option>
-          <option value="dash">Dash</option>
-          <option value="dot">Dot</option>
-        </select>
-      </label>
-      <label>
-        Line width
-        <input
-          type="number"
-          min={0.5}
-          max={8}
-          step={0.1}
-          value={assignment.lineWidth}
-          onChange={(event) => updateCurveAssignment(track.trackId, assignment.assignmentId, { lineWidth: Number(event.target.value) })}
-        />
-      </label>
-      <label>
-        Fill
-        <select
-          value={assignment.fillSide}
-          onChange={(event) => updateCurveAssignment(track.trackId, assignment.assignmentId, { fillSide: event.target.value as FillSide })}
-        >
-          <option value="none">None</option>
-          <option value="left">Left</option>
-          <option value="right">Right</option>
-          <option value="between">Between</option>
-        </select>
-      </label>
-      <label>
-        Fill color
-        <input type="color" value={assignment.fillColor} onChange={(event) => updateCurveAssignment(track.trackId, assignment.assignmentId, { fillColor: event.target.value })} />
-      </label>
+
+      <div className="wlv-curve-control-group">
+        <h4>Scale</h4>
+        <label>
+          Scale type
+          <select
+            value={scaleType}
+            onChange={(event) => update({ scaleType: event.target.value as CurveAssignment['scaleType'] })}
+          >
+            <option value="linear">Linear</option>
+            <option value="log">Log</option>
+          </select>
+        </label>
+        <label>
+          Range
+          <select
+            value={rangeMode}
+            onChange={(event) => {
+              const nextRangeMode = event.target.value as CurveAssignment['rangeMode'];
+              update(nextRangeMode === 'auto'
+                ? { rangeMode: nextRangeMode, scaleMin: curve.defaultMin, scaleMax: curve.defaultMax }
+                : { rangeMode: nextRangeMode });
+            }}
+          >
+            <option value="auto">Auto</option>
+            <option value="fixed">Fixed</option>
+          </select>
+        </label>
+        <label>
+          Range min
+          <input
+            type="number"
+            value={assignment.scaleMin}
+            onChange={(event) => update({ scaleMin: Number(event.target.value), rangeMode: 'fixed' })}
+          />
+        </label>
+        <label>
+          Range max
+          <input
+            type="number"
+            value={assignment.scaleMax}
+            onChange={(event) => update({ scaleMax: Number(event.target.value), rangeMode: 'fixed' })}
+          />
+        </label>
+        <label className="wlv-checkbox-row">
+          <input
+            type="checkbox"
+            checked={assignment.scaleDirection === 'reverse'}
+            onChange={(event) => update({ scaleDirection: event.target.checked ? 'reverse' : 'normal' })}
+          />
+          Reverse scale
+        </label>
+      </div>
+
+      <div className="wlv-curve-control-group">
+        <h4>Line</h4>
+        <label className="wlv-checkbox-row">
+          <input
+            type="checkbox"
+            checked={lineVisible}
+            onChange={(event) => update({ lineVisible: event.target.checked })}
+          />
+          Show line
+        </label>
+        <label>
+          Color
+          <input type="color" value={assignment.color} onChange={(event) => update({ color: event.target.value })} />
+        </label>
+        <label>
+          Width
+          <input
+            type="number"
+            min={0.5}
+            max={8}
+            step={0.1}
+            value={assignment.lineWidth}
+            onChange={(event) => update({ lineWidth: Number(event.target.value) })}
+          />
+        </label>
+        <label>
+          Style
+          <select
+            value={assignment.lineStyle}
+            onChange={(event) => update({ lineStyle: event.target.value as LineStyle })}
+          >
+            <option value="solid">Solid</option>
+            <option value="dash">Dashed</option>
+            <option value="dot">Dotted</option>
+          </select>
+        </label>
+        <label>
+          Opacity
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={lineOpacity}
+            onChange={(event) => update({ lineOpacity: Number(event.target.value) })}
+          />
+        </label>
+      </div>
+
+      <div className="wlv-curve-control-group">
+        <h4>Position</h4>
+        <label>
+          Position
+          <select
+            value={positionAnchor}
+            onChange={(event) => update({ positionAnchor: event.target.value as CurveAssignment['positionAnchor'] })}
+          >
+            <option value="left">Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+          </select>
+        </label>
+        <label>
+          Offset
+          <input
+            type="range"
+            min={-100}
+            max={100}
+            step={5}
+            value={horizontalOffsetPct}
+            onChange={(event) => update({ horizontalOffsetPct: Number(event.target.value) })}
+          />
+        </label>
+        <label className="wlv-checkbox-row">
+          <input
+            type="checkbox"
+            checked={clipToTrack}
+            onChange={(event) => update({ clipToTrack: event.target.checked })}
+          />
+          Clip to track
+        </label>
+      </div>
+
+      <div className="wlv-curve-control-group">
+        <h4>Infill</h4>
+        <label>
+          Infill
+          <select
+            value={assignment.fillSide}
+            onChange={(event) => update({ fillSide: event.target.value as FillSide })}
+          >
+            <option value="none">Off</option>
+            <option value="left">Left of curve</option>
+            <option value="right">Right of curve</option>
+            <option value="between">Between curves</option>
+          </select>
+        </label>
+        {assignment.fillSide !== 'none' ? (
+          <>
+            <label>
+              Infill source
+              <select
+                value={infillSource}
+                onChange={(event) => update({ infillSource: event.target.value as CurveAssignment['infillSource'] })}
+              >
+                <option value="solid">Solid color</option>
+                <option value="pattern">Pattern</option>
+                <option value="interval-column">Interval column</option>
+              </select>
+            </label>
+            {assignment.fillSide === 'between' ? (
+              <label>
+                Infill with curve
+                <select
+                  value={assignment.pairedCurveId ?? ''}
+                  onChange={(event) => update({ pairedCurveId: event.target.value || undefined })}
+                >
+                  <option value="">Select curve</option>
+                  {track.curves
+                    .filter((candidate) => candidate.assignmentId !== assignment.assignmentId)
+                    .map((candidate) => {
+                      const pairedCurve = curveById(curveCatalog, candidate.curveId);
+                      return <option key={candidate.assignmentId} value={candidate.assignmentId}>{pairedCurve.mnemonic}</option>;
+                    })}
+                </select>
+              </label>
+            ) : null}
+            {infillSource === 'interval-column' ? (
+              <label>
+                Interval column
+                <select
+                  value={infillIntervalColumn}
+                  onChange={(event) => update({ infillIntervalColumn: event.target.value as CurveAssignment['infillIntervalColumn'] })}
+                >
+                  <option value="lithology">Lithology</option>
+                  <option value="biostratigraphy">Biostratigraphy</option>
+                  <option value="formation">Formation / stratigraphy</option>
+                  <option value="facies">Facies</option>
+                  <option value="other">Other interval set</option>
+                </select>
+              </label>
+            ) : null}
+            {infillSource === 'pattern' ? (
+              <label>
+                Pattern
+                <select
+                  value={infillPattern}
+                  onChange={(event) => update({ infillPattern: event.target.value as CurveAssignment['infillPattern'] })}
+                >
+                  <option value="solid">Solid</option>
+                  <option value="hatch">Hatch</option>
+                  <option value="dots">Dots</option>
+                </select>
+              </label>
+            ) : null}
+            {infillSource !== 'interval-column' ? (
+              <label>
+                Infill color
+                <input type="color" value={assignment.fillColor} onChange={(event) => update({ fillColor: event.target.value })} />
+              </label>
+            ) : null}
+            <label>
+              Opacity
+              <input
+                type="range"
+                min={10}
+                max={100}
+                step={5}
+                value={fillOpacity}
+                onChange={(event) => update({ fillOpacity: Number(event.target.value) })}
+              />
+            </label>
+          </>
+        ) : null}
+      </div>
+
+      <div className="wlv-curve-control-group">
+        <h4>Display</h4>
+        <label>
+          Priority
+          <select
+            value={displayPriority}
+            onChange={(event) => update({ displayPriority: event.target.value as CurveAssignment['displayPriority'] })}
+          >
+            <option value="back">Back</option>
+            <option value="normal">Normal</option>
+            <option value="front">Front</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="wlv-curve-control-group">
+        <h4>QAQC</h4>
+        <label className="wlv-checkbox-row">
+          <input
+            type="checkbox"
+            checked={showQaqcWarnings}
+            onChange={(event) => update({ showQaqcWarnings: event.target.checked })}
+          />
+          Show warnings
+        </label>
+        <label className="wlv-checkbox-row">
+          <input
+            type="checkbox"
+            checked={showNullGaps}
+            onChange={(event) => update({ showNullGaps: event.target.checked })}
+          />
+          Show null gaps
+        </label>
+        <label className="wlv-checkbox-row">
+          <input
+            type="checkbox"
+            checked={showOutOfRange}
+            onChange={(event) => update({ showOutOfRange: event.target.checked })}
+          />
+          Show out-of-range
+        </label>
+      </div>
     </div>
   );
 }

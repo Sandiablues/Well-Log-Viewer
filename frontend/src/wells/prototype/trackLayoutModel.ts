@@ -16,6 +16,13 @@ export type CurveClass =
   | 'porosity';
 export type LineStyle = 'solid' | 'dash' | 'dot';
 export type FillSide = 'none' | 'left' | 'right' | 'between';
+export type InfillSource = 'solid' | 'pattern' | 'interval-column';
+export type InfillPattern = 'solid' | 'hatch' | 'dots';
+export type IntervalColumnType = 'lithology' | 'biostratigraphy' | 'formation' | 'facies' | 'other';
+export type CurveScaleType = 'linear' | 'log';
+export type CurveRangeMode = 'auto' | 'fixed';
+export type CurvePositionAnchor = 'left' | 'center' | 'right';
+export type CurveDisplayPriority = 'back' | 'normal' | 'front';
 
 export interface CurveCatalogItem {
   curveId: string;
@@ -38,11 +45,27 @@ export interface CurveAssignment {
   scaleMin: number;
   scaleMax: number;
   scaleDirection: 'normal' | 'reverse';
+  scaleType?: CurveScaleType;
+  rangeMode?: CurveRangeMode;
   color: string;
+  lineVisible?: boolean;
   lineStyle: LineStyle;
   lineWidth: number;
+  lineOpacity?: number;
+  positionAnchor?: CurvePositionAnchor;
+  horizontalOffsetPct?: number;
+  clipToTrack?: boolean;
   fillSide: FillSide;
   fillColor: string;
+  fillOpacity?: number;
+  infillSource?: InfillSource;
+  infillPattern?: InfillPattern;
+  infillIntervalColumn?: IntervalColumnType;
+  pairedCurveId?: string;
+  displayPriority?: CurveDisplayPriority;
+  showQaqcWarnings?: boolean;
+  showNullGaps?: boolean;
+  showOutOfRange?: boolean;
 }
 
 interface BaseTrack {
@@ -177,11 +200,26 @@ export function makeCurveAssignment(curve: CurveCatalogItem, stackIndex: number)
     scaleMin: curve.defaultMin,
     scaleMax: curve.defaultMax,
     scaleDirection: curve.mnemonic === 'NPHI' || curve.mnemonic === 'TNPH' ? 'reverse' : 'normal',
+    scaleType: curve.defaultLattice === 'logarithmic' ? 'log' : 'linear',
+    rangeMode: 'fixed',
     color: curve.defaultColor,
+    lineVisible: true,
     lineStyle: 'solid',
     lineWidth: 1.8,
+    lineOpacity: 100,
+    positionAnchor: 'center',
+    horizontalOffsetPct: 0,
+    clipToTrack: true,
     fillSide: 'none',
-    fillColor: 'rgba(47, 159, 99, 0.16)',
+    fillColor: '#7fbf8f',
+    fillOpacity: 55,
+    infillSource: 'solid',
+    infillPattern: 'solid',
+    infillIntervalColumn: 'lithology',
+    displayPriority: 'normal',
+    showQaqcWarnings: true,
+    showNullGaps: true,
+    showOutOfRange: true,
   };
 }
 
