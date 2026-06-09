@@ -5,7 +5,7 @@ import '../../styles/track-layout-prototype.css';
 import { curveCatalog, defaultDepthRange, depthUnitLabel, fullDepthRange, initialTracks, realCurveSamplesByCurveId, wellHeader } from './realLasTrackLayoutData';
 import { lithologyIntervals21_31, lithologySource } from './lithologyTrackData';
 import { WellLogPropertiesPanelSlot } from './WellLogPropertiesPanelSlot';
-import { loadBackendViewerPackageWithFallback } from './backendViewerPackageAdapter';
+import { loadBackendViewerPackageWithFallback, type BackendViewerPackageLoadResult } from './backendViewerPackageAdapter';
 import { useTrackBodyGeometry } from './useTrackBodyGeometry';
 import type {
   ActiveTrackType,
@@ -232,7 +232,7 @@ function developmentSeedAlreadyRegistered(wells: ManagedInventoryWellRecord[]): 
   return wells.some((well) => well.managed_well_id === 'managed-well:forge-21-31' || well.well_id === 'forge-21-31');
 }
 
-function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => void }) {
+function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (managedWellId?: string | null) => void }) {
   const [status, setStatus] = useState<ManagedInventoryStatusPayload | null>(null);
   const [wells, setWells] = useState<ManagedInventoryWellRecord[]>([]);
   const [selectedWellId, setSelectedWellId] = useState<string | null>(null);
@@ -318,7 +318,13 @@ function ManagedWellInventoryPage({ onBackToViewer }: { onBackToViewer: () => vo
           >
             {seedAlreadyRegistered ? 'Seed Well Registered' : 'Register Development Seed Well'}
           </button>
-          <button type="button" onClick={onBackToViewer}>Open Log Viewer</button>
+          <button
+            type="button"
+            onClick={() => onOpenLogViewer(selectedWell?.managed_well_id ?? null)}
+            title="Open the log viewer using the selected managed well viewer-package contract"
+          >
+            Open Log Viewer
+          </button>
         </div>
       </header>
 
@@ -2649,11 +2655,29 @@ function RightPanel({
 
 export function TrackLayoutPrototype() {
   const [activeView, setActiveView] = useState<DemoNavView>('log-viewer');
+  const [managedViewerWellId, setManagedViewerWellId] = useState<string | null>('managed-well:forge-21-31');
+  const [viewerPackageLoad, setViewerPackageLoad] = useState<BackendViewerPackageLoadResult | null>(null);
 
   useEffect(() => {
     if (activeView !== 'log-viewer') return;
-    void loadBackendViewerPackageWithFallback().catch(() => undefined);
-  }, [activeView]);
+    let cancelled = false;
+    void loadBackendViewerPackageWithFallback(managedViewerWellId ?? undefined)
+      .then((result) => {
+        if (!cancelled) setViewerPackageLoad(result);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setViewerPackageLoad({
+            source: 'prototype_fallback',
+            package: null,
+            warning: error instanceof Error ? error.message : 'Viewer package unavailable',
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeView, managedViewerWellId]);
   const [tracks, setTracks] = useState<WellLogTrack[]>(() => reindexTracks(initialTracks));
   const [selection, setSelection] = useState<SelectionRef>({ kind: 'track', trackId: 'track-gr-sp' });
   const [selectedInventoryCurveIds, setSelectedInventoryCurveIds] = useState<string[]>([]);
@@ -2964,6 +2988,13 @@ export function TrackLayoutPrototype() {
     setDragPanState(null);
   };
 
+  const openManagedWellLogViewer = (managedWellId?: string | null) => {
+    if (managedWellId) {
+      setManagedViewerWellId(managedWellId);
+    }
+    setActiveView('log-viewer');
+  };
+
   const startIntervalSelection = (depth: number, y: number) => {
     setDragPanState(null);
     setOpenCurveMenu(null);
@@ -3116,7 +3147,7 @@ export function TrackLayoutPrototype() {
       <DemoShellRail activeView={activeView} onNavigate={setActiveView} />
       <main className="wlv-demo-main" aria-label="Well Log Viewer workspace">
         {activeView === 'data' ? (
-          <ManagedWellInventoryPage onBackToViewer={() => setActiveView('log-viewer')} />
+          <ManagedWellInventoryPage onOpenLogViewer={openManagedWellLogViewer} />
         ) : (
         <div className="wlv-prototype-root">
       <header className="wlv-app-header">
@@ -3127,6 +3158,7 @@ export function TrackLayoutPrototype() {
           <span>Well <strong>{wellHeader.wellName}</strong></span>
           <span>Wellbore <strong>{wellHeader.wellboreName}</strong></span>
           <span>Status <strong>QAQC Review</strong></span>
+          <span>Viewer Source <strong>{viewerPackageLoad ? statusLabel(viewerPackageLoad.source) : 'loading'}</strong></span>
         </div>
       </header>
 
