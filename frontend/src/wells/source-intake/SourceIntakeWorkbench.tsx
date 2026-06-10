@@ -43,6 +43,17 @@ type SourceFileCandidate = {
   candidate_role: string;
   parser_status: string;
   review_required: boolean;
+  registration_status?: string | null;
+  managed_well_id?: string | null;
+  managed_well_name?: string | null;
+  wmdp_state?: string | null;
+  wdv_state?: string | null;
+  registered_product_count?: number;
+  registered_curve_count?: number;
+  parsed_metadata?: {
+    log_header?: { curve_count?: number | null } | null;
+    curve_headers?: Array<{ mnemonic?: string | null }> | null;
+  } | null;
   resolved_metadata?: {
     well_name?: ResolvedField;
     uwi?: ResolvedField;
@@ -118,7 +129,18 @@ function statusClass(value?: string | null): string {
   return '';
 }
 
+function candidateIsRegistered(candidate: SourceFileCandidate): boolean {
+  return candidate.registration_status === 'registered' || candidate.wmdp_state === 'staged_in_wmdp';
+}
+
+function candidateCurveCount(candidate: SourceFileCandidate): number {
+  const explicitCount = candidate.parsed_metadata?.log_header?.curve_count;
+  if (typeof explicitCount === 'number') return explicitCount;
+  return candidate.parsed_metadata?.curve_headers?.length ?? 0;
+}
+
 function candidateIsRegisterable(candidate: SourceFileCandidate): boolean {
+  if (candidateIsRegistered(candidate)) return false;
   const roleOk = candidate.candidate_role === 'well_log_candidate';
   const parserOk = candidate.parser_status === 'parsed' || candidate.parser_status === 'parsed_with_warnings';
   const qaqc = candidate.qaqc_status;
@@ -162,6 +184,11 @@ export function SourceIntakeWorkbench() {
     return candidates.filter((candidate) => candidate.repository_id === selectedRepository.repository_id);
   }, [candidates, selectedRepository]);
 
+  const visibleCurveCount = useMemo(
+    () => visibleCandidates.reduce((total, candidate) => total + candidateCurveCount(candidate), 0),
+    [visibleCandidates],
+  );
+
   const selectedRegisterableCount = visibleCandidates.filter(
     (candidate) => selectedCandidateIds.has(candidate.source_file_id) && candidateIsRegisterable(candidate),
   ).length;
@@ -169,7 +196,12 @@ export function SourceIntakeWorkbench() {
   const loadWorkbench = useCallback(async () => {
     const data = await fetchWlvJson<SourceIntakeWorkbenchResponse>('/api/wlv/source-intake/workbench');
     setWorkbench(data);
-    setSelectedRepositoryId((current) => current || data.repositories[0]?.repository_id || '');
+    setSelectedRepositoryId((current) => {
+      if (current && data.repositories.some((repo) => repo.repository_id === current)) {
+        return current;
+      }
+      return data.repositories[0]?.repository_id || '';
+    });
     setSelectedCandidateIds((current) => {
       const validIds = new Set(data.candidates.map((candidate) => candidate.source_file_id));
       return new Set([...current].filter((candidateId) => validIds.has(candidateId)));
@@ -205,7 +237,7 @@ export function SourceIntakeWorkbench() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: sourceName.trim() || undefined,
+        display_name: sourceName.trim() || undefined,
         root_path: trimmedPath,
         include_subfolders: includeSubfolders,
       }),
@@ -221,8 +253,12 @@ export function SourceIntakeWorkbench() {
       throw new Error('Select a source repository before scanning.');
     }
     const scan = await fetchWlvJson<ScanResponse>(
-      `/api/wlv/source-intake/repositories/${encodeURIComponent(repositoryId)}/scan?include_subfolders=${includeSubfolders ? 'true' : 'false'}`,
-      { method: 'POST' },
+      `/api/wlv/source-intake/repositories/${encodeURIComponent(repositoryId)}/scan`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ include_subfolders: includeSubfolders }),
+      },
     );
     setMessage(`Scan completed: ${scan.file_count} files · ${labelize(scan.scan_scope)}`);
     await loadWorkbench();
@@ -383,7 +419,8 @@ export function SourceIntakeWorkbench() {
           <div className="wlv-si-summary-grid">
             <SummaryTile label="Repositories" value={summary?.repository_count ?? 0} />
             <SummaryTile label="Files" value={summary?.file_count ?? 0} />
-            <SummaryTile label="Well logs" value={summary?.well_log_candidate_count ?? 0} />
+            <SummaryTile label="Well-log files" value={summary?.well_log_candidate_count ?? 0} />
+            <SummaryTile label="Curves" value={visibleCurveCount} />
             <SummaryTile label="Rasters" value={summary?.raster_candidate_count ?? 0} />
             <SummaryTile label="Documents" value={summary?.document_candidate_count ?? 0} />
             <SummaryTile label="Review" value={summary?.review_required_count ?? 0} />
@@ -423,6 +460,7 @@ export function SourceIntakeWorkbench() {
                     <th aria-label="Select">Sel</th>
                     <th>File</th>
                     <th>Role</th>
+                    <th>Curves</th>
                     <th>Parse</th>
                     <th>Well</th>
                     <th>UWI/API</th>
@@ -433,13 +471,15 @@ export function SourceIntakeWorkbench() {
                 <tbody>
                   {visibleCandidates.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="wlv-si-empty-row">No candidates discovered. Register and scan a source repository.</td>
+                      <td colSpan={9} className="wlv-si-empty-row">No candidates discovered. Register and scan a source repository.</td>
                     </tr>
                   ) : visibleCandidates.map((candidate) => {
                     const wellName = candidate.resolved_metadata?.well_name?.value ?? '—';
                     const uwi = candidate.resolved_metadata?.uwi?.value ?? '—';
                     const qaqcStatus = candidate.qaqc_status?.status ?? 'not_checked';
                     const eligible = candidateIsRegisterable(candidate);
+                    const registered = candidateIsRegistered(candidate);
+                    const curveCount = candidateCurveCount(candidate);
                     return (
                       <tr key={candidate.source_file_id} className={candidate.review_required ? 'requires-review' : ''}>
                         <td>
@@ -456,15 +496,31 @@ export function SourceIntakeWorkbench() {
                           <small>{candidate.relative_path}</small>
                         </td>
                         <td><span className="wlv-si-pill">{labelize(candidate.candidate_role)}</span></td>
+                        <td>{curveCount}</td>
                         <td><span className={`wlv-si-pill ${statusClass(candidate.parser_status)}`}>{labelize(candidate.parser_status)}</span></td>
                         <td>{wellName}</td>
                         <td>{uwi}</td>
-                        <td>
-                          <span className={`wlv-si-pill ${statusClass(qaqcStatus)}`}>{labelize(qaqcStatus)}</span>
-                          <small>{candidate.qaqc_status?.warning_count ?? 0} warn · {candidate.qaqc_status?.failure_count ?? 0} fail</small>
+                        <td className="wlv-si-status-cell">
+                          <div className="wlv-si-status-stack">
+                            <span className={`wlv-si-pill ${statusClass(qaqcStatus)}`}>{labelize(qaqcStatus)}</span>
+                            <small>{candidate.qaqc_status?.warning_count ?? 0} warn · {candidate.qaqc_status?.failure_count ?? 0} fail</small>
+                          </div>
                         </td>
-                        <td>
-                          {eligible ? <span className="wlv-si-pill is-ok">Ready to register</span> : <span className="wlv-si-pill is-warning">Review</span>}
+                        <td className="wlv-si-status-cell">
+                          {registered ? (
+                            <div className="wlv-si-status-stack">
+                              <span className="wlv-si-pill is-ok">Staged in WMDP</span>
+                              <small>{candidate.registered_curve_count ?? curveCount} curves · {labelize(candidate.wdv_state ?? 'not_loaded')}</small>
+                            </div>
+                          ) : eligible ? (
+                            <div className="wlv-si-status-stack">
+                              <span className="wlv-si-pill is-ok">Ready to register</span>
+                            </div>
+                          ) : (
+                            <div className="wlv-si-status-stack">
+                              <span className="wlv-si-pill is-warning">Review</span>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );

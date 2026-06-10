@@ -172,6 +172,7 @@ class WlvSourceIntakeService:
         results: list[SourceIntakeRegisterResult] = []
         registered_count = 0
         skipped_count = 0
+        snapshot_changed = False
 
         for candidate_id in request.candidate_ids:
             candidate = candidates_by_id.get(candidate_id)
@@ -202,6 +203,14 @@ class WlvSourceIntakeService:
             )
             registered_curve_count = sum(len(group.items) for group in record.product_groups)
             registered_product_count = sum(1 for group in record.product_groups if group.items)
+            candidate.registration_status = "registered"
+            candidate.managed_well_id = record.managed_well_id
+            candidate.managed_well_name = record.well_name
+            candidate.wmdp_state = record.wmdp_state.value if hasattr(record.wmdp_state, "value") else str(record.wmdp_state)
+            candidate.wdv_state = record.wdv_state.value if hasattr(record.wdv_state, "value") else str(record.wdv_state)
+            candidate.registered_product_count = registered_product_count
+            candidate.registered_curve_count = registered_curve_count
+            snapshot_changed = True
             registered_count += 1
             results.append(SourceIntakeRegisterResult(
                 candidate_id=candidate.source_file_id,
@@ -214,6 +223,9 @@ class WlvSourceIntakeService:
                 registered_curve_count=registered_curve_count,
                 action=action,
             ))
+
+        if snapshot_changed:
+            self._save_snapshot(snapshot)
 
         return SourceIntakeRegisterResponse(
             registered_count=registered_count,

@@ -237,6 +237,13 @@ class SourceFileCandidate(BaseModel):
     parse_error: Optional[str] = None
     review_required: bool = False
     warnings: list[str] = Field(default_factory=list)
+    registration_status: str = "not_registered"
+    managed_well_id: Optional[str] = None
+    managed_well_name: Optional[str] = None
+    wmdp_state: Optional[str] = None
+    wdv_state: Optional[str] = None
+    registered_product_count: int = 0
+    registered_curve_count: int = 0
 
 
 class SourceRepositoryScanResult(BaseModel):
