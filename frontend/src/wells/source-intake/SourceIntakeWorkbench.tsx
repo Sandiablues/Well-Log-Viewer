@@ -333,7 +333,7 @@ export function SourceIntakeWorkbench() {
         <aside className="wlv-si-card wlv-si-card--setup">
           <div className="wlv-si-card__header">
             <h2>Search & Discover</h2>
-            <span className="wlv-si-pill">No conversion</span>
+            <span className="wlv-si-pill wlv-si-pill--reserved">Representation space reserved</span>
           </div>
 
           <label className="wlv-si-field">
