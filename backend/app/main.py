@@ -15,6 +15,7 @@ from .wells.api_wlv import router as wlv_router
 from .system.api_system import router as system_router
 from .inventory.api_inventory import router as inventory_router
 from .ingestion.api_ingestion import router as ingestion_router
+from .source_intake.router import router as source_intake_router
 
 app = FastAPI(
     title="MultiViewer Well Log Viewer Backend",
@@ -42,4 +43,5 @@ def health() -> dict[str, object]:
 app.include_router(system_router)
 app.include_router(inventory_router)
 app.include_router(ingestion_router)
+app.include_router(source_intake_router)
 app.include_router(wlv_router)

@@ -1,0 +1,163 @@
+"""WLV Source Intake domain models.
+
+This module defines the backend-owned discovery layer for well-log source
+folders. It intentionally stops before metadata parsing, QAQC, MSI promotion,
+or WMDP staging. Those are later pipeline stages.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+WLV_SOURCE_INTAKE_WORKFLOW_STEPS: tuple[str, ...] = (
+    "Search & Discover",
+    "Categorize",
+    "QAQC",
+    "Register to MSI / Managed Well Inventory",
+    "Stage in WMDP",
+    "Load selected data to WDV",
+)
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class SourceIntakeRepositoryStatus(str, Enum):
+    AVAILABLE = "available"
+    SCANNED = "scanned"
+    MISSING = "missing"
+    ERROR = "error"
+
+
+class SourceIntakeFileType(str, Enum):
+    LAS = "LAS"
+    DLIS = "DLIS"
+    LIS = "LIS"
+    CGM = "CGM"
+    TIFF = "TIFF"
+    IMAGE = "IMAGE"
+    PDF = "PDF"
+    WORD = "WORD"
+    EXCEL = "EXCEL"
+    TEXT = "TEXT"
+    CSV = "CSV"
+    UNKNOWN = "UNKNOWN"
+
+
+class SourceIntakeCandidateRole(str, Enum):
+    WELL_LOG_CANDIDATE = "well_log_candidate"
+    RASTER_IMAGE_CANDIDATE = "raster_image_candidate"
+    SUPPORTING_DOCUMENT_CANDIDATE = "supporting_document_candidate"
+    TABULAR_CANDIDATE = "tabular_candidate"
+    OTHER_REVIEW_REQUIRED = "other_review_required"
+
+
+class SourceIntakeHealth(BaseModel):
+    ok: bool = True
+    service: str = "wlv-source-intake"
+    scope: str = "source_intake_foundation"
+    conversion_step_enabled: bool = False
+    reserved_future_representation_step: bool = True
+    workflow_steps: list[str] = Field(default_factory=lambda: list(WLV_SOURCE_INTAKE_WORKFLOW_STEPS))
+
+
+class SourceRepositoryCreateRequest(BaseModel):
+    root_path: str
+    name: Optional[str] = None
+    include_subfolders: bool = True
+
+
+class SourceRepositoryRecord(BaseModel):
+    repository_id: str
+    name: str
+    root_path: str
+    include_subfolders: bool = True
+    status: SourceIntakeRepositoryStatus = SourceIntakeRepositoryStatus.AVAILABLE
+    created_at: str = Field(default_factory=utc_now_iso)
+    updated_at: str = Field(default_factory=utc_now_iso)
+    last_scan_id: Optional[str] = None
+    last_scan_scope: Optional[str] = None
+    file_count: int = 0
+    well_log_candidate_count: int = 0
+    raster_candidate_count: int = 0
+    document_candidate_count: int = 0
+    tabular_candidate_count: int = 0
+    unknown_file_count: int = 0
+    review_required_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SourceFileCandidate(BaseModel):
+    source_file_id: str
+    repository_id: str
+    scan_id: str
+    file_name: str
+    original_path: str
+    relative_path: str
+    file_extension: str
+    detected_file_type: SourceIntakeFileType
+    candidate_role: SourceIntakeCandidateRole
+    size_bytes: int
+    modified_at: str
+    checksum: str
+    fingerprint_status: str = "computed"
+    parser_status: str = "not_parsed"
+    review_required: bool = False
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SourceRepositoryScanResult(BaseModel):
+    ok: bool
+    repository: SourceRepositoryRecord
+    scan_id: str
+    scan_scope: str
+    file_count: int
+    candidates: list[SourceFileCandidate] = Field(default_factory=list)
+
+
+class SourceIntakeWorkbenchSummary(BaseModel):
+    repository_count: int
+    file_count: int
+    well_log_candidate_count: int
+    raster_candidate_count: int
+    document_candidate_count: int
+    tabular_candidate_count: int
+    unknown_file_count: int
+    review_required_count: int
+
+
+class SourceIntakeWorkbench(BaseModel):
+    ok: bool = True
+    service: str = "wlv-source-intake"
+    conversion_step_enabled: bool = False
+    reserved_future_representation_step: bool = True
+    workflow_steps: list[str] = Field(default_factory=lambda: list(WLV_SOURCE_INTAKE_WORKFLOW_STEPS))
+    summary: SourceIntakeWorkbenchSummary
+    repositories: list[SourceRepositoryRecord] = Field(default_factory=list)
+    candidates: list[SourceFileCandidate] = Field(default_factory=list)
+
+
+class SourceIntakeClearRequest(BaseModel):
+    repository_id: Optional[str] = None
+
+
+class SourceIntakeClearResponse(BaseModel):
+    ok: bool = True
+    action: str = "clear_workbench_selection"
+    destructive: bool = False
+    records_deleted: int = 0
+    message: str = "Cleared active source-intake working selection only; discovered records were not deleted."
+    workbench: SourceIntakeWorkbench
+
+
+class SourceIntakeSnapshot(BaseModel):
+    schema_version: str = "wlv_source_intake_v1"
+    repositories: list[SourceRepositoryRecord] = Field(default_factory=list)
+    candidates: list[SourceFileCandidate] = Field(default_factory=list)
+    updated_at: str = Field(default_factory=utc_now_iso)
