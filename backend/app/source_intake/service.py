@@ -11,14 +11,21 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Any
+
+from ..ingestion.las_adapter import LasAdapterError, LasSourceAdapter
 
 from .models import (
     SourceFileCandidate,
     SourceIntakeCandidateRole,
     SourceIntakeClearResponse,
     SourceIntakeFileType,
+    SourceIntakeLogHeader,
+    SourceIntakeParseStatus,
+    SourceIntakeParsedMetadata,
     SourceIntakeRepositoryStatus,
+    SourceIntakeWellHeader,
+    SourceIntakeCurveHeader,
     SourceIntakeSnapshot,
     SourceIntakeWorkbench,
     SourceIntakeWorkbenchSummary,
@@ -182,7 +189,7 @@ class WlvSourceIntakeService:
         except Exception:
             pass
 
-        return SourceFileCandidate(
+        candidate = SourceFileCandidate(
             source_file_id=f"src:{repository_id}:{checksum[:16]}",
             repository_id=repository_id,
             scan_id=scan_id,
@@ -198,6 +205,92 @@ class WlvSourceIntakeService:
             review_required=review_required,
             warnings=warnings,
         )
+
+        if detected_file_type == SourceIntakeFileType.LAS:
+            self._attach_las_metadata(candidate, file_path)
+
+        return candidate
+
+    def _attach_las_metadata(self, candidate: SourceFileCandidate, file_path: Path) -> None:
+        """Parse LAS headers into the three-level source-intake metadata model.
+
+        This is metadata extraction only. It does not stage to WMDP, does not
+        create MSI records, and does not create a representation/conversion.
+        """
+        try:
+            package = LasSourceAdapter().parse_path(file_path)
+        except LasAdapterError as exc:
+            candidate.parser_status = SourceIntakeParseStatus.PARSE_FAILED
+            candidate.parse_error = str(exc)
+            candidate.review_required = True
+            candidate.warnings.append(f"LAS metadata parse failed: {exc}")
+            return
+
+        well_header_raw = _metadata_dict(package.metadata.get("well_header"))
+        null_value = _numeric_header_value(well_header_raw, "NULL")
+        start_depth = _numeric_header_value(well_header_raw, "STRT", "START", "START_DEPTH")
+        stop_depth = _numeric_header_value(well_header_raw, "STOP", "STOP_DEPTH")
+        step = _numeric_header_value(well_header_raw, "STEP", "STEP_VALUE")
+        depth_unit = _string_value(package.metadata.get("depth_unit"))
+
+        warning_messages = [finding.message for finding in package.qaqc_findings if getattr(finding.severity, "value", finding.severity) == "warning"]
+        error_messages = [finding.message for finding in package.qaqc_findings if getattr(finding.severity, "value", finding.severity) == "error"]
+
+        parsed = SourceIntakeParsedMetadata(
+            parser_id=getattr(LasSourceAdapter, "adapter_id", "las_numeric_curve_adapter_v1"),
+            source_format="LAS",
+            well_header=SourceIntakeWellHeader(
+                well_name=package.well_name,
+                uwi=_first_header_text(well_header_raw, "UWI", "API", "WELLID", "WELL_ID"),
+                operator=_first_header_text(well_header_raw, "COMP", "COMPANY", "OPERATOR", "OPER"),
+                field=_first_header_text(well_header_raw, "FLD", "FIELD"),
+                block=_first_header_text(well_header_raw, "BLOCK", "BLK", "LICENSE", "LICENCE"),
+                country=_first_header_text(well_header_raw, "CTRY", "COUNTRY"),
+                depth_unit=depth_unit,
+            ),
+            log_header=SourceIntakeLogHeader(
+                file_name=candidate.file_name,
+                file_type=candidate.detected_file_type,
+                run_date=_first_header_text(well_header_raw, "DATE", "LOG_DATE", "RUN_DATE"),
+                run_number=_first_header_text(well_header_raw, "RUN", "RUNNO", "RUN_NO", "RUN_NUMBER"),
+                service_company=_first_header_text(well_header_raw, "SRVC", "SERVICE", "SERVICE_COMPANY"),
+                start_depth=start_depth if start_depth is not None else package.metadata.get("top_depth"),
+                stop_depth=stop_depth if stop_depth is not None else package.metadata.get("base_depth"),
+                step=step,
+                null_value=null_value,
+                depth_unit=depth_unit,
+                curve_count=len(package.curve_channels),
+            ),
+            curve_headers=[
+                SourceIntakeCurveHeader(
+                    mnemonic=curve.mnemonic,
+                    description=curve.display_name,
+                    unit=curve.unit,
+                    source_curve_name=curve.mnemonic,
+                    depth_unit=curve.depth_unit,
+                    top_depth=curve.top_depth,
+                    base_depth=curve.base_depth,
+                    sample_count=curve.sample_count,
+                )
+                for curve in package.curve_channels
+            ],
+            evidence_count=len(package.evidence),
+            warning_count=len(warning_messages),
+            error_count=len(error_messages),
+            warnings=warning_messages + error_messages,
+        )
+
+        candidate.parsed_metadata = parsed
+        candidate.parser_status = (
+            SourceIntakeParseStatus.PARSE_FAILED if error_messages
+            else SourceIntakeParseStatus.PARSED_WITH_WARNINGS if warning_messages
+            else SourceIntakeParseStatus.PARSED
+        )
+        candidate.parse_error = "; ".join(error_messages) if error_messages else None
+        candidate.review_required = candidate.review_required or bool(error_messages)
+        for message in parsed.warnings:
+            if message not in candidate.warnings:
+                candidate.warnings.append(message)
 
     def _classify_file(self, path: Path) -> tuple[SourceIntakeFileType, SourceIntakeCandidateRole]:
         ext = path.suffix.lower().lstrip(".")
@@ -263,3 +356,48 @@ class WlvSourceIntakeService:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
         return digest.hexdigest()
+
+
+
+def _metadata_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _header_entry(header: dict[str, Any], key: str) -> dict[str, Any] | None:
+    entry = header.get(key.upper())
+    return entry if isinstance(entry, dict) else None
+
+
+def _first_header_text(header: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        entry = _header_entry(header, key)
+        if not entry:
+            continue
+        unit = entry.get("unit")
+        value = entry.get("value")
+        parts = [str(part).strip() for part in (unit, value) if part is not None and str(part).strip()]
+        if parts:
+            return " ".join(parts)
+    return None
+
+
+def _numeric_header_value(header: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        entry = _header_entry(header, key)
+        if not entry:
+            continue
+        for candidate in (entry.get("value"), entry.get("unit")):
+            if candidate is None or str(candidate).strip() == "":
+                continue
+            try:
+                return float(str(candidate).split()[0])
+            except (TypeError, ValueError, IndexError):
+                continue
+    return None
+
+
+def _string_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None

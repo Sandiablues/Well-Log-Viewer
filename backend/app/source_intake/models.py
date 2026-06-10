@@ -58,6 +58,60 @@ class SourceIntakeCandidateRole(str, Enum):
     OTHER_REVIEW_REQUIRED = "other_review_required"
 
 
+class SourceIntakeParseStatus(str, Enum):
+    NOT_PARSED = "not_parsed"
+    PARSED = "parsed"
+    PARSED_WITH_WARNINGS = "parsed_with_warnings"
+    PARSE_FAILED = "parse_failed"
+
+
+class SourceIntakeWellHeader(BaseModel):
+    well_name: Optional[str] = None
+    uwi: Optional[str] = None
+    operator: Optional[str] = None
+    field: Optional[str] = None
+    block: Optional[str] = None
+    country: Optional[str] = None
+    depth_unit: Optional[str] = None
+
+
+class SourceIntakeLogHeader(BaseModel):
+    file_name: str
+    file_type: SourceIntakeFileType
+    run_date: Optional[str] = None
+    run_number: Optional[str] = None
+    service_company: Optional[str] = None
+    start_depth: Optional[float] = None
+    stop_depth: Optional[float] = None
+    step: Optional[float] = None
+    null_value: Optional[float] = None
+    depth_unit: Optional[str] = None
+    curve_count: int = 0
+
+
+class SourceIntakeCurveHeader(BaseModel):
+    mnemonic: str
+    description: Optional[str] = None
+    unit: Optional[str] = None
+    source_curve_name: Optional[str] = None
+    depth_unit: Optional[str] = None
+    top_depth: Optional[float] = None
+    base_depth: Optional[float] = None
+    sample_count: Optional[int] = None
+
+
+class SourceIntakeParsedMetadata(BaseModel):
+    parser_id: str
+    source_format: str
+    well_header: SourceIntakeWellHeader = Field(default_factory=SourceIntakeWellHeader)
+    log_header: Optional[SourceIntakeLogHeader] = None
+    curve_headers: list[SourceIntakeCurveHeader] = Field(default_factory=list)
+    evidence_count: int = 0
+    warning_count: int = 0
+    error_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
 class SourceIntakeHealth(BaseModel):
     ok: bool = True
     service: str = "wlv-source-intake"
@@ -107,7 +161,9 @@ class SourceFileCandidate(BaseModel):
     modified_at: str
     checksum: str
     fingerprint_status: str = "computed"
-    parser_status: str = "not_parsed"
+    parser_status: SourceIntakeParseStatus = SourceIntakeParseStatus.NOT_PARSED
+    parsed_metadata: Optional[SourceIntakeParsedMetadata] = None
+    parse_error: Optional[str] = None
     review_required: bool = False
     warnings: list[str] = Field(default_factory=list)
 
