@@ -65,6 +65,43 @@ class SourceIntakeParseStatus(str, Enum):
     PARSE_FAILED = "parse_failed"
 
 
+class SourceIntakeQaqcStatus(str, Enum):
+    NOT_CHECKED = "not_checked"
+    PASS = "pass"
+    WARNING = "warning"
+    FAIL = "fail"
+    REVIEW_REQUIRED = "review_required"
+
+
+class SourceIntakeQaqcSeverity(str, Enum):
+    NONE = "none"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class SourceIntakeQaqcCheck(BaseModel):
+    check_id: str
+    status: SourceIntakeQaqcStatus
+    severity: SourceIntakeQaqcSeverity = SourceIntakeQaqcSeverity.NONE
+    message: str
+    field_name: Optional[str] = None
+    review_required: bool = False
+
+
+class SourceIntakeQaqcResult(BaseModel):
+    status: SourceIntakeQaqcStatus = SourceIntakeQaqcStatus.NOT_CHECKED
+    severity: SourceIntakeQaqcSeverity = SourceIntakeQaqcSeverity.NONE
+    check_count: int = 0
+    warning_count: int = 0
+    failure_count: int = 0
+    review_required: bool = False
+    messages: list[str] = Field(default_factory=list)
+    checks: list[SourceIntakeQaqcCheck] = Field(default_factory=list)
+
+
+
+
 class SourceIntakeWellHeader(BaseModel):
     well_name: Optional[str] = None
     uwi: Optional[str] = None
@@ -196,6 +233,7 @@ class SourceFileCandidate(BaseModel):
     parser_status: SourceIntakeParseStatus = SourceIntakeParseStatus.NOT_PARSED
     parsed_metadata: Optional[SourceIntakeParsedMetadata] = None
     resolved_metadata: Optional[SourceIntakeResolvedMetadata] = None
+    qaqc_status: SourceIntakeQaqcResult = Field(default_factory=SourceIntakeQaqcResult)
     parse_error: Optional[str] = None
     review_required: bool = False
     warnings: list[str] = Field(default_factory=list)

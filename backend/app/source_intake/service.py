@@ -16,6 +16,7 @@ from typing import Iterable, Any
 from ..ingestion.las_adapter import LasAdapterError, LasSourceAdapter
 
 from .metadata_resolver import resolve_candidate_metadata
+from .qaqc import run_source_intake_qaqc
 
 from .models import (
     SourceFileCandidate,
@@ -210,6 +211,9 @@ class WlvSourceIntakeService:
 
         if detected_file_type == SourceIntakeFileType.LAS:
             self._attach_las_metadata(candidate, file_path)
+
+        candidate.qaqc_status = run_source_intake_qaqc(candidate)
+        candidate.review_required = candidate.review_required or candidate.qaqc_status.review_required
 
         return candidate
 
