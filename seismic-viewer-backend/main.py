@@ -47,6 +47,7 @@ from app.msi.routes import router as msi_router
 from app.storage.routes import router as storage_router
 from app.api.artifact_lifecycle import router as artifact_lifecycle_router
 from app.api import artifact_lifecycle
+from app.api import seismic_bulk_loader as sblt_api
 app = FastAPI(title="Seismic Viewer API")
 
 app.include_router(documents_router)
@@ -109,6 +110,7 @@ app.include_router(msi_router)
 app.include_router(artifact_lifecycle.router)
 app.include_router(storage_router)
 app.include_router(artifact_lifecycle_router)
+app.include_router(sblt_api.router)
 @app.get("/build-info.json")
 async def get_build_info():
     build_info_path = FRONTEND_DIST / "build-info.json"

@@ -1,0 +1,99 @@
+"""
+SBLT-1: FastAPI router for the Seismic Bulk Loading Tool.
+
+Routes:
+    POST /api/sblt/sessions    — create a session from a prepared loadsheet path
+    GET  /api/sblt/sessions/{session_id} — retrieve a persisted session
+
+Ownership: backend SBLT service.
+Frontend: not involved.
+MSI: not touched.
+Source Intake: not touched.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from app.services.seismic_bulk_loader.sblt_session_service import (
+    SBLTNotFoundError,
+    SBLTValidationError,
+    create_session_from_loadsheet,
+    get_session,
+)
+
+
+router = APIRouter(prefix="/api/sblt", tags=["sblt"])
+
+
+# ---------------------------------------------------------------------------
+# Request models
+# ---------------------------------------------------------------------------
+
+class CreateSessionRequest(BaseModel):
+    # Optional at the Pydantic level so a missing or null field produces a
+    # controlled SBLTValidationError (HTTP 400) rather than a FastAPI 422.
+    # The service validates that the value is non-empty.
+    loadsheet_path: str | None = None
+    base_path: str | None = None
+    profile: str = "default"
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@router.post("/sessions")
+def create_sblt_session(request: CreateSessionRequest) -> dict[str, Any]:
+    """
+    Create an SBLT session from a prepared loadsheet path.
+
+    The loadsheet_path must be an absolute path to an existing .csv file
+    (or .xlsx if openpyxl is installed).
+
+    Returns the full session payload conforming to sblt.session.v1.
+    """
+    try:
+        session = create_session_from_loadsheet(
+            loadsheet_path=request.loadsheet_path,
+            base_path=request.base_path,
+            profile=request.profile,
+        )
+    except SBLTValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"SBLT session creation failed unexpectedly: {exc}",
+        ) from exc
+
+    return session
+
+
+@router.get("/sessions/{session_id}")
+def get_sblt_session(session_id: str) -> dict[str, Any]:
+    """
+    Retrieve a persisted SBLT session by session_id.
+
+    Returns 404 if the session does not exist.
+    Returns 500 if the stored session fails invariant checks.
+    """
+    try:
+        session = get_session(session_id)
+    except SBLTNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"SBLT session invariant failure: {exc}",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"SBLT session retrieval failed unexpectedly: {exc}",
+        ) from exc
+
+    return session

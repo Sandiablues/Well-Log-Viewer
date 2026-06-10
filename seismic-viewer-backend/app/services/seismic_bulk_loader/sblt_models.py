@@ -1,0 +1,198 @@
+"""
+SBLT-1: Model constants and builder helpers for the SBLT session contract.
+
+Ownership: backend SBLT service.
+
+This module defines:
+- Schema version constants.
+- Status vocabulary.
+- Builder functions that return plain dicts conforming to the sblt.session.v1 contract.
+
+No Pydantic models are defined here; the session state is stored and returned as
+plain JSON-serialisable dicts. FastAPI serialises them directly.
+
+MSI dataset_id and representation_id are NOT defined here — those belong to SBLT-8.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+SCHEMA_VERSION = "sblt.session.v1"
+
+# Session-level status values.
+SESSION_STATUS_PARSED = "parsed"
+SESSION_STATUS_SCHEMA_INVALID = "schema_invalid"
+SESSION_STATUS_VALIDATED = "validated"
+SESSION_STATUS_REVIEW_REQUIRED = "review_required"
+SESSION_STATUS_APPROVED = "approved"
+SESSION_STATUS_REGISTERED = "registered"
+SESSION_STATUS_FAILED = "failed"
+
+VALID_SESSION_STATUSES = {
+    SESSION_STATUS_PARSED,
+    SESSION_STATUS_SCHEMA_INVALID,
+    SESSION_STATUS_VALIDATED,
+    SESSION_STATUS_REVIEW_REQUIRED,
+    SESSION_STATUS_APPROVED,
+    SESSION_STATUS_REGISTERED,
+    SESSION_STATUS_FAILED,
+}
+
+# Row-level status values.
+ROW_STATUS_PARSED = "parsed"
+ROW_STATUS_READY = "ready"
+ROW_STATUS_WARNING = "warning"
+ROW_STATUS_REVIEW_REQUIRED = "review_required"
+ROW_STATUS_BLOCKED = "blocked"
+ROW_STATUS_DUPLICATE = "duplicate"
+ROW_STATUS_APPROVED = "approved"
+ROW_STATUS_REGISTERED = "registered"
+ROW_STATUS_FAILED = "failed"
+
+VALID_ROW_STATUSES = {
+    ROW_STATUS_PARSED,
+    ROW_STATUS_READY,
+    ROW_STATUS_WARNING,
+    ROW_STATUS_REVIEW_REQUIRED,
+    ROW_STATUS_BLOCKED,
+    ROW_STATUS_DUPLICATE,
+    ROW_STATUS_APPROVED,
+    ROW_STATUS_REGISTERED,
+    ROW_STATUS_FAILED,
+}
+
+# Supported loadsheet formats.
+FORMAT_CSV = "csv"
+FORMAT_XLSX = "xlsx"
+SUPPORTED_FORMATS = {FORMAT_CSV}  # XLSX requires openpyxl — see sblt_loadsheet_parser.py
+
+
+def make_row_actions(
+    *,
+    can_validate: bool = True,
+    can_approve: bool = False,
+    can_register: bool = False,
+    requires_review: bool = False,
+) -> dict[str, Any]:
+    return {
+        "can_validate": can_validate,
+        "can_approve": can_approve,
+        "can_register": can_register,
+        "requires_review": requires_review,
+    }
+
+
+def make_parsed_row(
+    *,
+    row_id: str,
+    source_row_number: int,
+    source_values: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Build a single row payload in SBLT-1 parsed state.
+
+    SBLT-1 scope: preserve original column names and values only.
+    No column canonicalisation, metadata normalisation, or file validation.
+    """
+    return {
+        "row_id": row_id,
+        "source_row_number": source_row_number,
+        "status": ROW_STATUS_PARSED,
+        "record_type": "unknown",
+        "source_values": source_values,
+        "normalized_metadata": {},
+        "validation": {},
+        "qaqc_flags": [],
+        "actions": make_row_actions(
+            can_validate=True,
+            can_approve=False,
+            can_register=False,
+            requires_review=False,
+        ),
+    }
+
+
+def make_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Build the summary block from a list of row dicts.
+
+    Invariants enforced by caller:
+    - summary.total == len(rows)
+    - summary.parsed == len(rows) for SBLT-1 parsed sessions
+    """
+    counts: dict[str, int] = {
+        "total": 0,
+        "parsed": 0,
+        "ready": 0,
+        "warning": 0,
+        "review_required": 0,
+        "blocked": 0,
+        "duplicate": 0,
+        "approved": 0,
+        "registered": 0,
+        "failed": 0,
+    }
+    counts["total"] = len(rows)
+    for row in rows:
+        status = str(row.get("status") or "").strip()
+        if status in counts:
+            counts[status] += 1
+    return counts
+
+
+def make_session_actions(
+    *,
+    can_validate: bool,
+    can_approve: bool,
+    can_register: bool,
+) -> dict[str, Any]:
+    return {
+        "can_validate": can_validate,
+        "can_approve": can_approve,
+        "can_register": can_register,
+    }
+
+
+def make_session(
+    *,
+    session_id: str,
+    status: str,
+    source: dict[str, Any],
+    rows: list[dict[str, Any]],
+    created_at: str,
+    updated_at: str,
+) -> dict[str, Any]:
+    """
+    Build a complete SBLT session dict conforming to sblt.session.v1.
+
+    Invariants:
+    - row_count == len(rows)
+    - summary.total == len(rows)
+    """
+    summary = make_summary(rows)
+    # Invariant assertion — hard stop if violated.
+    assert summary["total"] == len(rows), (
+        f"SBLT invariant failed: summary.total={summary['total']} != len(rows)={len(rows)}"
+    )
+    row_count = len(rows)
+
+    # Session-level actions for SBLT-1 parsed state.
+    actions = make_session_actions(
+        can_validate=status == SESSION_STATUS_PARSED and row_count > 0,
+        can_approve=False,
+        can_register=False,
+    )
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "session_id": session_id,
+        "status": status,
+        "source": source,
+        "row_count": row_count,
+        "summary": summary,
+        "rows": rows,
+        "actions": actions,
+        "created_at": created_at,
+        "updated_at": updated_at,
+    }
