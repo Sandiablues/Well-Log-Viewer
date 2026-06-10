@@ -72,6 +72,27 @@ class ViewerPackageReference(BaseModel):
     status: ManagedInventoryLifecycleState = ManagedInventoryLifecycleState.VIEWER_READY
 
 
+class ManagedProductGroupItem(BaseModel):
+    product_id: str
+    display_name: str
+    curve_name: str
+    curve_type: str
+    run_interval: str = "—"
+    run_number: str = "—"
+    qa_flag: str = "Pending"
+    selectable: bool = True
+    source_kind: Optional[str] = None
+    source_id: Optional[str] = None
+    viewer_package_id: Optional[str] = None
+
+
+class ManagedProductGroup(BaseModel):
+    group_key: str
+    group_label: str
+    collapsed_by_default: bool = True
+    items: list[ManagedProductGroupItem] = Field(default_factory=list)
+
+
 class ManagedWellRecord(BaseModel):
     managed_well_id: str
     well_id: str
@@ -88,6 +109,7 @@ class ManagedWellRecord(BaseModel):
     lifecycle_state: ManagedInventoryLifecycleState = ManagedInventoryLifecycleState.REGISTERED
     source_references: list[ManagedSourceReference] = Field(default_factory=list)
     viewer_packages: list[ViewerPackageReference] = Field(default_factory=list)
+    product_groups: list[ManagedProductGroup] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     lifecycle_notes: list[str] = Field(default_factory=list)

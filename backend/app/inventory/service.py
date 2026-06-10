@@ -6,7 +6,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.app.wells.models import WellMultitrackV1
+from backend.app.wells.models import Curve, WellMultitrackV1
 from backend.app.wells.seed_repository import SeedWellRepository
 
 from .models import (
@@ -17,6 +17,8 @@ from .models import (
     ManagedInventoryStatus,
     ManagedInventoryValidationIssue,
     ManagedInventoryValidationResult,
+    ManagedProductGroup,
+    ManagedProductGroupItem,
     ManagedSourceKind,
     ManagedSourceReference,
     ManagedWellRecord,
@@ -69,10 +71,10 @@ class ManagedWellInventoryService:
         )
 
     def list_wells(self) -> list[ManagedWellRecord]:
-        return self.repository.list_records()
+        return [self._with_product_groups(record) for record in self.repository.list_records()]
 
     def get_well(self, managed_well_id: str) -> ManagedWellRecord:
-        return self.repository.get_record(managed_well_id)
+        return self._with_product_groups(self.repository.get_record(managed_well_id))
 
     def list_viewer_packages(self) -> list[ViewerPackageReference]:
         packages: list[ViewerPackageReference] = []
@@ -116,6 +118,18 @@ class ManagedWellInventoryService:
             existing = None
 
         lifecycle_state = ManagedInventoryLifecycleState.VIEWER_READY
+        source_references = [
+            ManagedSourceReference(
+                source_id=f"source:{well.well_id}:seed-las",
+                source_kind=ManagedSourceKind.SEED,
+                display_name=well.source_file or f"{well.well_name} seed source",
+                file_name=well.source_file,
+                file_format="LAS",
+                metadata={"source": "prototype_seed_repository"},
+            )
+        ]
+        viewer_package_reference = self._viewer_package_reference(viewer_package)
+        run_number = well.log_files[0].run_number if well.log_files else "—"
         record = ManagedWellRecord(
             managed_well_id=managed_well_id,
             well_id=well.well_id,
@@ -130,17 +144,14 @@ class ManagedWellInventoryService:
             base_depth=well.depth_range.max,
             status=lifecycle_state,
             lifecycle_state=lifecycle_state,
-            source_references=[
-                ManagedSourceReference(
-                    source_id=f"source:{well.well_id}:seed-las",
-                    source_kind=ManagedSourceKind.SEED,
-                    display_name=well.source_file or f"{well.well_name} seed source",
-                    file_name=well.source_file,
-                    file_format="LAS",
-                    metadata={"source": "prototype_seed_repository"},
-                )
-            ],
-            viewer_packages=[self._viewer_package_reference(viewer_package)],
+            source_references=source_references,
+            viewer_packages=[viewer_package_reference],
+            product_groups=self._product_groups_from_viewer_package(
+                viewer_package=viewer_package,
+                viewer_package_reference=viewer_package_reference,
+                source_references=source_references,
+                run_number=run_number or "—",
+            ),
             tags=["seed", "forge"],
             metadata={
                 "api_number": well.api_number,
@@ -200,6 +211,124 @@ class ManagedWellInventoryService:
             warning_count=warning_count,
             issues=issues,
         )
+
+    def _with_product_groups(self, record: ManagedWellRecord) -> ManagedWellRecord:
+        """Return a record with backend-owned product_groups populated."""
+        if record.product_groups:
+            return record
+        contract = record.metadata.get("viewer_package_contract")
+        if not isinstance(contract, dict):
+            return record
+        viewer_package = WellMultitrackV1.model_validate(contract)
+        viewer_package_reference = record.viewer_packages[0] if record.viewer_packages else self._viewer_package_reference(viewer_package)
+        return record.model_copy(
+            update={
+                "product_groups": self._product_groups_from_viewer_package(
+                    viewer_package=viewer_package,
+                    viewer_package_reference=viewer_package_reference,
+                    source_references=record.source_references,
+                    run_number="—",
+                )
+            }
+        )
+
+    def _product_groups_from_viewer_package(
+        self,
+        *,
+        viewer_package: WellMultitrackV1,
+        viewer_package_reference: ViewerPackageReference,
+        source_references: list[ManagedSourceReference],
+        run_number: str,
+    ) -> list[ManagedProductGroup]:
+        source_id = source_references[0].source_id if source_references else None
+        run_interval = self._run_interval(viewer_package)
+        open_hole_items: list[ManagedProductGroupItem] = []
+        for track in viewer_package.tracks:
+            for curve in track.curves:
+                open_hole_items.append(
+                    self._product_item_from_curve(
+                        curve=curve,
+                        run_interval=run_interval,
+                        run_number=run_number,
+                        source_id=source_id,
+                        viewer_package_reference=viewer_package_reference,
+                    )
+                )
+
+        supporting_document_items = [
+            ManagedProductGroupItem(
+                product_id=f"source-reference:{source.source_id}",
+                display_name=source.display_name,
+                curve_name=source.display_name,
+                curve_type=source.file_format or (source.source_kind.value if hasattr(source.source_kind, "value") else str(source.source_kind)),
+                run_interval="—",
+                run_number="—",
+                qa_flag="Pending",
+                selectable=True,
+                source_kind=source.source_kind.value if hasattr(source.source_kind, "value") else str(source.source_kind),
+                source_id=source.source_id,
+                viewer_package_id=None,
+            )
+            for source in source_references
+        ]
+
+        return [
+            ManagedProductGroup(group_key="open_hole_logs", group_label="Open hole logs", items=open_hole_items),
+            ManagedProductGroup(group_key="cased_hole_logs", group_label="Cased hole logs", items=[]),
+            ManagedProductGroup(group_key="rasters_images", group_label="Rasters / Images", items=[]),
+            ManagedProductGroup(group_key="other", group_label="Other", items=[]),
+            ManagedProductGroup(group_key="supporting_documents", group_label="Supporting documents", items=supporting_document_items),
+        ]
+
+    @staticmethod
+    def _product_item_from_curve(
+        *,
+        curve: Curve,
+        run_interval: str,
+        run_number: str,
+        source_id: str | None,
+        viewer_package_reference: ViewerPackageReference,
+    ) -> ManagedProductGroupItem:
+        curve_name = curve.mnemonic or curve.normalized_name or curve.curve_id
+        return ManagedProductGroupItem(
+            product_id=f"curve:{viewer_package_reference.well_id}:{curve.curve_id}",
+            display_name=curve_name,
+            curve_name=curve_name,
+            curve_type=ManagedWellInventoryService._curve_type_label(curve),
+            run_interval=run_interval,
+            run_number=run_number or "—",
+            qa_flag="Passed",
+            selectable=True,
+            source_kind=ManagedSourceKind.LAS.value,
+            source_id=source_id,
+            viewer_package_id=viewer_package_reference.viewer_package_id,
+        )
+
+    @staticmethod
+    def _curve_type_label(curve: Curve) -> str:
+        mnemonic = (curve.mnemonic or curve.curve_id).upper()
+        if mnemonic in {"GR", "CGR", "SGR"}:
+            return "Gamma ray"
+        if mnemonic in {"SP"}:
+            return "Spontaneous potential"
+        if mnemonic in {"AF90", "AT90", "ILD", "ILM", "LLD", "LLS", "RT", "RXO"}:
+            return "Resistivity"
+        if mnemonic in {"RHOB", "RHOZ", "DEN"}:
+            return "Density"
+        if mnemonic in {"NPHI", "TNPH", "NPOR"}:
+            return "Neutron porosity"
+        if mnemonic in {"DT", "DTCO", "DTSM", "DTC", "DTS"}:
+            return "Sonic"
+        if mnemonic in {"CALI", "CAL", "HCAL"}:
+            return "Caliper"
+        if mnemonic in {"PEF", "PE"}:
+            return "Photoelectric factor"
+        return curve.normalized_name or mnemonic.title()
+
+    @staticmethod
+    def _run_interval(viewer_package: WellMultitrackV1) -> str:
+        depth_unit = viewer_package.depth_unit.value if hasattr(viewer_package.depth_unit, "value") else str(viewer_package.depth_unit)
+        return f"{viewer_package.depth_range.min:g}–{viewer_package.depth_range.max:g} {depth_unit}"
 
     @staticmethod
     def _viewer_package_reference(viewer_package: WellMultitrackV1) -> ViewerPackageReference:

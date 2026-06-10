@@ -94,3 +94,47 @@ def test_managed_well_viewer_package_endpoint_returns_404_when_missing(tmp_path:
     response = client.get("/api/wlv/inventory/wells/not-present/viewer-package")
     assert response.status_code == 404
 
+
+
+def test_managed_well_product_groups_are_backend_owned(tmp_path: Path) -> None:
+    _install_temp_inventory(tmp_path)
+    client = TestClient(app)
+
+    register = client.post("/api/wlv/inventory/wells/register-seed")
+    assert register.status_code == 200
+    record = register.json()["record"]
+    groups = record["product_groups"]
+    assert [group["group_key"] for group in groups] == [
+        "open_hole_logs",
+        "cased_hole_logs",
+        "rasters_images",
+        "other",
+        "supporting_documents",
+    ]
+    open_hole = groups[0]
+    assert open_hole["group_label"] == "Open hole logs"
+    assert open_hole["collapsed_by_default"] is True
+    assert len(open_hole["items"]) >= 10
+    first_curve = open_hole["items"][0]
+    assert {
+        "product_id",
+        "display_name",
+        "curve_name",
+        "curve_type",
+        "run_interval",
+        "run_number",
+        "qa_flag",
+        "selectable",
+        "source_kind",
+        "source_id",
+        "viewer_package_id",
+    }.issubset(first_curve.keys())
+    assert first_curve["curve_name"] == "GR"
+    assert first_curve["curve_type"] == "Gamma ray"
+    assert first_curve["run_interval"] == "300.5–6076 ft"
+    assert first_curve["run_number"] == "ONE"
+    assert first_curve["qa_flag"] == "Passed"
+
+    detail = client.get("/api/wlv/inventory/wells/managed-well:forge-21-31")
+    assert detail.status_code == 200
+    assert detail.json()["product_groups"][0]["items"][0]["curve_name"] == "GR"

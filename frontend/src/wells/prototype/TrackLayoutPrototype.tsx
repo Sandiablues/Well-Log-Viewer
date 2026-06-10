@@ -63,6 +63,27 @@ type ManagedInventoryViewerPackageReference = {
   status?: string | null;
 };
 
+type ManagedProductGroupItem = {
+  product_id: string;
+  display_name?: string | null;
+  curve_name?: string | null;
+  curve_type?: string | null;
+  run_interval?: string | null;
+  run_number?: string | null;
+  qa_flag?: string | null;
+  selectable?: boolean;
+  source_kind?: string | null;
+  source_id?: string | null;
+  viewer_package_id?: string | null;
+};
+
+type ManagedProductGroup = {
+  group_key: string;
+  group_label: string;
+  collapsed_by_default?: boolean;
+  items?: ManagedProductGroupItem[];
+};
+
 type ManagedInventoryWellRecord = {
   managed_well_id: string;
   well_id: string;
@@ -80,6 +101,7 @@ type ManagedInventoryWellRecord = {
   lifecycle_state?: string | null;
   source_references?: ManagedInventorySourceReference[];
   viewer_packages?: ManagedInventoryViewerPackageReference[];
+  product_groups?: ManagedProductGroup[];
   tags?: string[];
   created_at?: string | null;
   updated_at?: string | null;
@@ -212,22 +234,6 @@ function wellStatus(well: ManagedInventoryWellRecord): string {
   return well.lifecycle_state || well.status || 'unknown';
 }
 
-function sourceDisplayName(source: ManagedInventorySourceReference): string {
-  return source.display_name || source.file_name || source.source_id;
-}
-
-function sourceStatus(source: ManagedInventorySourceReference): string {
-  return source.status || source.source_kind || source.file_format || 'source';
-}
-
-function viewerPackageDisplayName(viewerPackage: ManagedInventoryViewerPackageReference): string {
-  return viewerPackage.display_name || viewerPackage.viewer_package_version || viewerPackage.representation_id || viewerPackage.viewer_package_id;
-}
-
-function viewerPackageKind(viewerPackage: ManagedInventoryViewerPackageReference): string {
-  return viewerPackage.package_kind || viewerPackage.viewer_package_version || 'viewer_package';
-}
-
 function developmentSeedAlreadyRegistered(wells: ManagedInventoryWellRecord[]): boolean {
   return wells.some((well) => well.managed_well_id === 'managed-well:forge-21-31' || well.well_id === 'forge-21-31');
 }
@@ -242,55 +248,20 @@ function wellTypeLabel(well: ManagedInventoryWellRecord): string {
 }
 
 function wellProductCount(well: ManagedInventoryWellRecord): number {
+  const productGroups = well.product_groups ?? [];
+  if (productGroups.length > 0) {
+    return productGroups.reduce((total, group) => total + (group.items ?? []).length, 0);
+  }
   return (well.viewer_packages ?? []).length;
 }
 
 type WmdpSortKey = 'wellName' | 'wellId' | 'field' | 'operator' | 'status' | 'updated';
 type WmdpBulkAction = 'load' | 'unload' | 'remove';
 
-type WmdpProductCategoryKey = 'openHoleLogs' | 'casedHoleLogs' | 'rastersImages' | 'other' | 'supportingDocuments';
+type WmdpProductCategoryKey = string;
 
-type WmdpProductItem = {
-  itemId: string;
-  label: string;
-  subLabel: string;
-  kind: string;
-  status: string;
-};
-
-type WmdpProductCategory = {
-  key: WmdpProductCategoryKey;
-  label: string;
-  items: WmdpProductItem[];
-};
-
-function wmdpProductCategories(
-  sourceReferences: ManagedInventorySourceReference[],
-  viewerPackages: ManagedInventoryViewerPackageReference[],
-): WmdpProductCategory[] {
-  const viewerPackageItems = viewerPackages.map((viewerPackage) => ({
-    itemId: `viewer-package:${viewerPackage.viewer_package_id}`,
-    label: viewerPackageDisplayName(viewerPackage),
-    subLabel: viewerPackage.representation_id || viewerPackage.dataset_id || viewerPackage.viewer_package_id,
-    kind: statusLabel(viewerPackageKind(viewerPackage)),
-    status: statusLabel(viewerPackage.status),
-  }));
-
-  const supportingDocumentItems = sourceReferences.map((source) => ({
-    itemId: `source-reference:${source.source_id}`,
-    label: sourceDisplayName(source),
-    subLabel: source.original_path || source.path || source.uri || source.source_id,
-    kind: statusLabel(source.source_kind || source.file_format || 'supporting document'),
-    status: statusLabel(sourceStatus(source)),
-  }));
-
-  return [
-    { key: 'openHoleLogs', label: 'Open hole logs', items: viewerPackageItems },
-    { key: 'casedHoleLogs', label: 'Cased hole logs', items: [] },
-    { key: 'rastersImages', label: 'Rasters / Images', items: [] },
-    { key: 'other', label: 'Other', items: [] },
-    { key: 'supportingDocuments', label: 'Supporting documents', items: supportingDocumentItems },
-  ];
+function productItemDisplayName(item: ManagedProductGroupItem): string {
+  return item.curve_name || item.display_name || item.product_id;
 }
 
 function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (managedWellId?: string | null) => void }) {
@@ -610,9 +581,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
               ) : pagedWells.map((well) => {
                 const expanded = expandedWellIds.has(well.managed_well_id);
                 const rowSelected = selectedWellIds.has(well.managed_well_id);
-                const sourceReferences = well.source_references ?? [];
-                const viewerPackages = well.viewer_packages ?? [];
-                const productCategories = wmdpProductCategories(sourceReferences, viewerPackages);
+                const productCategories = well.product_groups ?? [];
                 return (
                   <>
                     <tr className={rowSelected || selectedWellId === well.managed_well_id ? 'is-selected' : ''} key={well.managed_well_id}>
@@ -658,38 +627,42 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
                         <td colSpan={8}>
                           <div className="wlv-wmdp-expanded-content wlv-wmdp-product-groups">
                             {productCategories.map((category) => {
-                              const groupId = productGroupId(well.managed_well_id, category.key);
+                              const groupId = productGroupId(well.managed_well_id, category.group_key);
                               const categoryExpanded = expandedProductGroupIds.has(groupId);
+                              const categoryItems = category.items ?? [];
                               return (
-                                <section className="wlv-wmdp-product-group" key={category.key}>
+                                <section className="wlv-wmdp-product-group" key={category.group_key}>
                                   <button
                                     type="button"
                                     className="wlv-wmdp-product-group-header"
-                                    onClick={() => toggleProductGroupExpanded(well.managed_well_id, category.key)}
+                                    onClick={() => toggleProductGroupExpanded(well.managed_well_id, category.group_key)}
                                     aria-expanded={categoryExpanded}
                                   >
                                     <span className="wlv-wmdp-product-group-caret">{categoryExpanded ? '▾' : '▸'}</span>
-                                    <span className="wlv-wmdp-product-group-title">{category.label}</span>
-                                    <span className="wlv-wmdp-product-group-count">{category.items.length}</span>
+                                    <span className="wlv-wmdp-product-group-title">{category.group_label}</span>
+                                    <span className="wlv-wmdp-product-group-count">{categoryItems.length}</span>
                                   </button>
                                   {categoryExpanded ? (
                                     <div className="wlv-wmdp-product-items">
-                                      {category.items.length === 0 ? (
+                                      {categoryItems.length === 0 ? (
                                         <div className="wlv-wmdp-product-empty">No registered items.</div>
-                                      ) : category.items.map((item) => (
-                                        <label className="wlv-wmdp-product-item" key={item.itemId}>
+                                      ) : categoryItems.map((item) => (
+                                        <label className="wlv-wmdp-product-item" key={item.product_id}>
                                           <input
                                             type="checkbox"
-                                            checked={selectedProductItemIds.has(item.itemId)}
-                                            onChange={() => toggleProductItemSelected(item.itemId)}
-                                            aria-label={`Select ${item.label}`}
+                                            checked={selectedProductItemIds.has(item.product_id)}
+                                            disabled={item.selectable === false}
+                                            onChange={() => toggleProductItemSelected(item.product_id)}
+                                            aria-label={`Select ${productItemDisplayName(item)}`}
                                           />
                                           <span className="wlv-wmdp-product-item-main">
-                                            <strong>{item.label}</strong>
-                                            <span>{item.subLabel}</span>
+                                            <strong>{productItemDisplayName(item)}</strong>
+                                            <span>{safeText(item.display_name)}</span>
                                           </span>
-                                          <span className="wlv-wmdp-product-item-meta">{item.kind}</span>
-                                          <span className="wlv-wmdp-product-item-status">{item.status}</span>
+                                          <span className="wlv-wmdp-product-item-meta">{safeText(item.curve_type)}</span>
+                                          <span className="wlv-wmdp-product-item-meta">{safeText(item.run_interval)}</span>
+                                          <span className="wlv-wmdp-product-item-meta">{safeText(item.run_number)}</span>
+                                          <span className="wlv-wmdp-product-item-status">{safeText(item.qa_flag)}</span>
                                         </label>
                                       ))}
                                     </div>
