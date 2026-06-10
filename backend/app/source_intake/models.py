@@ -147,6 +147,38 @@ class SourceRepositoryRecord(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class SourceIntakeEvidenceRecord(BaseModel):
+    field_name: str
+    value: Optional[str] = None
+    source: str
+    source_path: Optional[str] = None
+    confidence: str = "high"
+    message: Optional[str] = None
+
+
+class SourceIntakeResolvedField(BaseModel):
+    field_name: str
+    value: Optional[str] = None
+    source: str = "missing"
+    confidence: str = "missing"
+    review_required: bool = False
+    evidence: list[SourceIntakeEvidenceRecord] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SourceIntakeResolvedMetadata(BaseModel):
+    resolver_id: str = "wlv_source_intake_metadata_resolver_v1"
+    well_name: SourceIntakeResolvedField
+    uwi: SourceIntakeResolvedField
+    operator: SourceIntakeResolvedField
+    field: SourceIntakeResolvedField
+    block: SourceIntakeResolvedField
+    review_required: bool = False
+    warning_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+    evidence_count: int = 0
+
+
 class SourceFileCandidate(BaseModel):
     source_file_id: str
     repository_id: str
@@ -163,6 +195,7 @@ class SourceFileCandidate(BaseModel):
     fingerprint_status: str = "computed"
     parser_status: SourceIntakeParseStatus = SourceIntakeParseStatus.NOT_PARSED
     parsed_metadata: Optional[SourceIntakeParsedMetadata] = None
+    resolved_metadata: Optional[SourceIntakeResolvedMetadata] = None
     parse_error: Optional[str] = None
     review_required: bool = False
     warnings: list[str] = Field(default_factory=list)

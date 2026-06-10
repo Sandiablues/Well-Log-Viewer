@@ -15,6 +15,8 @@ from typing import Iterable, Any
 
 from ..ingestion.las_adapter import LasAdapterError, LasSourceAdapter
 
+from .metadata_resolver import resolve_candidate_metadata
+
 from .models import (
     SourceFileCandidate,
     SourceIntakeCandidateRole,
@@ -281,6 +283,7 @@ class WlvSourceIntakeService:
         )
 
         candidate.parsed_metadata = parsed
+        candidate.resolved_metadata = resolve_candidate_metadata(candidate)
         candidate.parser_status = (
             SourceIntakeParseStatus.PARSE_FAILED if error_messages
             else SourceIntakeParseStatus.PARSED_WITH_WARNINGS if warning_messages
@@ -288,9 +291,15 @@ class WlvSourceIntakeService:
         )
         candidate.parse_error = "; ".join(error_messages) if error_messages else None
         candidate.review_required = candidate.review_required or bool(error_messages)
+        if candidate.resolved_metadata is not None:
+            candidate.review_required = candidate.review_required or candidate.resolved_metadata.review_required
         for message in parsed.warnings:
             if message not in candidate.warnings:
                 candidate.warnings.append(message)
+        if candidate.resolved_metadata is not None:
+            for message in candidate.resolved_metadata.warnings:
+                if message not in candidate.warnings:
+                    candidate.warnings.append(message)
 
     def _classify_file(self, path: Path) -> tuple[SourceIntakeFileType, SourceIntakeCandidateRole]:
         ext = path.suffix.lower().lstrip(".")
