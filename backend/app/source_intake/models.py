@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -268,6 +268,40 @@ class SourceIntakeWorkbench(BaseModel):
     summary: SourceIntakeWorkbenchSummary
     repositories: list[SourceRepositoryRecord] = Field(default_factory=list)
     candidates: list[SourceFileCandidate] = Field(default_factory=list)
+
+
+
+
+class SourceIntakeApproval(BaseModel):
+    approved_by: Optional[str] = None
+    approval_note: Optional[str] = None
+
+
+class SourceIntakeRegisterRequest(BaseModel):
+    candidate_ids: list[str]
+    approval: SourceIntakeApproval = Field(default_factory=SourceIntakeApproval)
+
+
+class SourceIntakeRegisterResult(BaseModel):
+    candidate_id: str
+    status: str
+    reason: Optional[str] = None
+    managed_well_id: Optional[str] = None
+    well_id: Optional[str] = None
+    well_name: Optional[str] = None
+    registered_product_count: int = 0
+    registered_curve_count: int = 0
+    action: Optional[str] = None
+
+
+class SourceIntakeRegisterResponse(BaseModel):
+    ok: bool = True
+    action: str = "register_to_managed_well_inventory"
+    destructive: bool = False
+    registered_count: int = 0
+    skipped_count: int = 0
+    results: list[SourceIntakeRegisterResult] = Field(default_factory=list)
+    workbench: Optional[SourceIntakeWorkbench] = None
 
 
 class SourceIntakeClearRequest(BaseModel):

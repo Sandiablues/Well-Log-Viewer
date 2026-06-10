@@ -17,6 +17,7 @@ from ..ingestion.las_adapter import LasAdapterError, LasSourceAdapter
 
 from .metadata_resolver import resolve_candidate_metadata
 from .qaqc import run_source_intake_qaqc
+from .registration import register_candidate_to_inventory, registration_block_reason
 
 from .models import (
     SourceFileCandidate,
@@ -26,6 +27,9 @@ from .models import (
     SourceIntakeLogHeader,
     SourceIntakeParseStatus,
     SourceIntakeParsedMetadata,
+    SourceIntakeRegisterRequest,
+    SourceIntakeRegisterResponse,
+    SourceIntakeRegisterResult,
     SourceIntakeRepositoryStatus,
     SourceIntakeWellHeader,
     SourceIntakeCurveHeader,
@@ -151,6 +155,72 @@ class WlvSourceIntakeService:
         # intentionally mirrors SSI Clear semantics: it is non-destructive and
         # does not delete repositories, candidates, source files, or managed data.
         return SourceIntakeClearResponse(workbench=self.get_workbench())
+
+    def register_candidates(self, request: SourceIntakeRegisterRequest, inventory_service=None) -> SourceIntakeRegisterResponse:
+        """Register approved intake candidates to Managed Well Inventory.
+
+        This is the first controlled handoff from Source Intake into MSI/WMDP
+        managed inventory. It does not load the WDV and does not create a viewer
+        representation/conversion.
+        """
+        if inventory_service is None:
+            from backend.app.inventory.service import ManagedWellInventoryService
+            inventory_service = ManagedWellInventoryService()
+
+        snapshot = self._load_snapshot()
+        candidates_by_id = {candidate.source_file_id: candidate for candidate in snapshot.candidates}
+        results: list[SourceIntakeRegisterResult] = []
+        registered_count = 0
+        skipped_count = 0
+
+        for candidate_id in request.candidate_ids:
+            candidate = candidates_by_id.get(candidate_id)
+            if candidate is None:
+                skipped_count += 1
+                results.append(SourceIntakeRegisterResult(
+                    candidate_id=candidate_id,
+                    status="skipped",
+                    reason="Candidate not found in Source Intake workbench.",
+                ))
+                continue
+
+            blocked_reason = registration_block_reason(candidate)
+            if blocked_reason is not None:
+                skipped_count += 1
+                results.append(SourceIntakeRegisterResult(
+                    candidate_id=candidate.source_file_id,
+                    status="blocked",
+                    reason=blocked_reason,
+                ))
+                continue
+
+            action, record = register_candidate_to_inventory(
+                candidate=candidate,
+                inventory_service=inventory_service,
+                approved_by=request.approval.approved_by,
+                approval_note=request.approval.approval_note,
+            )
+            registered_curve_count = sum(len(group.items) for group in record.product_groups)
+            registered_product_count = sum(1 for group in record.product_groups if group.items)
+            registered_count += 1
+            results.append(SourceIntakeRegisterResult(
+                candidate_id=candidate.source_file_id,
+                status="registered",
+                reason=None,
+                managed_well_id=record.managed_well_id,
+                well_id=record.well_id,
+                well_name=record.well_name,
+                registered_product_count=registered_product_count,
+                registered_curve_count=registered_curve_count,
+                action=action,
+            ))
+
+        return SourceIntakeRegisterResponse(
+            registered_count=registered_count,
+            skipped_count=skipped_count,
+            results=results,
+            workbench=self.get_workbench(),
+        )
 
     def _load_snapshot(self) -> SourceIntakeSnapshot:
         if not self.storage_path.exists():

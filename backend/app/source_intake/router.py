@@ -8,15 +8,19 @@ from .models import (
     SourceIntakeClearRequest,
     SourceIntakeClearResponse,
     SourceIntakeHealth,
+    SourceIntakeRegisterRequest,
+    SourceIntakeRegisterResponse,
     SourceIntakeWorkbench,
     SourceRepositoryCreateRequest,
     SourceRepositoryRecord,
     SourceRepositoryScanResult,
 )
 from .service import SourceIntakeError, WlvSourceIntakeService
+from backend.app.inventory.service import ManagedWellInventoryService
 
 router = APIRouter(prefix="/api/wlv/source-intake", tags=["wlv-source-intake"])
 _service = WlvSourceIntakeService()
+_inventory_service = ManagedWellInventoryService()
 
 
 @router.get("/health", response_model=SourceIntakeHealth, summary="WLV Source Intake health")
@@ -57,3 +61,11 @@ def get_workbench() -> SourceIntakeWorkbench:
 @router.post("/workbench/clear", response_model=SourceIntakeClearResponse, summary="Clear active WLV Source Intake selection")
 def clear_workbench(request: SourceIntakeClearRequest | None = None) -> SourceIntakeClearResponse:
     return _service.clear_workbench_selection(repository_id=request.repository_id if request else None)
+
+
+@router.post("/register", response_model=SourceIntakeRegisterResponse, summary="Register WLV Source Intake candidates to managed inventory")
+def register_candidates(request: SourceIntakeRegisterRequest) -> SourceIntakeRegisterResponse:
+    try:
+        return _service.register_candidates(request, inventory_service=_inventory_service)
+    except SourceIntakeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
