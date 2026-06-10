@@ -109,8 +109,21 @@ def test_managed_well_product_groups_are_backend_owned(tmp_path: Path) -> None:
         "open_hole_logs",
         "cased_hole_logs",
         "rasters_images",
-        "other",
+        "lithology_core_markers",
+        "pressure_production_fluid_data",
+        "completion_integrity_data",
         "supporting_documents",
+        "other_review_required",
+    ]
+    assert [group["group_label"] for group in groups] == [
+        "Open hole logs",
+        "Cased hole logs",
+        "Rasters / Images",
+        "Lithology / Core / Markers",
+        "Pressure / Production / Fluid data",
+        "Completion / Integrity data",
+        "Supporting documents",
+        "Other / Review required",
     ]
     open_hole = groups[0]
     assert open_hole["group_label"] == "Open hole logs"
@@ -122,6 +135,14 @@ def test_managed_well_product_groups_are_backend_owned(tmp_path: Path) -> None:
         "display_name",
         "curve_name",
         "curve_type",
+        "curve_description",
+        "curve_unit",
+        "product_category",
+        "curve_family",
+        "classification_confidence",
+        "classification_source",
+        "classification_reasons",
+        "review_required",
         "run_date",
         "run_interval",
         "run_number",
@@ -134,7 +155,15 @@ def test_managed_well_product_groups_are_backend_owned(tmp_path: Path) -> None:
     assert "block" in record
     assert record["operator"] == "Ormat Nevada, Inc."
     assert first_curve["curve_name"] == "GR"
-    assert first_curve["curve_type"] == "Gamma ray"
+    assert first_curve["curve_type"] == "Gamma Ray"
+    assert first_curve["curve_description"] == "Gamma Ray"
+    assert first_curve["curve_unit"] == "GAPI"
+    assert first_curve["product_category"] == "open_hole_logs"
+    assert first_curve["curve_family"] == "Gamma Ray"
+    assert first_curve["classification_confidence"] in {"high", "medium"}
+    assert first_curve["classification_source"] == "backend_well_log_classifier"
+    assert first_curve["classification_reasons"]
+    assert first_curve["review_required"] is False
     assert first_curve["run_date"] == "—"
     assert first_curve["run_interval"] == "300.5–6076 ft"
     assert first_curve["run_number"] == "ONE"

@@ -78,6 +78,14 @@ class ManagedProductGroupItem(BaseModel):
     display_name: str
     curve_name: str
     curve_type: str
+    curve_description: str | None = None
+    curve_unit: str | None = None
+    product_category: str = "other_review_required"
+    curve_family: str = "Unclassified"
+    classification_confidence: str = "low"
+    classification_source: str = "unclassified"
+    classification_reasons: list[str] = Field(default_factory=list)
+    review_required: bool = True
     run_date: str = "—"
     run_interval: str = "—"
     run_number: str = "—"

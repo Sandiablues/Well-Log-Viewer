@@ -8,6 +8,8 @@ from typing import Any
 
 from backend.app.wells.models import Curve, WellMultitrackV1
 from backend.app.wells.seed_repository import SeedWellRepository
+from backend.app.classification.well_log_classifier import classify_well_log_curve
+from backend.app.classification.well_log_vocabulary import PRODUCT_GROUP_ORDER
 
 from .models import (
     InventoryValidationSeverity,
@@ -248,19 +250,31 @@ class ManagedWellInventoryService:
     ) -> list[ManagedProductGroup]:
         source_id = source_references[0].source_id if source_references else None
         run_interval = self._run_interval(viewer_package)
-        open_hole_items: list[ManagedProductGroupItem] = []
+        items_by_group: dict[str, list[ManagedProductGroupItem]] = {
+            definition.group_key: [] for definition in PRODUCT_GROUP_ORDER
+        }
+
+        context_terms = [
+            viewer_package_reference.viewer_package_id,
+            viewer_package_reference.dataset_id,
+            viewer_package_reference.representation_id,
+            *(source.display_name for source in source_references),
+            *(source.file_name for source in source_references if source.file_name),
+        ]
+
         for track in viewer_package.tracks:
             for curve in track.curves:
-                open_hole_items.append(
-                    self._product_item_from_curve(
-                        curve=curve,
-                        run_interval=run_interval,
-                        run_date=run_date,
-                        run_number=run_number,
-                        source_id=source_id,
-                        viewer_package_reference=viewer_package_reference,
-                    )
+                item = self._product_item_from_curve(
+                    curve=curve,
+                    run_interval=run_interval,
+                    run_date=run_date,
+                    run_number=run_number,
+                    source_id=source_id,
+                    viewer_package_reference=viewer_package_reference,
+                    context_terms=context_terms,
                 )
+                group_key = item.product_category if item.product_category in items_by_group else "other_review_required"
+                items_by_group[group_key].append(item)
 
         supporting_document_items = [
             ManagedProductGroupItem(
@@ -268,6 +282,14 @@ class ManagedWellInventoryService:
                 display_name=source.display_name,
                 curve_name=source.display_name,
                 curve_type=source.file_format or (source.source_kind.value if hasattr(source.source_kind, "value") else str(source.source_kind)),
+                curve_description=source.file_format or (source.source_kind.value if hasattr(source.source_kind, "value") else str(source.source_kind)),
+                curve_unit=None,
+                product_category="supporting_documents",
+                curve_family="Supporting Document",
+                classification_confidence="high",
+                classification_source="managed_source_reference",
+                classification_reasons=["Source reference was registered as a supporting inventory item."],
+                review_required=False,
                 run_date="—",
                 run_interval="—",
                 run_number="—",
@@ -279,13 +301,15 @@ class ManagedWellInventoryService:
             )
             for source in source_references
         ]
+        items_by_group["supporting_documents"].extend(supporting_document_items)
 
         return [
-            ManagedProductGroup(group_key="open_hole_logs", group_label="Open hole logs", items=open_hole_items),
-            ManagedProductGroup(group_key="cased_hole_logs", group_label="Cased hole logs", items=[]),
-            ManagedProductGroup(group_key="rasters_images", group_label="Rasters / Images", items=[]),
-            ManagedProductGroup(group_key="other", group_label="Other", items=[]),
-            ManagedProductGroup(group_key="supporting_documents", group_label="Supporting documents", items=supporting_document_items),
+            ManagedProductGroup(
+                group_key=definition.group_key,
+                group_label=definition.group_label,
+                items=items_by_group[definition.group_key],
+            )
+            for definition in PRODUCT_GROUP_ORDER
         ]
 
     @staticmethod
@@ -297,22 +321,65 @@ class ManagedWellInventoryService:
         run_number: str,
         source_id: str | None,
         viewer_package_reference: ViewerPackageReference,
+        context_terms: list[str | None] | None = None,
     ) -> ManagedProductGroupItem:
         curve_name = curve.mnemonic or curve.normalized_name or curve.curve_id
+        curve_description = ManagedWellInventoryService._curve_description(curve)
+        curve_unit = ManagedWellInventoryService._curve_unit(curve)
+        classification = classify_well_log_curve(
+            mnemonic=curve_name,
+            description=curve_description,
+            unit=curve_unit,
+            context_terms=context_terms or [],
+        )
         return ManagedProductGroupItem(
             product_id=f"curve:{viewer_package_reference.well_id}:{curve.curve_id}",
             display_name=curve_name,
             curve_name=curve_name,
-            curve_type=ManagedWellInventoryService._curve_type_label(curve),
+            curve_type=classification.curve_description,
+            curve_description=classification.curve_description,
+            curve_unit=classification.curve_unit,
+            product_category=classification.product_category,
+            curve_family=classification.curve_family,
+            classification_confidence=classification.classification_confidence,
+            classification_source=classification.classification_source,
+            classification_reasons=classification.classification_reasons,
+            review_required=classification.review_required,
             run_date=run_date or "—",
             run_interval=run_interval,
             run_number=run_number or "—",
-            qa_flag="Passed",
+            qa_flag="Review" if classification.review_required else "Passed",
             selectable=True,
             source_kind=ManagedSourceKind.LAS.value,
             source_id=source_id,
             viewer_package_id=viewer_package_reference.viewer_package_id,
         )
+
+    @staticmethod
+    def _curve_description(curve: Curve) -> str | None:
+        for attr in ("description", "display_name", "long_name", "normalized_name"):
+            value = getattr(curve, attr, None)
+            if isinstance(value, str) and value.strip() and value.strip().upper() != (curve.mnemonic or "").upper():
+                return value.strip()
+        metadata = getattr(curve, "metadata", None)
+        if isinstance(metadata, dict):
+            for key in ("description", "long_name", "curve_description"):
+                value = metadata.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return None
+
+    @staticmethod
+    def _curve_unit(curve: Curve) -> str | None:
+        value = getattr(curve, "unit", None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        metadata = getattr(curve, "metadata", None)
+        if isinstance(metadata, dict):
+            value = metadata.get("unit")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return None
 
     @staticmethod
     def _curve_type_label(curve: Curve) -> str:
