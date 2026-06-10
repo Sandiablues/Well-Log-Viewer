@@ -24,6 +24,7 @@ SCHEMA_VERSION = "sblt.session.v1"
 SESSION_STATUS_PARSED = "parsed"
 SESSION_STATUS_SCHEMA_INVALID = "schema_invalid"
 SESSION_STATUS_VALIDATED = "validated"
+SESSION_STATUS_NORMALIZED = "normalized"
 SESSION_STATUS_REVIEW_REQUIRED = "review_required"
 SESSION_STATUS_APPROVED = "approved"
 SESSION_STATUS_REGISTERED = "registered"
@@ -33,6 +34,7 @@ VALID_SESSION_STATUSES = {
     SESSION_STATUS_PARSED,
     SESSION_STATUS_SCHEMA_INVALID,
     SESSION_STATUS_VALIDATED,
+    SESSION_STATUS_NORMALIZED,
     SESSION_STATUS_REVIEW_REQUIRED,
     SESSION_STATUS_APPROVED,
     SESSION_STATUS_REGISTERED,
@@ -149,6 +151,38 @@ def make_validated_row(
     }
 
 
+def make_normalized_row(
+    existing_row: dict[str, Any],
+    *,
+    normalized_metadata: dict[str, Any],
+    identity_hints: dict[str, Any],
+    qaqc_flags: list[dict[str, Any]],
+    status: str,
+) -> dict[str, Any]:
+    """
+    Build an updated row dict after SBLT-3 row normalization.
+
+    Preserves row_id, source_row_number, source_values, canonical_fields,
+    and validation unchanged.
+    Updates status, normalized_metadata, identity_hints, qaqc_flags, and actions.
+    """
+    requires_review = status in (ROW_STATUS_REVIEW_REQUIRED, ROW_STATUS_BLOCKED)
+    can_approve = status == ROW_STATUS_READY
+    return {
+        **existing_row,
+        "status": status,
+        "normalized_metadata": normalized_metadata,
+        "identity_hints": identity_hints,
+        "qaqc_flags": qaqc_flags,
+        "actions": make_row_actions(
+            can_validate=True,
+            can_approve=can_approve,
+            can_register=False,
+            requires_review=requires_review,
+        ),
+    }
+
+
 def make_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Build the summary block from a list of row dicts.
@@ -224,10 +258,13 @@ def make_session(
     )
     actions = make_session_actions(
         can_validate=(
-            status in (SESSION_STATUS_PARSED, SESSION_STATUS_VALIDATED)
+            status in (SESSION_STATUS_PARSED, SESSION_STATUS_VALIDATED, SESSION_STATUS_NORMALIZED)
             and row_count > 0
         ),
-        can_approve=status == SESSION_STATUS_VALIDATED and has_approvable_rows,
+        can_approve=(
+            status in (SESSION_STATUS_VALIDATED, SESSION_STATUS_NORMALIZED)
+            and has_approvable_rows
+        ),
         can_register=False,
     )
 

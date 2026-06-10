@@ -33,9 +33,11 @@ from .sblt_models import (
     FORMAT_XLSX,
     SESSION_STATUS_PARSED,
     SESSION_STATUS_VALIDATED,
+    SESSION_STATUS_NORMALIZED,
     SESSION_STATUS_FAILED,
     make_parsed_row,
     make_validated_row,
+    make_normalized_row,
     make_session,
 )
 from .sblt_loadsheet_parser import (
@@ -368,6 +370,77 @@ def validate_session(session_id: str) -> dict[str, Any]:
     )
 
     # Enforce invariants before saving.
+    _validate_session_invariants(updated_session)
+    _save_session(updated_session)
+
+    return updated_session
+
+
+def normalize_session(session_id: str) -> dict[str, Any]:
+    """
+    Run SBLT-3 row normalization on an existing SBLT validated session.
+
+    Loads the session, normalizes display text, builds key forms, constructs
+    normalized_metadata and identity_hints for each row, appends normalization-
+    stage QAQC flags (preserving all SBLT-2 flags), updates row statuses,
+    persists the updated session, and returns it.
+
+    SBLT-3 scope:
+    - String-level normalization from canonical_fields only.
+    - No filesystem access (no file/path existence check).
+    - No SEG-Y header inspection.
+    - No duplicate detection.
+    - No MSI interaction.
+
+    Status invariants:
+    - blocked rows stay blocked.
+    - review_required rows stay review_required.
+    - ready rows may become review_required if dataset_key cannot be built.
+
+    Raises SBLTValidationError if the session is not in validated or normalized state.
+    Raises SBLTNotFoundError if the session does not exist.
+    """
+    from .sblt_row_normalizer import normalize_row
+
+    session = get_session(session_id)
+
+    current_status = session.get("status")
+    if current_status not in (SESSION_STATUS_VALIDATED, SESSION_STATUS_NORMALIZED):
+        raise SBLTValidationError(
+            f"SBLT session must be in 'validated' or 'normalized' state before normalization. "
+            f"Current status: {current_status!r}",
+            status_code=400,
+        )
+
+    existing_rows: list[dict[str, Any]] = session.get("rows", [])
+    normalized_rows: list[dict[str, Any]] = []
+
+    for row in existing_rows:
+        normalized_meta, identity_hints, new_qaqc_flags, new_status = normalize_row(row)
+
+        # Merge SBLT-2 flags (preserved) with normalization-stage flags.
+        merged_flags = list(row.get("qaqc_flags") or []) + new_qaqc_flags
+
+        normalized_rows.append(
+            make_normalized_row(
+                row,
+                normalized_metadata=normalized_meta,
+                identity_hints=identity_hints,
+                qaqc_flags=merged_flags,
+                status=new_status,
+            )
+        )
+
+    now = _utc_now()
+    updated_session = make_session(
+        session_id=session["session_id"],
+        status=SESSION_STATUS_NORMALIZED,
+        source=session["source"],
+        rows=normalized_rows,
+        created_at=session["created_at"],
+        updated_at=now,
+    )
+
     _validate_session_invariants(updated_session)
     _save_session(updated_session)
 

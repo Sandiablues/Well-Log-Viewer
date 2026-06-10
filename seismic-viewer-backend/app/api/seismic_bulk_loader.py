@@ -24,6 +24,7 @@ from app.services.seismic_bulk_loader.sblt_session_service import (
     create_session_from_loadsheet,
     get_session,
     validate_session,
+    normalize_session,
 )
 
 
@@ -96,6 +97,36 @@ def validate_sblt_session(session_id: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=500,
             detail=f"SBLT schema validation failed unexpectedly: {exc}",
+        ) from exc
+
+    return session
+
+
+@router.post("/sessions/{session_id}/normalize")
+def normalize_sblt_session(session_id: str) -> dict[str, Any]:
+    """
+    Run SBLT-3 row normalization on an existing validated SBLT session.
+
+    Normalizes display text, builds key forms, constructs normalized_metadata
+    and identity_hints for each row, appends normalization-stage QAQC flags
+    (preserving all SBLT-2 flags), updates row statuses, persists the updated
+    session, and returns it.
+
+    Session must be in 'validated' or 'normalized' state.
+    Returns 400 if the session is in an incompatible state.
+    Returns 404 if the session does not exist.
+    Returns 500 on invariant failure or unexpected error.
+    """
+    try:
+        session = normalize_session(session_id)
+    except SBLTNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SBLTValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"SBLT row normalization failed unexpectedly: {exc}",
         ) from exc
 
     return session
