@@ -32,8 +32,10 @@ from .sblt_models import (
     FORMAT_CSV,
     FORMAT_XLSX,
     SESSION_STATUS_PARSED,
+    SESSION_STATUS_VALIDATED,
     SESSION_STATUS_FAILED,
     make_parsed_row,
+    make_validated_row,
     make_session,
 )
 from .sblt_loadsheet_parser import (
@@ -304,3 +306,69 @@ def get_session(session_id: str) -> dict[str, Any]:
     _validate_session_invariants(session)
 
     return session
+
+
+def validate_session(session_id: str) -> dict[str, Any]:
+    """
+    Run SBLT-2 schema validation on an existing SBLT session.
+
+    Loads the session, maps source column names to canonical SBLT fields,
+    validates required/conditional/recommended fields, assigns row statuses,
+    updates the summary, persists the updated session, and returns it.
+
+    SBLT-2 scope:
+    - Schema / column alias validation only.
+    - source_values on every row are preserved unchanged.
+    - No file/path existence check.
+    - No SEG-Y header inspection.
+    - No MSI interaction.
+
+    Raises SBLTNotFoundError if the session does not exist.
+    Raises SBLTValidationError if the session fails invariants.
+    """
+    from .sblt_column_mapper import map_columns
+    from .sblt_schema_validator import validate_row_schema
+
+    # Load and invariant-check the existing session.
+    session = get_session(session_id)
+
+    existing_rows: list[dict[str, Any]] = session.get("rows", [])
+    validated_rows: list[dict[str, Any]] = []
+
+    for row in existing_rows:
+        source_values: dict[str, str] = row.get("source_values", {})
+
+        # Map source column names → canonical field names + detect duplicates.
+        mapping = map_columns(source_values)
+
+        # Validate canonical fields → canonical_fields dict, validation block,
+        # QAQC flags, and row status.
+        canonical_fields, validation, qaqc_flags, status = validate_row_schema(mapping)
+
+        # Build updated row (source_values preserved unchanged).
+        validated_rows.append(
+            make_validated_row(
+                row,
+                canonical_fields=canonical_fields,
+                validation=validation,
+                qaqc_flags=qaqc_flags,
+                status=status,
+            )
+        )
+
+    # Rebuild session with validated rows and updated status.
+    now = _utc_now()
+    updated_session = make_session(
+        session_id=session["session_id"],
+        status=SESSION_STATUS_VALIDATED,
+        source=session["source"],
+        rows=validated_rows,
+        created_at=session["created_at"],
+        updated_at=now,
+    )
+
+    # Enforce invariants before saving.
+    _validate_session_invariants(updated_session)
+    _save_session(updated_session)
+
+    return updated_session

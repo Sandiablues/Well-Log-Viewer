@@ -23,6 +23,7 @@ from app.services.seismic_bulk_loader.sblt_session_service import (
     SBLTValidationError,
     create_session_from_loadsheet,
     get_session,
+    validate_session,
 )
 
 
@@ -68,6 +69,33 @@ def create_sblt_session(request: CreateSessionRequest) -> dict[str, Any]:
         raise HTTPException(
             status_code=500,
             detail=f"SBLT session creation failed unexpectedly: {exc}",
+        ) from exc
+
+    return session
+
+
+@router.post("/sessions/{session_id}/validate")
+def validate_sblt_session(session_id: str) -> dict[str, Any]:
+    """
+    Run SBLT-2 schema validation on an existing parsed session.
+
+    Maps source column names to canonical SBLT fields, validates required /
+    conditional / recommended fields, assigns row statuses, updates summary
+    counts, persists the updated session, and returns it.
+
+    Returns 404 if the session does not exist.
+    Returns 500 if the stored session fails invariant checks.
+    """
+    try:
+        session = validate_session(session_id)
+    except SBLTNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SBLTValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"SBLT schema validation failed unexpectedly: {exc}",
         ) from exc
 
     return session

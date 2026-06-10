@@ -1,5 +1,5 @@
 """
-SBLT-1: Model constants and builder helpers for the SBLT session contract.
+SBLT-1 / SBLT-2: Model constants and builder helpers for the SBLT session contract.
 
 Ownership: backend SBLT service.
 
@@ -94,6 +94,7 @@ def make_parsed_row(
 
     SBLT-1 scope: preserve original column names and values only.
     No column canonicalisation, metadata normalisation, or file validation.
+    canonical_fields is empty dict at this stage; populated by SBLT-2 validate.
     """
     return {
         "row_id": row_id,
@@ -101,6 +102,7 @@ def make_parsed_row(
         "status": ROW_STATUS_PARSED,
         "record_type": "unknown",
         "source_values": source_values,
+        "canonical_fields": {},
         "normalized_metadata": {},
         "validation": {},
         "qaqc_flags": [],
@@ -109,6 +111,40 @@ def make_parsed_row(
             can_approve=False,
             can_register=False,
             requires_review=False,
+        ),
+    }
+
+
+def make_validated_row(
+    existing_row: dict[str, Any],
+    *,
+    canonical_fields: dict[str, Any],
+    validation: dict[str, Any],
+    qaqc_flags: list[dict[str, Any]],
+    status: str,
+) -> dict[str, Any]:
+    """
+    Build an updated row dict after SBLT-2 schema validation.
+
+    Preserves row_id, source_row_number, and source_values unchanged.
+    Updates status, record_type, canonical_fields, validation, qaqc_flags,
+    and actions based on the validation result.
+    """
+    requires_review = status in (ROW_STATUS_REVIEW_REQUIRED, ROW_STATUS_BLOCKED)
+    can_approve = status == ROW_STATUS_READY
+    normalised_record_type = canonical_fields.get("record_type") or "unknown"
+    return {
+        **existing_row,
+        "status": status,
+        "record_type": normalised_record_type,
+        "canonical_fields": canonical_fields,
+        "validation": validation,
+        "qaqc_flags": qaqc_flags,
+        "actions": make_row_actions(
+            can_validate=True,
+            can_approve=can_approve,
+            can_register=False,
+            requires_review=requires_review,
         ),
     }
 
@@ -177,10 +213,21 @@ def make_session(
     )
     row_count = len(rows)
 
-    # Session-level actions for SBLT-1 parsed state.
+    # Session-level actions: computed from status and row states.
+    # can_validate: true for parsed and validated sessions that have rows.
+    # can_approve:  true only for validated sessions where at least one row
+    #               is ready or review_required (SBLT-7 will gate per-row approval).
+    # can_register: false until SBLT-8.
+    _approvable_statuses = {ROW_STATUS_READY, ROW_STATUS_REVIEW_REQUIRED}
+    has_approvable_rows = any(
+        r.get("status") in _approvable_statuses for r in rows
+    )
     actions = make_session_actions(
-        can_validate=status == SESSION_STATUS_PARSED and row_count > 0,
-        can_approve=False,
+        can_validate=(
+            status in (SESSION_STATUS_PARSED, SESSION_STATUS_VALIDATED)
+            and row_count > 0
+        ),
+        can_approve=status == SESSION_STATUS_VALIDATED and has_approvable_rows,
         can_register=False,
     )
 
