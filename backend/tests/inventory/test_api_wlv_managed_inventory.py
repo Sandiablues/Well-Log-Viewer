@@ -103,6 +103,7 @@ def test_managed_well_product_groups_are_backend_owned(tmp_path: Path) -> None:
     register = client.post("/api/wlv/inventory/wells/register-seed")
     assert register.status_code == 200
     record = register.json()["record"]
+    assert record.get("uwi") is None
     groups = record["product_groups"]
     assert [group["group_key"] for group in groups] == [
         "open_hole_logs",
@@ -121,6 +122,7 @@ def test_managed_well_product_groups_are_backend_owned(tmp_path: Path) -> None:
         "display_name",
         "curve_name",
         "curve_type",
+        "run_date",
         "run_interval",
         "run_number",
         "qa_flag",
@@ -129,8 +131,11 @@ def test_managed_well_product_groups_are_backend_owned(tmp_path: Path) -> None:
         "source_id",
         "viewer_package_id",
     }.issubset(first_curve.keys())
+    assert "block" in record
+    assert record["operator"] == "Ormat Nevada, Inc."
     assert first_curve["curve_name"] == "GR"
     assert first_curve["curve_type"] == "Gamma ray"
+    assert first_curve["run_date"] == "—"
     assert first_curve["run_interval"] == "300.5–6076 ft"
     assert first_curve["run_number"] == "ONE"
     assert first_curve["qa_flag"] == "Passed"

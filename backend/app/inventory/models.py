@@ -68,6 +68,7 @@ class ViewerPackageReference(BaseModel):
     dataset_id: str
     representation_id: str
     well_id: str
+    uwi: str | None = None
     endpoint: str
     status: ManagedInventoryLifecycleState = ManagedInventoryLifecycleState.VIEWER_READY
 
@@ -77,6 +78,7 @@ class ManagedProductGroupItem(BaseModel):
     display_name: str
     curve_name: str
     curve_type: str
+    run_date: str = "—"
     run_interval: str = "—"
     run_number: str = "—"
     qa_flag: str = "Pending"
@@ -101,6 +103,7 @@ class ManagedWellRecord(BaseModel):
     wellbore_name: Optional[str] = None
     operator: Optional[str] = None
     field: Optional[str] = None
+    block: Optional[str] = None
     country: Optional[str] = None
     depth_unit: str = "ft"
     top_depth: Optional[float] = None

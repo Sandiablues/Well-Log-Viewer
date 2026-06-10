@@ -129,7 +129,9 @@ class ManagedWellInventoryService:
             )
         ]
         viewer_package_reference = self._viewer_package_reference(viewer_package)
-        run_number = well.log_files[0].run_number if well.log_files else "—"
+        primary_log_file = well.log_files[0] if well.log_files else None
+        run_number = primary_log_file.run_number if primary_log_file else "—"
+        run_date = getattr(primary_log_file, "run_date", None) or getattr(primary_log_file, "date", None) or "—"
         record = ManagedWellRecord(
             managed_well_id=managed_well_id,
             well_id=well.well_id,
@@ -138,6 +140,7 @@ class ManagedWellInventoryService:
             wellbore_name=well.wellbore_name,
             operator=well.operator,
             field=well.field,
+            block=getattr(well, "block", None),
             country=well.country,
             depth_unit=well.depth_unit.value if hasattr(well.depth_unit, "value") else str(well.depth_unit),
             top_depth=well.depth_range.min,
@@ -150,6 +153,7 @@ class ManagedWellInventoryService:
                 viewer_package=viewer_package,
                 viewer_package_reference=viewer_package_reference,
                 source_references=source_references,
+                run_date=run_date or "—",
                 run_number=run_number or "—",
             ),
             tags=["seed", "forge"],
@@ -227,6 +231,7 @@ class ManagedWellInventoryService:
                     viewer_package=viewer_package,
                     viewer_package_reference=viewer_package_reference,
                     source_references=record.source_references,
+                    run_date="—",
                     run_number="—",
                 )
             }
@@ -238,7 +243,8 @@ class ManagedWellInventoryService:
         viewer_package: WellMultitrackV1,
         viewer_package_reference: ViewerPackageReference,
         source_references: list[ManagedSourceReference],
-        run_number: str,
+        run_date: str = "—",
+        run_number: str = "—",
     ) -> list[ManagedProductGroup]:
         source_id = source_references[0].source_id if source_references else None
         run_interval = self._run_interval(viewer_package)
@@ -249,6 +255,7 @@ class ManagedWellInventoryService:
                     self._product_item_from_curve(
                         curve=curve,
                         run_interval=run_interval,
+                        run_date=run_date,
                         run_number=run_number,
                         source_id=source_id,
                         viewer_package_reference=viewer_package_reference,
@@ -261,6 +268,7 @@ class ManagedWellInventoryService:
                 display_name=source.display_name,
                 curve_name=source.display_name,
                 curve_type=source.file_format or (source.source_kind.value if hasattr(source.source_kind, "value") else str(source.source_kind)),
+                run_date="—",
                 run_interval="—",
                 run_number="—",
                 qa_flag="Pending",
@@ -285,6 +293,7 @@ class ManagedWellInventoryService:
         *,
         curve: Curve,
         run_interval: str,
+        run_date: str,
         run_number: str,
         source_id: str | None,
         viewer_package_reference: ViewerPackageReference,
@@ -295,6 +304,7 @@ class ManagedWellInventoryService:
             display_name=curve_name,
             curve_name=curve_name,
             curve_type=ManagedWellInventoryService._curve_type_label(curve),
+            run_date=run_date or "—",
             run_interval=run_interval,
             run_number=run_number or "—",
             qa_flag="Passed",

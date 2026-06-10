@@ -4746,14 +4746,13 @@ button.wlv-view-range-readout,
 
 /* WLV-WMDP-BLUE-CHARCOAL-TABLE-END */
 
-
 /* WLV-WMDP-EXPANDED-PRODUCT-GROUPS-START */
 
 /*
   WMDP expanded well content groups.
   Scope: frontend display only.
-  Well expansion now reveals collapsed product/document sub-header rows:
-  Open hole logs, Cased hole logs, Rasters / Images, Other, Supporting documents.
+  Product row order:
+  Mnemonic | Description | File Name | Run Interval | Run Number | QA Flag
 */
 
 .wlv-wmdp-expanded-content.wlv-wmdp-product-groups {
@@ -4770,15 +4769,15 @@ button.wlv-view-range-readout,
   border: 1px solid var(--wmdp-blue-border, #2b333d) !important;
   border-radius: 7px !important;
   background: var(--wmdp-blue-expanded-card, #181c22) !important;
-  overflow: hidden !important;
+  overflow: visible !important;
 }
 
 .wlv-wmdp-product-group-header {
   width: 100% !important;
   min-height: 34px !important;
-  display: grid !important;
-  grid-template-columns: 22px minmax(0, 1fr) auto !important;
+  display: flex !important;
   align-items: center !important;
+  justify-content: flex-start !important;
   gap: 8px !important;
   padding: 0 11px !important;
   border: 0 !important;
@@ -4786,20 +4785,51 @@ button.wlv-view-range-readout,
   background: #1b2027 !important;
   color: var(--wmdp-blue-text, #e6ebf1) !important;
   text-align: left !important;
-  cursor: pointer !important;
 }
 
 .wlv-wmdp-product-group-header:hover {
   background: #202733 !important;
 }
 
+.wlv-wmdp-product-group-select {
+  flex: 0 0 auto !important;
+  width: 14px !important;
+  height: 14px !important;
+  margin: 0 !important;
+  accent-color: #5f7fa6 !important;
+}
+
+.wlv-wmdp-product-group-toggle {
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  min-height: 34px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: inherit !important;
+  text-align: left !important;
+  cursor: pointer !important;
+}
+
+.wlv-wmdp-product-group-toggle:hover {
+  background: transparent !important;
+}
+
 .wlv-wmdp-product-group-caret {
+  flex: 0 0 14px !important;
+  width: 14px !important;
   color: var(--wmdp-blue-text-muted, #8f9aa8) !important;
   font-size: 13px !important;
   line-height: 1 !important;
+  text-align: center !important;
 }
 
 .wlv-wmdp-product-group-title {
+  flex: 0 1 auto !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
@@ -4807,9 +4837,11 @@ button.wlv-view-range-readout,
   font-size: 12.25px !important;
   font-weight: 650 !important;
   letter-spacing: 0.01em !important;
+  text-align: left !important;
 }
 
 .wlv-wmdp-product-group-count {
+  flex: 0 0 auto !important;
   min-width: 24px !important;
   height: 20px !important;
   padding: 0 7px !important;
@@ -4832,7 +4864,7 @@ button.wlv-view-range-readout,
 .wlv-wmdp-product-item {
   min-height: 38px !important;
   display: grid !important;
-  grid-template-columns: 22px minmax(0, 1fr) 150px 120px !important;
+  grid-template-columns: 22px minmax(0, 1fr) !important;
   align-items: center !important;
   gap: 10px !important;
   padding: 0 11px !important;
@@ -4851,36 +4883,111 @@ button.wlv-view-range-readout,
   accent-color: #5f7fa6 !important;
 }
 
-.wlv-wmdp-product-item-main {
+.wlv-wmdp-product-item-summary {
   min-width: 0 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 2px !important;
-}
-
-.wlv-wmdp-product-item-main strong {
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-  color: #edf2f7 !important;
-  font-size: 11.75px !important;
-  font-weight: 600 !important;
-}
-
-.wlv-wmdp-product-item-main span,
-.wlv-wmdp-product-item-meta,
-.wlv-wmdp-product-item-status,
-.wlv-wmdp-product-empty {
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
+  display: grid !important;
+  grid-template-columns:
+    64px
+    minmax(170px, 210px)
+    minmax(210px, 1fr)
+    minmax(180px, 210px)
+    minmax(135px, 150px)
+    minmax(145px, 160px) !important;
+  column-gap: 14px !important;
+  align-items: center !important;
   color: var(--wmdp-blue-text-muted, #8f9aa8) !important;
   font-size: 10.75px !important;
   font-style: normal !important;
 }
 
-.wlv-wmdp-product-item-status {
+.wlv-wmdp-product-item-summary > span {
+  min-width: 0 !important;
+  display: inline-flex !important;
+  align-items: baseline !important;
+  justify-content: flex-start !important;
+  gap: 5px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.wlv-wmdp-product-item-summary strong {
+  color: var(--wmdp-blue-text, #e6ebf1) !important;
+  font-weight: 650 !important;
+}
+
+.wlv-wmdp-product-item-code {
+  min-width: 0 !important;
+  display: block !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  color: #edf2f7 !important;
+  font-size: 11.75px !important;
+  font-weight: 700 !important;
+}
+
+.wlv-wmdp-product-item-description,
+.wlv-wmdp-product-item-name,
+.wlv-wmdp-product-item-run-interval,
+.wlv-wmdp-product-item-run-number,
+.wlv-wmdp-product-item-qa-flag {
+  text-align: left !important;
+}
+
+.wlv-wmdp-product-item-qa-flag {
   justify-self: end !important;
+}
+
+.wlv-wmdp-product-name-details {
+  display: inline-block !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  position: relative !important;
+}
+
+.wlv-wmdp-product-name-details summary {
+  display: inline-block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  cursor: pointer !important;
+  color: var(--wmdp-blue-text-muted, #8f9aa8) !important;
+  list-style: none !important;
+  vertical-align: bottom !important;
+}
+
+.wlv-wmdp-product-name-details summary::-webkit-details-marker {
+  display: none !important;
+}
+
+.wlv-wmdp-product-name-details summary::after {
+  content: " +" !important;
+  color: var(--wmdp-blue-text-soft, #c0c8d2) !important;
+  font-weight: 700 !important;
+}
+
+.wlv-wmdp-product-name-details[open] summary::after {
+  content: " −" !important;
+}
+
+.wlv-wmdp-product-name-details[open] span {
+  display: block !important;
+  position: absolute !important;
+  z-index: 20 !important;
+  top: 18px !important;
+  left: 0 !important;
+  min-width: 320px !important;
+  max-width: 680px !important;
+  padding: 8px 10px !important;
+  border: 1px solid rgba(151, 163, 178, 0.45) !important;
+  border-radius: 8px !important;
+  background: #18212b !important;
+  color: #eef3f8 !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.38) !important;
+  white-space: normal !important;
+  word-break: break-word !important;
 }
 
 .wlv-wmdp-product-empty {
@@ -4890,17 +4997,184 @@ button.wlv-view-range-readout,
   padding: 0 11px 0 43px !important;
   border-top: 1px solid var(--wmdp-blue-border-soft, #252c35) !important;
   background: #151a21 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  color: var(--wmdp-blue-text-muted, #8f9aa8) !important;
+  font-size: 10.75px !important;
+  font-style: normal !important;
+}
+
+@media (max-width: 1400px) {
+  .wlv-wmdp-product-item-summary {
+    grid-template-columns:
+      58px
+      minmax(150px, 190px)
+      minmax(180px, 1fr)
+      minmax(160px, 190px)
+      minmax(120px, 140px)
+      minmax(130px, 150px) !important;
+    column-gap: 10px !important;
+  }
 }
 
 @media (max-width: 1200px) {
-  .wlv-wmdp-product-item {
-    grid-template-columns: 22px minmax(0, 1fr) 120px !important;
+  .wlv-wmdp-product-item-summary {
+    grid-template-columns: 58px minmax(0, 1fr) minmax(150px, 180px) minmax(120px, 140px) !important;
   }
 
-  .wlv-wmdp-product-item-status {
+  .wlv-wmdp-product-item-run-number,
+  .wlv-wmdp-product-item-qa-flag {
     display: none !important;
   }
 }
 
 /* WLV-WMDP-EXPANDED-PRODUCT-GROUPS-END */
+
+
+/* WLV-WMDP-PRODUCT-ROW-SPACING-CSS-START */
+
+/*
+  WMDP product row spacing correction.
+  Rules:
+  - Description is not truncated.
+  - File Name may truncate/expand.
+  - Run Interval and Run Number sit closer to File Name.
+  - QA Flag remains right-positioned.
+*/
+
+.wlv-wmdp-product-item-summary {
+  display: grid !important;
+  grid-template-columns:
+    76px
+    minmax(240px, max-content)
+    minmax(190px, 300px)
+    minmax(175px, 195px)
+    minmax(145px, 165px)
+    minmax(130px, 1fr) !important;
+  column-gap: 18px !important;
+  align-items: center !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.wlv-wmdp-product-item-description {
+  min-width: 0 !important;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+.wlv-wmdp-product-item-description span,
+.wlv-wmdp-product-item-description details,
+.wlv-wmdp-product-item-description summary {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+.wlv-wmdp-product-item-name {
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+.wlv-wmdp-product-item-name .wlv-wmdp-product-name-details,
+.wlv-wmdp-product-item-name .wlv-wmdp-product-name-details summary {
+  max-width: 230px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.wlv-wmdp-product-item-run-interval,
+.wlv-wmdp-product-item-run-number {
+  justify-self: start !important;
+  min-width: 0 !important;
+  white-space: nowrap !important;
+}
+
+.wlv-wmdp-product-item-qa-flag {
+  justify-self: end !important;
+  min-width: 0 !important;
+  white-space: nowrap !important;
+}
+
+/* WLV-WMDP-PRODUCT-ROW-SPACING-CSS-END */
+
+
+/* WLV-WMDP-WELL-CURVE-CONTRACT-LAYOUT-START */
+
+/* Well table contract:
+   checkbox | expand | Well Name | UWI | Well Type | Field | Block | Operator | Products | Actions. */
+.wlv-wmdp-table {
+  min-width: 1540px !important;
+}
+
+.wlv-wmdp-expanded-row > td {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Product row contract:
+   checkbox | Mnemonic | Description | File Name | Run Date | Run Interval | Run Number | QA Flag. */
+.wlv-wmdp-product-item-summary {
+  display: grid !important;
+  grid-template-columns:
+    58px
+    minmax(220px, max-content)
+    minmax(160px, 230px)
+    minmax(120px, 150px)
+    minmax(170px, 190px)
+    minmax(130px, 150px)
+    minmax(130px, 1fr) !important;
+  column-gap: 14px !important;
+  align-items: center !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.wlv-wmdp-product-item-description {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+.wlv-wmdp-product-item-name,
+.wlv-wmdp-product-item-run-date,
+.wlv-wmdp-product-item-run-interval,
+.wlv-wmdp-product-item-run-number {
+  justify-self: start !important;
+  min-width: 0 !important;
+  white-space: nowrap !important;
+}
+
+.wlv-wmdp-product-item-name .wlv-wmdp-product-name-details,
+.wlv-wmdp-product-item-name .wlv-wmdp-product-name-details summary {
+  max-width: 190px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.wlv-wmdp-product-item-qa-flag {
+  justify-self: end !important;
+  min-width: 0 !important;
+  white-space: nowrap !important;
+}
+
+@media (max-width: 1400px) {
+  .wlv-wmdp-product-item-summary {
+    grid-template-columns:
+      52px
+      minmax(180px, max-content)
+      minmax(140px, 190px)
+      minmax(110px, 130px)
+      minmax(150px, 175px)
+      minmax(115px, 135px)
+      minmax(120px, 1fr) !important;
+    column-gap: 10px !important;
+  }
+}
+
+/* WLV-WMDP-WELL-CURVE-CONTRACT-LAYOUT-END */
 

@@ -68,6 +68,7 @@ type ManagedProductGroupItem = {
   display_name?: string | null;
   curve_name?: string | null;
   curve_type?: string | null;
+  run_date?: string | null;
   run_interval?: string | null;
   run_number?: string | null;
   qa_flag?: string | null;
@@ -87,12 +88,14 @@ type ManagedProductGroup = {
 type ManagedInventoryWellRecord = {
   managed_well_id: string;
   well_id: string;
+  uwi?: string | null;
   well_name?: string | null;
   display_name?: string | null;
   wellbore_id?: string | null;
   wellbore_name?: string | null;
   operator?: string | null;
   field?: string | null;
+  block?: string | null;
   country?: string | null;
   depth_unit?: string | null;
   top_depth?: number | null;
@@ -262,6 +265,23 @@ type WmdpProductCategoryKey = string;
 
 function productItemDisplayName(item: ManagedProductGroupItem): string {
   return item.curve_name || item.display_name || item.product_id;
+}
+
+
+function expandableProductName(value: string) {
+  const text = safeText(value);
+  const maxLength = 64;
+
+  if (text.length <= maxLength) {
+    return <>{text}</>;
+  }
+
+  return (
+    <details className="wlv-wmdp-product-name-details">
+      <summary title={text}>{text.slice(0, maxLength - 1)}…</summary>
+      <span>{text}</span>
+    </details>
+  );
 }
 
 function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (managedWellId?: string | null) => void }) {
@@ -456,6 +476,28 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
     });
   };
 
+
+  const toggleProductGroupItemsSelected = (items: ManagedProductGroupItem[]) => {
+    setSelectedProductItemIds((current) => {
+      const selectableIds = items
+        .filter((item) => item.selectable !== false)
+        .map((item) => item.product_id);
+
+      const allSelected = selectableIds.length > 0 && selectableIds.every((id) => current.has(id));
+      const next = new Set(current);
+
+      selectableIds.forEach((id) => {
+        if (allSelected) {
+          next.delete(id);
+        } else {
+          next.add(id);
+        }
+      });
+
+      return next;
+    });
+  };
+
   const applyBulkAction = () => {
     if (bulkAction !== 'load') return;
     const managedWellId = [...selectedWellIds][0] ?? selectedWellId;
@@ -562,19 +604,21 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
                 </th>
                 <th className="wlv-wmdp-col-expand" aria-label="Expand" />
                 <th>Well Name</th>
-                <th>Well ID</th>
-                <th>Field</th>
+                <th>UWI</th>
                 <th>Well Type</th>
+                <th>Field</th>
+                <th>Block</th>
+                <th>Operator</th>
                 <th>Products</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="wlv-wmdp-empty-cell">Loading managed inventory from backend...</td></tr>
+                <tr><td colSpan={10} className="wlv-wmdp-empty-cell">Loading managed inventory from backend...</td></tr>
               ) : pagedWells.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="wlv-wmdp-empty-cell">
+                  <td colSpan={10} className="wlv-wmdp-empty-cell">
                     {wells.length === 0 ? 'No managed wells registered.' : 'No managed wells match the current search.'}
                   </td>
                 </tr>
@@ -610,9 +654,11 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
                           <span>{well.managed_well_id}</span>
                         </button>
                       </td>
-                      <td>{safeText(well.well_id)}</td>
-                      <td>{safeText(well.field)}</td>
+                      <td>{safeText(well.uwi)}</td>
                       <td>{wellTypeLabel(well)}</td>
+                      <td>{safeText(well.field)}</td>
+                      <td>{safeText(well.block)}</td>
+                      <td>{safeText(well.operator)}</td>
                       <td>{wellProductCount(well)}</td>
                       <td>
                         <div className="wlv-wmdp-row-actions">
@@ -624,24 +670,37 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
                     </tr>
                     {expanded ? (
                       <tr className="wlv-wmdp-expanded-row" key={`${well.managed_well_id}-expanded`}>
-                        <td colSpan={8}>
+                        <td colSpan={10}>
                           <div className="wlv-wmdp-expanded-content wlv-wmdp-product-groups">
                             {productCategories.map((category) => {
                               const groupId = productGroupId(well.managed_well_id, category.group_key);
                               const categoryExpanded = expandedProductGroupIds.has(groupId);
                               const categoryItems = category.items ?? [];
+                              const selectableCategoryItems = categoryItems.filter((item) => item.selectable !== false);
+                              const categoryItemsAllSelected = selectableCategoryItems.length > 0
+                                && selectableCategoryItems.every((item) => selectedProductItemIds.has(item.product_id));
                               return (
                                 <section className="wlv-wmdp-product-group" key={category.group_key}>
-                                  <button
-                                    type="button"
-                                    className="wlv-wmdp-product-group-header"
-                                    onClick={() => toggleProductGroupExpanded(well.managed_well_id, category.group_key)}
-                                    aria-expanded={categoryExpanded}
-                                  >
-                                    <span className="wlv-wmdp-product-group-caret">{categoryExpanded ? '▾' : '▸'}</span>
-                                    <span className="wlv-wmdp-product-group-title">{category.group_label}</span>
-                                    <span className="wlv-wmdp-product-group-count">{categoryItems.length}</span>
-                                  </button>
+                                  <div className="wlv-wmdp-product-group-header">
+                                    <input
+                                      type="checkbox"
+                                      className="wlv-wmdp-product-group-select"
+                                      checked={categoryItemsAllSelected}
+                                      disabled={selectableCategoryItems.length === 0}
+                                      onChange={() => toggleProductGroupItemsSelected(categoryItems)}
+                                      aria-label={`Select all ${category.group_label}`}
+                                    />
+                                    <button
+                                      type="button"
+                                      className="wlv-wmdp-product-group-toggle"
+                                      onClick={() => toggleProductGroupExpanded(well.managed_well_id, category.group_key)}
+                                      aria-expanded={categoryExpanded}
+                                    >
+                                      <span className="wlv-wmdp-product-group-caret">{categoryExpanded ? '▾' : '▸'}</span>
+                                      <span className="wlv-wmdp-product-group-title">{category.group_label}</span>
+                                      <span className="wlv-wmdp-product-group-count">{categoryItems.length}</span>
+                                    </button>
+                                  </div>
                                   {categoryExpanded ? (
                                     <div className="wlv-wmdp-product-items">
                                       {categoryItems.length === 0 ? (
@@ -655,14 +714,27 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
                                             onChange={() => toggleProductItemSelected(item.product_id)}
                                             aria-label={`Select ${productItemDisplayName(item)}`}
                                           />
-                                          <span className="wlv-wmdp-product-item-main">
-                                            <strong>{productItemDisplayName(item)}</strong>
-                                            <span>{safeText(item.display_name)}</span>
+                                          <span className="wlv-wmdp-product-item-summary">
+                                            <strong className="wlv-wmdp-product-item-code">{productItemDisplayName(item)}</strong>
+                                            <span className="wlv-wmdp-product-item-description">
+                                              <strong>Description:</strong> {safeText(item.curve_type)}
+                                            </span>
+                                            <span className="wlv-wmdp-product-item-name">
+                                              <strong>File Name:</strong> {expandableProductName(item.display_name || productItemDisplayName(item))}
+                                            </span>
+                                            <span className="wlv-wmdp-product-item-run-date">
+                                              <strong>Run Date:</strong> {safeText(item.run_date)}
+                                            </span>
+                                            <span className="wlv-wmdp-product-item-run-interval">
+                                              <strong>Run Interval:</strong> {safeText(item.run_interval)}
+                                            </span>
+                                            <span className="wlv-wmdp-product-item-run-number">
+                                              <strong>Run Number:</strong> {safeText(item.run_number)}
+                                            </span>
+                                            <span className="wlv-wmdp-product-item-qa-flag">
+                                              <strong>QA Flag:</strong> {safeText(item.qa_flag)}
+                                            </span>
                                           </span>
-                                          <span className="wlv-wmdp-product-item-meta">{safeText(item.curve_type)}</span>
-                                          <span className="wlv-wmdp-product-item-meta">{safeText(item.run_interval)}</span>
-                                          <span className="wlv-wmdp-product-item-meta">{safeText(item.run_number)}</span>
-                                          <span className="wlv-wmdp-product-item-status">{safeText(item.qa_flag)}</span>
                                         </label>
                                       ))}
                                     </div>
