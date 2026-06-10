@@ -42,6 +42,20 @@ class ManagedInventoryLifecycleState(str, Enum):
 ManagedWellStatus = ManagedInventoryLifecycleState
 
 
+
+
+class ManagedWmdpState(str, Enum):
+    REGISTERED = "registered"
+    STAGED_IN_WMDP = "staged_in_wmdp"
+    HIDDEN_FROM_WMDP = "hidden_from_wmdp"
+    REMOVED_FROM_WMDP = "removed_from_wmdp"
+
+
+class ManagedWdvState(str, Enum):
+    NOT_LOADED = "not_loaded"
+    LOADED_TO_WDV = "loaded_to_wdv"
+
+
 class ManagedSourceKind(str, Enum):
     LAS = "las"
     CSV_INTERVALS = "csv_intervals"
@@ -94,6 +108,10 @@ class ManagedProductGroupItem(BaseModel):
     source_kind: Optional[str] = None
     source_id: Optional[str] = None
     viewer_package_id: Optional[str] = None
+    wmdp_state: ManagedWmdpState = ManagedWmdpState.REGISTERED
+    wdv_state: ManagedWdvState = ManagedWdvState.NOT_LOADED
+    source_intake_candidate_id: Optional[str] = None
+    provenance: dict[str, Any] = Field(default_factory=dict)
 
 
 class ManagedProductGroup(BaseModel):
@@ -124,6 +142,10 @@ class ManagedWellRecord(BaseModel):
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     lifecycle_notes: list[str] = Field(default_factory=list)
+    wmdp_state: ManagedWmdpState = ManagedWmdpState.REGISTERED
+    wdv_state: ManagedWdvState = ManagedWdvState.NOT_LOADED
+    source_intake_candidate_id: Optional[str] = None
+    wmdp_available: bool = True
     created_at: str = Field(default_factory=utc_now_iso)
     updated_at: str = Field(default_factory=utc_now_iso)
 

@@ -15,6 +15,8 @@ from backend.app.classification.well_log_classifier import classify_well_log_cur
 from backend.app.classification.well_log_vocabulary import PRODUCT_GROUP_ORDER
 from backend.app.inventory.models import (
     ManagedInventoryLifecycleState,
+    ManagedWdvState,
+    ManagedWmdpState,
     ManagedProductGroup,
     ManagedProductGroupItem,
     ManagedSourceKind,
@@ -63,6 +65,20 @@ def registration_block_reason(candidate: SourceFileCandidate) -> str | None:
     return None
 
 
+def _source_intake_provenance(candidate: SourceFileCandidate) -> dict[str, object]:
+    return {
+        "source_intake_candidate_id": candidate.source_file_id,
+        "repository_id": candidate.repository_id,
+        "scan_id": candidate.scan_id,
+        "relative_path": candidate.relative_path,
+        "original_path": candidate.original_path,
+        "checksum": candidate.checksum,
+        "parser_status": candidate.parser_status.value,
+        "qaqc_status": candidate.qaqc_status.model_dump(mode="json"),
+        "resolved_metadata": candidate.resolved_metadata.model_dump(mode="json") if candidate.resolved_metadata else None,
+    }
+
+
 def register_candidate_to_inventory(
     *,
     candidate: SourceFileCandidate,
@@ -88,6 +104,7 @@ def register_candidate_to_inventory(
 
     well_id = _managed_well_identity(well_name=well_name, uwi=uwi)
     managed_well_id = f"managed-well:{well_id}"
+    provenance = _source_intake_provenance(candidate)
     source_reference = ManagedSourceReference(
         source_id=candidate.source_file_id,
         source_kind=ManagedSourceKind.LAS,
@@ -96,16 +113,7 @@ def register_candidate_to_inventory(
         file_name=candidate.file_name,
         file_format=candidate.detected_file_type.value,
         checksum=candidate.checksum,
-        metadata={
-            "source_intake_candidate_id": candidate.source_file_id,
-            "repository_id": candidate.repository_id,
-            "scan_id": candidate.scan_id,
-            "relative_path": candidate.relative_path,
-            "parser_status": candidate.parser_status.value,
-            "qaqc_status": candidate.qaqc_status.model_dump(mode="json"),
-            "resolved_metadata": candidate.resolved_metadata.model_dump(mode="json") if candidate.resolved_metadata else None,
-            "parsed_metadata": parsed.model_dump(mode="json"),
-        },
+        metadata={**provenance, "parsed_metadata": parsed.model_dump(mode="json")},
     )
 
     review_required = bool(candidate.review_required or candidate.qaqc_status.review_required)
@@ -131,6 +139,10 @@ def register_candidate_to_inventory(
         base_depth=log_header.stop_depth if log_header else None,
         status=lifecycle_state,
         lifecycle_state=lifecycle_state,
+        wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,
+        wdv_state=ManagedWdvState.NOT_LOADED,
+        source_intake_candidate_id=candidate.source_file_id,
+        wmdp_available=True,
         source_references=_merge_source_references(existing.source_references if existing else [], source_reference),
         viewer_packages=existing.viewer_packages if existing else [],
         product_groups=_product_groups_from_candidate(candidate),
@@ -140,6 +152,10 @@ def register_candidate_to_inventory(
             "uwi": uwi,
             "uwi_missing": uwi is None,
             "source_intake_registered": True,
+            "wmdp_state": ManagedWmdpState.STAGED_IN_WMDP.value,
+            "wdv_state": ManagedWdvState.NOT_LOADED.value,
+            "wmdp_available": True,
+            "source_intake_provenance": provenance,
             "source_intake_candidate_id": candidate.source_file_id,
             "approval": {
                 "approved_by": approved_by,
@@ -176,6 +192,7 @@ def _product_groups_from_candidate(candidate: SourceFileCandidate) -> list[Manag
         candidate.detected_file_type.value,
         log_header.service_company if log_header else None,
     ]
+    provenance = _source_intake_provenance(candidate)
 
     for index, curve in enumerate(curve_headers, start=1):
         classification = classify_well_log_curve(
@@ -208,6 +225,10 @@ def _product_groups_from_candidate(candidate: SourceFileCandidate) -> list[Manag
                 source_kind=ManagedSourceKind.LAS.value,
                 source_id=candidate.source_file_id,
                 viewer_package_id=None,
+                wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,
+                wdv_state=ManagedWdvState.NOT_LOADED,
+                source_intake_candidate_id=candidate.source_file_id,
+                provenance=provenance,
             )
         )
 
