@@ -248,12 +248,59 @@ function wellProductCount(well: ManagedInventoryWellRecord): number {
 type WmdpSortKey = 'wellName' | 'wellId' | 'field' | 'operator' | 'status' | 'updated';
 type WmdpBulkAction = 'load' | 'unload' | 'remove';
 
+type WmdpProductCategoryKey = 'openHoleLogs' | 'casedHoleLogs' | 'rastersImages' | 'other' | 'supportingDocuments';
+
+type WmdpProductItem = {
+  itemId: string;
+  label: string;
+  subLabel: string;
+  kind: string;
+  status: string;
+};
+
+type WmdpProductCategory = {
+  key: WmdpProductCategoryKey;
+  label: string;
+  items: WmdpProductItem[];
+};
+
+function wmdpProductCategories(
+  sourceReferences: ManagedInventorySourceReference[],
+  viewerPackages: ManagedInventoryViewerPackageReference[],
+): WmdpProductCategory[] {
+  const viewerPackageItems = viewerPackages.map((viewerPackage) => ({
+    itemId: `viewer-package:${viewerPackage.viewer_package_id}`,
+    label: viewerPackageDisplayName(viewerPackage),
+    subLabel: viewerPackage.representation_id || viewerPackage.dataset_id || viewerPackage.viewer_package_id,
+    kind: statusLabel(viewerPackageKind(viewerPackage)),
+    status: statusLabel(viewerPackage.status),
+  }));
+
+  const supportingDocumentItems = sourceReferences.map((source) => ({
+    itemId: `source-reference:${source.source_id}`,
+    label: sourceDisplayName(source),
+    subLabel: source.original_path || source.path || source.uri || source.source_id,
+    kind: statusLabel(source.source_kind || source.file_format || 'supporting document'),
+    status: statusLabel(sourceStatus(source)),
+  }));
+
+  return [
+    { key: 'openHoleLogs', label: 'Open hole logs', items: viewerPackageItems },
+    { key: 'casedHoleLogs', label: 'Cased hole logs', items: [] },
+    { key: 'rastersImages', label: 'Rasters / Images', items: [] },
+    { key: 'other', label: 'Other', items: [] },
+    { key: 'supportingDocuments', label: 'Supporting documents', items: supportingDocumentItems },
+  ];
+}
+
 function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (managedWellId?: string | null) => void }) {
   const [status, setStatus] = useState<ManagedInventoryStatusPayload | null>(null);
   const [wells, setWells] = useState<ManagedInventoryWellRecord[]>([]);
   const [selectedWellId, setSelectedWellId] = useState<string | null>(null);
   const [selectedWellIds, setSelectedWellIds] = useState<Set<string>>(new Set());
   const [expandedWellIds, setExpandedWellIds] = useState<Set<string>>(new Set());
+  const [expandedProductGroupIds, setExpandedProductGroupIds] = useState<Set<string>>(new Set());
+  const [selectedProductItemIds, setSelectedProductItemIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [sortKey, setSortKey] = useState<WmdpSortKey>('wellName');
   const [pageSize, setPageSize] = useState(25);
@@ -323,6 +370,11 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
         const validIds = new Set(nextWells.map((well) => well.managed_well_id));
         return new Set([...current].filter((id) => validIds.has(id)));
       });
+      setExpandedProductGroupIds((current) => {
+        const validPrefixes = nextWells.map((well) => `${well.managed_well_id}:`);
+        return new Set([...current].filter((id) => validPrefixes.some((prefix) => id.startsWith(prefix))));
+      });
+      setSelectedProductItemIds(new Set());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to load managed well inventory');
       setStatus(null);
@@ -330,6 +382,8 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
       setSelectedWellId(null);
       setSelectedWellIds(new Set());
       setExpandedWellIds(new Set());
+      setExpandedProductGroupIds(new Set());
+      setSelectedProductItemIds(new Set());
     } finally {
       setLoading(false);
     }
@@ -401,6 +455,34 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
       return next;
     });
     setSelectedWellId(managedWellId);
+  };
+
+  const productGroupId = (managedWellId: string, categoryKey: WmdpProductCategoryKey): string => `${managedWellId}:${categoryKey}`;
+
+  const toggleProductGroupExpanded = (managedWellId: string, categoryKey: WmdpProductCategoryKey) => {
+    const groupId = productGroupId(managedWellId, categoryKey);
+    setExpandedProductGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+    setSelectedWellId(managedWellId);
+  };
+
+  const toggleProductItemSelected = (itemId: string) => {
+    setSelectedProductItemIds((current) => {
+      const next = new Set(current);
+      if (next.has(itemId)) {
+        next.delete(itemId);
+      } else {
+        next.add(itemId);
+      }
+      return next;
+    });
   };
 
   const applyBulkAction = () => {
@@ -530,6 +612,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
                 const rowSelected = selectedWellIds.has(well.managed_well_id);
                 const sourceReferences = well.source_references ?? [];
                 const viewerPackages = well.viewer_packages ?? [];
+                const productCategories = wmdpProductCategories(sourceReferences, viewerPackages);
                 return (
                   <>
                     <tr className={rowSelected || selectedWellId === well.managed_well_id ? 'is-selected' : ''} key={well.managed_well_id}>
@@ -573,29 +656,47 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
                     {expanded ? (
                       <tr className="wlv-wmdp-expanded-row" key={`${well.managed_well_id}-expanded`}>
                         <td colSpan={8}>
-                          <div className="wlv-wmdp-expanded-content">
-                            <section>
-                              <h3>Source References <span>{sourceReferences.length}</span></h3>
-                              {sourceReferences.length === 0 ? (
-                                <p>No source references registered.</p>
-                              ) : sourceReferences.map((source) => (
-                                <div className="wlv-wmdp-expanded-item" key={source.source_id}>
-                                  <div><strong>{sourceDisplayName(source)}</strong><span>{source.source_id}</span></div>
-                                  <em>{statusLabel(source.source_kind)} · {statusLabel(sourceStatus(source))}</em>
-                                </div>
-                              ))}
-                            </section>
-                            <section>
-                              <h3>Viewer Packages <span>{viewerPackages.length}</span></h3>
-                              {viewerPackages.length === 0 ? (
-                                <p>No viewer packages registered.</p>
-                              ) : viewerPackages.map((viewerPackage) => (
-                                <div className="wlv-wmdp-expanded-item" key={viewerPackage.viewer_package_id}>
-                                  <div><strong>{viewerPackageDisplayName(viewerPackage)}</strong><span>{viewerPackage.viewer_package_id}</span></div>
-                                  <em>{statusLabel(viewerPackageKind(viewerPackage))} · {statusLabel(viewerPackage.status)}</em>
-                                </div>
-                              ))}
-                            </section>
+                          <div className="wlv-wmdp-expanded-content wlv-wmdp-product-groups">
+                            {productCategories.map((category) => {
+                              const groupId = productGroupId(well.managed_well_id, category.key);
+                              const categoryExpanded = expandedProductGroupIds.has(groupId);
+                              return (
+                                <section className="wlv-wmdp-product-group" key={category.key}>
+                                  <button
+                                    type="button"
+                                    className="wlv-wmdp-product-group-header"
+                                    onClick={() => toggleProductGroupExpanded(well.managed_well_id, category.key)}
+                                    aria-expanded={categoryExpanded}
+                                  >
+                                    <span className="wlv-wmdp-product-group-caret">{categoryExpanded ? '▾' : '▸'}</span>
+                                    <span className="wlv-wmdp-product-group-title">{category.label}</span>
+                                    <span className="wlv-wmdp-product-group-count">{category.items.length}</span>
+                                  </button>
+                                  {categoryExpanded ? (
+                                    <div className="wlv-wmdp-product-items">
+                                      {category.items.length === 0 ? (
+                                        <div className="wlv-wmdp-product-empty">No registered items.</div>
+                                      ) : category.items.map((item) => (
+                                        <label className="wlv-wmdp-product-item" key={item.itemId}>
+                                          <input
+                                            type="checkbox"
+                                            checked={selectedProductItemIds.has(item.itemId)}
+                                            onChange={() => toggleProductItemSelected(item.itemId)}
+                                            aria-label={`Select ${item.label}`}
+                                          />
+                                          <span className="wlv-wmdp-product-item-main">
+                                            <strong>{item.label}</strong>
+                                            <span>{item.subLabel}</span>
+                                          </span>
+                                          <span className="wlv-wmdp-product-item-meta">{item.kind}</span>
+                                          <span className="wlv-wmdp-product-item-status">{item.status}</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                </section>
+                              );
+                            })}
                           </div>
                         </td>
                       </tr>

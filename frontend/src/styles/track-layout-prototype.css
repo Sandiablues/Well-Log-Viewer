@@ -4746,3 +4746,161 @@ button.wlv-view-range-readout,
 
 /* WLV-WMDP-BLUE-CHARCOAL-TABLE-END */
 
+
+/* WLV-WMDP-EXPANDED-PRODUCT-GROUPS-START */
+
+/*
+  WMDP expanded well content groups.
+  Scope: frontend display only.
+  Well expansion now reveals collapsed product/document sub-header rows:
+  Open hole logs, Cased hole logs, Rasters / Images, Other, Supporting documents.
+*/
+
+.wlv-wmdp-expanded-content.wlv-wmdp-product-groups {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+  padding: 10px 12px 12px 68px !important;
+  background: var(--wmdp-blue-expanded, #14171c) !important;
+  border-bottom: 1px solid var(--wmdp-blue-border-soft, #252c35) !important;
+}
+
+.wlv-wmdp-product-group {
+  display: block !important;
+  border: 1px solid var(--wmdp-blue-border, #2b333d) !important;
+  border-radius: 7px !important;
+  background: var(--wmdp-blue-expanded-card, #181c22) !important;
+  overflow: hidden !important;
+}
+
+.wlv-wmdp-product-group-header {
+  width: 100% !important;
+  min-height: 34px !important;
+  display: grid !important;
+  grid-template-columns: 22px minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 0 11px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #1b2027 !important;
+  color: var(--wmdp-blue-text, #e6ebf1) !important;
+  text-align: left !important;
+  cursor: pointer !important;
+}
+
+.wlv-wmdp-product-group-header:hover {
+  background: #202733 !important;
+}
+
+.wlv-wmdp-product-group-caret {
+  color: var(--wmdp-blue-text-muted, #8f9aa8) !important;
+  font-size: 13px !important;
+  line-height: 1 !important;
+}
+
+.wlv-wmdp-product-group-title {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  color: var(--wmdp-blue-text, #e6ebf1) !important;
+  font-size: 12.25px !important;
+  font-weight: 650 !important;
+  letter-spacing: 0.01em !important;
+}
+
+.wlv-wmdp-product-group-count {
+  min-width: 24px !important;
+  height: 20px !important;
+  padding: 0 7px !important;
+  border: 1px solid var(--wmdp-blue-border-strong, #354253) !important;
+  border-radius: 999px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: var(--wmdp-blue-text-muted, #8f9aa8) !important;
+  font-size: 10.75px !important;
+  font-weight: 650 !important;
+}
+
+.wlv-wmdp-product-items {
+  display: flex !important;
+  flex-direction: column !important;
+  background: #151a21 !important;
+}
+
+.wlv-wmdp-product-item {
+  min-height: 38px !important;
+  display: grid !important;
+  grid-template-columns: 22px minmax(0, 1fr) 150px 120px !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 0 11px !important;
+  border-top: 1px solid var(--wmdp-blue-border-soft, #252c35) !important;
+  background: #161b22 !important;
+  color: var(--wmdp-blue-text, #e6ebf1) !important;
+}
+
+.wlv-wmdp-product-item:hover {
+  background: #1b222c !important;
+}
+
+.wlv-wmdp-product-item input[type="checkbox"] {
+  width: 14px !important;
+  height: 14px !important;
+  accent-color: #5f7fa6 !important;
+}
+
+.wlv-wmdp-product-item-main {
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+}
+
+.wlv-wmdp-product-item-main strong {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  color: #edf2f7 !important;
+  font-size: 11.75px !important;
+  font-weight: 600 !important;
+}
+
+.wlv-wmdp-product-item-main span,
+.wlv-wmdp-product-item-meta,
+.wlv-wmdp-product-item-status,
+.wlv-wmdp-product-empty {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  color: var(--wmdp-blue-text-muted, #8f9aa8) !important;
+  font-size: 10.75px !important;
+  font-style: normal !important;
+}
+
+.wlv-wmdp-product-item-status {
+  justify-self: end !important;
+}
+
+.wlv-wmdp-product-empty {
+  min-height: 34px !important;
+  display: flex !important;
+  align-items: center !important;
+  padding: 0 11px 0 43px !important;
+  border-top: 1px solid var(--wmdp-blue-border-soft, #252c35) !important;
+  background: #151a21 !important;
+}
+
+@media (max-width: 1200px) {
+  .wlv-wmdp-product-item {
+    grid-template-columns: 22px minmax(0, 1fr) 120px !important;
+  }
+
+  .wlv-wmdp-product-item-status {
+    display: none !important;
+  }
+}
+
+/* WLV-WMDP-EXPANDED-PRODUCT-GROUPS-END */
+
