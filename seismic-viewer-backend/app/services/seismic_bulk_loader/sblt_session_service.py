@@ -34,10 +34,12 @@ from .sblt_models import (
     SESSION_STATUS_PARSED,
     SESSION_STATUS_VALIDATED,
     SESSION_STATUS_NORMALIZED,
+    SESSION_STATUS_PATHS_VALIDATED,
     SESSION_STATUS_FAILED,
     make_parsed_row,
     make_validated_row,
     make_normalized_row,
+    make_path_validated_row,
     make_session,
 )
 from .sblt_loadsheet_parser import (
@@ -437,6 +439,82 @@ def normalize_session(session_id: str) -> dict[str, Any]:
         status=SESSION_STATUS_NORMALIZED,
         source=session["source"],
         rows=normalized_rows,
+        created_at=session["created_at"],
+        updated_at=now,
+    )
+
+    _validate_session_invariants(updated_session)
+    _save_session(updated_session)
+
+    return updated_session
+
+
+def validate_session_paths(session_id: str) -> dict[str, Any]:
+    """
+    Run SBLT-4 file/path reference validation on an existing normalized session.
+
+    Loads the session, validates the SEG-Y path and supporting document paths
+    referenced in each row's normalized_metadata, appends path-validation-stage
+    QAQC flags (preserving all earlier flags), updates row statuses, persists
+    the updated session, and returns it.
+
+    SBLT-4 scope:
+    - Existence, is_file, and read-permission checks only.
+    - SEG-Y extension check (warning; does not block if file is readable).
+    - No SEG-Y header/trace data inspection.
+    - No supporting document content inspection or classification.
+    - No folder scanning or path inference.
+    - No duplicate detection.
+    - No MSI interaction.
+
+    Status rules:
+    - blocked         stays blocked.
+    - review_required stays review_required unless SEG-Y blocker → blocked.
+    - ready           stays ready if SEG-Y valid, else blocked.
+    - Supporting document failures produce warnings only; never block.
+
+    Raises SBLTValidationError (400) if session is not in normalized or
+    paths_validated state.
+    Raises SBLTNotFoundError (404) if the session does not exist.
+    """
+    from .sblt_path_validator import validate_row_paths
+
+    session = get_session(session_id)
+
+    current_status = session.get("status")
+    if current_status not in (SESSION_STATUS_NORMALIZED, SESSION_STATUS_PATHS_VALIDATED):
+        raise SBLTValidationError(
+            "SBLT session must be normalized before path validation.",
+            status_code=400,
+        )
+
+    # base_path from the original session creation request (may be None).
+    base_path: str | None = (session.get("source") or {}).get("base_path") or None
+
+    existing_rows: list[dict[str, Any]] = session.get("rows", [])
+    path_validated_rows: list[dict[str, Any]] = []
+
+    for row in existing_rows:
+        path_validation, new_qaqc_flags, new_status = validate_row_paths(row, base_path)
+
+        # Merge earlier flags (SBLT-2 + SBLT-3) with path-validation-stage flags.
+        merged_flags = list(row.get("qaqc_flags") or []) + new_qaqc_flags
+
+        path_validated_rows.append(
+            make_path_validated_row(
+                row,
+                path_validation=path_validation,
+                qaqc_flags=merged_flags,
+                status=new_status,
+            )
+        )
+
+    now = _utc_now()
+    updated_session = make_session(
+        session_id=session["session_id"],
+        status=SESSION_STATUS_PATHS_VALIDATED,
+        source=session["source"],
+        rows=path_validated_rows,
         created_at=session["created_at"],
         updated_at=now,
     )

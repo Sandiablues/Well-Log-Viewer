@@ -25,6 +25,7 @@ from app.services.seismic_bulk_loader.sblt_session_service import (
     get_session,
     validate_session,
     normalize_session,
+    validate_session_paths,
 )
 
 
@@ -127,6 +128,35 @@ def normalize_sblt_session(session_id: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=500,
             detail=f"SBLT row normalization failed unexpectedly: {exc}",
+        ) from exc
+
+    return session
+
+
+@router.post("/sessions/{session_id}/validate-paths")
+def validate_sblt_session_paths(session_id: str) -> dict[str, Any]:
+    """
+    Run SBLT-4 file/path reference validation on an existing normalized session.
+
+    Validates the SEG-Y path and supporting document paths referenced in each
+    row's normalized_metadata.  Adds a path_validation block to each row,
+    appends structured QAQC flags, and updates row statuses.
+
+    Session must be in 'normalized' or 'paths_validated' state.
+    Returns 400 if the session has not been normalized yet.
+    Returns 404 if the session does not exist.
+    Returns 500 on invariant failure or unexpected error.
+    """
+    try:
+        session = validate_session_paths(session_id)
+    except SBLTNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SBLTValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"SBLT path validation failed unexpectedly: {exc}",
         ) from exc
 
     return session
