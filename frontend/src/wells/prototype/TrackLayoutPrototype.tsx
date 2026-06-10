@@ -228,6 +228,19 @@ function viewerPackageKind(viewerPackage: ManagedInventoryViewerPackageReference
   return viewerPackage.package_kind || viewerPackage.viewer_package_version || 'viewer_package';
 }
 
+function wellTypeLabel(well: ManagedInventoryWellRecord): string {
+  const record = well as ManagedInventoryWellRecord & {
+    well_type?: string | null;
+    type?: string | null;
+    well_category?: string | null;
+  };
+  return statusLabel(record.well_type || record.type || record.well_category || '—');
+}
+
+function wellProductCount(well: ManagedInventoryWellRecord): number {
+  return (well.viewer_packages ?? []).length;
+}
+
 type WmdpSortKey = 'wellName' | 'wellId' | 'field' | 'operator' | 'status' | 'updated';
 type WmdpBulkAction = 'load' | 'unload' | 'remove';
 
@@ -459,20 +472,17 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
                 <th>Well Name</th>
                 <th>Well ID</th>
                 <th>Field</th>
-                <th>Operator</th>
-                <th>Status</th>
-                <th>Sources</th>
-                <th>Packages</th>
-                <th>Updated</th>
+                <th>Well Type</th>
+                <th>Products</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={11} className="wlv-wmdp-empty-cell">Loading managed inventory from backend...</td></tr>
+                <tr><td colSpan={8} className="wlv-wmdp-empty-cell">Loading managed inventory from backend...</td></tr>
               ) : pagedWells.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="wlv-wmdp-empty-cell">
+                  <td colSpan={8} className="wlv-wmdp-empty-cell">
                     {wells.length === 0 ? 'No managed wells registered.' : 'No managed wells match the current search.'}
                   </td>
                 </tr>
@@ -511,11 +521,8 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
                       </td>
                       <td>{safeText(well.well_id)}</td>
                       <td>{safeText(well.field)}</td>
-                      <td>{safeText(well.operator)}</td>
-                      <td><span className="wlv-wmdp-badge">{statusLabel(wellStatus(well))}</span></td>
-                      <td>{sourceReferences.length}</td>
-                      <td>{viewerPackages.length}</td>
-                      <td>{safeText(well.updated_at ?? well.created_at)}</td>
+                      <td>{wellTypeLabel(well)}</td>
+                      <td>{wellProductCount(well)}</td>
                       <td>
                         <div className="wlv-wmdp-row-actions">
                           <button type="button" onClick={() => onOpenLogViewer(well.managed_well_id)}>Load</button>
@@ -526,7 +533,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
                     </tr>
                     {expanded ? (
                       <tr className="wlv-wmdp-expanded-row" key={`${well.managed_well_id}-expanded`}>
-                        <td colSpan={11}>
+                        <td colSpan={8}>
                           <div className="wlv-wmdp-expanded-content">
                             <section>
                               <h3>Source References <span>{sourceReferences.length}</span></h3>
