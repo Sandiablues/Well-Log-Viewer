@@ -5,6 +5,7 @@ import '../../styles/track-layout-prototype.css';
 import { curveCatalog, defaultDepthRange, depthUnitLabel, fullDepthRange, initialTracks, realCurveSamplesByCurveId, wellHeader } from './realLasTrackLayoutData';
 import { lithologyIntervals21_31, lithologySource } from './lithologyTrackData';
 import { WellLogPropertiesPanelSlot } from './WellLogPropertiesPanelSlot';
+import { SourceIntakeWorkbench } from '../source-intake/SourceIntakeWorkbench';
 import { loadBackendViewerPackageWithFallback, type BackendViewerPackageLoadResult } from './backendViewerPackageAdapter';
 import { useTrackBodyGeometry } from './useTrackBodyGeometry';
 import type {
@@ -37,7 +38,7 @@ type DepthViewRange = {
 };
 
 
-type DemoNavView = 'log-viewer' | 'data';
+type DemoNavView = 'log-viewer' | 'data' | 'sources';
 
 type ManagedInventorySourceReference = {
   source_id: string;
@@ -845,7 +846,7 @@ function DemoShellNavItem({
         if (item.view) onNavigate(item.view);
       }}
       disabled={!navigable}
-      title={item.view === 'data' ? 'Open Managed Well Inventory' : item.label}
+      title={item.view === 'data' ? 'Open Managed Well Inventory' : item.view === 'sources' ? 'Open Source Intake' : item.label}
     >
       <span className="wlv-demo-nav-icon" aria-hidden="true"><DemoRailIcon icon={item.icon} /></span>
       <span className="wlv-demo-nav-label">{item.label}</span>
@@ -866,7 +867,7 @@ function DemoShellRail({
   ];
 
   const bottomItems: DemoNavItem[] = [
-    { label: 'Sources', icon: 'sources' },
+    { label: 'Sources', icon: 'sources', view: 'sources' },
     { label: 'Toolbox', icon: 'toolbox' },
     { label: 'Settings', icon: 'settings' },
   ];
@@ -3471,6 +3472,8 @@ export function TrackLayoutPrototype() {
       <main className="wlv-demo-main" aria-label="Well Log Viewer workspace">
         {activeView === 'data' ? (
           <ManagedWellInventoryPage onOpenLogViewer={openManagedWellLogViewer} />
+        ) : activeView === 'sources' ? (
+          <SourceIntakeWorkbench />
         ) : (
         <div className="wlv-prototype-root">
       <header className="wlv-app-header">
