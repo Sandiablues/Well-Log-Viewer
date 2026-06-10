@@ -4369,64 +4369,108 @@ button.wlv-view-range-readout,
 
 /* WLV-WMDP-CONTROL-ROWS-EXACT-SMDP-END */
 
-
-/* WLV-WMDP-CONTROL-DENSITY-STRONG-START */
+/* WLV-WMDP-DISPOSABLE-SEED-BUTTON-START */
 
 /*
-  WMDP strong density normalization.
-  Scope: CSS sizing only.
-  Purpose: visually reduce WMDP header, action bars, buttons, and table
-  density to match the compact Seismic MDP pattern.
+  Temporary WMDP seed button.
+  Remove when well intake workflow is complete.
 */
 
+.wlv-wmdp-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.wlv-wmdp-page-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.wlv-wmdp-disposable-seed-button {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px dashed rgba(214, 170, 82, 0.75);
+  background: transparent;
+  color: #d6aa52;
+  font-size: 11.25px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.wlv-wmdp-disposable-seed-button:hover:not(:disabled) {
+  background: rgba(214, 170, 82, 0.08);
+  border-color: #e2bd6a;
+  color: #e2bd6a;
+}
+
+.wlv-wmdp-disposable-seed-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+/* WLV-WMDP-DISPOSABLE-SEED-BUTTON-END */
+
+
+/* WLV-WMDP-SMDP-VISUAL-TUNING-START */
+
+/*
+  WMDP visual tuning against SMDP reference.
+  Scope: CSS only.
+  Changes:
+  - cool table colors from brown/ash toward SMDP charcoal
+  - increase Managed Well Data panel header height
+  - increase table header row height
+  - increase primary well row height / breathing room
+  - do not redesign expanded subrows in this block
+*/
+
+.wlv-wmdp-panel {
+  background: #202020 !important;
+  border-color: #33363b !important;
+}
+
 .wlv-wmdp-panel-header {
-  padding: 8px 10px !important;
-  gap: 10px !important;
-  min-height: 0 !important;
+  min-height: 68px !important;
+  padding: 14px 16px !important;
+  background: #202020 !important;
+  border-bottom: 1px solid #34373d !important;
+  gap: 14px !important;
 }
 
 .wlv-wmdp-panel-header h2 {
-  margin: 0 0 2px !important;
-  font-size: 13px !important;
-  font-weight: 600 !important;
-  line-height: 1.15 !important;
+  margin: 0 0 5px !important;
+  font-size: 14.5px !important;
+  font-weight: 650 !important;
+  line-height: 1.25 !important;
+  color: #f0f0f0 !important;
 }
 
 .wlv-wmdp-panel-header p {
   margin: 0 !important;
-  font-size: 10.75px !important;
-  line-height: 1.2 !important;
-}
-
-.wlv-wmdp-panel-actions {
-  gap: 6px !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+  color: #aeb3bb !important;
 }
 
 .wlv-wmdp-control-band {
-  margin: 8px 10px 10px !important;
-  padding: 8px 10px !important;
-  gap: 6px !important;
-  border-radius: 7px !important;
+  margin: 12px 14px 12px !important;
+  padding: 10px 12px !important;
+  gap: 8px !important;
+  background: #151922 !important;
+  border-color: #536985 !important;
+  border-radius: 8px !important;
 }
 
 .wlv-wmdp-control-row {
-  gap: 6px !important;
-  min-height: 26px !important;
-}
-
-.wlv-wmdp-sort-control,
-.wlv-wmdp-page-size-control,
-.wlv-wmdp-action-control {
-  gap: 5px !important;
-  font-size: 11.5px !important;
-  line-height: 1 !important;
-}
-
-.wlv-wmdp-sort-control span,
-.wlv-wmdp-page-size-control span,
-.wlv-wmdp-action-control span {
-  font-size: 11.25px !important;
-  font-weight: 500 !important;
+  min-height: 30px !important;
+  gap: 8px !important;
 }
 
 .wlv-wmdp-control-row button,
@@ -4434,105 +4478,271 @@ button.wlv-view-range-readout,
 .wlv-wmdp-control-row select,
 .wlv-wmdp-panel-actions select,
 .wlv-wmdp-control-row input[type="search"] {
-  height: 26px !important;
-  min-height: 26px !important;
-  border-radius: 6px !important;
-  font-size: 11.5px !important;
-  line-height: 1 !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  border-radius: 7px !important;
+  font-size: 12px !important;
 }
 
-.wlv-wmdp-control-row button,
-.wlv-wmdp-panel-actions button {
-  padding: 0 7px !important;
-  font-weight: 500 !important;
+.wlv-wmdp-table-wrap {
+  margin: 0 14px 16px !important;
+  background: #1f1f1f !important;
+  border-color: #33363b !important;
 }
 
-.wlv-wmdp-control-row select,
-.wlv-wmdp-panel-actions select {
-  padding: 0 22px 0 7px !important;
-  font-weight: 500 !important;
-}
-
-.wlv-wmdp-control-row input[type="search"] {
-  padding: 0 8px !important;
-  font-weight: 400 !important;
-}
-
-.wlv-wmdp-control-row-paging input[type="search"] {
-  flex-basis: 500px !important;
-  min-width: 260px !important;
-  max-width: 600px !important;
-}
-
-.wlv-wmdp-panel-actions select {
-  min-width: 126px !important;
-}
-
-.wlv-wmdp-action-control select {
-  min-width: 238px !important;
-}
-
-.wlv-wmdp-page-readout,
-.wlv-wmdp-selected-readout {
-  font-size: 11.5px !important;
-  line-height: 1 !important;
-}
-
-.wlv-wmdp-selected-readout {
-  min-width: 92px !important;
+.wlv-wmdp-table {
+  background: #1f1f1f !important;
 }
 
 .wlv-wmdp-table th {
-  height: 28px !important;
-  padding: 0 7px !important;
-  font-size: 10.75px !important;
-  line-height: 1.1 !important;
+  height: 42px !important;
+  padding: 0 11px !important;
+  background: #242424 !important;
+  border-bottom: 1px solid #36393f !important;
+  color: #bdb9b2 !important;
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.12em !important;
+  line-height: 1.2 !important;
 }
 
 .wlv-wmdp-table td {
-  height: 32px !important;
-  padding: 0 7px !important;
-  font-size: 11.5px !important;
-  line-height: 1.15 !important;
+  height: 50px !important;
+  padding: 8px 11px !important;
+  background: #202020 !important;
+  border-bottom: 1px solid #303238 !important;
+  color: #dedede !important;
+  font-size: 12.5px !important;
+  line-height: 1.3 !important;
+  vertical-align: middle !important;
 }
 
-.wlv-wmdp-name-cell button strong {
-  font-size: 11.5px !important;
-  line-height: 1.1 !important;
+.wlv-wmdp-table tbody tr:hover td {
+  background: #252525 !important;
 }
 
-.wlv-wmdp-name-cell button span {
-  font-size: 9.75px !important;
-  line-height: 1.1 !important;
+.wlv-wmdp-table tbody tr.is-selected td {
+  background: #292929 !important;
 }
 
-.wlv-wmdp-row-actions {
+.wlv-wmdp-name-cell button {
   gap: 4px !important;
 }
 
-.wlv-wmdp-row-actions button {
-  min-height: 24px !important;
-  height: 24px !important;
-  padding: 0 6px !important;
-  border-radius: 6px !important;
+.wlv-wmdp-name-cell button strong {
+  font-size: 12.75px !important;
+  line-height: 1.25 !important;
+  color: #f1f1f1 !important;
+}
+
+.wlv-wmdp-name-cell button span {
   font-size: 10.75px !important;
+  line-height: 1.25 !important;
+  color: #9fa4ad !important;
+}
+
+.wlv-wmdp-row-actions {
+  gap: 6px !important;
+}
+
+.wlv-wmdp-row-actions button {
+  height: 28px !important;
+  min-height: 28px !important;
+  padding: 0 9px !important;
+  border-radius: 7px !important;
+  font-size: 11.5px !important;
   font-weight: 500 !important;
-  line-height: 1 !important;
 }
 
 .wlv-wmdp-badge {
-  height: 20px !important;
-  padding: 0 6px !important;
-  border-radius: 999px !important;
-  font-size: 10.75px !important;
-  font-weight: 500 !important;
-  line-height: 20px !important;
+  height: 22px !important;
+  padding: 0 8px !important;
+  font-size: 11.25px !important;
+  line-height: 22px !important;
 }
 
-.wlv-wmdp-empty-cell {
-  height: 44px !important;
-  font-size: 11.5px !important;
+/* Preserve expanded content structure for the next block. */
+.wlv-wmdp-expanded-row td {
+  background: #1c1c1c !important;
+  padding: 12px 14px 16px !important;
 }
 
-/* WLV-WMDP-CONTROL-DENSITY-STRONG-END */
+/* WLV-WMDP-SMDP-VISUAL-TUNING-END */
+
+
+/* WLV-WMDP-BLUE-CHARCOAL-TABLE-START */
+
+/*
+  Strong WMDP blue-charcoal table correction.
+  Scope: color only.
+  Preserve accepted layout, spacing, row heights, and density.
+  Goal: remove warm/brown ash tone and push WMDP table toward the
+  cooler SMDP charcoal/blue-gray palette.
+*/
+
+.wlv-wmdp-page {
+  /*
+    Override the earlier warm --mdp variables locally so older WMDP rules
+    cannot keep pulling the table back toward brown/ash.
+  */
+  --mdp-page-bg: #0f1114 !important;
+  --mdp-panel-bg: #171a1f !important;
+  --mdp-panel-soft: #1b1f25 !important;
+  --mdp-row-bg: #171a1f !important;
+  --mdp-row-hover: #1d2229 !important;
+  --mdp-row-selected: #202631 !important;
+  --mdp-expanded-bg: #14171c !important;
+  --mdp-border: #2b333d !important;
+  --mdp-border-strong: #354253 !important;
+  --mdp-blue-border: #536a88 !important;
+  --mdp-toolbar-bg: #121720 !important;
+  --mdp-text-primary: #e6ebf1 !important;
+  --mdp-text-secondary: #c0c8d2 !important;
+  --mdp-text-muted: #8f9aa8 !important;
+
+  --wmdp-blue-page: #0f1114;
+  --wmdp-blue-panel: #171a1f;
+  --wmdp-blue-panel-header: #1a1e24;
+  --wmdp-blue-header-row: #1d2228;
+  --wmdp-blue-row: #171a1f;
+  --wmdp-blue-row-alt: #181c22;
+  --wmdp-blue-row-hover: #1d2229;
+  --wmdp-blue-row-selected: #202631;
+  --wmdp-blue-expanded: #14171c;
+  --wmdp-blue-expanded-card: #181c22;
+  --wmdp-blue-border: #2b333d;
+  --wmdp-blue-border-soft: #252c35;
+  --wmdp-blue-border-strong: #354253;
+  --wmdp-blue-control: #121720;
+  --wmdp-blue-control-border: #536a88;
+  --wmdp-blue-text: #e6ebf1;
+  --wmdp-blue-text-soft: #c0c8d2;
+  --wmdp-blue-text-muted: #8f9aa8;
+  --wmdp-blue-header-text: #bcc5d0;
+}
+
+/* Panel and table containers: cool blue-charcoal, no brown channel. */
+.wlv-wmdp-panel,
+.wlv-wmdp-table-wrap,
+.wlv-wmdp-table {
+  background-color: var(--wmdp-blue-panel) !important;
+  border-color: var(--wmdp-blue-border) !important;
+}
+
+.wlv-wmdp-panel-header {
+  background-color: var(--wmdp-blue-panel-header) !important;
+  border-bottom-color: var(--wmdp-blue-border) !important;
+}
+
+.wlv-wmdp-control-band {
+  background-color: var(--wmdp-blue-control) !important;
+  border-color: var(--wmdp-blue-control-border) !important;
+}
+
+/* Header row: cooler and slightly bluer than body. */
+.wlv-wmdp-table thead,
+.wlv-wmdp-table thead tr,
+.wlv-wmdp-table thead th,
+.wlv-wmdp-table th {
+  background-color: var(--wmdp-blue-header-row) !important;
+  border-color: var(--wmdp-blue-border) !important;
+  color: var(--wmdp-blue-header-text) !important;
+}
+
+/* Body rows: force out all warm/brown inheritance. */
+.wlv-wmdp-table tbody,
+.wlv-wmdp-table tbody tr,
+.wlv-wmdp-table tbody td,
+.wlv-wmdp-table td {
+  background-color: var(--wmdp-blue-row) !important;
+  border-color: var(--wmdp-blue-border-soft) !important;
+  color: var(--wmdp-blue-text) !important;
+}
+
+/* Keep row interaction cool, not brown. */
+.wlv-wmdp-table tbody tr:hover td {
+  background-color: var(--wmdp-blue-row-hover) !important;
+}
+
+.wlv-wmdp-table tbody tr.is-selected td {
+  background-color: var(--wmdp-blue-row-selected) !important;
+}
+
+/* Expanded area: leave layout alone, only cool the color temperature. */
+.wlv-wmdp-expanded-row,
+.wlv-wmdp-expanded-row td {
+  background-color: var(--wmdp-blue-expanded) !important;
+  border-color: var(--wmdp-blue-border-soft) !important;
+}
+
+.wlv-wmdp-expanded-content section,
+.wlv-wmdp-expanded-item {
+  background-color: var(--wmdp-blue-expanded-card) !important;
+  border-color: var(--wmdp-blue-border) !important;
+}
+
+/* Text: cooler gray-blue instead of warm gray. */
+.wlv-wmdp-panel-header h2,
+.wlv-wmdp-name-cell button strong,
+.wlv-wmdp-expanded-item strong {
+  color: #edf2f7 !important;
+}
+
+.wlv-wmdp-panel-header p,
+.wlv-wmdp-name-cell button span,
+.wlv-wmdp-page-readout,
+.wlv-wmdp-selected-readout,
+.wlv-wmdp-expanded-item span,
+.wlv-wmdp-expanded-item em {
+  color: var(--wmdp-blue-text-muted) !important;
+}
+
+/* Controls and row actions: cool blue-gray outlines. */
+.wlv-wmdp-control-row button,
+.wlv-wmdp-panel-actions button,
+.wlv-wmdp-control-row select,
+.wlv-wmdp-panel-actions select,
+.wlv-wmdp-control-row input[type="search"],
+.wlv-wmdp-row-actions button {
+  background-color: transparent !important;
+  border-color: var(--wmdp-blue-control-border) !important;
+  color: var(--wmdp-blue-text-soft) !important;
+}
+
+.wlv-wmdp-control-row button:hover:not(:disabled),
+.wlv-wmdp-panel-actions button:hover:not(:disabled),
+.wlv-wmdp-row-actions button:hover:not(:disabled) {
+  background-color: rgba(83, 106, 136, 0.12) !important;
+  border-color: #6682a6 !important;
+  color: #edf3fa !important;
+}
+
+/* Force table control cells to inherit the cool row, not older warm CSS. */
+.wlv-wmdp-col-select,
+.wlv-wmdp-col-expand,
+.wlv-wmdp-name-cell,
+.wlv-wmdp-table td.wlv-wmdp-col-select,
+.wlv-wmdp-table td.wlv-wmdp-col-expand,
+.wlv-wmdp-table td.wlv-wmdp-name-cell {
+  background-color: inherit !important;
+}
+
+/* Checkboxes can make warm gray obvious; cool them too. */
+.wlv-wmdp-table input[type="checkbox"] {
+  accent-color: #5f7fa6 !important;
+}
+
+/* Disposable seed button remains temporary, but reduce its brown/gold punch. */
+.wlv-wmdp-disposable-seed-button {
+  border-color: rgba(142, 155, 174, 0.55) !important;
+  color: #aeb8c7 !important;
+}
+
+.wlv-wmdp-disposable-seed-button:hover:not(:disabled) {
+  background-color: rgba(142, 155, 174, 0.08) !important;
+  border-color: #bdc8d8 !important;
+  color: #d5dde9 !important;
+}
+
+/* WLV-WMDP-BLUE-CHARCOAL-TABLE-END */
 

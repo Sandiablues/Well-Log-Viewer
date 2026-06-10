@@ -228,6 +228,10 @@ function viewerPackageKind(viewerPackage: ManagedInventoryViewerPackageReference
   return viewerPackage.package_kind || viewerPackage.viewer_package_version || 'viewer_package';
 }
 
+function developmentSeedAlreadyRegistered(wells: ManagedInventoryWellRecord[]): boolean {
+  return wells.some((well) => well.managed_well_id === 'managed-well:forge-21-31' || well.well_id === 'forge-21-31');
+}
+
 function wellTypeLabel(well: ManagedInventoryWellRecord): string {
   const record = well as ManagedInventoryWellRecord & {
     well_type?: string | null;
@@ -256,8 +260,10 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
   const [currentPage, setCurrentPage] = useState(1);
   const [bulkAction, setBulkAction] = useState<WmdpBulkAction>('load');
   const [loading, setLoading] = useState(true);
+  const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const seedAlreadyRegistered = developmentSeedAlreadyRegistered(wells);
   const backendConnected = Boolean(status?.ok && !error);
 
   const filteredWells = useMemo(() => {
@@ -337,6 +343,28 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
     setCurrentPage(1);
   }, [pageSize, searchQuery, sortKey, wells.length]);
 
+  const registerSeedWell = async () => {
+    if (seedAlreadyRegistered) {
+      setError('Development seed well is already registered. Use Refresh to reload the managed inventory.');
+      return;
+    }
+
+    setRegistering(true);
+    setError(null);
+    try {
+      const result = await fetchWlvJson<{ record: ManagedInventoryWellRecord }>('/api/wlv/inventory/wells/register-seed', {
+        method: 'POST',
+      });
+      await loadInventory();
+      setSelectedWellId(result.record.managed_well_id);
+      setExpandedWellIds((current) => new Set(current).add(result.record.managed_well_id));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to register development seed well');
+    } finally {
+      setRegistering(false);
+    }
+  };
+
   const toggleWellSelected = (managedWellId: string) => {
     setSelectedWellIds((current) => {
       const next = new Set(current);
@@ -390,6 +418,17 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
           <span className="wlv-page-kicker">Data</span>
           <h1>Managed Data</h1>
           <p>Manage registered wells and data made available to the Well Data Viewer.</p>
+        </div>
+        <div className="wlv-wmdp-page-actions">
+          <button
+            type="button"
+            className="wlv-wmdp-disposable-seed-button"
+            onClick={registerSeedWell}
+            disabled={loading || registering || seedAlreadyRegistered}
+            title="Temporary development bootstrap action. Remove when intake workflow is complete."
+          >
+            {seedAlreadyRegistered ? '[disposable] Seed Registered' : registering ? '[disposable] Seeding…' : '[disposable] Seed Example Well'}
+          </button>
         </div>
       </header>
 
