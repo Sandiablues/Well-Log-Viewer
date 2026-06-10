@@ -1,68 +1,71 @@
 /**
  * MultiViewer Well Log Viewer — Inspection Shell
- * WL-BUILD-001B
+ * WL-BUILD-001B + WLV-SOURCE-INTAKE-7
  *
- * Visual inspection wrapper for proving real ViDEx rendering with mock
- * backend-owned well_multitrack_v1 data.
- *
- * Renders:
- * - Mock data banner (amber, always visible)
- * - Application header with sprint label
- * - WellLogViewerPage with inspectionPackage + inspectionSamples props
- *
- * The viewer area is a real ViDEx LogController render — not fake cards.
- *
- * Rules:
- * - Does not parse LAS.
- * - Does not infer QAQC.
- * - Does not introduce lifecycle state.
- * - ViDEx is behind the VidExWellLogRenderer boundary.
- * - This component must not be used in production data paths.
+ * Shell-level entry point for the Well Log Viewer and the WLV Source Intake
+ * workbench. Source Intake consumes backend-owned contracts; it does not parse
+ * LAS in the frontend, infer lifecycle state, or implement conversion.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   mockWellMultitrackPackage,
   mockCurveSamples,
 } from './fixtures/mockWellMultitrackPackage';
+import { SourceIntakeWorkbench } from './source-intake/SourceIntakeWorkbench';
 import { WellLogViewerPage } from './WellLogViewerPage';
 
-/**
- * InspectionShell
- *
- * Mounts the Well Log Viewer with mock backend-owned data for
- * visual review and proof-of-render of the WL-BUILD-001B implementation.
- */
-export const InspectionShell: React.FC = () => (
-  <div className="mvwlv-inspection-shell">
+type ShellView = 'source-intake' | 'well-viewer';
 
-    {/* Mock data notice */}
-    <div className="mvwlv-mock-notice" role="alert" aria-label="Mock inspection data notice">
-      <span className="mvwlv-mock-notice__icon" aria-hidden="true">⚠</span>
-      <span className="mvwlv-mock-notice__label">Mock inspection data only</span>
-      <span className="mvwlv-mock-notice__detail">
-        — well_multitrack_v1 fixture · real ViDEx rendering · WL-BUILD-001B proof-of-render
-      </span>
-    </div>
+export const InspectionShell: React.FC = () => {
+  const [activeView, setActiveView] = useState<ShellView>('source-intake');
 
-    {/* Application header */}
-    <header className="mvwlv-app-header" role="banner">
-      <div className="mvwlv-app-header__brand">
-        <span className="mvwlv-app-header__product">MultiViewer</span>
-        <span className="mvwlv-app-header__module">Well Log Viewer</span>
+  return (
+    <div className="mvwlv-inspection-shell">
+      <div className="mvwlv-mock-notice" role="alert" aria-label="Development shell notice">
+        <span className="mvwlv-mock-notice__icon" aria-hidden="true">⚠</span>
+        <span className="mvwlv-mock-notice__label">Development shell</span>
+        <span className="mvwlv-mock-notice__detail">
+          — Source Intake uses backend contracts · viewer tab still uses inspection data
+        </span>
       </div>
-      <span className="mvwlv-app-header__sprint">WL-BUILD-001B</span>
-    </header>
 
-    {/* Well Log Viewer via inspection prop path */}
-    <WellLogViewerPage
-      datasetId={mockWellMultitrackPackage.dataset_id}
-      representationId={mockWellMultitrackPackage.representation_id}
-      inspectionPackage={mockWellMultitrackPackage}
-      inspectionSamples={mockCurveSamples}
-    />
+      <header className="mvwlv-app-header" role="banner">
+        <div className="mvwlv-app-header__brand">
+          <span className="mvwlv-app-header__product">MultiViewer</span>
+          <span className="mvwlv-app-header__module">Well Log Viewer</span>
+        </div>
+        <nav className="mvwlv-app-header__nav" aria-label="Well Log Viewer sections">
+          <button
+            type="button"
+            className={activeView === 'source-intake' ? 'is-active' : ''}
+            onClick={() => setActiveView('source-intake')}
+          >
+            Sources
+          </button>
+          <button
+            type="button"
+            className={activeView === 'well-viewer' ? 'is-active' : ''}
+            onClick={() => setActiveView('well-viewer')}
+          >
+            Well Viewer
+          </button>
+        </nav>
+        <span className="mvwlv-app-header__sprint">WLV-SOURCE-INTAKE-7</span>
+      </header>
 
-  </div>
-);
+      {activeView === 'source-intake' ? (
+        <SourceIntakeWorkbench />
+      ) : (
+        <WellLogViewerPage
+          datasetId={mockWellMultitrackPackage.dataset_id}
+          representationId={mockWellMultitrackPackage.representation_id}
+          inspectionPackage={mockWellMultitrackPackage}
+          inspectionSamples={mockCurveSamples}
+        />
+      )}
+    </div>
+  );
+};
 
 export default InspectionShell;
