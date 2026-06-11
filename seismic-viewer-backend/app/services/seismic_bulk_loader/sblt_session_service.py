@@ -36,6 +36,7 @@ from .sblt_models import (
     SESSION_STATUS_NORMALIZED,
     SESSION_STATUS_PATHS_VALIDATED,
     SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED,
+    SESSION_STATUS_REVIEW_PACKAGE_BUILT,
     SESSION_STATUS_FAILED,
     make_parsed_row,
     make_validated_row,
@@ -834,6 +835,74 @@ def extract_segy_header_evidence(session_id: str) -> dict:
         created_at=session["created_at"],
         updated_at=now,
     )
+
+    _validate_session_invariants(updated_session)
+    _save_session(updated_session)
+
+    return updated_session
+
+
+# ---------------------------------------------------------------------------
+# SBLT-6: build_review_package
+# ---------------------------------------------------------------------------
+
+def build_review_package(session_id: str) -> dict:
+    """
+    Run SBLT-6 review exception packaging on a segy_header_evidence_extracted session.
+
+    Loads the session, calls build_review_package_for_session() to build the
+    session-level review package, attaches it to the session dict, advances the
+    session status to review_package_built, persists the updated session, and
+    returns the full session dict (with review_package key set).
+
+    SBLT-6 scope:
+      - Reads: row.metadata_evidence.field_review, review_summary.
+      - Reads: row.validation.required_missing, recommended_missing.
+      - Reads: row.qaqc_flags.
+      - Reads: row.normalized_metadata, row.path_validation.
+      - Does NOT approve rows.
+      - Does NOT register MSI records.
+      - Does NOT trigger conversion or indexing.
+      - Does NOT query MSI, Managed Data, or Source Intake.
+      - Duplicate detection is session-local ONLY.
+      - can_register remains False.
+
+    Raises SBLTValidationError (400) if session is not in
+    segy_header_evidence_extracted or review_package_built state.
+    Raises SBLTNotFoundError (404) if the session does not exist.
+    """
+    from .sblt_review_package import build_review_package_for_session
+
+    session = get_session(session_id)
+
+    current_status = session.get("status")
+    if current_status not in (
+        SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED,
+        SESSION_STATUS_REVIEW_PACKAGE_BUILT,
+    ):
+        raise SBLTValidationError(
+            f"SBLT session must be in 'segy_header_evidence_extracted' or "
+            f"'review_package_built' state before building the review package. "
+            f"Current status: {current_status!r}",
+            status_code=400,
+        )
+
+    # Build the review package (pure read, no mutation).
+    review_package = build_review_package_for_session(session)
+
+    # Advance session status and attach the review package.
+    now = _utc_now()
+    updated_session = make_session(
+        session_id=session["session_id"],
+        status=SESSION_STATUS_REVIEW_PACKAGE_BUILT,
+        source=session["source"],
+        rows=session.get("rows", []),
+        created_at=session["created_at"],
+        updated_at=now,
+    )
+    # Attach review_package outside make_session to avoid polluting the
+    # invariant-checked core session schema.
+    updated_session["review_package"] = review_package
 
     _validate_session_invariants(updated_session)
     _save_session(updated_session)

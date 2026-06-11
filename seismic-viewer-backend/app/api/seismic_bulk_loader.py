@@ -1,9 +1,14 @@
 """
-SBLT-1: FastAPI router for the Seismic Bulk Loading Tool.
+SBLT-1 through SBLT-6: FastAPI router for the Seismic Bulk Loading Tool.
 
 Routes:
-    POST /api/sblt/sessions    — create a session from a prepared loadsheet path
-    GET  /api/sblt/sessions/{session_id} — retrieve a persisted session
+    POST /api/sblt/sessions                                     — create a session
+    GET  /api/sblt/sessions/{session_id}                        — retrieve a session
+    POST /api/sblt/sessions/{session_id}/validate               — SBLT-2 schema validation
+    POST /api/sblt/sessions/{session_id}/normalize              — SBLT-3 row normalization
+    POST /api/sblt/sessions/{session_id}/validate-paths         — SBLT-4 path validation
+    POST /api/sblt/sessions/{session_id}/extract-segy-header-evidence — SBLT-5
+    POST /api/sblt/sessions/{session_id}/build-review-package   — SBLT-6
 
 Ownership: backend SBLT service.
 Frontend: not involved.
@@ -27,6 +32,7 @@ from app.services.seismic_bulk_loader.sblt_session_service import (
     normalize_session,
     validate_session_paths,
     extract_segy_header_evidence,
+    build_review_package,
 )
 
 
@@ -189,6 +195,48 @@ def extract_sblt_segy_header_evidence(session_id: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=500,
             detail=f"SBLT SEG-Y header evidence extraction failed unexpectedly: {exc}",
+        ) from exc
+
+    return session
+
+
+@router.post("/sessions/{session_id}/build-review-package")
+def build_sblt_review_package(session_id: str) -> dict[str, Any]:
+    """
+    Run SBLT-6 review exception packaging on a segy_header_evidence_extracted session.
+
+    Builds a session-level review_package dict that:
+      - Classifies every row as ready, review_required, or blocked.
+      - Lists per-field exceptions (conflicts, missing required, suggested candidates).
+      - Lists auto-accepted fields (informational; no user action required).
+      - Detects session-local duplicate risk groups (3 types: dataset_key, source
+        reference, line/volume identity).
+      - Provides session-level bulk action hints.
+      - Produces a session-level blocking_reasons list and status flags.
+
+    Architecture guarantees:
+      - Does NOT approve rows.
+      - Does NOT register MSI records.
+      - Does NOT trigger conversion or indexing.
+      - Does NOT query MSI, Managed Data, or Source Intake.
+      - Duplicate detection is session-local ONLY.
+      - can_register remains False.
+
+    Session must be in 'segy_header_evidence_extracted' or 'review_package_built' state.
+    Returns 400 if the session is in an incompatible state.
+    Returns 404 if the session does not exist.
+    Returns 500 on invariant failure or unexpected error.
+    """
+    try:
+        session = build_review_package(session_id)
+    except SBLTNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SBLTValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"SBLT review package build failed unexpectedly: {exc}",
         ) from exc
 
     return session
