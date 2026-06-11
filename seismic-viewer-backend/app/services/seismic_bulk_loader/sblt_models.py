@@ -26,6 +26,7 @@ SESSION_STATUS_SCHEMA_INVALID = "schema_invalid"
 SESSION_STATUS_VALIDATED = "validated"
 SESSION_STATUS_NORMALIZED = "normalized"
 SESSION_STATUS_PATHS_VALIDATED = "paths_validated"
+SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED = "segy_header_evidence_extracted"
 SESSION_STATUS_REVIEW_REQUIRED = "review_required"
 SESSION_STATUS_APPROVED = "approved"
 SESSION_STATUS_REGISTERED = "registered"
@@ -37,6 +38,7 @@ VALID_SESSION_STATUSES = {
     SESSION_STATUS_VALIDATED,
     SESSION_STATUS_NORMALIZED,
     SESSION_STATUS_PATHS_VALIDATED,
+    SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED,
     SESSION_STATUS_REVIEW_REQUIRED,
     SESSION_STATUS_APPROVED,
     SESSION_STATUS_REGISTERED,
@@ -217,6 +219,41 @@ def make_path_validated_row(
     }
 
 
+def make_segy_header_evidence_row(
+    existing_row: dict[str, Any],
+    *,
+    metadata_evidence: dict[str, Any],
+    header_read_summary: dict[str, Any] | None,
+    qaqc_flags: list[dict[str, Any]],
+    status: str,
+) -> dict[str, Any]:
+    """
+    Build an updated row dict after SBLT-5 SEG-Y header evidence extraction.
+
+    Preserves row_id, source_row_number, source_values, canonical_fields,
+    validation, normalized_metadata, identity_hints, and path_validation
+    unchanged.  Adds metadata_evidence, optionally adds header_read_summary,
+    and updates status, qaqc_flags, and actions.
+    """
+    requires_review = status in (ROW_STATUS_REVIEW_REQUIRED, ROW_STATUS_BLOCKED)
+    can_approve = status == ROW_STATUS_READY
+    result: dict[str, Any] = {
+        **existing_row,
+        "status": status,
+        "metadata_evidence": metadata_evidence,
+        "qaqc_flags": qaqc_flags,
+        "actions": make_row_actions(
+            can_validate=True,
+            can_approve=can_approve,
+            can_register=False,
+            requires_review=requires_review,
+        ),
+    }
+    if header_read_summary is not None:
+        result["header_read_summary"] = header_read_summary
+    return result
+
+
 def make_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Build the summary block from a list of row dicts.
@@ -297,6 +334,7 @@ def make_session(
                 SESSION_STATUS_VALIDATED,
                 SESSION_STATUS_NORMALIZED,
                 SESSION_STATUS_PATHS_VALIDATED,
+                SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED,
             )
             and row_count > 0
         ),
@@ -305,6 +343,7 @@ def make_session(
                 SESSION_STATUS_VALIDATED,
                 SESSION_STATUS_NORMALIZED,
                 SESSION_STATUS_PATHS_VALIDATED,
+                SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED,
             )
             and has_approvable_rows
         ),

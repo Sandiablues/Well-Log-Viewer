@@ -26,6 +26,7 @@ from app.services.seismic_bulk_loader.sblt_session_service import (
     validate_session,
     normalize_session,
     validate_session_paths,
+    extract_segy_header_evidence,
 )
 
 
@@ -157,6 +158,37 @@ def validate_sblt_session_paths(session_id: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=500,
             detail=f"SBLT path validation failed unexpectedly: {exc}",
+        ) from exc
+
+    return session
+
+
+@router.post("/sessions/{session_id}/extract-segy-header-evidence")
+def extract_sblt_segy_header_evidence(session_id: str) -> dict[str, Any]:
+    """
+    Run SBLT-5 SEG-Y header evidence extraction on a paths-validated session.
+
+    For each row with a valid, readable SEG-Y path from path_validation:
+      - Reads fixed SEG-Y headers (textual + binary only; no trace data).
+      - Builds MDE candidate observations from header fields.
+      - Attaches the resulting MDE bundle to each row as metadata_evidence.
+      - Updates row status per evidence / review / blocker rules.
+
+    Session must be in 'paths_validated' or 'segy_header_evidence_extracted' state.
+    Returns 400 if the session is in an incompatible state.
+    Returns 404 if the session does not exist.
+    Returns 500 on invariant failure or unexpected error.
+    """
+    try:
+        session = extract_segy_header_evidence(session_id)
+    except SBLTNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SBLTValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"SBLT SEG-Y header evidence extraction failed unexpectedly: {exc}",
         ) from exc
 
     return session

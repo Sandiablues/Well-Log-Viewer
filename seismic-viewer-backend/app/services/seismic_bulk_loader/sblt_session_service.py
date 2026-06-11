@@ -35,11 +35,13 @@ from .sblt_models import (
     SESSION_STATUS_VALIDATED,
     SESSION_STATUS_NORMALIZED,
     SESSION_STATUS_PATHS_VALIDATED,
+    SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED,
     SESSION_STATUS_FAILED,
     make_parsed_row,
     make_validated_row,
     make_normalized_row,
     make_path_validated_row,
+    make_segy_header_evidence_row,
     make_session,
 )
 from .sblt_loadsheet_parser import (
@@ -515,6 +517,320 @@ def validate_session_paths(session_id: str) -> dict[str, Any]:
         status=SESSION_STATUS_PATHS_VALIDATED,
         source=session["source"],
         rows=path_validated_rows,
+        created_at=session["created_at"],
+        updated_at=now,
+    )
+
+    _validate_session_invariants(updated_session)
+    _save_session(updated_session)
+
+    return updated_session
+
+
+# ---------------------------------------------------------------------------
+# SBLT-5 helpers
+# ---------------------------------------------------------------------------
+
+# Fields from normalized_metadata that are actual metadata (not path / key fields).
+_MDE_METADATA_FIELDS: frozenset = frozenset({
+    "survey_name",
+    "line_name",
+    "volume_name",
+    "record_type",
+    "processing_stage",
+    "operator",
+    "area_or_block",
+    "sample_interval_ms",
+    "crs_raw",    # exposed as "crs" to MDE
+    "datum_raw",  # exposed as "datum" to MDE
+})
+
+# Normalise field names that differ between normalized_metadata and MDE policy keys.
+_NM_TO_MDE_FIELD: dict = {
+    "crs_raw": "crs",
+    "datum_raw": "datum",
+}
+
+
+def _build_mde_raw_submitted(normalized_metadata: dict) -> dict:
+    """
+    Extract a flat {field: value} dict from normalized_metadata for MDE.
+
+    Only real metadata fields are included; path, key, and system fields
+    are excluded.  Fields whose value is None or empty string are omitted
+    entirely so MDE classifies them as absent rather than receiving an
+    explicit None.
+
+    IMPORTANT: the is-absent check uses explicit ``is not None`` plus a
+    non-empty-string guard — never a bare truthy test — so that numeric
+    values such as 0 or 0.0 are preserved and passed through correctly.
+    """
+    out: dict = {}
+    nm = normalized_metadata if normalized_metadata is not None else {}
+    for nm_key in _MDE_METADATA_FIELDS:
+        mde_key = _NM_TO_MDE_FIELD.get(nm_key, nm_key)
+        raw_val = nm.get(nm_key)
+        # Convert empty strings to absent; preserve all other types (int, float,
+        # non-empty str) including numeric zero and 0.0.
+        if raw_val is not None and isinstance(raw_val, str) and not raw_val.strip():
+            raw_val = None
+        # Only include the field when a value is actually present.
+        if raw_val is not None:
+            out[mde_key] = raw_val
+    return out
+
+
+def _sblt5_flag(severity: str, code: str, message: str) -> dict:
+    return {
+        "severity": severity,
+        "code": code,
+        "message": message,
+        "field": None,
+        "source": "segy_header_evidence",
+    }
+
+
+# ---------------------------------------------------------------------------
+# SBLT-5: extract_segy_header_evidence
+# ---------------------------------------------------------------------------
+
+def extract_segy_header_evidence(session_id: str) -> dict:
+    """
+    Run SBLT-5 SEG-Y header evidence extraction on a paths-validated session.
+
+    For each row with a valid, readable SEG-Y path from path_validation:
+      - Reads fixed SEG-Y headers (textual + binary only; no trace data).
+      - Builds MDE candidate observations from header fields.
+      - Calls build_metadata_evidence_bundle() to produce the MDE bundle.
+      - Attaches the MDE bundle to the row as metadata_evidence.
+      - Updates row status per evidence / review / blocker rules.
+      - Appends operational QAQC flags (preserving all prior flags).
+
+    SBLT-5 scope:
+      - Fixed headers only.  No trace data.  No geometry.  No approval.
+      - No MSI registration.  No conversion/indexing.  No folder scanning.
+
+    Raises SBLTValidationError (400) if session is not in paths_validated
+    or segy_header_evidence_extracted state.
+    Raises SBLTNotFoundError (404) if the session does not exist.
+    """
+    from pathlib import Path as _Path
+
+    from app.services.metadata_evidence import build_metadata_evidence_bundle
+    from app.services.metadata_evidence.mde_models import (
+        WORKFLOW_SBLT,
+        SOURCE_REF_LOCAL_PATH,
+        SOURCE_STATUS_VALIDATED,
+        make_dataset_context,
+        make_source_reference,
+    )
+    from .sblt_segy_header_reader import read_segy_fixed_headers
+    from .sblt_segy_header_evidence import build_segy_candidate_observations
+
+    session = get_session(session_id)
+
+    current_status = session.get("status")
+    if current_status not in (
+        SESSION_STATUS_PATHS_VALIDATED,
+        SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED,
+    ):
+        raise SBLTValidationError(
+            f"SBLT session must be in 'paths_validated' or "
+            f"'segy_header_evidence_extracted' state before SEG-Y header "
+            f"evidence extraction.  Current status: {current_status!r}",
+            status_code=400,
+        )
+
+    existing_rows: list = session.get("rows", [])
+    updated_rows: list = []
+
+    for row in existing_rows:
+        row_id: str = row.get("row_id", "")
+        row_status: str = str(row.get("status") or "blocked")
+        nm: dict = row.get("normalized_metadata") or {}
+        prior_flags: list = list(row.get("qaqc_flags") or [])
+        path_val: dict = row.get("path_validation") or {}
+
+        # ------------------------------------------------------------------ #
+        # Determine whether this row has a readable SEG-Y path                #
+        # ------------------------------------------------------------------ #
+        segy_info: dict = path_val.get("segy") or {}
+        segy_readable: bool = bool(
+            segy_info.get("exists")
+            and segy_info.get("is_file")
+            and segy_info.get("readable")
+        )
+        resolved_path_str: str = str(segy_info.get("resolved_path") or "").strip()
+
+        # ------------------------------------------------------------------ #
+        # Rows that are already blocked or have no readable path               #
+        # ------------------------------------------------------------------ #
+        if row_status == "blocked" or not segy_readable or not resolved_path_str:
+            # Attach an empty MDE bundle so the key is always present on
+            # rows that have been through this step.
+            if "metadata_evidence" not in row:
+                raw_submitted = _build_mde_raw_submitted(nm)
+                dataset_ctx = make_dataset_context(
+                    record_type=nm.get("record_type") or "unknown",
+                    dataset_label=nm.get("dataset_label") or "",
+                    source_reference=make_source_reference(
+                        source_reference_type=SOURCE_REF_LOCAL_PATH,
+                        source_reference_value=nm.get("segy_path_raw") or "",
+                        resolved_reference=resolved_path_str,
+                        source_status=(
+                            SOURCE_STATUS_VALIDATED if segy_readable else "unknown"
+                        ),
+                    ),
+                )
+                empty_bundle = build_metadata_evidence_bundle(
+                    workflow_type=WORKFLOW_SBLT,
+                    workflow_session_id=session_id,
+                    workflow_row_id=row_id,
+                    dataset_context=dataset_ctx,
+                    raw_submitted_metadata=raw_submitted,
+                    candidate_observations=[],
+                    existing_qaqc_findings=[],
+                )
+                updated_rows.append(make_segy_header_evidence_row(
+                    row,
+                    metadata_evidence=empty_bundle,
+                    header_read_summary=None,
+                    qaqc_flags=prior_flags,
+                    status=row_status,
+                ))
+            else:
+                updated_rows.append(row)
+            continue
+
+        # ------------------------------------------------------------------ #
+        # Read fixed SEG-Y headers                                             #
+        # ------------------------------------------------------------------ #
+        resolved_path = _Path(resolved_path_str)
+        header_result = read_segy_fixed_headers(resolved_path)
+
+        new_flags: list = []
+
+        if not header_result["ok"]:
+            err_str: str = str(header_result.get("error") or "")
+            if "SEGY_HEADER_TOO_SMALL" in err_str:
+                code = "SEGY_HEADER_TOO_SMALL"
+                msg = (
+                    f"SEG-Y file too small for fixed headers "
+                    f"(requires {3600} bytes): {resolved_path_str}"
+                )
+            else:
+                code = "SEGY_HEADER_READ_FAILED"
+                msg = (
+                    f"SEG-Y header read failed for {resolved_path_str!r}: {err_str}"
+                )
+            new_flags.append(_sblt5_flag("blocker", code, msg))
+            merged_flags = prior_flags + new_flags
+            new_status = "blocked"
+
+            raw_submitted = _build_mde_raw_submitted(nm)
+            dataset_ctx = make_dataset_context(
+                record_type=nm.get("record_type") or "unknown",
+                dataset_label=nm.get("dataset_label") or "",
+                source_reference=make_source_reference(
+                    source_reference_type=SOURCE_REF_LOCAL_PATH,
+                    source_reference_value=nm.get("segy_path_raw") or "",
+                    resolved_reference=resolved_path_str,
+                    source_status=SOURCE_STATUS_VALIDATED,
+                ),
+            )
+            mde_bundle = build_metadata_evidence_bundle(
+                workflow_type=WORKFLOW_SBLT,
+                workflow_session_id=session_id,
+                workflow_row_id=row_id,
+                dataset_context=dataset_ctx,
+                raw_submitted_metadata=raw_submitted,
+                candidate_observations=[],
+                existing_qaqc_findings=[],
+            )
+            updated_rows.append(make_segy_header_evidence_row(
+                row,
+                metadata_evidence=mde_bundle,
+                header_read_summary=header_result["header_read_summary"],
+                qaqc_flags=merged_flags,
+                status=new_status,
+            ))
+            continue
+
+        # ------------------------------------------------------------------ #
+        # Build MDE candidate observations                                     #
+        # ------------------------------------------------------------------ #
+        new_flags.append(_sblt5_flag(
+            "info", "SEGY_BINARY_HEADER_PARSED",
+            f"SEG-Y binary header parsed: {resolved_path_str}",
+        ))
+
+        candidate_obs = build_segy_candidate_observations(header_result, nm)
+
+        # ------------------------------------------------------------------ #
+        # Build MDE bundle                                                     #
+        # ------------------------------------------------------------------ #
+        raw_submitted = _build_mde_raw_submitted(nm)
+        dataset_ctx = make_dataset_context(
+            record_type=nm.get("record_type") or "unknown",
+            dataset_label=nm.get("dataset_label") or "",
+            source_reference=make_source_reference(
+                source_reference_type=SOURCE_REF_LOCAL_PATH,
+                source_reference_value=nm.get("segy_path_raw") or "",
+                resolved_reference=resolved_path_str,
+                source_status=SOURCE_STATUS_VALIDATED,
+            ),
+        )
+        mde_bundle = build_metadata_evidence_bundle(
+            workflow_type=WORKFLOW_SBLT,
+            workflow_session_id=session_id,
+            workflow_row_id=row_id,
+            dataset_context=dataset_ctx,
+            raw_submitted_metadata=raw_submitted,
+            candidate_observations=candidate_obs,
+            existing_qaqc_findings=[],
+        )
+
+        # ------------------------------------------------------------------ #
+        # Determine new row status from MDE review summary                     #
+        # ------------------------------------------------------------------ #
+        review_summary: dict = mde_bundle.get("review_summary") or {}
+        mde_requires_review: bool = bool(
+            review_summary.get("requires_user_review", False)
+        )
+
+        if row_status == "blocked":
+            new_status = "blocked"
+        elif row_status == "review_required":
+            new_status = "review_required"
+        elif row_status == "ready":
+            new_status = "review_required" if mde_requires_review else "ready"
+        else:
+            new_status = row_status
+
+        new_flags.append(_sblt5_flag(
+            "info", "SEGY_HEADER_EVIDENCE_EXTRACTED",
+            f"SEG-Y header evidence extracted for row {row_id!r}.",
+        ))
+
+        merged_flags = prior_flags + new_flags
+
+        updated_rows.append(make_segy_header_evidence_row(
+            row,
+            metadata_evidence=mde_bundle,
+            header_read_summary=header_result["header_read_summary"],
+            qaqc_flags=merged_flags,
+            status=new_status,
+        ))
+
+    # ------------------------------------------------------------------ #
+    # Rebuild and persist session atomically                               #
+    # ------------------------------------------------------------------ #
+    now = _utc_now()
+    updated_session = make_session(
+        session_id=session["session_id"],
+        status=SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED,
+        source=session["source"],
+        rows=updated_rows,
         created_at=session["created_at"],
         updated_at=now,
     )
