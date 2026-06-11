@@ -14,6 +14,10 @@ from .models import (
     ManagedInventoryHealth,
     ManagedInventoryMaintenanceStatus,
     ManagedInventoryStatus,
+    LoadManagedWellToWdvRequest,
+    LoadManagedWellToWdvResponse,
+    UnloadManagedWellFromWdvRequest,
+    UnloadManagedWellFromWdvResponse,
     ManagedInventoryValidationResult,
     ManagedWellRecord,
     RegisterSeedWellResponse,
@@ -58,6 +62,46 @@ def maintenance_status() -> ManagedInventoryMaintenanceStatus:
     except ManagedInventoryStoreError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
+
+
+
+@router.post(
+    "/load-to-wdv",
+    response_model=LoadManagedWellToWdvResponse,
+    summary="Load selected managed well data to the Well Data Viewer",
+)
+def load_managed_well_to_wdv(request: LoadManagedWellToWdvRequest) -> LoadManagedWellToWdvResponse:
+    try:
+        return _service.load_managed_well_to_wdv(
+            managed_well_id=request.managed_well_id,
+            product_ids=request.product_ids,
+        )
+    except ManagedWellNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Managed well not found: {exc.args[0]}",
+        ) from exc
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+@router.post(
+    "/unload-from-wdv",
+    response_model=UnloadManagedWellFromWdvResponse,
+    summary="Unload selected managed well data from the Well Data Viewer",
+)
+def unload_managed_well_from_wdv(request: UnloadManagedWellFromWdvRequest) -> UnloadManagedWellFromWdvResponse:
+    try:
+        return _service.unload_managed_well_from_wdv(
+            managed_well_id=request.managed_well_id,
+            product_ids=request.product_ids,
+        )
+    except ManagedWellNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Managed well not found: {exc.args[0]}",
+        ) from exc
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 @router.get("/wells", response_model=list[ManagedWellRecord], summary="List managed WLV wells")
 def list_wells() -> list[ManagedWellRecord]:

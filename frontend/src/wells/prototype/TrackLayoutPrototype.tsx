@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import '../../styles/track-layout-prototype.css';
-import { curveCatalog, defaultDepthRange, depthUnitLabel, fullDepthRange, initialTracks, realCurveSamplesByCurveId, wellHeader } from './realLasTrackLayoutData';
+import { curveCatalog, defaultDepthRange, depthUnitLabel, fullDepthRange, realCurveSamplesByCurveId, wellHeader } from './realLasTrackLayoutData';
 import { lithologyIntervals21_31, lithologySource } from './lithologyTrackData';
 import { WellLogPropertiesPanelSlot } from './WellLogPropertiesPanelSlot';
 import { SourceIntakeWorkbench } from '../source-intake/SourceIntakeWorkbench';
 import { loadBackendViewerPackageWithFallback, type BackendViewerPackageLoadResult } from './backendViewerPackageAdapter';
+import { buildWdvPackageState, emptyWdvPackageState, type WdvPackageState } from './wdvPackageState';
 import { useTrackBodyGeometry } from './useTrackBodyGeometry';
 import type {
   ActiveTrackType,
@@ -77,6 +78,8 @@ type ManagedProductGroupItem = {
   source_kind?: string | null;
   source_id?: string | null;
   viewer_package_id?: string | null;
+  wmdp_state?: string | null;
+  wdv_state?: string | null;
 };
 
 type ManagedProductGroup = {
@@ -106,6 +109,8 @@ type ManagedInventoryWellRecord = {
   source_references?: ManagedInventorySourceReference[];
   viewer_packages?: ManagedInventoryViewerPackageReference[];
   product_groups?: ManagedProductGroup[];
+  wmdp_state?: string | null;
+  wdv_state?: string | null;
   tags?: string[];
   created_at?: string | null;
   updated_at?: string | null;
@@ -195,11 +200,19 @@ function wlvApiBaseUrl(): string {
     return runtimeConfig.__WLV_API_BASE_URL__.replace(/\/$/, '');
   }
 
-  if (window.location.port === '8010') {
+  const protocol = window.location.protocol || 'http:';
+  const hostname = window.location.hostname || '127.0.0.1';
+  const port = window.location.port;
+
+  if (port === '8000') {
     return '';
   }
 
-  return 'http://127.0.0.1:8010';
+  if (port === '5173' || port === '5174' || port === '5175') {
+    return `${protocol}//${hostname}:8000`;
+  }
+
+  return 'http://127.0.0.1:8000';
 }
 
 async function fetchWlvJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -285,7 +298,7 @@ function expandableProductName(value: string) {
   );
 }
 
-function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (managedWellId?: string | null) => void }) {
+function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeManagedWellId }: { onOpenLogViewer: (managedWellId?: string | null) => void; onClearLogViewer: () => void; activeManagedWellId: string | null }) {
   const [status, setStatus] = useState<ManagedInventoryStatusPayload | null>(null);
   const [wells, setWells] = useState<ManagedInventoryWellRecord[]>([]);
   const [selectedWellId, setSelectedWellId] = useState<string | null>(null);
@@ -298,6 +311,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
   const [pageSize, setPageSize] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
   const [bulkAction, setBulkAction] = useState<WmdpBulkAction>('load');
+  const [bulkApplying, setBulkApplying] = useState(false);
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -499,11 +513,62 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
     });
   };
 
-  const applyBulkAction = () => {
-    if (bulkAction !== 'load') return;
-    const managedWellId = [...selectedWellIds][0] ?? selectedWellId;
-    if (managedWellId) {
-      onOpenLogViewer(managedWellId);
+  const selectedProductWellIds = useMemo(() => {
+    const owners = new Set<string>();
+    if (selectedProductItemIds.size === 0) return owners;
+
+    wells.forEach((well) => {
+      const ownsSelectedProduct = (well.product_groups ?? []).some((group) => (group.items ?? []).some((item) => selectedProductItemIds.has(item.product_id)));
+      if (ownsSelectedProduct) owners.add(well.managed_well_id);
+    });
+
+    return owners;
+  }, [selectedProductItemIds, wells]);
+
+  const applyBulkAction = async () => {
+    if ((bulkAction !== 'load' && bulkAction !== 'unload') || bulkApplying) return;
+
+    const productIds = [...selectedProductItemIds];
+    const productOwnerIds = [...selectedProductWellIds];
+    const managedWellId = productIds.length > 0
+      ? productOwnerIds[0] ?? null
+      : [...selectedWellIds][0] ?? selectedWellId;
+
+    if (!managedWellId) {
+      setError(`Select one managed well or product row to ${bulkAction === 'load' ? 'load to' : 'unload from'} the Well Data Viewer.`);
+      return;
+    }
+
+    if (productOwnerIds.length > 1) {
+      setError(`${bulkAction === 'load' ? 'Load to' : 'Unload from'} WDV supports one managed well at a time. Clear selections from other wells first.`);
+      return;
+    }
+
+    const endpoint = bulkAction === 'load'
+      ? '/api/wlv/inventory/load-to-wdv'
+      : '/api/wlv/inventory/unload-from-wdv';
+
+    setBulkApplying(true);
+    setError(null);
+    try {
+      await fetchWlvJson(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          managed_well_id: managedWellId,
+          product_ids: productIds,
+        }),
+      });
+      await loadInventory();
+      if (bulkAction === 'load') {
+        onOpenLogViewer(managedWellId);
+      } else if (managedWellId === activeManagedWellId) {
+        onClearLogViewer();
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : `Unable to ${bulkAction === 'load' ? 'load selected managed data to' : 'unload selected managed data from'} the Well Data Viewer`);
+    } finally {
+      setBulkApplying(false);
     }
   };
 
@@ -577,7 +642,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
           </div>
 
           <div className="wlv-wmdp-control-row wlv-wmdp-control-row-bulk">
-            <span className="wlv-wmdp-selected-readout">Selected {selectedWellIds.size}</span>
+            <span className="wlv-wmdp-selected-readout">Selected wells {selectedWellIds.size} · products {selectedProductItemIds.size}</span>
             <label className="wlv-wmdp-action-control">
               <span>Action</span>
               <select value={bulkAction} onChange={(event) => setBulkAction(event.target.value as WmdpBulkAction)}>
@@ -586,7 +651,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
                 <option value="remove">Remove selected from MDP</option>
               </select>
             </label>
-            <button type="button" onClick={applyBulkAction} disabled={selectedWellIds.size === 0 || bulkAction !== 'load'}>Apply</button>
+            <button type="button" onClick={applyBulkAction} disabled={(selectedWellIds.size === 0 && selectedProductItemIds.size === 0) || bulkAction === 'remove' || bulkApplying}>{bulkApplying ? (bulkAction === 'unload' ? 'Unloading…' : 'Loading…') : 'Apply'}</button>
           </div>
         </div>
 
@@ -663,7 +728,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer }: { onOpenLogViewer: (manag
                       <td>{wellProductCount(well)}</td>
                       <td>
                         <div className="wlv-wmdp-row-actions">
-                          <button type="button" onClick={() => onOpenLogViewer(well.managed_well_id)}>Load</button>
+                          <button type="button" onClick={() => { setSelectedWellIds(new Set([well.managed_well_id])); void fetchWlvJson('/api/wlv/inventory/load-to-wdv', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ managed_well_id: well.managed_well_id, product_ids: [] }) }).then(() => loadInventory()).then(() => onOpenLogViewer(well.managed_well_id)).catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load managed well to WDV')); }}>Load</button>
                           <button type="button" onClick={() => setSelectedWellId(well.managed_well_id)}>Info</button>
                           <button type="button" disabled title="Remove from MDP requires a backend lifecycle endpoint">Remove</button>
                         </div>
@@ -1330,33 +1395,46 @@ function lithologyPattern(unit: string): string {
 type CurveInventoryTab = 'all' | 'selected' | 'aliases';
 
 function CurveInventory({
+  availableCurves,
   curveUsageCounts,
+  visibleTrackCurveIds,
   selectedTrackCurveIds,
   selectedCurveIds,
   assignmentEnabled,
+  preferredInventoryTab,
   onSelectCurve,
   onToggleCurveInSelectedTrack,
 }: {
+  availableCurves: CurveCatalogItem[];
   curveUsageCounts: Map<string, number>;
+  visibleTrackCurveIds: Set<string>;
   selectedTrackCurveIds: Set<string>;
   selectedCurveIds: Set<string>;
   assignmentEnabled: boolean;
+  preferredInventoryTab: CurveInventoryTab;
   onSelectCurve: (curveId: string) => void;
   onToggleCurveInSelectedTrack: (curveId: string, checked: boolean) => void;
 }) {
-  const [activeInventoryTab, setActiveInventoryTab] = useState<CurveInventoryTab>('selected');
+  const [activeInventoryTab, setActiveInventoryTab] = useState<CurveInventoryTab>(preferredInventoryTab);
+
+  // WLV-WDV-REBUILD-1A-INVENTORY-TAB:
+  // Empty WDV + WMDP-loaded data defaults to Loaded Curves.
+  // Once visible tracks exist, refresh/default view returns to Selected.
+  useEffect(() => {
+    setActiveInventoryTab(preferredInventoryTab);
+  }, [preferredInventoryTab]);
 
   const displayedCurves = useMemo(() => {
-    if (activeInventoryTab === 'selected') {
-      return curveCatalog.filter((curve) => (curveUsageCounts.get(curve.curveId) ?? 0) > 0);
-    }
-
     if (activeInventoryTab === 'aliases') {
       return [];
     }
 
-    return curveCatalog;
-  }, [activeInventoryTab, curveUsageCounts]);
+    if (activeInventoryTab === 'selected') {
+      return availableCurves.filter((curve) => visibleTrackCurveIds.has(curve.curveId));
+    }
+
+    return availableCurves.filter((curve) => (curveUsageCounts.get(curve.curveId) ?? 0) > 0);
+  }, [activeInventoryTab, availableCurves, curveUsageCounts, visibleTrackCurveIds]);
 
   const groups = useMemo(
     () => Array.from(new Set(displayedCurves.map((curve) => curve.curveClass))).filter((group) => group !== 'depth'),
@@ -1364,11 +1442,16 @@ function CurveInventory({
   );
 
   const selectedCurveCount = useMemo(
-    () => curveCatalog.filter((curve) => (curveUsageCounts.get(curve.curveId) ?? 0) > 0).length,
+    () => availableCurves.filter((curve) => visibleTrackCurveIds.has(curve.curveId)).length,
+    [availableCurves, visibleTrackCurveIds],
+  );
+
+  const loadedProductCount = useMemo(
+    () => Array.from(curveUsageCounts.values()).reduce((total, count) => total + count, 0),
     [curveUsageCounts],
   );
 
-  const inventoryCount = activeInventoryTab === 'selected' ? selectedCurveCount : curveCatalog.length;
+  const inventoryCount = loadedProductCount;
 
   return (
     <aside className="wlv-curve-inventory">
@@ -1386,7 +1469,7 @@ function CurveInventory({
           className={activeInventoryTab === 'all' ? 'active' : ''}
           onClick={() => setActiveInventoryTab('all')}
         >
-          All Curves
+          Loaded Curves
         </button>
         <button
           type="button"
@@ -1410,7 +1493,7 @@ function CurveInventory({
       )}
       {activeInventoryTab === 'selected' && selectedCurveCount === 0 && (
         <div className="wlv-curve-assignment-hint">
-          No curves are currently assigned to visible curve tracks.
+          No curves are currently assigned to visible tracks.
         </div>
       )}
       {activeInventoryTab === 'aliases' && (
@@ -1502,6 +1585,7 @@ function Toolbar({
   pendingAddTrackCurveCount,
   viewDepthRange,
   fullDepthRange,
+  viewDepthReadoutEnabled,
   intervalZoomActive,
   goToDepthValue,
   onGoToDepthValueChange,
@@ -1530,6 +1614,7 @@ function Toolbar({
   pendingAddTrackCurveCount: number;
   viewDepthRange: DepthViewRange;
   fullDepthRange: DepthViewRange;
+  viewDepthReadoutEnabled: boolean;
   intervalZoomActive: boolean;
   goToDepthValue: string;
   onGoToDepthValueChange: (value: string) => void;
@@ -2012,9 +2097,11 @@ function Toolbar({
           <button type="button" onClick={onPreviousView}>Prev</button>
           <button type="button" onClick={onFitDepth}>Full</button>
           <button type="button" onClick={onResetView}>Reset</button>
-          <strong className="wlv-depth-readout" title={`Full range ${depthRangeLabel(fullDepthRange)}`}>
-            View: {depthRangeLabel(viewDepthRange)}
-          </strong>
+          {viewDepthReadoutEnabled ? (
+            <strong className="wlv-depth-readout" title={`Full range ${depthRangeLabel(fullDepthRange)}`}>
+              View: {depthRangeLabel(viewDepthRange)}
+            </strong>
+          ) : null}
           <input
             className="wlv-go-to-depth-input"
             aria-label="Go to depth"
@@ -2979,15 +3066,31 @@ function RightPanel({
 
 export function TrackLayoutPrototype() {
   const [activeView, setActiveView] = useState<DemoNavView>('log-viewer');
-  const [managedViewerWellId, setManagedViewerWellId] = useState<string | null>('managed-well:forge-21-31');
+  const [managedViewerWellId, setManagedViewerWellId] = useState<string | null>(null);
   const [viewerPackageLoad, setViewerPackageLoad] = useState<BackendViewerPackageLoadResult | null>(null);
+  const [wdvPackageState, setWdvPackageState] = useState<WdvPackageState>(() => emptyWdvPackageState());
 
+  // WLV-WDV-REBUILD-1: WMDP load creates WDV availability only.
+  // It must not auto-populate visible well-log tracks.
   useEffect(() => {
     if (activeView !== 'log-viewer') return;
+    if (!managedViewerWellId) {
+      setViewerPackageLoad({
+        source: 'prototype_fallback',
+        package: null,
+        warning: 'No managed well is currently loaded to the Well Data Viewer',
+      });
+      setWdvPackageState(emptyWdvPackageState());
+      return;
+    }
     let cancelled = false;
-    void loadBackendViewerPackageWithFallback(managedViewerWellId ?? undefined)
+    setWdvPackageState(emptyWdvPackageState());
+    void loadBackendViewerPackageWithFallback(managedViewerWellId)
       .then((result) => {
-        if (!cancelled) setViewerPackageLoad(result);
+        if (!cancelled) {
+          setViewerPackageLoad(result);
+          setWdvPackageState(buildWdvPackageState(result.package));
+        }
       })
       .catch((error) => {
         if (!cancelled) {
@@ -2996,13 +3099,14 @@ export function TrackLayoutPrototype() {
             package: null,
             warning: error instanceof Error ? error.message : 'Viewer package unavailable',
           });
+          setWdvPackageState(emptyWdvPackageState());
         }
       });
     return () => {
       cancelled = true;
     };
   }, [activeView, managedViewerWellId]);
-  const [tracks, setTracks] = useState<WellLogTrack[]>(() => reindexTracks(initialTracks));
+  const [tracks, setTracks] = useState<WellLogTrack[]>([]);
   const [selection, setSelection] = useState<SelectionRef>({ kind: 'track', trackId: 'track-gr-sp' });
   const [selectedInventoryCurveIds, setSelectedInventoryCurveIds] = useState<string[]>([]);
   const [addTrackCurveSelectionMode, setAddTrackCurveSelectionMode] = useState(false);
@@ -3016,6 +3120,7 @@ export function TrackLayoutPrototype() {
   const [intervalSelection, setIntervalSelection] = useState<IntervalSelectionState | null>(null);
   const [dragPanState, setDragPanState] = useState<DragPanState | null>(null);
   const [trackResizeState, setTrackResizeState] = useState<TrackResizeState | null>(null);
+  const hasLoadedViewerWell = Boolean(managedViewerWellId);
   const [trackBackdropMode, setTrackBackdropMode] = useState<TrackBackdropMode>('light');
 
   const visibleDepthTicks = useMemo(() => makeDepthTicks(viewDepthRange), [viewDepthRange]);
@@ -3070,23 +3175,28 @@ export function TrackLayoutPrototype() {
   const canAdjustSelectedCurveTrackWidthDown = Boolean(selectedCurveTrack && selectedCurveTrack.widthPx > CURVE_TRACK_MIN_WIDTH);
   const canAdjustSelectedCurveTrackWidthUp = Boolean(selectedCurveTrack && selectedCurveTrack.widthPx < CURVE_TRACK_MAX_WIDTH);
 
-  const curveUsageCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-
-    tracks.forEach((track) => {
-      if (track.trackType !== 'curve') return;
-      track.curves.forEach((assignment) => {
-        counts.set(assignment.curveId, (counts.get(assignment.curveId) ?? 0) + 1);
-      });
-    });
-
-    return counts;
-  }, [tracks]);
+  const activeViewerCurves = useMemo(() => wdvPackageState.availableCurves, [wdvPackageState]);
+  const activeCurveCatalog = useMemo(() => (
+    activeViewerCurves.length > 0 ? activeViewerCurves : curveCatalog
+  ), [activeViewerCurves]);
+  const curveUsageCounts = useMemo(() => wdvPackageState.curveUsageCounts, [wdvPackageState]);
 
   const selectedTrackCurveIds = useMemo(() => {
     if (!selectedTrack || selectedTrack.trackType !== 'curve') return new Set<string>();
     return new Set(selectedTrack.curves.map((assignment) => assignment.curveId));
   }, [selectedTrack]);
+
+  // WLV-WDV-REBUILD-1B-EMPTY-STATE-CLEANUP:
+  // Selected inventory reflects curves assigned to visible tracks only.
+  // WMDP-loaded availability remains separate under Loaded Curves.
+  const visibleTrackCurveIds = useMemo(() => {
+    const ids = new Set<string>();
+    tracks.forEach((track) => {
+      if (track.trackType !== 'curve') return;
+      track.curves.forEach((assignment) => ids.add(assignment.curveId));
+    });
+    return ids;
+  }, [tracks]);
 
   const updateTrack = (trackId: string, patch: Partial<WellLogTrack>) => {
     setTracks((current) => current.map((track) => (track.trackId === trackId ? { ...track, ...patch } as WellLogTrack : track)));
@@ -3119,7 +3229,7 @@ export function TrackLayoutPrototype() {
       ));
 
       const selectedCurves = pendingAddTrackCurveIds
-        .map((curveId) => curveCatalog.find((curve) => curve.curveId === curveId))
+        .map((curveId) => activeCurveCatalog.find((curve) => curve.curveId === curveId))
         .filter((curve): curve is CurveCatalogItem => Boolean(curve));
 
       const curveAssignments = draft.trackType === 'curve' && draft.curveSource === 'selected'
@@ -3127,7 +3237,7 @@ export function TrackLayoutPrototype() {
         : [];
 
       const frontCurve = curveAssignments[0]
-        ? curveById(curveCatalog, curveAssignments[0].curveId)
+        ? curveById(activeCurveCatalog, curveAssignments[0].curveId)
         : null;
 
       const latticeOverride = draft.trackType === 'curve' && draft.latticeMode !== 'auto';
@@ -3153,7 +3263,7 @@ export function TrackLayoutPrototype() {
             trackIndex: insertionIndex,
             trackType: 'curve',
             title: curveAssignments.length > 0
-              ? curveAssignments.map((assignment) => curveById(curveCatalog, assignment.curveId).mnemonic).join(' / ')
+              ? curveAssignments.map((assignment) => curveById(activeCurveCatalog, assignment.curveId).mnemonic).join(' / ')
               : 'NEW CURVE TRACK',
             widthPx: 220,
             visible: true,
@@ -3315,7 +3425,20 @@ export function TrackLayoutPrototype() {
   const openManagedWellLogViewer = (managedWellId?: string | null) => {
     if (managedWellId) {
       setManagedViewerWellId(managedWellId);
+      setTracks([]);
+      setSelectedInventoryCurveIds([]);
+      setPendingAddTrackCurveIds([]);
+      setAddTrackCurveSelectionMode(false);
     }
+    setActiveView('log-viewer');
+  };
+
+  const clearManagedWellLogViewer = () => {
+    setManagedViewerWellId(null);
+    setTracks([]);
+    setSelectedInventoryCurveIds([]);
+    setPendingAddTrackCurveIds([]);
+    setAddTrackCurveSelectionMode(false);
     setActiveView('log-viewer');
   };
 
@@ -3377,7 +3500,7 @@ export function TrackLayoutPrototype() {
     setOpenCurveMenu(null);
 
     if (checked) {
-      const curve = curveById(curveCatalog, curveId);
+      const curve = curveById(activeCurveCatalog, curveId);
       const newAssignment = makeCurveAssignment(curve, selectedTrack.curves.length);
 
       setTracks((current) => current.map((track) => {
@@ -3421,7 +3544,7 @@ export function TrackLayoutPrototype() {
         return track;
       });
 
-      const curve = curveById(curveCatalog, payload.curveId);
+      const curve = curveById(activeCurveCatalog, payload.curveId);
       const assignment = movingAssignment ?? makeCurveAssignment(curve, 0);
 
       working = working.map((track) => {
@@ -3471,7 +3594,7 @@ export function TrackLayoutPrototype() {
       <DemoShellRail activeView={activeView} onNavigate={setActiveView} />
       <main className="wlv-demo-main" aria-label="Well Log Viewer workspace">
         {activeView === 'data' ? (
-          <ManagedWellInventoryPage onOpenLogViewer={openManagedWellLogViewer} />
+          <ManagedWellInventoryPage onOpenLogViewer={openManagedWellLogViewer} onClearLogViewer={clearManagedWellLogViewer} activeManagedWellId={managedViewerWellId} />
         ) : activeView === 'sources' ? (
           <SourceIntakeWorkbench />
         ) : (
@@ -3481,18 +3604,46 @@ export function TrackLayoutPrototype() {
           <strong>Well Log Viewer</strong>
         </div>
         <div className="wlv-loaded-context">
-          <span>Well <strong>{wellHeader.wellName}</strong></span>
-          <span>Wellbore <strong>{wellHeader.wellboreName}</strong></span>
-          <span>Status <strong>QAQC Review</strong></span>
-          <span>Viewer Source <strong>{viewerPackageLoad ? statusLabel(viewerPackageLoad.source) : 'loading'}</strong></span>
+          {hasLoadedViewerWell ? (
+            <>
+              <span>Well <strong>{wellHeader.wellName}</strong></span>
+              <span>Wellbore <strong>{wellHeader.wellboreName}</strong></span>
+              <span>Status <strong>QAQC Review</strong></span>
+              <span>Viewer Source <strong>{viewerPackageLoad ? statusLabel(viewerPackageLoad.source) : 'loading'}</strong></span>
+            </>
+          ) : (
+            <>
+              <span>Well <strong>No well loaded</strong></span>
+              <span>WDV <strong>Ready</strong></span>
+              <span>Load Source <strong>WMDP required</strong></span>
+              <span>Viewer Source <strong>{viewerPackageLoad ? statusLabel(viewerPackageLoad.source) : 'none'}</strong></span>
+            </>
+          )}
         </div>
       </header>
 
+      {!hasLoadedViewerWell ? (
+        <section className="wlv-empty-viewer-state" aria-label="Well Data Viewer empty state">
+          <div className="wlv-empty-viewer-card">
+            <h2>No data loaded in the Well Data Viewer</h2>
+            <p>
+              The WDV is ready. Load a managed well or selected products from the
+              WMDP using Bulk Action → Load selected to Data Viewer.
+            </p>
+            <p className="wlv-empty-viewer-note">
+              Existing WMDP inventory and Source Intake records are unchanged.
+              The viewer remains empty until WMDP explicitly loads data.
+            </p>
+          </div>
+        </section>
+      ) : (
+        <>
       <Toolbar
         selectedTrack={selectedTrack}
         pendingAddTrackCurveCount={pendingAddTrackCurveIds.length}
         viewDepthRange={viewDepthRange}
         fullDepthRange={FULL_DEPTH_RANGE}
+        viewDepthReadoutEnabled={tracks.length > 0}
         intervalZoomActive={intervalZoomActive}
         goToDepthValue={goToDepthValue}
         onGoToDepthValueChange={setGoToDepthValue}
@@ -3536,10 +3687,13 @@ export function TrackLayoutPrototype() {
 
       <div className={`wlv-prototype-workspace wlv-track-backdrop-${trackBackdropMode}`}>
         <CurveInventory
+          availableCurves={activeViewerCurves}
           curveUsageCounts={curveUsageCounts}
+          visibleTrackCurveIds={visibleTrackCurveIds}
           selectedTrackCurveIds={addTrackCurveSelectionMode ? new Set(pendingAddTrackCurveIds) : selectedTrackCurveIds}
           selectedCurveIds={new Set(selectedInventoryCurveIds)}
           assignmentEnabled={addTrackCurveSelectionMode || selectedTrack?.trackType === 'curve'}
+          preferredInventoryTab={tracks.length > 0 ? 'selected' : 'all'}
           onToggleCurveInSelectedTrack={(curveId, checked) => {
             if (addTrackCurveSelectionMode) {
               setPendingAddTrackCurveIds((current) => (
@@ -3570,47 +3724,80 @@ export function TrackLayoutPrototype() {
             }
           }}
         />
-        <TrackCanvas
-          tracks={tracks}
-          selection={selection}
-          openCurveMenu={openCurveMenu}
-          depthTicks={visibleDepthTicks}
-          viewDepthRange={viewDepthRange}
-          goToDepthMarker={goToDepthMarker}
-          intervalZoomActive={intervalZoomActive}
-          intervalSelection={intervalSelection}
-          dragPanActive={Boolean(dragPanState)}
-          onSelectTrack={(trackId) => setSelection({ kind: 'track', trackId })}
-          onSelectCurve={(trackId, assignmentId) => setSelection({ kind: 'curve', trackId, assignmentId })}
-          onReorderCurve={reorderCurve}
-          onMoveCurveToTrack={moveCurveToTrack}
-          onOpenCurveMenu={(trackId, assignmentId) => setOpenCurveMenu({ trackId, assignmentId })}
-          onCloseCurveMenu={() => setOpenCurveMenu(null)}
-          onRemoveCurveFromTrack={removeCurveFromTrack}
-          onStartIntervalSelection={startIntervalSelection}
-          onUpdateIntervalSelection={updateIntervalSelection}
-          onArmIntervalSelection={armIntervalSelection}
-          onCompleteIntervalSelection={completeIntervalSelection}
-          onStartDragPan={startDragPan}
-          onUpdateDragPan={updateDragPan}
-          onEndDragPan={endDragPan}
-          onStartCurveTrackResize={startCurveTrackResize}
-          resizingTrackId={trackResizeState?.trackId ?? null}
-        />
-        <WellLogPropertiesPanelSlot
-          tracks={tracks}
-          selection={selection}
-          updateTrack={updateTrack}
-          updateCurveAssignment={updateCurveAssignment}
-          legacyPanel={(
-            <RightPanel
-              tracks={tracks}
-              selection={selection}
-              updateTrack={updateTrack}
-              updateCurveAssignment={updateCurveAssignment}
-            />
-          )}
-        />
+        {tracks.length === 0 ? (
+          <section className="wlv-loaded-curves-ready-state" aria-label="Loaded curves ready">
+            <div className="wlv-loaded-curves-ready-card">
+              <h2>Loaded curves are ready</h2>
+              <p>
+                {wdvPackageState.loadedProductCount} loaded curve product{wdvPackageState.loadedProductCount === 1 ? '' : 's'}
+                {' '}are available in the left Loaded Curves panel.
+              </p>
+              <p className="wlv-empty-viewer-note">
+                Select loaded curves and use Add Track, or drag curves into a manually created curve track.
+                WMDP Load does not automatically populate well-log tracks.
+              </p>
+              {wdvPackageState.unsupportedProductCount > 0 && (
+                <p className="wlv-empty-viewer-note">
+                  {wdvPackageState.unsupportedProductCount} unsupported product{wdvPackageState.unsupportedProductCount === 1 ? '' : 's'}
+                  {' '}were excluded from renderable Loaded Curves.
+                </p>
+              )}
+            </div>
+          </section>
+        ) : (
+          <TrackCanvas
+            tracks={tracks}
+            selection={selection}
+            openCurveMenu={openCurveMenu}
+            depthTicks={visibleDepthTicks}
+            viewDepthRange={viewDepthRange}
+            goToDepthMarker={goToDepthMarker}
+            intervalZoomActive={intervalZoomActive}
+            intervalSelection={intervalSelection}
+            dragPanActive={Boolean(dragPanState)}
+            onSelectTrack={(trackId) => setSelection({ kind: 'track', trackId })}
+            onSelectCurve={(trackId, assignmentId) => setSelection({ kind: 'curve', trackId, assignmentId })}
+            onReorderCurve={reorderCurve}
+            onMoveCurveToTrack={moveCurveToTrack}
+            onOpenCurveMenu={(trackId, assignmentId) => setOpenCurveMenu({ trackId, assignmentId })}
+            onCloseCurveMenu={() => setOpenCurveMenu(null)}
+            onRemoveCurveFromTrack={removeCurveFromTrack}
+            onStartIntervalSelection={startIntervalSelection}
+            onUpdateIntervalSelection={updateIntervalSelection}
+            onArmIntervalSelection={armIntervalSelection}
+            onCompleteIntervalSelection={completeIntervalSelection}
+            onStartDragPan={startDragPan}
+            onUpdateDragPan={updateDragPan}
+            onEndDragPan={endDragPan}
+            onStartCurveTrackResize={startCurveTrackResize}
+            resizingTrackId={trackResizeState?.trackId ?? null}
+          />
+        )}
+        {tracks.length === 0 ? (
+          <aside className="wlv-right-panel wlv-ready-properties-panel" aria-label="Track properties unavailable">
+            <div className="wlv-panel-heading">
+              <h2>Track Properties</h2>
+            </div>
+            <div className="wlv-ready-properties-copy">
+              Create or select a visible track to edit display properties.
+            </div>
+          </aside>
+        ) : (
+          <WellLogPropertiesPanelSlot
+            tracks={tracks}
+            selection={selection}
+            updateTrack={updateTrack}
+            updateCurveAssignment={updateCurveAssignment}
+            legacyPanel={(
+              <RightPanel
+                tracks={tracks}
+                selection={selection}
+                updateTrack={updateTrack}
+                updateCurveAssignment={updateCurveAssignment}
+              />
+            )}
+          />
+        )}
       </div>
 
       <footer className="wlv-status-footer">
@@ -3618,6 +3805,8 @@ export function TrackLayoutPrototype() {
         <span>Track terminology only</span>
         <span>Mock frontend layout draft — no LAS parsing or MSI persistence</span>
       </footer>
+        </>
+      )}
         </div>
         )}
       </main>

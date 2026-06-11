@@ -175,6 +175,45 @@ class RegisterSeedWellResponse(BaseModel):
     record: ManagedWellRecord
 
 
+class LoadManagedWellToWdvRequest(BaseModel):
+    managed_well_id: str
+    product_ids: list[str] = Field(default_factory=list)
+
+
+class LoadManagedWellToWdvResult(BaseModel):
+    managed_well_id: str
+    loaded_product_ids: list[str] = Field(default_factory=list)
+    unloaded_managed_well_ids: list[str] = Field(default_factory=list)
+    wdv_state: ManagedWdvState = ManagedWdvState.LOADED_TO_WDV
+    active_viewer_package_id: Optional[str] = None
+
+
+class LoadManagedWellToWdvResponse(BaseModel):
+    ok: bool = True
+    action: str = "loaded_to_wdv"
+    result: LoadManagedWellToWdvResult
+    record: ManagedWellRecord
+
+
+class UnloadManagedWellFromWdvRequest(BaseModel):
+    managed_well_id: str
+    product_ids: list[str] = Field(default_factory=list)
+
+
+class UnloadManagedWellFromWdvResult(BaseModel):
+    managed_well_id: str
+    unloaded_product_ids: list[str] = Field(default_factory=list)
+    remaining_loaded_product_ids: list[str] = Field(default_factory=list)
+    wdv_state: ManagedWdvState = ManagedWdvState.NOT_LOADED
+
+
+class UnloadManagedWellFromWdvResponse(BaseModel):
+    ok: bool = True
+    action: str = "unloaded_from_wdv"
+    result: UnloadManagedWellFromWdvResult
+    record: ManagedWellRecord
+
+
 class InventoryValidationSeverity(str, Enum):
     INFO = "info"
     WARNING = "warning"

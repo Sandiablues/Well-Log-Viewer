@@ -10,6 +10,7 @@ from backend.app.wells.models import Curve, WellMultitrackV1
 from backend.app.wells.seed_repository import SeedWellRepository
 from backend.app.classification.well_log_classifier import classify_well_log_curve
 from backend.app.classification.well_log_vocabulary import PRODUCT_GROUP_ORDER
+from backend.app.knowledge.curve_knowledge import normalize_viewer_package_for_wdv
 
 from .models import (
     InventoryValidationSeverity,
@@ -19,11 +20,16 @@ from .models import (
     ManagedInventoryStatus,
     ManagedInventoryValidationIssue,
     ManagedInventoryValidationResult,
+    LoadManagedWellToWdvResponse,
+    LoadManagedWellToWdvResult,
+    UnloadManagedWellFromWdvResponse,
+    UnloadManagedWellFromWdvResult,
     ManagedProductGroup,
     ManagedProductGroupItem,
     ManagedSourceKind,
     ManagedSourceReference,
     ManagedWellRecord,
+    ManagedWdvState,
     RegisterSeedWellResponse,
     ViewerPackageReference,
     utc_now_iso,
@@ -90,12 +96,54 @@ class ManagedWellInventoryService:
         Managed Inventory remains the lookup authority. The full viewer package
         contract is stored in record metadata by registration/ingestion services,
         while viewer_packages holds lightweight package references for lists.
+
+        If WMDP has loaded only selected curve products to WDV, the returned
+        package is filtered to those loaded curves. This keeps the WDV display
+        controlled by WMDP state instead of frontend fallback/demo state.
         """
         record = self.repository.get_record(managed_well_id)
         contract = record.metadata.get("viewer_package_contract")
         if isinstance(contract, dict):
-            return contract
+            return self._viewer_package_contract_for_wdv(record=record, contract=contract)
         raise ManagedWellNotFoundError(f"{managed_well_id}/viewer-package")
+
+    def _viewer_package_contract_for_wdv(self, record: ManagedWellRecord, contract: dict[str, Any]) -> dict[str, Any]:
+        loaded_curve_names = {
+            item.curve_name
+            for group in record.product_groups
+            for item in group.items
+            if self._is_wdv_loadable_product(item)
+            and item.wdv_state == ManagedWdvState.LOADED_TO_WDV
+            and item.curve_name
+        }
+
+        if record.wdv_state != ManagedWdvState.LOADED_TO_WDV or not loaded_curve_names:
+            return normalize_viewer_package_for_wdv(contract)
+
+        filtered = dict(contract)
+        filtered_tracks: list[dict[str, Any]] = []
+
+        for raw_track in contract.get("tracks", []):
+            if not isinstance(raw_track, dict):
+                continue
+            curves = raw_track.get("curves", [])
+            if not curves:
+                filtered_tracks.append(dict(raw_track))
+                continue
+            filtered_curves = [
+                curve
+                for curve in curves
+                if isinstance(curve, dict)
+                and str(curve.get("curve_id") or curve.get("mnemonic") or "") in loaded_curve_names
+            ]
+            if filtered_curves:
+                next_track = dict(raw_track)
+                next_track["curves"] = filtered_curves
+                filtered_tracks.append(next_track)
+
+        filtered["tracks"] = filtered_tracks
+        filtered["wmdp_loaded_curve_names"] = sorted(loaded_curve_names)
+        return normalize_viewer_package_for_wdv(filtered)
 
     def upsert_managed_record(self, record: ManagedWellRecord) -> tuple[str, ManagedWellRecord]:
         """Upsert a managed well record built by another backend service.
@@ -172,6 +220,151 @@ class ManagedWellInventoryService:
         )
         action, saved = self.repository.upsert_record(record)
         return RegisterSeedWellResponse(ok=True, action=action, record=saved)
+
+
+    def load_managed_well_to_wdv(
+        self,
+        managed_well_id: str,
+        product_ids: list[str] | None = None,
+    ) -> LoadManagedWellToWdvResponse:
+        """Mark one managed well, and optionally selected products, as loaded to WDV.
+
+        The Managed Well Inventory remains authoritative for WMDP/WDV state.
+        Loading is deliberately state-only here: it does not generate viewer
+        representations or mutate source-intake records. Only one managed well
+        may be loaded at a time.
+        """
+        selected_product_ids = set(product_ids or [])
+        records = self.repository.list_records()
+        target = None
+
+        for record in records:
+            if record.managed_well_id == managed_well_id:
+                target = record
+                break
+
+        if target is None:
+            raise ManagedWellNotFoundError(managed_well_id)
+
+        unloaded_managed_well_ids: list[str] = []
+        for record in records:
+            if record.managed_well_id == managed_well_id:
+                continue
+            if record.wdv_state != ManagedWdvState.NOT_LOADED:
+                unloaded_managed_well_ids.append(record.managed_well_id)
+            record.wdv_state = ManagedWdvState.NOT_LOADED
+            for group in record.product_groups:
+                for item in group.items:
+                    item.wdv_state = ManagedWdvState.NOT_LOADED
+            self.repository.upsert_record(record)
+
+        loadable_items = [
+            item
+            for group in target.product_groups
+            for item in group.items
+            if self._is_wdv_loadable_product(item)
+        ]
+
+        if selected_product_ids:
+            loadable_items = [item for item in loadable_items if item.product_id in selected_product_ids]
+
+        loaded_product_ids = [item.product_id for item in loadable_items]
+        loaded_product_id_set = set(loaded_product_ids)
+
+        target.wdv_state = ManagedWdvState.LOADED_TO_WDV
+        for group in target.product_groups:
+            for item in group.items:
+                if item.product_id in loaded_product_id_set:
+                    item.wdv_state = ManagedWdvState.LOADED_TO_WDV
+                else:
+                    item.wdv_state = ManagedWdvState.NOT_LOADED
+
+        target.updated_at = utc_now_iso()
+        _action, saved = self.repository.upsert_record(target)
+        active_package_id = saved.viewer_packages[0].viewer_package_id if saved.viewer_packages else None
+
+        return LoadManagedWellToWdvResponse(
+            result=LoadManagedWellToWdvResult(
+                managed_well_id=saved.managed_well_id,
+                loaded_product_ids=loaded_product_ids,
+                unloaded_managed_well_ids=unloaded_managed_well_ids,
+                active_viewer_package_id=active_package_id,
+            ),
+            record=saved,
+        )
+
+    def unload_managed_well_from_wdv(
+        self,
+        managed_well_id: str,
+        product_ids: list[str] | None = None,
+    ) -> UnloadManagedWellFromWdvResponse:
+        """Mark selected managed well data as unloaded from WDV.
+
+        Unload is a non-destructive WDV state transition. It does not remove
+        Managed Well Inventory records, WMDP staging state, source-intake
+        records, source files, or viewer-package metadata. If product_ids is
+        empty, the whole managed well is unloaded from WDV. If product_ids is
+        supplied, only those products are unloaded and the well remains
+        loaded_to_wdv while any loadable product remains loaded.
+        """
+        selected_product_ids = set(product_ids or [])
+        record = self.repository.get_record(managed_well_id)
+
+        loadable_items = [
+            item
+            for group in record.product_groups
+            for item in group.items
+            if self._is_wdv_loadable_product(item)
+        ]
+
+        if selected_product_ids:
+            target_items = [item for item in loadable_items if item.product_id in selected_product_ids]
+        else:
+            target_items = loadable_items
+
+        unloaded_product_ids = [item.product_id for item in target_items]
+        unloaded_product_id_set = set(unloaded_product_ids)
+
+        for group in record.product_groups:
+            for item in group.items:
+                if item.product_id in unloaded_product_id_set:
+                    item.wdv_state = ManagedWdvState.NOT_LOADED
+
+        remaining_loaded_product_ids = [
+            item.product_id
+            for group in record.product_groups
+            for item in group.items
+            if self._is_wdv_loadable_product(item) and item.wdv_state == ManagedWdvState.LOADED_TO_WDV
+        ]
+
+        record.wdv_state = (
+            ManagedWdvState.LOADED_TO_WDV
+            if remaining_loaded_product_ids
+            else ManagedWdvState.NOT_LOADED
+        )
+        record.updated_at = utc_now_iso()
+        _action, saved = self.repository.upsert_record(record)
+
+        return UnloadManagedWellFromWdvResponse(
+            result=UnloadManagedWellFromWdvResult(
+                managed_well_id=saved.managed_well_id,
+                unloaded_product_ids=unloaded_product_ids,
+                remaining_loaded_product_ids=remaining_loaded_product_ids,
+                wdv_state=saved.wdv_state,
+            ),
+            record=saved,
+        )
+
+    @staticmethod
+    def _is_wdv_loadable_product(item: ManagedProductGroupItem) -> bool:
+        if item.selectable is False:
+            return False
+        if item.product_category == "supporting_documents":
+            return False
+        source_kind = (item.source_kind or "").lower()
+        if source_kind in {ManagedSourceKind.DOCUMENT.value, "pdf", "doc", "docx"}:
+            return False
+        return True
 
     def validate_inventory(self) -> ManagedInventoryValidationResult:
         snapshot = self.repository.snapshot()
