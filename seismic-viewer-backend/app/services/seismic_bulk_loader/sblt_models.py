@@ -30,6 +30,7 @@ SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED = "segy_header_evidence_extracted"
 SESSION_STATUS_REVIEW_PACKAGE_BUILT = "review_package_built"
 SESSION_STATUS_REVIEW_REQUIRED = "review_required"
 SESSION_STATUS_REVIEW_DECISIONS_APPLIED = "review_decisions_applied"
+SESSION_STATUS_APPROVED_FOR_LOADING_PREP = "approved_for_loading_prep"  # SBLT-8
 SESSION_STATUS_APPROVED = "approved"
 SESSION_STATUS_REGISTERED = "registered"
 SESSION_STATUS_FAILED = "failed"
@@ -44,6 +45,7 @@ VALID_SESSION_STATUSES = {
     SESSION_STATUS_REVIEW_PACKAGE_BUILT,
     SESSION_STATUS_REVIEW_REQUIRED,
     SESSION_STATUS_REVIEW_DECISIONS_APPLIED,
+    SESSION_STATUS_APPROVED_FOR_LOADING_PREP,
     SESSION_STATUS_APPROVED,
     SESSION_STATUS_REGISTERED,
     SESSION_STATUS_FAILED,
@@ -288,6 +290,33 @@ def make_review_decided_row(
     }
 
 
+def make_approval_gate_row(
+    existing_row: dict[str, Any],
+    *,
+    approval_gate: dict[str, Any],
+    approved_canonical_metadata: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """
+    Build an updated row dict after SBLT-8 approval gate processing.
+
+    Preserves all fields produced by SBLT-1 through SBLT-7 unchanged, including
+    metadata_evidence (read-only), review_decisions, approved_canonical_metadata_draft,
+    and approval_readiness.
+
+    Adds:
+      approval_gate                — gate decision, status, reasons, and readiness flags
+      approved_canonical_metadata  — copy of approved_canonical_metadata_draft if approved;
+                                     None otherwise
+
+    Row status, row actions, and all prior SBLT fields are NOT changed by SBLT-8.
+    """
+    return {
+        **existing_row,
+        "approval_gate": approval_gate,
+        "approved_canonical_metadata": approved_canonical_metadata,
+    }
+
+
 def make_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Build the summary block from a list of row dicts.
@@ -371,6 +400,7 @@ def make_session(
                 SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED,
                 SESSION_STATUS_REVIEW_PACKAGE_BUILT,
                 SESSION_STATUS_REVIEW_DECISIONS_APPLIED,
+                SESSION_STATUS_APPROVED_FOR_LOADING_PREP,
             )
             and row_count > 0
         ),

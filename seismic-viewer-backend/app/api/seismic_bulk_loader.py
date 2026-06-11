@@ -1,5 +1,5 @@
 """
-SBLT-1 through SBLT-7: FastAPI router for the Seismic Bulk Loading Tool.
+SBLT-1 through SBLT-8: FastAPI router for the Seismic Bulk Loading Tool.
 
 Routes:
     POST /api/sblt/sessions                                          — create a session
@@ -10,6 +10,7 @@ Routes:
     POST /api/sblt/sessions/{session_id}/extract-segy-header-evidence — SBLT-5
     POST /api/sblt/sessions/{session_id}/build-review-package        — SBLT-6
     POST /api/sblt/sessions/{session_id}/apply-review-decisions      — SBLT-7
+    POST /api/sblt/sessions/{session_id}/approve-reviewed-rows       — SBLT-8
 
 Ownership: backend SBLT service.
 Frontend: not involved.
@@ -35,6 +36,7 @@ from app.services.seismic_bulk_loader.sblt_session_service import (
     extract_segy_header_evidence,
     build_review_package,
     apply_review_decisions,
+    approve_reviewed_rows,
 )
 
 
@@ -354,6 +356,48 @@ def apply_sblt_review_decisions(
         raise HTTPException(
             status_code=500,
             detail=f"SBLT review decision application failed unexpectedly: {exc}",
+        ) from exc
+
+    return session
+
+
+@router.post("/sessions/{session_id}/approve-reviewed-rows")
+def approve_sblt_reviewed_rows(session_id: str) -> dict[str, Any]:
+    """
+    Run SBLT-8 approval gate on a review_decisions_applied session.
+
+    Classifies every row as approved, held, rejected, or blocked based on the
+    SBLT-7 approval_readiness outputs.  For each approved row, promotes
+    approved_canonical_metadata_draft to approved_canonical_metadata.  Builds a
+    session-level approval_package summarising gate outcomes and loading readiness.
+
+    Architecture guarantees:
+      - Does NOT approve rows for operational loading, conversion, or registration.
+      - Does NOT register MSI records.
+      - Does NOT trigger conversion or indexing.
+      - Does NOT query MSI, Managed Data, or Source Intake.
+      - Does NOT read SEG-Y files or trace data.
+      - Does NOT modify MDE bundles or metadata_evidence.
+      - can_register remains False.
+      - can_convert remains False.
+      - approval_package.session_loading_readiness.can_continue_to_loading_handoff
+        is readiness for SBLT-9 only.
+
+    Session must be in 'review_decisions_applied' or 'approved_for_loading_prep' state.
+    Returns 400 if the session is in an incompatible state.
+    Returns 404 if the session does not exist.
+    Returns 500 on invariant failure or unexpected error.
+    """
+    try:
+        session = approve_reviewed_rows(session_id)
+    except SBLTNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SBLTValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"SBLT approval gate failed unexpectedly: {exc}",
         ) from exc
 
     return session

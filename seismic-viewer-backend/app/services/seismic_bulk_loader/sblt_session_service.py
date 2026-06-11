@@ -38,6 +38,7 @@ from .sblt_models import (
     SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED,
     SESSION_STATUS_REVIEW_PACKAGE_BUILT,
     SESSION_STATUS_REVIEW_DECISIONS_APPLIED,
+    SESSION_STATUS_APPROVED_FOR_LOADING_PREP,
     SESSION_STATUS_FAILED,
     make_parsed_row,
     make_validated_row,
@@ -991,6 +992,88 @@ def apply_review_decisions(
     if "review_package" in session:
         updated_session["review_package"] = session["review_package"]
     updated_session["review_decision_package"] = decision_package
+
+    _validate_session_invariants(updated_session)
+    _save_session(updated_session)
+
+    return updated_session
+
+
+# ---------------------------------------------------------------------------
+# SBLT-8: approve_reviewed_rows
+# ---------------------------------------------------------------------------
+
+def approve_reviewed_rows(session_id: str) -> dict:
+    """
+    Run the SBLT-8 approval gate on a review_decisions_applied session.
+
+    Loads the session, classifies every row through the approval gate, attaches
+    row.approval_gate and row.approved_canonical_metadata to each row, builds a
+    session-level approval_package, advances session status to
+    approved_for_loading_prep, and persists.
+
+    SBLT-8 scope:
+      - Reads:  row.approval_readiness, row.approved_canonical_metadata_draft.
+      - Writes: row.approval_gate, row.approved_canonical_metadata,
+                session.approval_package.
+      - Preserves: all prior row fields (status, actions, metadata_evidence,
+                   review_decisions, approved_canonical_metadata_draft,
+                   approval_readiness, and all SBLT-1..7 fields).
+      - Does NOT approve rows for operational loading, conversion, or registration.
+      - Does NOT register MSI records.
+      - Does NOT trigger conversion or indexing.
+      - Does NOT query MSI, Managed Data, or Source Intake.
+      - Does NOT read SEG-Y files or trace data.
+      - Does NOT modify MDE bundles.
+      - can_register remains False.
+      - can_convert remains False.
+      - session_loading_readiness.can_continue_to_loading_handoff == True means
+        the session is ready for SBLT-9 loading/conversion handoff only.
+
+    Idempotent: re-running replaces row.approval_gate, row.approved_canonical_metadata,
+    and session.approval_package with the new result.
+
+    Raises SBLTValidationError (400) if session is not in
+    review_decisions_applied or approved_for_loading_prep state.
+    Raises SBLTNotFoundError (404) if the session does not exist.
+    """
+    from .sblt_approval_gate import run_approval_gate
+
+    session = get_session(session_id)
+
+    current_status = session.get("status")
+    if current_status not in (
+        SESSION_STATUS_REVIEW_DECISIONS_APPLIED,
+        SESSION_STATUS_APPROVED_FOR_LOADING_PREP,
+    ):
+        raise SBLTValidationError(
+            f"SBLT session must be in 'review_decisions_applied' or "
+            f"'approved_for_loading_prep' state before running the approval gate. "
+            f"Current status: {current_status!r}",
+            status_code=400,
+        )
+
+    # Run the approval gate — pure computation, no I/O beyond this session read.
+    updated_rows, approval_package = run_approval_gate(session)
+
+    now = _utc_now()
+    updated_session = make_session(
+        session_id=session["session_id"],
+        status=SESSION_STATUS_APPROVED_FOR_LOADING_PREP,
+        source=session["source"],
+        rows=updated_rows,
+        created_at=session["created_at"],
+        updated_at=now,
+    )
+
+    # Preserve SBLT-6 review_package if present.
+    if "review_package" in session:
+        updated_session["review_package"] = session["review_package"]
+    # Preserve SBLT-7 review_decision_package — SBLT-8 does not modify it.
+    if "review_decision_package" in session:
+        updated_session["review_decision_package"] = session["review_decision_package"]
+    # Attach SBLT-8 approval_package.
+    updated_session["approval_package"] = approval_package
 
     _validate_session_invariants(updated_session)
     _save_session(updated_session)
