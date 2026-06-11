@@ -29,6 +29,7 @@ SESSION_STATUS_PATHS_VALIDATED = "paths_validated"
 SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED = "segy_header_evidence_extracted"
 SESSION_STATUS_REVIEW_PACKAGE_BUILT = "review_package_built"
 SESSION_STATUS_REVIEW_REQUIRED = "review_required"
+SESSION_STATUS_REVIEW_DECISIONS_APPLIED = "review_decisions_applied"
 SESSION_STATUS_APPROVED = "approved"
 SESSION_STATUS_REGISTERED = "registered"
 SESSION_STATUS_FAILED = "failed"
@@ -42,6 +43,7 @@ VALID_SESSION_STATUSES = {
     SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED,
     SESSION_STATUS_REVIEW_PACKAGE_BUILT,
     SESSION_STATUS_REVIEW_REQUIRED,
+    SESSION_STATUS_REVIEW_DECISIONS_APPLIED,
     SESSION_STATUS_APPROVED,
     SESSION_STATUS_REGISTERED,
     SESSION_STATUS_FAILED,
@@ -256,6 +258,36 @@ def make_segy_header_evidence_row(
     return result
 
 
+def make_review_decided_row(
+    existing_row: dict[str, Any],
+    *,
+    review_decisions: dict[str, Any],
+    approved_canonical_metadata_draft: dict[str, Any],
+    approval_readiness: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Build an updated row dict after SBLT-7 review decision application.
+
+    Preserves all fields produced by SBLT-1 through SBLT-6 unchanged, including
+    metadata_evidence (read-only in SBLT-7).
+
+    Adds:
+      review_decisions                — per-field decision records
+      approved_canonical_metadata_draft — draft canonical field values
+      approval_readiness              — row-level readiness status
+
+    Row status and actions are NOT changed by SBLT-7.  Earlier pipeline steps
+    own those fields.  approval_readiness independently communicates the SBLT-7
+    outcome without conflicting with existing row state.
+    """
+    return {
+        **existing_row,
+        "review_decisions": review_decisions,
+        "approved_canonical_metadata_draft": approved_canonical_metadata_draft,
+        "approval_readiness": approval_readiness,
+    }
+
+
 def make_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Build the summary block from a list of row dicts.
@@ -338,6 +370,7 @@ def make_session(
                 SESSION_STATUS_PATHS_VALIDATED,
                 SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED,
                 SESSION_STATUS_REVIEW_PACKAGE_BUILT,
+                SESSION_STATUS_REVIEW_DECISIONS_APPLIED,
             )
             and row_count > 0
         ),
@@ -348,6 +381,7 @@ def make_session(
                 SESSION_STATUS_PATHS_VALIDATED,
                 SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED,
                 SESSION_STATUS_REVIEW_PACKAGE_BUILT,
+                SESSION_STATUS_REVIEW_DECISIONS_APPLIED,
             )
             and has_approvable_rows
         ),

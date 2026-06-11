@@ -37,6 +37,7 @@ from .sblt_models import (
     SESSION_STATUS_PATHS_VALIDATED,
     SESSION_STATUS_SEGY_HEADER_EVIDENCE_EXTRACTED,
     SESSION_STATUS_REVIEW_PACKAGE_BUILT,
+    SESSION_STATUS_REVIEW_DECISIONS_APPLIED,
     SESSION_STATUS_FAILED,
     make_parsed_row,
     make_validated_row,
@@ -903,6 +904,93 @@ def build_review_package(session_id: str) -> dict:
     # Attach review_package outside make_session to avoid polluting the
     # invariant-checked core session schema.
     updated_session["review_package"] = review_package
+
+    _validate_session_invariants(updated_session)
+    _save_session(updated_session)
+
+    return updated_session
+
+
+# ---------------------------------------------------------------------------
+# SBLT-7: apply_review_decisions
+# ---------------------------------------------------------------------------
+
+def apply_review_decisions(
+    session_id: str,
+    row_decisions_input: list[dict],
+    bulk_accept_auto_accepted: bool = False,
+    bulk_accept_suggestions: bool = False,
+) -> dict:
+    """
+    Run SBLT-7 review decision application on a review_package_built session.
+
+    Loads the session, applies user-supplied review decisions and system-derived
+    safe defaults to every row, builds per-row review_decisions,
+    approved_canonical_metadata_draft, and approval_readiness, then builds a
+    session-level review_decision_package.  Advances session status to
+    review_decisions_applied and persists.
+
+    SBLT-7 scope:
+      - Reads:  row.metadata_evidence.field_review, submitted_metadata,
+                candidate_metadata.
+      - Writes: row.review_decisions,
+                row.approved_canonical_metadata_draft,
+                row.approval_readiness.
+      - Preserves: all prior row fields unchanged, including metadata_evidence.
+      - Does NOT approve rows for loading.
+      - Does NOT register MSI records.
+      - Does NOT trigger conversion or indexing.
+      - Does NOT query MSI, Managed Data, or Source Intake.
+      - Does NOT read SEG-Y files or trace data.
+      - can_register remains False.
+      - approved_for_loading remains False.
+
+    Idempotent: calling again replaces review_decisions,
+    approved_canonical_metadata_draft, approval_readiness, and
+    review_decision_package with the new request's values.
+
+    Raises SBLTValidationError (400) if session is not in
+    review_package_built or review_decisions_applied state.
+    Raises SBLTNotFoundError (404) if the session does not exist.
+    """
+    from .sblt_review_decisions import apply_review_decisions_to_session
+
+    session = get_session(session_id)
+
+    current_status = session.get("status")
+    if current_status not in (
+        SESSION_STATUS_REVIEW_PACKAGE_BUILT,
+        SESSION_STATUS_REVIEW_DECISIONS_APPLIED,
+    ):
+        raise SBLTValidationError(
+            f"SBLT session must be in 'review_package_built' or "
+            f"'review_decisions_applied' state before applying review decisions. "
+            f"Current status: {current_status!r}",
+            status_code=400,
+        )
+
+    # Apply decisions — pure computation, no mutation of session or rows.
+    updated_rows, decision_package = apply_review_decisions_to_session(
+        session=session,
+        row_decisions_input=row_decisions_input,
+        bulk_accept_auto_accepted=bulk_accept_auto_accepted,
+        bulk_accept_suggestions=bulk_accept_suggestions,
+    )
+
+    now = _utc_now()
+    updated_session = make_session(
+        session_id=session["session_id"],
+        status=SESSION_STATUS_REVIEW_DECISIONS_APPLIED,
+        source=session["source"],
+        rows=updated_rows,
+        created_at=session["created_at"],
+        updated_at=now,
+    )
+
+    # Preserve the SBLT-6 review_package if present; attach the SBLT-7 package.
+    if "review_package" in session:
+        updated_session["review_package"] = session["review_package"]
+    updated_session["review_decision_package"] = decision_package
 
     _validate_session_invariants(updated_session)
     _save_session(updated_session)
