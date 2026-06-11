@@ -1,5 +1,5 @@
 """
-SBLT-1 through SBLT-8: FastAPI router for the Seismic Bulk Loading Tool.
+SBLT-1 through SBLT-9: FastAPI router for the Seismic Bulk Loading Tool.
 
 Routes:
     POST /api/sblt/sessions                                          — create a session
@@ -11,6 +11,7 @@ Routes:
     POST /api/sblt/sessions/{session_id}/build-review-package        — SBLT-6
     POST /api/sblt/sessions/{session_id}/apply-review-decisions      — SBLT-7
     POST /api/sblt/sessions/{session_id}/approve-reviewed-rows       — SBLT-8
+    POST /api/sblt/sessions/{session_id}/prepare-loading-handoff     — SBLT-9
 
 Ownership: backend SBLT service.
 Frontend: not involved.
@@ -37,6 +38,7 @@ from app.services.seismic_bulk_loader.sblt_session_service import (
     build_review_package,
     apply_review_decisions,
     approve_reviewed_rows,
+    prepare_loading_handoff_session,
 )
 
 
@@ -398,6 +400,49 @@ def approve_sblt_reviewed_rows(session_id: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=500,
             detail=f"SBLT approval gate failed unexpectedly: {exc}",
+        ) from exc
+
+    return session
+
+
+@router.post("/sessions/{session_id}/prepare-loading-handoff")
+def prepare_sblt_loading_handoff(session_id: str) -> dict[str, Any]:
+    """
+    Run SBLT-9 loading handoff preparation on an approved_for_loading_prep session.
+
+    Classifies every SBLT-8-approved row for loading handoff eligibility.  For each
+    eligible row, builds a prepared job request record (status = "prepared"; no job
+    is queued, no conversion is started).  Builds a session-level
+    loading_handoff_package summarising handoff outcomes and readiness for SBLT-10
+    job queueing.
+
+    Architecture guarantees:
+      - Does NOT queue jobs, execute conversion, register MSI, or write artifacts.
+      - Does NOT read SEG-Y files, supporting documents, or any filesystem path.
+      - Does NOT query MSI, Managed Data, or Source Intake.
+      - Does NOT modify MDE bundles or metadata_evidence.
+      - can_register remains False.
+      - can_convert remains False.
+      - can_expose_to_managed_data remains False.
+      - session_handoff_readiness.can_continue_to_job_queueing is readiness for
+        SBLT-10 only — not operational conversion, registration, or MSI.
+      - session.approval_package from SBLT-8 is preserved unchanged.
+
+    Session must be in 'approved_for_loading_prep' or 'loading_handoff_prepared' state.
+    Returns 400 if the session is in an incompatible state.
+    Returns 404 if the session does not exist.
+    Returns 500 on invariant failure or unexpected error.
+    """
+    try:
+        session = prepare_loading_handoff_session(session_id)
+    except SBLTNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SBLTValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"SBLT loading handoff preparation failed unexpectedly: {exc}",
         ) from exc
 
     return session

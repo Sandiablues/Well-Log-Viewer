@@ -31,6 +31,7 @@ SESSION_STATUS_REVIEW_PACKAGE_BUILT = "review_package_built"
 SESSION_STATUS_REVIEW_REQUIRED = "review_required"
 SESSION_STATUS_REVIEW_DECISIONS_APPLIED = "review_decisions_applied"
 SESSION_STATUS_APPROVED_FOR_LOADING_PREP = "approved_for_loading_prep"  # SBLT-8
+SESSION_STATUS_LOADING_HANDOFF_PREPARED = "loading_handoff_prepared"   # SBLT-9
 SESSION_STATUS_APPROVED = "approved"
 SESSION_STATUS_REGISTERED = "registered"
 SESSION_STATUS_FAILED = "failed"
@@ -46,6 +47,7 @@ VALID_SESSION_STATUSES = {
     SESSION_STATUS_REVIEW_REQUIRED,
     SESSION_STATUS_REVIEW_DECISIONS_APPLIED,
     SESSION_STATUS_APPROVED_FOR_LOADING_PREP,
+    SESSION_STATUS_LOADING_HANDOFF_PREPARED,
     SESSION_STATUS_APPROVED,
     SESSION_STATUS_REGISTERED,
     SESSION_STATUS_FAILED,
@@ -317,6 +319,29 @@ def make_approval_gate_row(
     }
 
 
+def make_loading_handoff_row(
+    existing_row: dict[str, Any],
+    *,
+    loading_handoff: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Build an updated row dict after SBLT-9 loading handoff preparation.
+
+    Preserves all fields produced by SBLT-1 through SBLT-8 unchanged, including
+    metadata_evidence (read-only), review_decisions, approved_canonical_metadata_draft,
+    approval_readiness, approval_gate, and approved_canonical_metadata.
+
+    Adds:
+      loading_handoff  — SBLT-9 handoff record (prepared | skipped | blocked)
+
+    Row status, row actions, and all prior SBLT fields are NOT changed by SBLT-9.
+    """
+    return {
+        **existing_row,
+        "loading_handoff": loading_handoff,
+    }
+
+
 def make_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Build the summary block from a list of row dicts.
@@ -401,6 +426,7 @@ def make_session(
                 SESSION_STATUS_REVIEW_PACKAGE_BUILT,
                 SESSION_STATUS_REVIEW_DECISIONS_APPLIED,
                 SESSION_STATUS_APPROVED_FOR_LOADING_PREP,
+                SESSION_STATUS_LOADING_HANDOFF_PREPARED,
             )
             and row_count > 0
         ),

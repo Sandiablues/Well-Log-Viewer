@@ -39,6 +39,7 @@ from .sblt_models import (
     SESSION_STATUS_REVIEW_PACKAGE_BUILT,
     SESSION_STATUS_REVIEW_DECISIONS_APPLIED,
     SESSION_STATUS_APPROVED_FOR_LOADING_PREP,
+    SESSION_STATUS_LOADING_HANDOFF_PREPARED,
     SESSION_STATUS_FAILED,
     make_parsed_row,
     make_validated_row,
@@ -1074,6 +1075,96 @@ def approve_reviewed_rows(session_id: str) -> dict:
         updated_session["review_decision_package"] = session["review_decision_package"]
     # Attach SBLT-8 approval_package.
     updated_session["approval_package"] = approval_package
+
+    _validate_session_invariants(updated_session)
+    _save_session(updated_session)
+
+    return updated_session
+
+
+# ---------------------------------------------------------------------------
+# SBLT-9: prepare_loading_handoff_session
+# ---------------------------------------------------------------------------
+
+def prepare_loading_handoff_session(session_id: str) -> dict:
+    """
+    Run SBLT-9 loading handoff preparation on an approved_for_loading_prep session.
+
+    Loads the session, classifies every row for loading handoff eligibility,
+    builds row.loading_handoff for each row, builds a session-level
+    loading_handoff_package, advances session status to loading_handoff_prepared,
+    and persists.
+
+    SBLT-9 scope:
+      - Reads:  row.approval_gate            (from SBLT-8)
+                row.approved_canonical_metadata  (from SBLT-8)
+                row.path_validation          (from SBLT-4; no filesystem re-check)
+                row.record_type              (from SBLT-2/3)
+      - Writes: row.loading_handoff,
+                session.loading_handoff_package.
+      - Preserves: all prior row and session fields unchanged, including
+                   metadata_evidence, review_decisions, approval_gate,
+                   approved_canonical_metadata, approval_package.
+      - Does NOT approve rows for loading, conversion, or registration.
+      - Does NOT register MSI records.
+      - Does NOT trigger conversion or indexing.
+      - Does NOT queue jobs.
+      - Does NOT read SEG-Y files, supporting documents, or any filesystem path.
+      - Does NOT query MSI, Managed Data, or Source Intake.
+      - Does NOT modify MDE bundles or metadata_evidence.
+      - can_register remains False.
+      - can_convert remains False.
+      - can_expose_to_managed_data remains False.
+      - session_handoff_readiness.can_continue_to_job_queueing == True means
+        the session is ready for SBLT-10 job queueing only — not operational
+        conversion, registration, or MSI interaction.
+
+    Idempotent: re-running replaces row.loading_handoff and
+    session.loading_handoff_package with the new result.
+
+    Raises SBLTValidationError (400) if session is not in
+    approved_for_loading_prep or loading_handoff_prepared state.
+    Raises SBLTNotFoundError (404) if the session does not exist.
+    """
+    from .sblt_loading_handoff import prepare_loading_handoff
+
+    session = get_session(session_id)
+
+    current_status = session.get("status")
+    if current_status not in (
+        SESSION_STATUS_APPROVED_FOR_LOADING_PREP,
+        SESSION_STATUS_LOADING_HANDOFF_PREPARED,
+    ):
+        raise SBLTValidationError(
+            f"SBLT session must be in 'approved_for_loading_prep' or "
+            f"'loading_handoff_prepared' state before loading handoff preparation. "
+            f"Current status: {current_status!r}",
+            status_code=400,
+        )
+
+    # Run the loading handoff preparation — pure computation, no I/O beyond
+    # this session read.
+    updated_rows, loading_handoff_package = prepare_loading_handoff(session)
+
+    now = _utc_now()
+    updated_session = make_session(
+        session_id=session["session_id"],
+        status=SESSION_STATUS_LOADING_HANDOFF_PREPARED,
+        source=session["source"],
+        rows=updated_rows,
+        created_at=session["created_at"],
+        updated_at=now,
+    )
+
+    # Preserve all prior session-level packages — SBLT-9 does not modify them.
+    if "review_package" in session:
+        updated_session["review_package"] = session["review_package"]
+    if "review_decision_package" in session:
+        updated_session["review_decision_package"] = session["review_decision_package"]
+    if "approval_package" in session:
+        updated_session["approval_package"] = session["approval_package"]
+    # Attach SBLT-9 loading_handoff_package.
+    updated_session["loading_handoff_package"] = loading_handoff_package
 
     _validate_session_invariants(updated_session)
     _save_session(updated_session)
