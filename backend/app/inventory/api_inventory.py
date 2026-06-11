@@ -18,6 +18,8 @@ from .models import (
     LoadManagedWellToWdvResponse,
     UnloadManagedWellFromWdvRequest,
     UnloadManagedWellFromWdvResponse,
+    RemoveManagedDataFromMdpRequest,
+    RemoveManagedDataFromMdpResponse,
     ManagedInventoryValidationResult,
     ManagedWellRecord,
     RegisterSeedWellResponse,
@@ -99,6 +101,27 @@ def unload_managed_well_from_wdv(request: UnloadManagedWellFromWdvRequest) -> Un
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Managed well not found: {exc.args[0]}",
+        ) from exc
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+@router.post(
+    "/remove-from-mdp",
+    response_model=RemoveManagedDataFromMdpResponse,
+    summary="Remove selected managed well data from the Managed Data Page",
+)
+def remove_managed_data_from_mdp(request: RemoveManagedDataFromMdpRequest) -> RemoveManagedDataFromMdpResponse:
+    try:
+        return _service.remove_managed_data_from_mdp(
+            managed_well_ids=request.managed_well_ids,
+            product_ids=request.product_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ManagedWellNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Managed well or product not found: {exc.args[0]}",
         ) from exc
     except ManagedInventoryStoreError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc

@@ -525,11 +525,49 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
     return owners;
   }, [selectedProductItemIds, wells]);
 
+  const selectedWellCount = selectedWellIds.size;
+  const selectedProductCount = selectedProductItemIds.size;
+  const hasSelection = selectedWellCount > 0 || selectedProductCount > 0;
+  const canApplyBulkAction = hasSelection && !bulkApplying;
+
   const applyBulkAction = async () => {
-    if ((bulkAction !== 'load' && bulkAction !== 'unload') || bulkApplying) return;
+    if (!canApplyBulkAction) return;
 
     const productIds = [...selectedProductItemIds];
     const productOwnerIds = [...selectedProductWellIds];
+
+    if (bulkAction === 'remove') {
+      const managedWellIds = [...selectedWellIds];
+
+      setBulkApplying(true);
+      setError(null);
+      try {
+        await fetchWlvJson('/api/wlv/inventory/remove-from-mdp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            managed_well_ids: managedWellIds,
+            product_ids: productIds,
+          }),
+        });
+        const removedActiveWell = activeManagedWellId !== null
+          && (managedWellIds.includes(activeManagedWellId) || productOwnerIds.includes(activeManagedWellId));
+        setSelectedWellIds(new Set());
+        setSelectedProductItemIds(new Set());
+        await loadInventory();
+        if (removedActiveWell) {
+          onClearLogViewer();
+        }
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : 'Unable to remove selected managed data from MDP');
+      } finally {
+        setBulkApplying(false);
+      }
+      return;
+    }
+
+    if (bulkAction !== 'load' && bulkAction !== 'unload') return;
+
     const managedWellId = productIds.length > 0
       ? productOwnerIds[0] ?? null
       : [...selectedWellIds][0] ?? selectedWellId;
@@ -642,7 +680,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
           </div>
 
           <div className="wlv-wmdp-control-row wlv-wmdp-control-row-bulk">
-            <span className="wlv-wmdp-selected-readout">Selected wells {selectedWellIds.size} · products {selectedProductItemIds.size}</span>
+            <span className="wlv-wmdp-selected-readout">Selected wells {selectedWellCount} · products {selectedProductCount}</span>
             <label className="wlv-wmdp-action-control">
               <span>Action</span>
               <select value={bulkAction} onChange={(event) => setBulkAction(event.target.value as WmdpBulkAction)}>
@@ -651,7 +689,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                 <option value="remove">Remove selected from MDP</option>
               </select>
             </label>
-            <button type="button" onClick={applyBulkAction} disabled={(selectedWellIds.size === 0 && selectedProductItemIds.size === 0) || bulkAction === 'remove' || bulkApplying}>{bulkApplying ? (bulkAction === 'unload' ? 'Unloading…' : 'Loading…') : 'Apply'}</button>
+            <button type="button" onClick={applyBulkAction} disabled={!canApplyBulkAction}>{bulkApplying ? (bulkAction === 'remove' ? 'Removing…' : bulkAction === 'unload' ? 'Unloading…' : 'Loading…') : 'Apply'}</button>
           </div>
         </div>
 
@@ -730,7 +768,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                         <div className="wlv-wmdp-row-actions">
                           <button type="button" onClick={() => { setSelectedWellIds(new Set([well.managed_well_id])); void fetchWlvJson('/api/wlv/inventory/load-to-wdv', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ managed_well_id: well.managed_well_id, product_ids: [] }) }).then(() => loadInventory()).then(() => onOpenLogViewer(well.managed_well_id)).catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load managed well to WDV')); }}>Load</button>
                           <button type="button" onClick={() => setSelectedWellId(well.managed_well_id)}>Info</button>
-                          <button type="button" disabled title="Remove from MDP requires a backend lifecycle endpoint">Remove</button>
+                          <button type="button" onClick={() => { setSelectedWellIds(new Set([well.managed_well_id])); setSelectedProductItemIds(new Set()); setBulkAction('remove'); }}>Remove</button>
                         </div>
                       </td>
                     </tr>
@@ -3067,7 +3105,7 @@ function RightPanel({
 export function TrackLayoutPrototype() {
   const [activeView, setActiveView] = useState<DemoNavView>('log-viewer');
   const [managedViewerWellId, setManagedViewerWellId] = useState<string | null>(null);
-  const [viewerPackageLoad, setViewerPackageLoad] = useState<BackendViewerPackageLoadResult | null>(null);
+  const [, setViewerPackageLoad] = useState<BackendViewerPackageLoadResult | null>(null);
   const [wdvPackageState, setWdvPackageState] = useState<WdvPackageState>(() => emptyWdvPackageState());
 
   // WLV-WDV-REBUILD-1: WMDP load creates WDV availability only.
@@ -3602,23 +3640,6 @@ export function TrackLayoutPrototype() {
       <header className="wlv-app-header">
         <div className="wlv-app-title">
           <strong>Well Log Viewer</strong>
-        </div>
-        <div className="wlv-loaded-context">
-          {hasLoadedViewerWell ? (
-            <>
-              <span>Well <strong>{wellHeader.wellName}</strong></span>
-              <span>Wellbore <strong>{wellHeader.wellboreName}</strong></span>
-              <span>Status <strong>QAQC Review</strong></span>
-              <span>Viewer Source <strong>{viewerPackageLoad ? statusLabel(viewerPackageLoad.source) : 'loading'}</strong></span>
-            </>
-          ) : (
-            <>
-              <span>Well <strong>No well loaded</strong></span>
-              <span>WDV <strong>Ready</strong></span>
-              <span>Load Source <strong>WMDP required</strong></span>
-              <span>Viewer Source <strong>{viewerPackageLoad ? statusLabel(viewerPackageLoad.source) : 'none'}</strong></span>
-            </>
-          )}
         </div>
       </header>
 

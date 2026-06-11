@@ -148,3 +148,28 @@ def test_viewer_package_contract_filters_to_loaded_wmdp_curves(tmp_path: Path) -
     assert loaded_curve["canonical_curve_id"] == "gamma_ray"
     assert loaded_curve["display_curve_id"] == "GR"
     assert loaded_curve["is_renderable"] is True
+
+
+
+def test_remove_from_mdp_hides_well_and_unloads_wdv_but_retains_record(tmp_path: Path) -> None:
+    repository = ManagedWellInventoryRepository(storage_path=tmp_path / "inventory.json")
+    service = ManagedWellInventoryService(repository=repository)
+    repository.upsert_record(_record("managed-well:a", ["curve:a:gr", "curve:a:rt"]))
+
+    service.load_managed_well_to_wdv("managed-well:a")
+    removed = service.remove_managed_data_from_mdp(managed_well_ids=["managed-well:a"])
+
+    assert removed.result.removed_managed_well_ids == ["managed-well:a"]
+    assert removed.result.retained_msi_records is True
+    assert "managed-well:a" in removed.result.unloaded_managed_well_ids
+
+    retained = repository.get_record("managed-well:a")
+    assert retained.wmdp_available is False
+    assert retained.wmdp_state.value == "removed_from_wmdp"
+    assert retained.wdv_state == ManagedWdvState.NOT_LOADED
+    assert all(
+        item.wdv_state == ManagedWdvState.NOT_LOADED
+        for group in retained.product_groups
+        for item in group.items
+    )
+    assert service.list_wells() == []

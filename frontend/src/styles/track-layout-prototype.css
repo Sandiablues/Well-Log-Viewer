@@ -5801,3 +5801,40 @@ button.wlv-view-range-readout,
 .wlv-inventory-tabs .wlv-tab-count {
   margin-left: 3px;
 }
+
+
+/* WLV-WDV-HEADER-CLEANUP-1 */
+.wlv-app-header {
+  justify-content: flex-start;
+}
+
+.wlv-loaded-curves-ready-state,
+.wlv-empty-viewer-state {
+  padding: 22px;
+}
+
+.wlv-loaded-curves-ready-card,
+.wlv-empty-viewer-card {
+  width: min(520px, 100%);
+  padding: 18px 22px;
+  border-radius: 14px;
+  box-shadow: 0 12px 28px rgba(2, 6, 23, 0.28);
+}
+
+.wlv-loaded-curves-ready-card h2,
+.wlv-empty-viewer-card h2 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.wlv-loaded-curves-ready-card p,
+.wlv-empty-viewer-card p {
+  font-size: 0.88rem;
+  line-height: 1.42;
+}
+
+.wlv-loaded-curves-ready-card p + p,
+.wlv-empty-viewer-card p + p {
+  margin-top: 8px;
+}

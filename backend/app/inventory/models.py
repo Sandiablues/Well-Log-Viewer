@@ -214,6 +214,25 @@ class UnloadManagedWellFromWdvResponse(BaseModel):
     record: ManagedWellRecord
 
 
+class RemoveManagedDataFromMdpRequest(BaseModel):
+    managed_well_ids: list[str] = Field(default_factory=list)
+    product_ids: list[str] = Field(default_factory=list)
+
+
+class RemoveManagedDataFromMdpResult(BaseModel):
+    removed_managed_well_ids: list[str] = Field(default_factory=list)
+    removed_product_ids: list[str] = Field(default_factory=list)
+    unloaded_managed_well_ids: list[str] = Field(default_factory=list)
+    retained_msi_records: bool = True
+
+
+class RemoveManagedDataFromMdpResponse(BaseModel):
+    ok: bool = True
+    action: str = "removed_from_mdp"
+    result: RemoveManagedDataFromMdpResult
+    records: list[ManagedWellRecord] = Field(default_factory=list)
+
+
 class InventoryValidationSeverity(str, Enum):
     INFO = "info"
     WARNING = "warning"

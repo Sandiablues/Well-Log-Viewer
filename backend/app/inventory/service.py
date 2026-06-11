@@ -24,12 +24,15 @@ from .models import (
     LoadManagedWellToWdvResult,
     UnloadManagedWellFromWdvResponse,
     UnloadManagedWellFromWdvResult,
+    RemoveManagedDataFromMdpResponse,
+    RemoveManagedDataFromMdpResult,
     ManagedProductGroup,
     ManagedProductGroupItem,
     ManagedSourceKind,
     ManagedSourceReference,
     ManagedWellRecord,
     ManagedWdvState,
+    ManagedWmdpState,
     RegisterSeedWellResponse,
     ViewerPackageReference,
     utc_now_iso,
@@ -79,7 +82,11 @@ class ManagedWellInventoryService:
         )
 
     def list_wells(self) -> list[ManagedWellRecord]:
-        return [self._with_product_groups(record) for record in self.repository.list_records()]
+        return [
+            self._with_product_groups(record)
+            for record in self.repository.list_records()
+            if record.wmdp_available and record.wmdp_state != ManagedWmdpState.REMOVED_FROM_WMDP
+        ]
 
     def get_well(self, managed_well_id: str) -> ManagedWellRecord:
         return self._with_product_groups(self.repository.get_record(managed_well_id))
@@ -291,6 +298,97 @@ class ManagedWellInventoryService:
                 active_viewer_package_id=active_package_id,
             ),
             record=saved,
+        )
+
+    def remove_managed_data_from_mdp(
+        self,
+        managed_well_ids: list[str] | None = None,
+        product_ids: list[str] | None = None,
+    ) -> RemoveManagedDataFromMdpResponse:
+        """Remove selected managed data from the MDP while retaining MSI records.
+
+        This is a non-destructive MDP visibility transition. It also unloads the
+        same wells/products from WDV so the viewer cannot retain data that the
+        user removed from the Managed Data Page. Source files, source-intake
+        history, viewer-package metadata, and the MSI record remain intact.
+        """
+        selected_well_ids = set(managed_well_ids or [])
+        selected_product_ids = set(product_ids or [])
+
+        if not selected_well_ids and not selected_product_ids:
+            raise ValueError("Select at least one managed well or product to remove from MDP.")
+
+        records = self.repository.list_records()
+        known_well_ids = {record.managed_well_id for record in records}
+        missing_well_ids = sorted(selected_well_ids - known_well_ids)
+        if missing_well_ids:
+            raise ManagedWellNotFoundError(missing_well_ids[0])
+
+        touched_records: list[ManagedWellRecord] = []
+        removed_well_ids: list[str] = []
+        removed_product_ids: list[str] = []
+        unloaded_well_ids: list[str] = []
+
+        for record in records:
+            full_well_remove = record.managed_well_id in selected_well_ids
+            product_removed_for_record = False
+
+            if full_well_remove:
+                record.wmdp_available = False
+                record.wmdp_state = ManagedWmdpState.REMOVED_FROM_WMDP
+                if record.wdv_state != ManagedWdvState.NOT_LOADED:
+                    unloaded_well_ids.append(record.managed_well_id)
+                record.wdv_state = ManagedWdvState.NOT_LOADED
+                removed_well_ids.append(record.managed_well_id)
+
+            for group in record.product_groups:
+                for item in group.items:
+                    remove_item = full_well_remove or item.product_id in selected_product_ids
+                    if not remove_item:
+                        continue
+                    item.wmdp_state = ManagedWmdpState.REMOVED_FROM_WMDP
+                    if item.wdv_state != ManagedWdvState.NOT_LOADED and record.managed_well_id not in unloaded_well_ids:
+                        unloaded_well_ids.append(record.managed_well_id)
+                    item.wdv_state = ManagedWdvState.NOT_LOADED
+                    product_removed_for_record = True
+                    if item.product_id not in removed_product_ids:
+                        removed_product_ids.append(item.product_id)
+
+            if selected_product_ids and product_removed_for_record and not full_well_remove:
+                remaining_mdp_items = [
+                    item
+                    for group in record.product_groups
+                    for item in group.items
+                    if item.wmdp_state != ManagedWmdpState.REMOVED_FROM_WMDP
+                ]
+                remaining_loaded_items = [
+                    item
+                    for item in remaining_mdp_items
+                    if self._is_wdv_loadable_product(item) and item.wdv_state == ManagedWdvState.LOADED_TO_WDV
+                ]
+                record.wdv_state = (
+                    ManagedWdvState.LOADED_TO_WDV
+                    if remaining_loaded_items
+                    else ManagedWdvState.NOT_LOADED
+                )
+
+            if full_well_remove or product_removed_for_record:
+                record.updated_at = utc_now_iso()
+                _action, saved = self.repository.upsert_record(record)
+                touched_records.append(saved)
+
+        missing_product_ids = sorted(selected_product_ids - set(removed_product_ids))
+        if missing_product_ids and not touched_records:
+            raise ManagedWellNotFoundError(missing_product_ids[0])
+
+        return RemoveManagedDataFromMdpResponse(
+            result=RemoveManagedDataFromMdpResult(
+                removed_managed_well_ids=removed_well_ids,
+                removed_product_ids=removed_product_ids,
+                unloaded_managed_well_ids=sorted(set(unloaded_well_ids)),
+                retained_msi_records=True,
+            ),
+            records=touched_records,
         )
 
     def unload_managed_well_from_wdv(
