@@ -21,3 +21,12 @@ backend/.wlv_backend.pid
 logs/
 backend/runtime/
 backend/well_log_viewer_backend.egg-info/
+
+# WLV local runtime, backup, validation, and data artifacts
+.wlv_*.log
+.wlv_*.pid
+.wlv_*_backup_*/
+.wlv_*_last_backup
+wlv_*_validation.log
+wlv_*.log
+backend/data/
