@@ -1,4 +1,4 @@
-"""WLV Managed Knowledge Repository API routes (KR-2 + KR-3 + KR-4).
+"""WLV Managed Knowledge Repository API routes (KR-2 + KR-3 + KR-4 + KR-6).
 
 KR-2 read-only endpoints (unchanged):
   GET  /api/wlv/knowledge/managed/health
@@ -9,13 +9,17 @@ KR-3 import/staging endpoints (unchanged):
   POST /api/wlv/knowledge/managed/import/preview
   POST /api/wlv/knowledge/managed/import/stage
 
-KR-4 governance review endpoints (new):
+KR-4 governance review endpoints (unchanged):
   GET  /api/wlv/knowledge/managed/records
   GET  /api/wlv/knowledge/managed/records/{record_id}
   POST /api/wlv/knowledge/managed/records/{record_id}/approve
   POST /api/wlv/knowledge/managed/records/{record_id}/reject
   POST /api/wlv/knowledge/managed/records/{record_id}/deprecate
   GET  /api/wlv/knowledge/managed/production-eligible
+
+KR-6 resolution endpoints (new):
+  POST /api/wlv/knowledge/resolve/curve
+  POST /api/wlv/knowledge/resolve/curves
 
 KR-1 endpoints (/api/wlv/knowledge/*) are NOT touched by this module.
 
@@ -638,3 +642,229 @@ def managed_storage_health(
     """
     data = repo.get_storage_health()
     return StorageHealthResponse(**data)
+
+
+# ---------------------------------------------------------------------------
+# KR-6 resolution router (separate prefix: /api/wlv/knowledge)
+# ---------------------------------------------------------------------------
+
+from .resolution_service import (  # noqa: E402
+    CurveResolveInput,
+    CurveResolveResult,
+    DisplayRuleResult,
+    KnowledgeResolutionService,
+    KR6_VERSION,
+)
+
+resolve_router = APIRouter(
+    prefix="/api/wlv/knowledge",
+    tags=["wlv-knowledge-resolution"],
+)
+
+
+# ---------------------------------------------------------------------------
+# KR-6 Pydantic request / response models
+# ---------------------------------------------------------------------------
+
+
+class ResolveContextModel(BaseModel):
+    """Optional context hints for a resolution request."""
+
+    well_id: Optional[str] = Field(None, description="Well identifier (informational)")
+    source: Optional[str] = Field(None, description="Caller / data source identifier")
+
+
+class CurveResolveRequest(BaseModel):
+    """Request body for POST /api/wlv/knowledge/resolve/curve."""
+
+    mnemonic: str = Field(..., description="Curve mnemonic to resolve")
+    unit: Optional[str] = Field(None, description="Optional unit hint (supporting evidence only)")
+    description: Optional[str] = Field(None, description="Optional description hint")
+    context: Optional[ResolveContextModel] = Field(None, description="Optional resolution context")
+
+
+class DisplayRuleResponse(BaseModel):
+    """Display rule sub-object returned when a matching rule exists."""
+
+    scale_type: str
+    recommended_min: float
+    recommended_max: float
+    unit: Optional[str]
+
+
+class CurveResolveResponse(BaseModel):
+    """Response contract for a single mnemonic resolution.
+
+    resolved=True : mnemonic was matched to approved managed knowledge.
+    resolved=False: no match; only mnemonic, normalized_mnemonic, and warnings
+                    are meaningful.
+    """
+
+    kr_version: str
+    resolved: bool
+    mnemonic: str
+    normalized_mnemonic: str
+    canonical_curve_id: Optional[str]
+    display_name: Optional[str] = None
+    family: Optional[str] = None
+    product_group: Optional[str] = None
+    product_subgroup: Optional[str] = None
+    default_unit: Optional[str] = None
+    confidence: float
+    resolution_source: str
+    record_id: Optional[str] = None
+    display_rule: Optional[DisplayRuleResponse] = None
+    warnings: list[str]
+
+
+class BatchCurveResolveRequest(BaseModel):
+    """Request body for POST /api/wlv/knowledge/resolve/curves."""
+
+    curves: list[CurveResolveRequest] = Field(
+        ...,
+        description="Ordered list of curve resolution requests",
+        min_length=1,
+    )
+
+
+class BatchCurveResolveResponse(BaseModel):
+    """Response contract for batch mnemonic resolution."""
+
+    kr_version: str
+    count: int
+    resolved_count: int
+    unresolved_count: int
+    results: list[CurveResolveResponse]
+
+
+# ---------------------------------------------------------------------------
+# KR-6 dependency provider
+# ---------------------------------------------------------------------------
+
+
+def get_resolution_service(
+    repo: ManagedKRRepository = Depends(get_managed_repository),
+) -> KnowledgeResolutionService:
+    """Return a KnowledgeResolutionService wrapping the active managed repository.
+
+    Overriding get_managed_repository in tests is sufficient to inject an
+    isolated repository into the resolution service.
+    """
+    return KnowledgeResolutionService(repo)
+
+
+# ---------------------------------------------------------------------------
+# KR-6 helpers
+# ---------------------------------------------------------------------------
+
+
+def _display_rule_to_response(dr: Optional[DisplayRuleResult]) -> Optional[DisplayRuleResponse]:
+    if dr is None:
+        return None
+    return DisplayRuleResponse(
+        scale_type=dr.scale_type,
+        recommended_min=dr.recommended_min,
+        recommended_max=dr.recommended_max,
+        unit=dr.unit,
+    )
+
+
+def _result_to_response(result: CurveResolveResult) -> CurveResolveResponse:
+    return CurveResolveResponse(
+        kr_version=KR6_VERSION,
+        resolved=result.resolved,
+        mnemonic=result.mnemonic,
+        normalized_mnemonic=result.normalized_mnemonic,
+        canonical_curve_id=result.canonical_curve_id,
+        display_name=result.display_name,
+        family=result.family,
+        product_group=result.product_group,
+        product_subgroup=result.product_subgroup,
+        default_unit=result.default_unit,
+        confidence=result.confidence,
+        resolution_source=result.resolution_source,
+        record_id=result.record_id,
+        display_rule=_display_rule_to_response(result.display_rule),
+        warnings=result.warnings,
+    )
+
+
+def _request_to_input(req: CurveResolveRequest) -> CurveResolveInput:
+    ctx: dict = {}
+    if req.context is not None:
+        ctx = req.context.model_dump()
+    return CurveResolveInput(
+        mnemonic=req.mnemonic,
+        unit=req.unit,
+        description=req.description,
+        context=ctx,
+    )
+
+
+# ---------------------------------------------------------------------------
+# KR-6 endpoints
+# ---------------------------------------------------------------------------
+
+
+@resolve_router.post(
+    "/resolve/curve",
+    response_model=CurveResolveResponse,
+    summary="Resolve a single curve mnemonic to approved managed knowledge (KR-6)",
+    status_code=200,
+)
+def resolve_curve(
+    body: CurveResolveRequest,
+    service: KnowledgeResolutionService = Depends(get_resolution_service),
+) -> CurveResolveResponse:
+    """Resolve a single curve mnemonic into a stable backend knowledge contract.
+
+    Uses only production-eligible knowledge (status = seed or approved).
+    Candidate, rejected, and deprecated records are always excluded.
+
+    Resolution priority:
+      1. Exact approved/seed alias match
+      2. Normalized approved/seed alias match
+      3. Exact canonical curve ID match
+
+    Returns resolved=True on a match, resolved=False with a warning when no
+    approved knowledge matches the input mnemonic.
+
+    This endpoint is offline-capable and side-effect free.
+    """
+    input_ = _request_to_input(body)
+    result = service.resolve_curve(input_)
+    return _result_to_response(result)
+
+
+@resolve_router.post(
+    "/resolve/curves",
+    response_model=BatchCurveResolveResponse,
+    summary="Resolve a batch of curve mnemonics to approved managed knowledge (KR-6)",
+    status_code=200,
+)
+def resolve_curves(
+    body: BatchCurveResolveRequest,
+    service: KnowledgeResolutionService = Depends(get_resolution_service),
+) -> BatchCurveResolveResponse:
+    """Resolve a batch of curve mnemonics.
+
+    Input order is strictly preserved in the response.  Each entry is
+    independently resolved; one unresolvable mnemonic does not affect others.
+
+    The same exclusion rules apply as the single-curve endpoint:
+    candidate, rejected, and deprecated records are never used.
+
+    Returns a batch result with per-entry resolved/unresolved status and
+    aggregate counts.
+    """
+    inputs = [_request_to_input(req) for req in body.curves]
+    results = service.resolve_curves(inputs)
+    responses = [_result_to_response(r) for r in results]
+    resolved_count = sum(1 for r in responses if r.resolved)
+    return BatchCurveResolveResponse(
+        kr_version=KR6_VERSION,
+        count=len(responses),
+        resolved_count=resolved_count,
+        unresolved_count=len(responses) - resolved_count,
+        results=responses,
+    )
