@@ -1,4 +1,4 @@
-"""WLV Managed Knowledge Repository API routes (KR-2 + KR-3 + KR-4 + KR-6).
+"""WLV Managed Knowledge Repository API routes (KR-2 + KR-3 + KR-4 + KR-6 + KR-7).
 
 KR-2 read-only endpoints (unchanged):
   GET  /api/wlv/knowledge/managed/health
@@ -17,9 +17,12 @@ KR-4 governance review endpoints (unchanged):
   POST /api/wlv/knowledge/managed/records/{record_id}/deprecate
   GET  /api/wlv/knowledge/managed/production-eligible
 
-KR-6 resolution endpoints (new):
+KR-6 resolution endpoints (unchanged):
   POST /api/wlv/knowledge/resolve/curve
   POST /api/wlv/knowledge/resolve/curves
+
+KR-7 classification endpoint (new):
+  POST /api/wlv/knowledge/classify/curves
 
 KR-1 endpoints (/api/wlv/knowledge/*) are NOT touched by this module.
 
@@ -868,3 +871,254 @@ def resolve_curves(
         unresolved_count=len(responses) - resolved_count,
         results=responses,
     )
+
+
+# ---------------------------------------------------------------------------
+# KR-7 classification — imports and models
+# ---------------------------------------------------------------------------
+
+from .classification_service import (  # noqa: E402
+    ClassificationSource,
+    CurveClassificationBatchResult,
+    CurveClassificationRequest,
+    CurveClassificationResult,
+    CurveClassificationService,
+    CurveClassifyInput,
+    KR7_VERSION,
+)
+
+
+# ---------------------------------------------------------------------------
+# KR-7 Pydantic request / response models
+# ---------------------------------------------------------------------------
+
+
+class ClassificationSourceModel(BaseModel):
+    """Optional import source context for a classification batch."""
+
+    source_type: str = Field(..., description="Source type (e.g. las_import, dlis_import)")
+    source_file: Optional[str] = Field(None, description="Optional source filename")
+    import_batch_id: Optional[str] = Field(None, description="Optional import batch ID")
+
+
+class CurveClassifyRequestItem(BaseModel):
+    """A single raw curve to classify within a batch."""
+
+    curve_id: str = Field(..., description="Caller-supplied stable identifier for this curve")
+    mnemonic: str = Field(..., description="Curve mnemonic from source file")
+    unit: Optional[str] = Field(None, description="Unit from source file (evidence only)")
+    description: Optional[str] = Field(None, description="Description from source file (evidence only)")
+    source_curve_index: Optional[int] = Field(
+        None, description="Zero-based index of the curve in its source file"
+    )
+
+
+class BatchClassifyRequest(BaseModel):
+    """Request body for POST /api/wlv/knowledge/classify/curves."""
+
+    well_id: Optional[str] = Field(None, description="Well identifier (informational)")
+    source: Optional[ClassificationSourceModel] = Field(
+        None, description="Import source context"
+    )
+    curves: list[CurveClassifyRequestItem] = Field(
+        ...,
+        description="Ordered list of raw curves to classify",
+    )
+
+
+class DisplayRuleClassifyResponse(BaseModel):
+    """Display rule sub-object in a classification result."""
+
+    scale_type: str
+    recommended_min: float
+    recommended_max: float
+    unit: Optional[str]
+
+
+class CurveClassificationItemResponse(BaseModel):
+    """Classification result for a single curve."""
+
+    curve_id: str
+    mnemonic: str
+    normalized_mnemonic: str
+    resolved: bool
+    classification_status: str
+    source_curve_index: Optional[int]
+    canonical_curve_id: Optional[str] = None
+    display_name: Optional[str] = None
+    family: Optional[str] = None
+    product_group: Optional[str] = None
+    product_subgroup: Optional[str] = None
+    default_unit: Optional[str] = None
+    confidence: float
+    resolution_source: str
+    knowledge_record_id: Optional[str] = None
+    display_rule: Optional[DisplayRuleClassifyResponse] = None
+    review_required: bool
+    warnings: list[str]
+
+
+class BatchClassifyResponse(BaseModel):
+    """Response contract for POST /api/wlv/knowledge/classify/curves."""
+
+    kr_version: str
+    well_id: Optional[str]
+    source: Optional[ClassificationSourceModel]
+    curve_count: int
+    classified_count: int
+    unclassified_count: int
+    review_required_count: int
+    classifications: list[CurveClassificationItemResponse]
+
+
+# ---------------------------------------------------------------------------
+# KR-7 dependency provider
+# ---------------------------------------------------------------------------
+
+
+def get_classification_service(
+    repo: ManagedKRRepository = Depends(get_managed_repository),
+) -> CurveClassificationService:
+    """Return a CurveClassificationService backed by the active managed repository.
+
+    Overriding get_managed_repository in tests is sufficient to inject an
+    isolated repository into the full service chain.
+    """
+    resolution_service = KnowledgeResolutionService(repo)
+    return CurveClassificationService(resolution_service)
+
+
+# ---------------------------------------------------------------------------
+# KR-7 helpers
+# ---------------------------------------------------------------------------
+
+
+def _display_rule_to_classify_response(
+    dr: Optional["DisplayRuleResult"],
+) -> Optional[DisplayRuleClassifyResponse]:
+    if dr is None:
+        return None
+    return DisplayRuleClassifyResponse(
+        scale_type=dr.scale_type,
+        recommended_min=dr.recommended_min,
+        recommended_max=dr.recommended_max,
+        unit=dr.unit,
+    )
+
+
+def _source_model_to_domain(
+    src: Optional[ClassificationSourceModel],
+) -> Optional[ClassificationSource]:
+    if src is None:
+        return None
+    return ClassificationSource(
+        source_type=src.source_type,
+        source_file=src.source_file,
+        import_batch_id=src.import_batch_id,
+    )
+
+
+def _domain_source_to_model(
+    src: Optional[ClassificationSource],
+) -> Optional[ClassificationSourceModel]:
+    if src is None:
+        return None
+    return ClassificationSourceModel(
+        source_type=src.source_type,
+        source_file=src.source_file,
+        import_batch_id=src.import_batch_id,
+    )
+
+
+def _classification_result_to_response(
+    result: CurveClassificationResult,
+) -> CurveClassificationItemResponse:
+    return CurveClassificationItemResponse(
+        curve_id=result.curve_id,
+        mnemonic=result.mnemonic,
+        normalized_mnemonic=result.normalized_mnemonic,
+        resolved=result.resolved,
+        classification_status=result.classification_status,
+        source_curve_index=result.source_curve_index,
+        canonical_curve_id=result.canonical_curve_id,
+        display_name=result.display_name,
+        family=result.family,
+        product_group=result.product_group,
+        product_subgroup=result.product_subgroup,
+        default_unit=result.default_unit,
+        confidence=result.confidence,
+        resolution_source=result.resolution_source,
+        knowledge_record_id=result.knowledge_record_id,
+        display_rule=_display_rule_to_classify_response(result.display_rule),
+        review_required=result.review_required,
+        warnings=result.warnings,
+    )
+
+
+def _batch_result_to_response(
+    result: CurveClassificationBatchResult,
+) -> BatchClassifyResponse:
+    return BatchClassifyResponse(
+        kr_version=result.kr_version,
+        well_id=result.well_id,
+        source=_domain_source_to_model(result.source),
+        curve_count=result.curve_count,
+        classified_count=result.classified_count,
+        unclassified_count=result.unclassified_count,
+        review_required_count=result.review_required_count,
+        classifications=[
+            _classification_result_to_response(c) for c in result.classifications
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# KR-7 endpoint
+# ---------------------------------------------------------------------------
+
+
+@resolve_router.post(
+    "/classify/curves",
+    response_model=BatchClassifyResponse,
+    summary="Classify a batch of raw imported curves using backend knowledge (KR-7)",
+    status_code=200,
+)
+def classify_curves(
+    body: BatchClassifyRequest,
+    service: CurveClassificationService = Depends(get_classification_service),
+) -> BatchClassifyResponse:
+    """Classify a batch of raw imported curves into stable backend-owned identities.
+
+    Accepts raw curve inventory from a well/log import context and returns
+    ordered classification results.
+
+    Classification rules:
+    - Only production-eligible knowledge (seed + approved) is used.
+    - Candidate, rejected, and deprecated records are always excluded.
+    - resolved=True  → classification_status="classified"
+    - resolved=False → classification_status="unclassified", review_required=True
+    - Input order is strictly preserved.
+    - Source curve identity (curve_id, source_curve_index) is preserved.
+
+    This endpoint is offline-capable and side-effect free.
+
+    HTTP 200 for both classified and unclassified results.
+    HTTP 422 for malformed request bodies.
+    """
+    domain_curves = [
+        CurveClassifyInput(
+            curve_id=c.curve_id,
+            mnemonic=c.mnemonic,
+            unit=c.unit,
+            description=c.description,
+            source_curve_index=c.source_curve_index,
+        )
+        for c in body.curves
+    ]
+    request = CurveClassificationRequest(
+        curves=domain_curves,
+        well_id=body.well_id,
+        source=_source_model_to_domain(body.source),
+    )
+    result = service.classify_curves(request)
+    return _batch_result_to_response(result)
