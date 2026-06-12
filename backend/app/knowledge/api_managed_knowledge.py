@@ -1,4 +1,4 @@
-"""WLV Managed Knowledge Repository API routes (KR-2 + KR-3 + KR-4 + KR-6 + KR-7).
+"""WLV Managed Knowledge Repository API routes (KR-2 through KR-8).
 
 KR-2 read-only endpoints (unchanged):
   GET  /api/wlv/knowledge/managed/health
@@ -21,8 +21,11 @@ KR-6 resolution endpoints (unchanged):
   POST /api/wlv/knowledge/resolve/curve
   POST /api/wlv/knowledge/resolve/curves
 
-KR-7 classification endpoint (new):
+KR-7 classification endpoint (unchanged):
   POST /api/wlv/knowledge/classify/curves
+
+KR-8 display recommendation endpoint (new):
+  POST /api/wlv/knowledge/recommend-display/curves
 
 KR-1 endpoints (/api/wlv/knowledge/*) are NOT touched by this module.
 
@@ -1122,3 +1125,206 @@ def classify_curves(
     )
     result = service.classify_curves(request)
     return _batch_result_to_response(result)
+
+
+# ---------------------------------------------------------------------------
+# KR-8 display recommendation — imports and models
+# ---------------------------------------------------------------------------
+
+from .display_recommendation_service import (  # noqa: E402
+    CurveDisplayRecommendation,
+    CurveRecommendInput,
+    DisplayRecommendationBatchResult,
+    DisplayRecommendationRequest,
+    DisplayRecommendationService,
+    KR8_VERSION,
+)
+
+
+# ---------------------------------------------------------------------------
+# KR-8 Pydantic request / response models
+# ---------------------------------------------------------------------------
+
+
+class CurveRecommendRequestItem(BaseModel):
+    """A single raw curve to receive a display recommendation within a batch."""
+
+    curve_id: str = Field(..., description="Caller-supplied stable identifier for this curve")
+    mnemonic: str = Field(..., description="Curve mnemonic from source file")
+    unit: Optional[str] = Field(None, description="Unit from source file (evidence only)")
+    description: Optional[str] = Field(
+        None, description="Description from source file (evidence only)"
+    )
+    source_curve_index: Optional[int] = Field(
+        None, description="Zero-based index of the curve in its source file"
+    )
+
+
+class BatchRecommendRequest(BaseModel):
+    """Request body for POST /api/wlv/knowledge/recommend-display/curves."""
+
+    well_id: Optional[str] = Field(None, description="Well identifier (informational)")
+    source: Optional[ClassificationSourceModel] = Field(
+        None, description="Import source context"
+    )
+    curves: list[CurveRecommendRequestItem] = Field(
+        ...,
+        description="Ordered list of raw curves to receive display recommendations",
+    )
+
+
+class CurveRecommendationItemResponse(BaseModel):
+    """Display recommendation result for a single curve."""
+
+    curve_id: str
+    mnemonic: str
+    normalized_mnemonic: str
+    canonical_curve_id: Optional[str] = None
+    classification_status: str
+    recommendation_status: str
+    source_curve_index: Optional[int] = None
+
+    # Classification / knowledge fields
+    display_name: Optional[str] = None
+    product_group: Optional[str] = None
+    product_subgroup: Optional[str] = None
+    display_family: Optional[str] = None
+
+    # Display rule fields
+    scale_type: Optional[str] = None
+    recommended_min: Optional[float] = None
+    recommended_max: Optional[float] = None
+    unit: Optional[str] = None
+    preferred_track_group: Optional[str] = None
+
+    review_required: bool
+    warnings: list[str]
+
+
+class BatchRecommendResponse(BaseModel):
+    """Response contract for POST /api/wlv/knowledge/recommend-display/curves."""
+
+    kr_version: str
+    well_id: Optional[str] = None
+    curve_count: int
+    recommended_count: int
+    unrecommended_count: int
+    review_required_count: int
+    recommendations: list[CurveRecommendationItemResponse]
+
+
+# ---------------------------------------------------------------------------
+# KR-8 dependency provider
+# ---------------------------------------------------------------------------
+
+
+def get_recommendation_service(
+    repo: ManagedKRRepository = Depends(get_managed_repository),
+) -> DisplayRecommendationService:
+    """Return a DisplayRecommendationService backed by the active managed repository.
+
+    Overriding get_managed_repository in tests is sufficient to inject an
+    isolated repository into the full service chain.
+    """
+    resolution_service = KnowledgeResolutionService(repo)
+    classification_service = CurveClassificationService(resolution_service)
+    return DisplayRecommendationService(classification_service)
+
+
+# ---------------------------------------------------------------------------
+# KR-8 helpers
+# ---------------------------------------------------------------------------
+
+
+def _recommendation_to_response(
+    rec: CurveDisplayRecommendation,
+) -> CurveRecommendationItemResponse:
+    return CurveRecommendationItemResponse(
+        curve_id=rec.curve_id,
+        mnemonic=rec.mnemonic,
+        normalized_mnemonic=rec.normalized_mnemonic,
+        canonical_curve_id=rec.canonical_curve_id,
+        classification_status=rec.classification_status,
+        recommendation_status=rec.recommendation_status,
+        source_curve_index=rec.source_curve_index,
+        display_name=rec.display_name,
+        product_group=rec.product_group,
+        product_subgroup=rec.product_subgroup,
+        display_family=rec.display_family,
+        scale_type=rec.scale_type,
+        recommended_min=rec.recommended_min,
+        recommended_max=rec.recommended_max,
+        unit=rec.unit,
+        preferred_track_group=rec.preferred_track_group,
+        review_required=rec.review_required,
+        warnings=rec.warnings,
+    )
+
+
+def _batch_recommend_result_to_response(
+    result: DisplayRecommendationBatchResult,
+) -> BatchRecommendResponse:
+    return BatchRecommendResponse(
+        kr_version=result.kr_version,
+        well_id=result.well_id,
+        curve_count=result.curve_count,
+        recommended_count=result.recommended_count,
+        unrecommended_count=result.unrecommended_count,
+        review_required_count=result.review_required_count,
+        recommendations=[_recommendation_to_response(r) for r in result.recommendations],
+    )
+
+
+# ---------------------------------------------------------------------------
+# KR-8 endpoint
+# ---------------------------------------------------------------------------
+
+
+@resolve_router.post(
+    "/recommend-display/curves",
+    response_model=BatchRecommendResponse,
+    summary="Return backend display recommendations for a batch of curves (KR-8)",
+    status_code=200,
+)
+def recommend_display_curves(
+    body: BatchRecommendRequest,
+    service: DisplayRecommendationService = Depends(get_recommendation_service),
+) -> BatchRecommendResponse:
+    """Return backend-owned display recommendations for a batch of raw curves.
+
+    Classifies each curve via KR-7, applies approved/seed display rules, and
+    returns ordered display recommendations.
+
+    Recommendation rules:
+    - classified + approved/seed display rule found → recommendation_status="recommended"
+    - classified + no display rule                  → recommendation_status="review_required"
+    - unclassified                                  → recommendation_status="unrecommended",
+                                                       review_required=True
+    - Only production-eligible records (seed + approved) are used.
+    - Candidate, rejected, and deprecated display rules never produce recommendations.
+    - Input order is strictly preserved.
+    - Source curve identity (curve_id, source_curve_index) is preserved.
+
+    This endpoint is offline-capable and side-effect free.  It does not mutate
+    storage, alter WDV state, alter MDP state, or build track templates.
+
+    HTTP 200 for all valid requests (including all-unrecommended results).
+    HTTP 422 for malformed request bodies.
+    """
+    domain_curves = [
+        CurveRecommendInput(
+            curve_id=c.curve_id,
+            mnemonic=c.mnemonic,
+            unit=c.unit,
+            description=c.description,
+            source_curve_index=c.source_curve_index,
+        )
+        for c in body.curves
+    ]
+    request = DisplayRecommendationRequest(
+        curves=domain_curves,
+        well_id=body.well_id,
+        source=_source_model_to_domain(body.source),
+    )
+    result = service.recommend_display(request)
+    return _batch_recommend_result_to_response(result)

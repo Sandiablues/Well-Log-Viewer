@@ -78,6 +78,7 @@ class DisplayRuleResult:
     recommended_min: float
     recommended_max: float
     unit: Optional[str]
+    preferred_track_family: Optional[str] = None
 
 
 @dataclass
@@ -382,5 +383,6 @@ class KnowledgeResolutionService:
                     recommended_min=float(record.display_min),
                     recommended_max=float(record.display_max),
                     unit=record.default_unit,
+                    preferred_track_family=record.preferred_track_family,
                 )
         return None
