@@ -70,6 +70,10 @@ type ManagedProductGroupItem = {
   display_name?: string | null;
   curve_name?: string | null;
   curve_type?: string | null;
+  curve_family?: string | null;
+  product_subgroup_key?: string | null;
+  product_subgroup_label?: string | null;
+  classification_confidence?: string | null;
   run_date?: string | null;
   run_interval?: string | null;
   run_number?: string | null;
@@ -277,8 +281,117 @@ type WmdpBulkAction = 'load' | 'unload' | 'remove';
 
 type WmdpProductCategoryKey = string;
 
+type WmdpProductSubgroup = {
+  subgroupKey: string;
+  subgroupLabel: string;
+  items: ManagedProductGroupItem[];
+};
+
+// KR-1: Backend-owned Knowledge Repository contracts.
+// The frontend renders these; it must not own subgroup order or label truth.
+type KrSubgroup = {
+  key: string;
+  label: string;
+  order: number;
+};
+
+type KrProductGroup = {
+  key: string;
+  label: string;
+  order: number;
+  subgroups: KrSubgroup[];
+};
+
+type KrProductGroupsPayload = {
+  version: string;
+  groups: KrProductGroup[];
+};
+
+function normalizedProductSubgroupKey(value: string | null | undefined): string {
+  return (value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+/**
+ * Group product items using backend-provided subgroup order and labels.
+ * Items whose key is not in the KR list fall into the last subgroup
+ * (conventionally the "other/review" bucket) if one exists.
+ * The frontend does not infer or re-order subgroups — it renders the
+ * backend-provided order and labels only.
+ */
+function groupProductItemsByKrSubgroups(
+  items: ManagedProductGroupItem[],
+  krSubgroups: KrSubgroup[],
+): WmdpProductSubgroup[] {
+  if (krSubgroups.length === 0) return [];
+
+  const sortedSubgroups = [...krSubgroups].sort((a, b) => a.order - b.order);
+  const subgroupByKey = new Map<string, WmdpProductSubgroup>(
+    sortedSubgroups.map((s) => [s.key, { subgroupKey: s.key, subgroupLabel: s.label, items: [] }]),
+  );
+
+  // Last subgroup absorbs unrecognised keys (typically the "other/review" bucket).
+  const fallbackKey = sortedSubgroups[sortedSubgroups.length - 1].key;
+
+  for (const item of items) {
+    const rawKey = item.product_subgroup_key || item.curve_family || '';
+    const normKey = normalizedProductSubgroupKey(rawKey);
+    const targetKey = subgroupByKey.has(normKey) ? normKey : fallbackKey;
+    subgroupByKey.get(targetKey)?.items.push(item);
+  }
+
+  return sortedSubgroups
+    .map((s) => subgroupByKey.get(s.key)!)
+    .filter((s) => s.items.length > 0);
+}
+
+function productItemClassificationTitle(item: ManagedProductGroupItem): string | undefined {
+  const parts = [
+    item.product_subgroup_label ? `Subclass: ${item.product_subgroup_label}` : '',
+    item.curve_family ? `Family: ${item.curve_family}` : '',
+    item.classification_confidence ? `Confidence: ${item.classification_confidence}` : '',
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' | ') : undefined;
+}
+
 function productItemDisplayName(item: ManagedProductGroupItem): string {
   return item.curve_name || item.display_name || item.product_id;
+}
+
+function productItemRunDateDisplay(value: unknown): string {
+  if (value === null || value === undefined) {
+    return '—';
+  }
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return '—';
+  }
+
+  const text = String(value).trim();
+  if (!text) {
+    return '—';
+  }
+
+  const normalized = text.replace(/[\s_-]+/g, ' ').trim().toUpperCase();
+  const placeholders = new Set([
+    'LOG DATE',
+    'LOGDATE',
+    'RUN DATE',
+    'DATE',
+    'N A',
+    'NA',
+    'N/A',
+    'NONE',
+    'NULL',
+    'UNKNOWN',
+    'UNAVAILABLE',
+    '-',
+    '—',
+  ]);
+
+  if (placeholders.has(normalized) || placeholders.has(text.toUpperCase())) {
+    return '—';
+  }
+
+  return text;
 }
 
 
@@ -295,6 +408,44 @@ function expandableProductName(value: string) {
       <summary title={text}>{text.slice(0, maxLength - 1)}…</summary>
       <span>{text}</span>
     </details>
+  );
+}
+
+
+function WmdpProductItemRow({ item, selected, onToggle }: { item: ManagedProductGroupItem; selected: boolean; onToggle: () => void }) {
+  return (
+    <label className="wlv-wmdp-product-item" key={item.product_id}>
+      <input
+        type="checkbox"
+        checked={selected}
+        disabled={item.selectable === false}
+        onChange={onToggle}
+        aria-label={`Select ${productItemDisplayName(item)}`}
+      />
+      <span className="wlv-wmdp-product-item-summary">
+        <span className="wlv-wmdp-product-item-code-wrap" title={productItemClassificationTitle(item)}>
+          <strong className="wlv-wmdp-product-item-code">{productItemDisplayName(item)}</strong>
+        </span>
+        <span className="wlv-wmdp-product-item-description" title={safeText(item.curve_type)}>
+          <strong>Description:</strong> {safeText(item.curve_type)}
+        </span>
+        <span className="wlv-wmdp-product-item-name" title={safeText(item.display_name || productItemDisplayName(item))}>
+          <strong>File Name:</strong> {expandableProductName(item.display_name || productItemDisplayName(item))}
+        </span>
+        <span className="wlv-wmdp-product-item-run-date" title={productItemRunDateDisplay(item.run_date)}>
+          <strong>Run Date:</strong> {productItemRunDateDisplay(item.run_date)}
+        </span>
+        <span className="wlv-wmdp-product-item-run-interval" title={safeText(item.run_interval)}>
+          <strong>Run Interval:</strong> {safeText(item.run_interval)}
+        </span>
+        <span className="wlv-wmdp-product-item-run-number" title={safeText(item.run_number)}>
+          <strong>Run Number:</strong> {safeText(item.run_number)}
+        </span>
+        <span className="wlv-wmdp-product-item-qa-flag" title={safeText(item.qa_flag)}>
+          <strong>QA Flag:</strong> {safeText(item.qa_flag)}
+        </span>
+      </span>
+    </label>
   );
 }
 
@@ -315,6 +466,9 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // KR-1: backend-owned product groups fetched once on mount.
+  // If unavailable the page degrades safely (subgroups not shown).
+  const [krProductGroups, setKrProductGroups] = useState<KrProductGroup[]>([]);
 
   const seedAlreadyRegistered = developmentSeedAlreadyRegistered(wells);
   const backendConnected = Boolean(status?.ok && !error);
@@ -356,6 +510,13 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
   const loadInventory = async () => {
     setLoading(true);
     setError(null);
+
+    // KR-1: Fetch backend-owned product groups in parallel with inventory.
+    // A KR failure is non-fatal — the page degrades gracefully (no subgrouping).
+    fetchWlvJson<KrProductGroupsPayload>('/api/wlv/knowledge/product-groups')
+      .then((payload) => setKrProductGroups(payload.groups ?? []))
+      .catch(() => { /* KR unavailable — subgroup rendering degrades safely */ });
+
     try {
       const [nextStatus, nextWells] = await Promise.all([
         fetchWlvJson<ManagedInventoryStatusPayload>('/api/wlv/inventory/status'),
@@ -805,44 +966,52 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                                       <span className="wlv-wmdp-product-group-count">{categoryItems.length}</span>
                                     </button>
                                   </div>
-                                  {categoryExpanded ? (
-                                    <div className="wlv-wmdp-product-items">
-                                      {categoryItems.length === 0 ? (
-                                        <div className="wlv-wmdp-product-empty">No registered items.</div>
-                                      ) : categoryItems.map((item) => (
-                                        <label className="wlv-wmdp-product-item" key={item.product_id}>
-                                          <input
-                                            type="checkbox"
-                                            checked={selectedProductItemIds.has(item.product_id)}
-                                            disabled={item.selectable === false}
-                                            onChange={() => toggleProductItemSelected(item.product_id)}
-                                            aria-label={`Select ${productItemDisplayName(item)}`}
+                                  {categoryExpanded ? (() => {
+                                    // KR-1: use backend-provided subgroups for any group that has them.
+                                    const krGroup = krProductGroups.find((g) => g.key === category.group_key);
+                                    const krSubgroups = krGroup?.subgroups ?? [];
+                                    const subgroupedItems = krSubgroups.length > 0
+                                      ? groupProductItemsByKrSubgroups(categoryItems, krSubgroups)
+                                      : [];
+                                    return subgroupedItems.length > 0 ? (
+                                      <div className="wlv-wmdp-product-subgroups">
+                                        {categoryItems.length === 0 ? (
+                                          <div className="wlv-wmdp-product-empty">No registered items.</div>
+                                        ) : subgroupedItems.map((subgroup) => (
+                                          <section className="wlv-wmdp-product-subgroup" key={subgroup.subgroupKey}>
+                                            <div className="wlv-wmdp-product-subgroup-header">
+                                              <span className="wlv-wmdp-product-subgroup-caret">▾</span>
+                                              <span className="wlv-wmdp-product-subgroup-title">{subgroup.subgroupLabel}</span>
+                                              <span className="wlv-wmdp-product-subgroup-count">{subgroup.items.length}</span>
+                                            </div>
+                                            <div className="wlv-wmdp-product-items">
+                                              {subgroup.items.map((item) => (
+                                                <WmdpProductItemRow
+                                                  item={item}
+                                                  key={item.product_id}
+                                                  selected={selectedProductItemIds.has(item.product_id)}
+                                                  onToggle={() => toggleProductItemSelected(item.product_id)}
+                                                />
+                                              ))}
+                                            </div>
+                                          </section>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="wlv-wmdp-product-items">
+                                        {categoryItems.length === 0 ? (
+                                          <div className="wlv-wmdp-product-empty">No registered items.</div>
+                                        ) : categoryItems.map((item) => (
+                                          <WmdpProductItemRow
+                                            item={item}
+                                            key={item.product_id}
+                                            selected={selectedProductItemIds.has(item.product_id)}
+                                            onToggle={() => toggleProductItemSelected(item.product_id)}
                                           />
-                                          <span className="wlv-wmdp-product-item-summary">
-                                            <strong className="wlv-wmdp-product-item-code">{productItemDisplayName(item)}</strong>
-                                            <span className="wlv-wmdp-product-item-description">
-                                              <strong>Description:</strong> {safeText(item.curve_type)}
-                                            </span>
-                                            <span className="wlv-wmdp-product-item-name">
-                                              <strong>File Name:</strong> {expandableProductName(item.display_name || productItemDisplayName(item))}
-                                            </span>
-                                            <span className="wlv-wmdp-product-item-run-date">
-                                              <strong>Run Date:</strong> {safeText(item.run_date)}
-                                            </span>
-                                            <span className="wlv-wmdp-product-item-run-interval">
-                                              <strong>Run Interval:</strong> {safeText(item.run_interval)}
-                                            </span>
-                                            <span className="wlv-wmdp-product-item-run-number">
-                                              <strong>Run Number:</strong> {safeText(item.run_number)}
-                                            </span>
-                                            <span className="wlv-wmdp-product-item-qa-flag">
-                                              <strong>QA Flag:</strong> {safeText(item.qa_flag)}
-                                            </span>
-                                          </span>
-                                        </label>
-                                      ))}
-                                    </div>
-                                  ) : null}
+                                        ))}
+                                      </div>
+                                    );
+                                  })() : null}
                                 </section>
                               );
                             })}
@@ -1050,31 +1219,6 @@ type MockCurveSample = {
   value: number;
 };
 
-
-type ProductCurveSamplesResponse = {
-  ok?: boolean;
-  product_id: string;
-  depth_min?: number | null;
-  depth_max?: number | null;
-  sample_count?: number | null;
-  returned_sample_count?: number | null;
-  samples?: [number, number][];
-};
-
-let backendProductCurveSamplesByCurveId: Record<string, MockCurveSample[]> = {};
-
-function setBackendProductCurveSamples(curveId: string, samples: MockCurveSample[]): void {
-  backendProductCurveSamplesByCurveId = {
-    ...backendProductCurveSamplesByCurveId,
-    [curveId]: samples,
-  };
-}
-
-function backendProductCurveSamples(curveId: string): MockCurveSample[] | null {
-  const samples = backendProductCurveSamplesByCurveId[curveId];
-  return samples?.length ? samples : null;
-}
-
 function depthToY(depth: number, viewRange: DepthViewRange, bodyHeightPx = TRACK_BODY_HEIGHT_PX): number {
   const span = Math.max(1, viewRange.max - viewRange.min);
   const t = (depth - viewRange.min) / span;
@@ -1264,17 +1408,14 @@ function renderLogarithmicGrid(track: CurveTrack, trackWidth: number, bodyHeight
   );
 }
 
-function isManagedProductCurve(curve: CurveCatalogItem): boolean {
-  return curve.curveId.startsWith('source-intake-curve:') || curve.curveId.startsWith('product:');
-}
+const PROTOTYPE_SAMPLE_ALIASES_BY_MNEMONIC: Record<string, string[]> = {
+  RXO: ['RXOZ', 'RXO8'],
+};
 
 function sampleKeysForCurve(curve: CurveCatalogItem): string[] {
-  // Managed/product-backed curves must render from backend product_id samples.
-  // Prototype mnemonic aliases are deliberately not used for managed curves
-  // because they can draw a real product at the wrong depth.
-  if (isManagedProductCurve(curve)) return [];
   const keys = [curve.curveId, curve.mnemonic];
-  return keys.filter((key, index, allKeys) => Boolean(key) && allKeys.indexOf(key) === index);
+  const aliases = PROTOTYPE_SAMPLE_ALIASES_BY_MNEMONIC[String(curve.mnemonic || '').toUpperCase()] ?? [];
+  return [...keys, ...aliases].filter((key, index, allKeys) => Boolean(key) && allKeys.indexOf(key) === index);
 }
 
 function makeMockCurveSamples(
@@ -1282,9 +1423,6 @@ function makeMockCurveSamples(
   _assignment: CurveAssignment,
   _trackPosition: number,
 ): MockCurveSample[] {
-  const backendSamples = backendProductCurveSamples(curve.curveId);
-  if (backendSamples) return backendSamples;
-
   const samples = sampleKeysForCurve(curve)
     .map((key) => realCurveSamplesByCurveId[key])
     .find((candidate) => candidate?.length) ?? [];
@@ -3213,7 +3351,6 @@ export function TrackLayoutPrototype() {
   const [managedViewerWellId, setManagedViewerWellId] = useState<string | null>(null);
   const [, setViewerPackageLoad] = useState<BackendViewerPackageLoadResult | null>(null);
   const [wdvPackageState, setWdvPackageState] = useState<WdvPackageState>(() => emptyWdvPackageState());
-  const [, setProductCurveSamplesVersion] = useState(0);
 
   // WLV-WDV-REBUILD-1: WMDP load creates WDV availability only.
   // It must not auto-populate visible well-log tracks.
@@ -3412,46 +3549,6 @@ export function TrackLayoutPrototype() {
     });
     return ids;
   }, [tracks]);
-  const visibleTrackCurveIdsKey = useMemo(() => Array.from(visibleTrackCurveIds).sort().join('|'), [visibleTrackCurveIds]);
-
-  useEffect(() => {
-    if (!managedViewerWellId || !visibleTrackCurveIdsKey) return undefined;
-
-    const productCurveIds = Array.from(visibleTrackCurveIds).filter((curveId) => (
-      (curveId.startsWith('source-intake-curve:') || curveId.startsWith('product:'))
-      && !backendProductCurveSamples(curveId)
-    ));
-    if (!productCurveIds.length) return undefined;
-
-    let cancelled = false;
-    void Promise.all(productCurveIds.map(async (curveId) => {
-      const response = await fetchWlvJson<ProductCurveSamplesResponse>(
-        `/api/wlv/inventory/wells/${encodeURIComponent(managedViewerWellId)}/curve-samples?product_id=${encodeURIComponent(curveId)}`,
-      );
-      const samples = (response.samples ?? [])
-        .filter((sample): sample is [number, number] => (
-          Array.isArray(sample)
-          && typeof sample[0] === 'number'
-          && Number.isFinite(sample[0])
-          && typeof sample[1] === 'number'
-          && Number.isFinite(sample[1])
-        ))
-        .map(([depth, value]) => ({ depth, value }));
-      return { curveId, samples };
-    })).then((results) => {
-      if (cancelled) return;
-      results.forEach(({ curveId, samples }) => {
-        if (samples.length) setBackendProductCurveSamples(curveId, samples);
-      });
-      setProductCurveSamplesVersion((version) => version + 1);
-    }).catch((error) => {
-      console.warn('Unable to load backend product curve samples', error);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [managedViewerWellId, visibleTrackCurveIds, visibleTrackCurveIdsKey]);
 
   const updateTrack = (trackId: string, patch: Partial<WellLogTrack>) => {
     setTracks((current) => current.map((track) => (track.trackId === trackId ? { ...track, ...patch } as WellLogTrack : track)));
