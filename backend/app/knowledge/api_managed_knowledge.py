@@ -1,40 +1,46 @@
-"""WLV Managed Knowledge Repository API routes (KR-2 + KR-3).
+"""WLV Managed Knowledge Repository API routes (KR-2 + KR-3 + KR-4).
 
 KR-2 read-only endpoints (unchanged):
   GET  /api/wlv/knowledge/managed/health
   GET  /api/wlv/knowledge/managed/schema
   GET  /api/wlv/knowledge/managed/status-summary
 
-KR-3 import/staging endpoints (new):
+KR-3 import/staging endpoints (unchanged):
   POST /api/wlv/knowledge/managed/import/preview
   POST /api/wlv/knowledge/managed/import/stage
 
-The ``/preview`` endpoint validates a payload and returns a projected
-candidate record count WITHOUT persisting anything.
+KR-4 governance review endpoints (new):
+  GET  /api/wlv/knowledge/managed/records
+  GET  /api/wlv/knowledge/managed/records/{record_id}
+  POST /api/wlv/knowledge/managed/records/{record_id}/approve
+  POST /api/wlv/knowledge/managed/records/{record_id}/reject
+  POST /api/wlv/knowledge/managed/records/{record_id}/deprecate
+  GET  /api/wlv/knowledge/managed/production-eligible
 
-The ``/stage`` endpoint validates a payload and, if valid, creates
-candidate managed records in the in-memory repository.  Staged records
-are NOT production-eligible and do NOT affect KR-1 endpoints.
-
-No approval / promotion endpoint is added in KR-3.
 KR-1 endpoints (/api/wlv/knowledge/*) are NOT touched by this module.
 
 FastAPI dependency injection is used for the managed repository so that
-tests can inject isolated ManagedKRRepository instances for KR-3 import
-tests without affecting the global singleton.
+tests can inject isolated ManagedKRRepository instances without affecting
+the global singleton.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
+from .governance_service import (
+    GovernanceService,
+    GovernanceTransitionError,
+    RecordNotFoundError,
+    _serialize_record,
+)
 from .import_models import ImportPayload
 from .import_staging_service import stage_import_payload
 from .import_validation_service import validate_import_payload
-from .managed_models import KR2_VERSION, KR3_VERSION
+from .managed_models import KR2_VERSION, KR3_VERSION, KR4_VERSION
 from .managed_repository import ManagedKRRepository
 
 router = APIRouter(prefix="/api/wlv/knowledge/managed", tags=["wlv-knowledge-managed"])
@@ -323,4 +329,279 @@ def import_stage(
         record_ids=staging.record_ids,
         errors=[],
         warnings=_issues_to_response(result.warnings),
+    )
+
+
+# ---------------------------------------------------------------------------
+# KR-4 governance dependency
+# ---------------------------------------------------------------------------
+
+
+def get_governance_service(
+    repo: ManagedKRRepository = Depends(get_managed_repository),
+) -> GovernanceService:
+    """Return a GovernanceService wrapping the active managed repository.
+
+    Override in tests via::
+
+        app.dependency_overrides[get_managed_repository] = lambda: fresh_repo
+        # get_governance_service derives from get_managed_repository, so
+        # overriding the repository is sufficient.
+    """
+    return GovernanceService(repo)
+
+
+# ---------------------------------------------------------------------------
+# KR-4 response models
+# ---------------------------------------------------------------------------
+
+
+class GovernanceActionRequest(BaseModel):
+    """Request body for approve / reject / deprecate actions."""
+
+    actor: str = Field(..., description="Identity of the person or system performing the action")
+    reason: Optional[str] = Field(None, description="Reason for the governance action")
+    notes: Optional[str] = Field(None, description="Optional free-text reviewer notes")
+
+
+class GovernanceActionResponse(BaseModel):
+    """Response for a successful governance action."""
+
+    ok: bool
+    kr_version: str
+    record_id: str
+    previous_status: str
+    new_status: str
+    production_eligible: bool
+    record: dict[str, Any]
+
+
+class RecordListResponse(BaseModel):
+    """Response for GET /records."""
+
+    kr_version: str
+    count: int
+    records: list[dict[str, Any]]
+
+
+class ProductionEligibleResponse(BaseModel):
+    """Response for GET /production-eligible."""
+
+    kr_version: str
+    count: int
+    records: list[dict[str, Any]]
+
+
+# ---------------------------------------------------------------------------
+# KR-4 endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/records",
+    response_model=RecordListResponse,
+    summary="List managed KR records with optional status/type filtering",
+)
+def list_managed_records(
+    status: Optional[str] = Query(None, description="Filter by governance status"),
+    record_type: Optional[str] = Query(None, description="Filter by record type"),
+    service: GovernanceService = Depends(get_governance_service),
+) -> RecordListResponse:
+    """Return governed records.
+
+    Optional query parameters:
+    - ``status``: one of seed, candidate, approved, rejected, deprecated
+    - ``record_type``: one of curve_definition, alias, display_rule,
+      classification_rule, template_rule
+
+    HTTP 422 is returned for unknown status values (via Pydantic/FastAPI).
+    """
+    from .governance import validate_status
+
+    parsed_status = None
+    if status is not None:
+        try:
+            parsed_status = validate_status(status)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    records = service.list_records(status=parsed_status, record_type=record_type)
+    return RecordListResponse(
+        kr_version=KR4_VERSION,
+        count=len(records),
+        records=[_serialize_record(r) for r in records],
+    )
+
+
+@router.get(
+    "/records/{record_id}",
+    response_model=dict,
+    summary="Fetch a single managed KR record by ID",
+)
+def get_managed_record(
+    record_id: str,
+    service: GovernanceService = Depends(get_governance_service),
+) -> dict[str, Any]:
+    """Return a single governed record by its record_id.
+
+    HTTP 404 if the record does not exist.
+    """
+    try:
+        record = service.get_record(record_id)
+    except RecordNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "kr_version": KR4_VERSION,
+        "record": _serialize_record(record),
+    }
+
+
+@router.post(
+    "/records/{record_id}/approve",
+    response_model=GovernanceActionResponse,
+    summary="Approve a candidate or seed managed KR record",
+)
+def approve_managed_record(
+    record_id: str,
+    body: GovernanceActionRequest,
+    service: GovernanceService = Depends(get_governance_service),
+) -> GovernanceActionResponse:
+    """Approve a candidate or seed record, making it production-eligible.
+
+    Valid transitions: candidate → approved, seed → approved.
+
+    HTTP 404 if the record does not exist.
+    HTTP 400 if the transition is not permitted.
+    HTTP 422 if the request body is malformed.
+    """
+    try:
+        result = service.approve_record(
+            record_id,
+            actor=body.actor,
+            reason=body.reason,
+            notes=body.notes,
+        )
+    except RecordNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except GovernanceTransitionError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_transition",
+                "record_id": exc.record_id,
+                "from_status": exc.from_status.value,
+                "to_status": exc.to_status.value,
+                "message": str(exc),
+            },
+        ) from exc
+    return GovernanceActionResponse(**result)
+
+
+@router.post(
+    "/records/{record_id}/reject",
+    response_model=GovernanceActionResponse,
+    summary="Reject a candidate managed KR record",
+)
+def reject_managed_record(
+    record_id: str,
+    body: GovernanceActionRequest,
+    service: GovernanceService = Depends(get_governance_service),
+) -> GovernanceActionResponse:
+    """Reject a candidate record.  Rejected records are NOT production-eligible.
+
+    Valid transitions: candidate → rejected.
+
+    HTTP 404 if the record does not exist.
+    HTTP 400 if the transition is not permitted.
+    HTTP 422 if the request body is malformed.
+    """
+    reason = body.reason or ""
+    try:
+        result = service.reject_record(
+            record_id,
+            actor=body.actor,
+            reason=reason,
+            notes=body.notes,
+        )
+    except RecordNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except GovernanceTransitionError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_transition",
+                "record_id": exc.record_id,
+                "from_status": exc.from_status.value,
+                "to_status": exc.to_status.value,
+                "message": str(exc),
+            },
+        ) from exc
+    return GovernanceActionResponse(**result)
+
+
+@router.post(
+    "/records/{record_id}/deprecate",
+    response_model=GovernanceActionResponse,
+    summary="Deprecate a seed or approved managed KR record",
+)
+def deprecate_managed_record(
+    record_id: str,
+    body: GovernanceActionRequest,
+    service: GovernanceService = Depends(get_governance_service),
+) -> GovernanceActionResponse:
+    """Deprecate a seed or approved record.  Deprecated records are NOT production-eligible.
+
+    Valid transitions: seed → deprecated, approved → deprecated.
+    candidate → deprecated is NOT permitted.
+
+    HTTP 404 if the record does not exist.
+    HTTP 400 if the transition is not permitted.
+    HTTP 422 if the request body is malformed.
+    """
+    reason = body.reason or ""
+    try:
+        result = service.deprecate_record(
+            record_id,
+            actor=body.actor,
+            reason=reason,
+            notes=body.notes,
+        )
+    except RecordNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except GovernanceTransitionError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_transition",
+                "record_id": exc.record_id,
+                "from_status": exc.from_status.value,
+                "to_status": exc.to_status.value,
+                "message": str(exc),
+            },
+        ) from exc
+    return GovernanceActionResponse(**result)
+
+
+@router.get(
+    "/production-eligible",
+    response_model=ProductionEligibleResponse,
+    summary="List all production-eligible managed KR records (seed + approved)",
+)
+def list_production_eligible(
+    record_type: Optional[str] = Query(None, description="Filter by record type"),
+    service: GovernanceService = Depends(get_governance_service),
+) -> ProductionEligibleResponse:
+    """Return all records that are production-eligible (status = seed or approved).
+
+    Candidate, rejected, and deprecated records are excluded.
+
+    Optional query parameter:
+    - ``record_type``: one of curve_definition, alias, display_rule,
+      classification_rule, template_rule
+    """
+    records = service.list_production_eligible_records(record_type=record_type)
+    return ProductionEligibleResponse(
+        kr_version=KR4_VERSION,
+        count=len(records),
+        records=[_serialize_record(r) for r in records],
     )

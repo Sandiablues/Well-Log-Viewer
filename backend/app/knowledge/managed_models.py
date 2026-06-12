@@ -31,6 +31,7 @@ from .governance import GovernanceStatus
 
 KR2_VERSION = "kr-2"
 KR3_VERSION = "kr-3"
+KR4_VERSION = "kr-4"
 
 GOVERNED_RECORD_TYPES: frozenset[str] = frozenset(
     {
@@ -92,6 +93,9 @@ class CurveDefinitionRecord:
     deprecated_at: Optional[datetime] = None
     change_reason: Optional[str] = None
     evidence_refs: list[str] = field(default_factory=list)
+    # KR-4: compact governance audit history.  Each entry records:
+    # {action, actor, timestamp, previous_status, new_status, reason, notes}
+    governance_history: list[dict] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +131,7 @@ class AliasRecord:
     reviewed_by: Optional[str] = None
     approved_by: Optional[str] = None
     change_reason: Optional[str] = None
+    governance_history: list[dict] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.normalized_alias:
@@ -168,6 +173,7 @@ class DisplayRuleRecord:
     updated_at: Optional[datetime] = None
     approved_by: Optional[str] = None
     change_reason: Optional[str] = None
+    governance_history: list[dict] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +209,7 @@ class ClassificationRuleRecord:
     updated_at: Optional[datetime] = None
     approved_by: Optional[str] = None
     change_reason: Optional[str] = None
+    governance_history: list[dict] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +246,7 @@ class TemplateRuleRecord:
     updated_at: Optional[datetime] = None
     approved_by: Optional[str] = None
     change_reason: Optional[str] = None
+    governance_history: list[dict] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

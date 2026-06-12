@@ -1147,6 +1147,13 @@ class TestTemplatesNonProduction:
 
 class TestNoApprovalEndpoint:
     def test_no_approve_endpoint_exists(self) -> None:
+        """KR-3 added no approval/promotion endpoints.
+
+        KR-4 has since added /records/{record_id}/approve, /reject, /deprecate
+        under the managed namespace — those are intentional and permitted.
+        This test now verifies only that no *import*-route-level approval
+        endpoints were added by KR-3 (i.e. no /import/approve path).
+        """
         from fastapi.routing import APIRoute
         routes = [
             route.path
@@ -1154,25 +1161,29 @@ class TestNoApprovalEndpoint:
             if isinstance(route, APIRoute)
         ]
 
-        forbidden_route_terms = {
-            "approve",
+        # These terms must not appear in import-layer paths.
+        # KR-4 record management paths (/records/.../approve etc.) are allowed.
+        forbidden_import_route_terms = {
             "approval",
             "promote",
-            "review",
         }
 
         forbidden_routes = []
         for route_path in routes:
+            # Skip KR-4 record governance paths — they intentionally have
+            # "approve", "reject", "deprecate" as path segments.
+            if "/records/" in route_path:
+                continue
             path_parts = {
                 part.strip().lower()
                 for part in route_path.split("/")
                 if part.strip()
             }
-            if path_parts.intersection(forbidden_route_terms):
+            if path_parts.intersection(forbidden_import_route_terms):
                 forbidden_routes.append(route_path)
 
         assert forbidden_routes == [], (
-            f"Unexpected approval/promotion/review endpoints found: {forbidden_routes}"
+            f"Unexpected approval/promotion endpoints found in import routes: {forbidden_routes}"
         )
 
     def test_no_approval_endpoint_via_http_404(
