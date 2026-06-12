@@ -30,6 +30,7 @@ from .governance import GovernanceStatus
 # ---------------------------------------------------------------------------
 
 KR2_VERSION = "kr-2"
+KR3_VERSION = "kr-3"
 
 GOVERNED_RECORD_TYPES: frozenset[str] = frozenset(
     {
