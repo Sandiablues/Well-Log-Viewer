@@ -95,6 +95,8 @@ class ManagedProductGroupItem(BaseModel):
     curve_description: str | None = None
     curve_unit: str | None = None
     product_category: str = "other_review_required"
+    product_subgroup_key: str | None = None
+    product_subgroup_label: str | None = None
     curve_family: str = "Unclassified"
     classification_confidence: str = "low"
     classification_source: str = "unclassified"

@@ -16,6 +16,68 @@ class ProductGroupDefinition:
     group_label: str
 
 
+
+@dataclass(frozen=True)
+class ProductSubgroupDefinition:
+    subgroup_key: str
+    subgroup_label: str
+
+
+OPEN_HOLE_SUBGROUP_ORDER: tuple[ProductSubgroupDefinition, ...] = (
+    ProductSubgroupDefinition("gamma_ray", "Gamma Ray"),
+    ProductSubgroupDefinition("resistivity", "Resistivity"),
+    ProductSubgroupDefinition("sonic_acoustic", "Sonic / Acoustic"),
+    ProductSubgroupDefinition("density_neutron_porosity", "Density / Neutron / Porosity"),
+    ProductSubgroupDefinition("nmr", "NMR"),
+    ProductSubgroupDefinition("borehole_geometry_imaging", "Borehole Geometry / Imaging"),
+    ProductSubgroupDefinition("sp_electrochemical", "SP / Electrochemical"),
+    ProductSubgroupDefinition("dip_directional", "Dip / Directional"),
+    ProductSubgroupDefinition("formation_pressure_sampling", "Formation Pressure / Sampling"),
+    ProductSubgroupDefinition("petrophysical_interpretation", "Petrophysical Interpretation"),
+    ProductSubgroupDefinition("other_open_hole_review", "Other Open-hole / Review"),
+)
+
+OPEN_HOLE_SUBGROUP_LABELS: dict[str, str] = {
+    definition.subgroup_key: definition.subgroup_label
+    for definition in OPEN_HOLE_SUBGROUP_ORDER
+}
+
+OPEN_HOLE_FAMILY_TO_SUBGROUP: dict[str, str] = {
+    "gamma ray": "gamma_ray",
+    "computed gamma ray": "gamma_ray",
+    "spectral gamma ray": "gamma_ray",
+    "resistivity": "resistivity",
+    "density": "density_neutron_porosity",
+    "density correction": "density_neutron_porosity",
+    "neutron porosity": "density_neutron_porosity",
+    "photoelectric factor": "density_neutron_porosity",
+    "sonic": "sonic_acoustic",
+    "sonic compressional": "sonic_acoustic",
+    "sonic shear": "sonic_acoustic",
+    "acoustic": "sonic_acoustic",
+    "array acoustic": "sonic_acoustic",
+    "nmr": "nmr",
+    "caliper": "borehole_geometry_imaging",
+    "hole diameter": "borehole_geometry_imaging",
+    "borehole image": "borehole_geometry_imaging",
+    "spontaneous potential": "sp_electrochemical",
+    "dipmeter": "dip_directional",
+    "directional": "dip_directional",
+    "formation pressure": "formation_pressure_sampling",
+    "formation tester": "formation_pressure_sampling",
+    "formation sampling": "formation_pressure_sampling",
+    "petrophysical interpretation": "petrophysical_interpretation",
+}
+
+
+def open_hole_subgroup_for_family(curve_family: str | None) -> ProductSubgroupDefinition:
+    family_key = (curve_family or "").strip().lower()
+    subgroup_key = OPEN_HOLE_FAMILY_TO_SUBGROUP.get(family_key, "other_open_hole_review")
+    return ProductSubgroupDefinition(
+        subgroup_key=subgroup_key,
+        subgroup_label=OPEN_HOLE_SUBGROUP_LABELS[subgroup_key],
+    )
+
 PRODUCT_GROUP_ORDER: tuple[ProductGroupDefinition, ...] = (
     ProductGroupDefinition("open_hole_logs", "Open hole logs"),
     ProductGroupDefinition("cased_hole_logs", "Cased hole logs"),

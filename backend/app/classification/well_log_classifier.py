@@ -18,6 +18,7 @@ from .well_log_vocabulary import (
     OPEN_HOLE_CONTEXT_TERMS,
     OPEN_HOLE_CURVE_FAMILIES,
     PRESSURE_PRODUCTION_FLUID_FAMILIES,
+    open_hole_subgroup_for_family,
 )
 
 
@@ -25,6 +26,8 @@ from .well_log_vocabulary import (
 class WellLogClassification:
     product_category: str
     curve_family: str
+    product_subgroup_key: str | None
+    product_subgroup_label: str | None
     curve_description: str
     curve_unit: str | None
     classification_confidence: str
@@ -93,6 +96,8 @@ def classify_well_log_curve(
         return WellLogClassification(
             product_category="lithology_core_markers",
             curve_family=family,
+            product_subgroup_key=None,
+            product_subgroup_label=None,
             curve_description=cleaned_description or default_description,
             curve_unit=cleaned_unit,
             classification_confidence="high",
@@ -106,6 +111,8 @@ def classify_well_log_curve(
         return WellLogClassification(
             product_category="pressure_production_fluid_data",
             curve_family=family,
+            product_subgroup_key=None,
+            product_subgroup_label=None,
             curve_description=cleaned_description or default_description,
             curve_unit=cleaned_unit,
             classification_confidence="high",
@@ -119,6 +126,8 @@ def classify_well_log_curve(
         return WellLogClassification(
             product_category="completion_integrity_data",
             curve_family=family,
+            product_subgroup_key=None,
+            product_subgroup_label=None,
             curve_description=cleaned_description or default_description,
             curve_unit=cleaned_unit,
             classification_confidence="high",
@@ -133,6 +142,8 @@ def classify_well_log_curve(
         return WellLogClassification(
             product_category="cased_hole_logs",
             curve_family=family,
+            product_subgroup_key=None,
+            product_subgroup_label=None,
             curve_description=cleaned_description or default_description,
             curve_unit=cleaned_unit,
             classification_confidence=confidence,
@@ -143,10 +154,13 @@ def classify_well_log_curve(
 
     if key in OPEN_HOLE_CURVE_FAMILIES:
         family, default_description = OPEN_HOLE_CURVE_FAMILIES[key]
+        subgroup = open_hole_subgroup_for_family(family)
         confidence = "high" if has_open_context or cleaned_unit or key not in {"GR", "CGR", "SGR"} else "medium"
         return WellLogClassification(
             product_category="open_hole_logs",
             curve_family=family,
+            product_subgroup_key=subgroup.subgroup_key,
+            product_subgroup_label=subgroup.subgroup_label,
             curve_description=cleaned_description or default_description,
             curve_unit=cleaned_unit,
             classification_confidence=confidence,
@@ -158,6 +172,8 @@ def classify_well_log_curve(
     return WellLogClassification(
         product_category="other_review_required",
         curve_family="Unclassified",
+        product_subgroup_key=None,
+        product_subgroup_label=None,
         curve_description=_fallback_description(key, cleaned_description),
         curve_unit=cleaned_unit,
         classification_confidence="low",
