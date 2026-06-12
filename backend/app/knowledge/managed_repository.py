@@ -1,31 +1,47 @@
-"""Managed KR repository and service layer for KR-2.
+"""Managed KR repository and service layer — KR-2 through KR-5.
 
-ManagedKRRepository is the backend service that owns the in-memory managed
-record store.  It is the single point of truth for:
+KR-5 adds durable, file-backed storage so that managed records survive
+backend restart.  The design preserves the service-boundary model established
+in KR-1 through KR-4:
 
-  - listing governed records by status or record type
-  - serving production-eligible (seed + approved) knowledge
-  - promoting or deprecating records (service methods; not yet HTTP endpoints)
-  - generating health, schema, and status-summary introspection data
+  Seed knowledge
+    - Loaded from the Python seed layer (managed_seed.py) on every startup.
+    - Stored in ``_seed_records`` (in-memory only; never written to disk).
+    - Record IDs are prefixed ``seed_`` and are deterministic.
 
-Architecture
-------------
-KR-2 uses in-memory storage backed by the Python seed layer.  The repository
-is designed so that a future KR block can swap in file-backed or database
-storage without changing the service interface.
+  Managed knowledge
+    - Candidates, approved, rejected, deprecated, and evidence records.
+    - Loaded from persistent JSON storage on startup.
+    - Written to disk after every mutating operation.
+    - Stored in ``_managed_records`` (also held in memory for fast access).
 
-The ManagedKRRepository does NOT replace the KR-1 KnowledgeRepository.
-KR-1 endpoints remain the stable external contract; the managed repository is
-an additional internal service layer whose read-only introspection endpoints
-are registered under /api/wlv/knowledge/managed/*.
+  Merged view
+    - ``list_*`` and ``get_by_id`` methods merge both stores.
+    - Managed records take precedence over seed records on the same ID
+      (enabling seed-override deprecations / approvals).
 
-Evidence records are stored separately from governed records because they have
-no governance lifecycle status.
+Seed transitions (approve / deprecate a seed record)
+    When the governance layer transitions a seed record, the repository
+    copies that record into ``_managed_records`` so the new status is
+    persisted.  The seed constant layer is never mutated.
+
+Persistence points
+    - ``_add_record()``    — called by import staging
+    - ``_add_evidence()``  — called by import staging
+    - ``persist()``        — called by GovernanceService after approve/reject/deprecate
+    - Read-only operations do NOT write.
+    - Preview does NOT write.
+
+Test isolation
+    Pass ``storage_path=Path("/tmp/…")`` to the constructor.  Tests inject
+    isolated repos via FastAPI dependency_overrides and never touch the
+    real project storage file.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from .governance import (
@@ -45,10 +61,11 @@ from .managed_models import (
     TemplateRuleRecord,
 )
 from .managed_seed import build_seed_managed_records
+from .managed_storage import ManagedStorage, ManagedStorageError, serialize_record
 
 
 # ---------------------------------------------------------------------------
-# Type alias for governed records (all types that carry GovernanceStatus)
+# Type alias
 # ---------------------------------------------------------------------------
 
 GovernedRecord = (
@@ -64,46 +81,142 @@ GovernedRecord = (
 # ManagedKRRepository
 # ---------------------------------------------------------------------------
 
+
 class ManagedKRRepository:
-    """In-memory managed Knowledge Repository for KR-2.
+    """Managed Knowledge Repository with durable file-backed storage (KR-5).
 
     Lifecycle
     ---------
-    Instantiated once by the API layer.  Seed records are loaded on __init__.
-    The store is read-only from the HTTP perspective; promote/deprecate service
-    methods exist but are not exposed as public write endpoints in KR-2.
+    Instantiated once by the API layer.  Seed records are loaded from the
+    Python seed layer; managed records are loaded from JSON storage.  The
+    two stores are merged for all read operations.
+
+    Storage
+    -------
+    ``storage_path`` defaults to
+    ``backend/data/knowledge/managed_knowledge.json`` relative to the
+    project root.  Pass a custom path in tests for full isolation::
+
+        repo = ManagedKRRepository(storage_path=tmp_path / "kr.json")
     """
 
-    def __init__(self) -> None:
-        # Governed records: record_id → GovernedRecord
-        self._records: dict[str, GovernedRecord] = {}
-        # Evidence records: evidence_id → EvidenceRecord
+    def __init__(self, storage_path: Path | None = None) -> None:
+        # Seed records: record_id → GovernedRecord (never persisted)
+        self._seed_records: dict[str, GovernedRecord] = {}
+        # Set of seed record IDs for O(1) membership tests
+        self._seed_ids: set[str] = set()
+
+        # Managed records: record_id → GovernedRecord (persisted on mutation)
+        self._managed_records: dict[str, GovernedRecord] = {}
+
+        # Evidence records: evidence_id → EvidenceRecord (persisted)
         self._evidence: dict[str, EvidenceRecord] = {}
+
+        # Storage layer (path-injectable for test isolation)
+        self._storage: ManagedStorage = ManagedStorage(path=storage_path)
+
         self._load_seed_records()
+        self._load_persisted_records()
 
     # ------------------------------------------------------------------
     # Internal loading
     # ------------------------------------------------------------------
 
     def _load_seed_records(self) -> None:
-        """Load all seed records from the managed_seed module."""
+        """Load all seed records from the managed_seed module into _seed_records."""
         for record in build_seed_managed_records():
-            self._records[record.record_id] = record  # type: ignore[union-attr]
+            rid = record.record_id  # type: ignore[union-attr]
+            self._seed_records[rid] = record  # type: ignore[assignment]
+            self._seed_ids.add(rid)
 
-    def _add_record(self, record: GovernedRecord) -> None:
-        """Add or replace a governed record.
+    def _load_persisted_records(self) -> None:
+        """Load managed records and evidence from persistent storage.
 
-        Intended for internal use, testing, and future import pipelines.
-        Not exposed as a public HTTP endpoint in KR-2.
+        Missing file → start with seed-only state (no error).
+        Empty file → same as missing.
+        Malformed JSON → raises ManagedStorageError (hard startup failure).
+
+        Managed records override seed records on the same record_id.
         """
-        self._records[record.record_id] = record  # type: ignore[union-attr]
-
-    def _add_evidence(self, record: EvidenceRecord) -> None:
-        """Add an evidence/provenance record."""
-        self._evidence[record.evidence_id] = record
+        records, evidence = self._storage.load()
+        for record in records:
+            self._managed_records[record.record_id] = record  # type: ignore[union-attr]
+        for ev in evidence:
+            self._evidence[ev.evidence_id] = ev
 
     # ------------------------------------------------------------------
-    # List / query methods
+    # Merged view helpers
+    # ------------------------------------------------------------------
+
+    def _all_records(self) -> dict[str, GovernedRecord]:
+        """Return merged seed + managed record dict.
+
+        Managed records take precedence over seed records on the same ID.
+        """
+        merged: dict[str, GovernedRecord] = {**self._seed_records, **self._managed_records}
+        return merged
+
+    def _is_persisted_managed(self, record_id: str) -> bool:
+        """Return True if this record_id lives in the managed (persisted) store."""
+        return record_id in self._managed_records
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def persist(self) -> None:
+        """Write current managed records and evidence to durable storage.
+
+        Only ``_managed_records`` and ``_evidence`` are written.
+        Seed records are never written.
+
+        Called automatically by ``_add_record`` and ``_add_evidence``.
+        Also called explicitly by GovernanceService after governance actions
+        so that approve/reject/deprecate transitions survive restart.
+        """
+        records_to_persist = list(self._managed_records.values())
+        evidence_to_persist = list(self._evidence.values())
+        self._storage.save(records_to_persist, evidence_to_persist)
+
+    def _ensure_managed(self, record_id: str) -> None:
+        """If a seed record is being mutated, promote it to the managed store.
+
+        This ensures seed transitions (approve/deprecate) are persisted.
+        The seed constant layer is never mutated directly.
+
+        If the record is already managed (candidate or previously promoted),
+        this is a no-op.
+        """
+        if record_id in self._managed_records:
+            return  # already in the managed store
+        seed_record = self._seed_records.get(record_id)
+        if seed_record is None:
+            return  # record does not exist; caller will raise appropriately
+        # Copy the seed record into the managed store so it can be persisted
+        import copy
+        self._managed_records[record_id] = copy.deepcopy(seed_record)
+
+    # ------------------------------------------------------------------
+    # Internal mutating helpers (called by staging and governance layers)
+    # ------------------------------------------------------------------
+
+    def _add_record(self, record: GovernedRecord) -> None:
+        """Add or replace a governed record and persist immediately.
+
+        Raises:
+            ValueError: if the record_id already exists in the managed store
+                with the same ID (duplicate import protection handled upstream).
+        """
+        self._managed_records[record.record_id] = record  # type: ignore[union-attr]
+        self.persist()
+
+    def _add_evidence(self, record: EvidenceRecord) -> None:
+        """Add an evidence record and persist immediately."""
+        self._evidence[record.evidence_id] = record
+        self.persist()
+
+    # ------------------------------------------------------------------
+    # List / query methods (unchanged API from KR-2)
     # ------------------------------------------------------------------
 
     def list_records(
@@ -111,12 +224,12 @@ class ManagedKRRepository:
         record_type: str | None = None,
         status: GovernanceStatus | None = None,
     ) -> list[GovernedRecord]:
-        """Return governed records, optionally filtered by record_type and/or status."""
-        records: list[GovernedRecord] = list(self._records.values())
+        """Return governed records (seed + managed merged), filtered optionally."""
+        records: list[GovernedRecord] = list(self._all_records().values())
         if record_type is not None:
-            records = [r for r in records if r.record_type == record_type]
+            records = [r for r in records if r.record_type == record_type]  # type: ignore[union-attr]
         if status is not None:
-            records = [r for r in records if r.status == status]
+            records = [r for r in records if r.status == status]  # type: ignore[union-attr]
         return records
 
     def list_seeds(self) -> list[GovernedRecord]:
@@ -124,18 +237,11 @@ class ManagedKRRepository:
         return self.list_records(status=GovernanceStatus.SEED)
 
     def list_candidates(self) -> list[GovernedRecord]:
-        """Return all candidate-status governed records.
-
-        Candidate records are NOT production-eligible by default.
-        """
+        """Return all candidate-status governed records (NOT production-eligible)."""
         return self.list_records(status=GovernanceStatus.CANDIDATE)
 
     def list_approved(self) -> list[GovernedRecord]:
-        """Return only explicitly approved governed records.
-
-        Does NOT include seed records; use list_production_eligible() for
-        the full set of records safe to serve to classifiers.
-        """
+        """Return only explicitly approved governed records (NOT including seeds)."""
         return self.list_records(status=GovernanceStatus.APPROVED)
 
     def list_deprecated(self) -> list[GovernedRecord]:
@@ -148,7 +254,11 @@ class ManagedKRRepository:
 
     def list_production_eligible(self) -> list[GovernedRecord]:
         """Return all records safe to serve to production (seed + approved)."""
-        return [r for r in self._records.values() if is_production_eligible(r.status)]  # type: ignore[union-attr]
+        return [
+            r
+            for r in self._all_records().values()
+            if is_production_eligible(r.status)  # type: ignore[union-attr]
+        ]
 
     def list_evidence(self) -> list[EvidenceRecord]:
         """Return all evidence/provenance records."""
@@ -159,8 +269,11 @@ class ManagedKRRepository:
     # ------------------------------------------------------------------
 
     def get_by_id(self, record_id: str) -> GovernedRecord | None:
-        """Return a governed record by its record_id, or None if not found."""
-        return self._records.get(record_id)
+        """Return a governed record by its record_id, or None if not found.
+
+        Managed records take precedence over seed records.
+        """
+        return self._all_records().get(record_id)
 
     def get_evidence_by_id(self, evidence_id: str) -> EvidenceRecord | None:
         """Return an evidence record by its evidence_id, or None."""
@@ -171,10 +284,7 @@ class ManagedKRRepository:
     # ------------------------------------------------------------------
 
     def validate_record(self, record: GovernedRecord) -> list[str]:
-        """Validate a governed record and return a list of validation errors.
-
-        Returns an empty list if the record is valid.
-        """
+        """Validate a governed record and return a list of validation errors."""
         errors: list[str] = []
         if not getattr(record, "record_id", ""):
             errors.append("record_id must be non-empty")
@@ -183,7 +293,6 @@ class ManagedKRRepository:
         status = getattr(record, "status", None)
         if status is not None and not isinstance(status, GovernanceStatus):
             errors.append(f"status {status!r} is not a valid GovernanceStatus")
-        # Record-type-specific validation
         if isinstance(record, CurveDefinitionRecord):
             if not record.canonical_curve_id:
                 errors.append("canonical_curve_id must be non-empty")
@@ -210,7 +319,27 @@ class ManagedKRRepository:
         return errors
 
     # ------------------------------------------------------------------
-    # Service methods (not exposed as public HTTP endpoints in KR-2)
+    # Governance transition helpers (used by GovernanceService)
+    # ------------------------------------------------------------------
+
+    def prepare_for_mutation(self, record_id: str) -> GovernedRecord | None:
+        """Return the mutable record for governance actions.
+
+        If the record currently lives only in the seed store, it is first
+        copied into the managed store so the subsequent mutation will be
+        persisted by ``persist()``.
+
+        Returns None if the record does not exist.
+        """
+        record = self.get_by_id(record_id)
+        if record is None:
+            return None
+        self._ensure_managed(record_id)
+        return self._managed_records[record_id]
+
+    # ------------------------------------------------------------------
+    # Legacy service methods (kept for backward compatibility; not used by
+    # governance_service.py which owns transition logic directly)
     # ------------------------------------------------------------------
 
     def promote_to_approved(
@@ -223,11 +352,8 @@ class ManagedKRRepository:
 
         Returns True on success, False if the record does not exist or the
         transition is not permitted.
-
-        Not exposed as a public HTTP endpoint in KR-2.  Call from tests or
-        future KR management service only.
         """
-        record = self._records.get(record_id)
+        record = self.prepare_for_mutation(record_id)
         if record is None:
             return False
         current = getattr(record, "status", None)
@@ -239,6 +365,7 @@ class ManagedKRRepository:
             record.approved_at = datetime.now(tz=timezone.utc)  # type: ignore[union-attr]
         if change_reason:
             record.change_reason = change_reason  # type: ignore[union-attr]
+        self.persist()
         return True
 
     def deprecate_record(
@@ -248,12 +375,9 @@ class ManagedKRRepository:
     ) -> bool:
         """Deprecate an approved or seed record.
 
-        Returns True on success, False if the record does not exist or the
-        transition is not permitted.
-
-        Not exposed as a public HTTP endpoint in KR-2.
+        Returns True on success, False if not found or transition disallowed.
         """
-        record = self._records.get(record_id)
+        record = self.prepare_for_mutation(record_id)
         if record is None:
             return False
         current = getattr(record, "status", None)
@@ -264,6 +388,7 @@ class ManagedKRRepository:
             record.deprecated_at = datetime.now(tz=timezone.utc)  # type: ignore[union-attr]
         if change_reason:
             record.change_reason = change_reason  # type: ignore[union-attr]
+        self.persist()
         return True
 
     def reject_record(
@@ -273,12 +398,9 @@ class ManagedKRRepository:
     ) -> bool:
         """Reject a candidate record.
 
-        Returns True on success, False if the record does not exist or the
-        transition is not permitted.
-
-        Not exposed as a public HTTP endpoint in KR-2.
+        Returns True on success, False if not found or transition disallowed.
         """
-        record = self._records.get(record_id)
+        record = self.prepare_for_mutation(record_id)
         if record is None:
             return False
         current = getattr(record, "status", None)
@@ -287,16 +409,17 @@ class ManagedKRRepository:
         record.status = GovernanceStatus.REJECTED  # type: ignore[union-attr]
         if change_reason:
             record.change_reason = change_reason  # type: ignore[union-attr]
+        self.persist()
         return True
 
     # ------------------------------------------------------------------
-    # Introspection / read-only summary methods
+    # Introspection / read-only summary methods (unchanged from KR-2)
     # ------------------------------------------------------------------
 
     def get_status_summary(self) -> dict[str, int]:
         """Return record counts per governance status value."""
         counts: dict[str, int] = {s.value: 0 for s in GovernanceStatus}
-        for record in self._records.values():
+        for record in self._all_records().values():
             status = getattr(record, "status", None)
             if status is not None:
                 counts[status.value] = counts.get(status.value, 0) + 1
@@ -305,7 +428,7 @@ class ManagedKRRepository:
     def get_type_summary(self) -> dict[str, int]:
         """Return record counts per record type."""
         counts: dict[str, int] = {}
-        for record in self._records.values():
+        for record in self._all_records().values():
             rt = getattr(record, "record_type", "unknown")
             counts[rt] = counts.get(rt, 0) + 1
         if self._evidence:
@@ -316,14 +439,15 @@ class ManagedKRRepository:
         """Return health/status data for the managed repository."""
         status_summary = self.get_status_summary()
         type_summary = self.get_type_summary()
-        total = len(self._records) + len(self._evidence)
+        all_records = self._all_records()
+        total = len(all_records) + len(self._evidence)
         return {
             "service": "wlv_managed_knowledge_repository",
             "status": "ok",
             "mode": "read_only",
             "kr_version": KR2_VERSION,
             "total_record_count": total,
-            "governed_record_count": len(self._records),
+            "governed_record_count": len(all_records),
             "evidence_record_count": len(self._evidence),
             "status_summary": status_summary,
             "type_summary": type_summary,
@@ -376,13 +500,13 @@ class ManagedKRRepository:
                 "record_type": "classification_rule",
                 "description": "Deterministic classification hint rule",
                 "governed": True,
-                "seed_count": 0,  # No classification rule seeds in KR-2
+                "seed_count": 0,
             },
             {
                 "record_type": "template_rule",
                 "description": "Viewer template construction rule (empty in KR-2)",
                 "governed": True,
-                "seed_count": 0,  # Templates intentionally empty in KR-2
+                "seed_count": 0,
             },
             {
                 "record_type": "evidence",
@@ -414,7 +538,7 @@ class ManagedKRRepository:
         seed_count = len(self.list_seeds())
         return {
             "kr_version": KR2_VERSION,
-            "total_governed_records": len(self._records),
+            "total_governed_records": len(self._all_records()),
             "production_eligible_count": production_count,
             "seed_count": seed_count,
             "candidate_count": candidate_count,
@@ -435,3 +559,11 @@ class ManagedKRRepository:
                 }
             },
         }
+
+    # ------------------------------------------------------------------
+    # Storage health (KR-5)
+    # ------------------------------------------------------------------
+
+    def get_storage_health(self) -> dict[str, Any]:
+        """Return storage health data (KR-5)."""
+        return self._storage.health()

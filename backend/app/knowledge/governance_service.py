@@ -189,7 +189,7 @@ class GovernanceService:
             RecordNotFoundError: if record_id does not exist.
             GovernanceTransitionError: if the transition is not permitted.
         """
-        record = self._get_or_raise(record_id)
+        record = self._get_mutable_or_raise(record_id)
         previous_status = record.status  # type: ignore[union-attr]
         self._validate_transition(record, record_id, previous_status, GovernanceStatus.APPROVED)
 
@@ -206,6 +206,7 @@ class GovernanceService:
             record.updated_at = now  # type: ignore[union-attr]
 
         self._append_history(record, "approved", actor, previous_status, GovernanceStatus.APPROVED, reason, notes, now)
+        self._repo.persist()  # KR-5: persist after governance transition
 
         return self._action_response(record, record_id, previous_status, GovernanceStatus.APPROVED)
 
@@ -227,7 +228,7 @@ class GovernanceService:
             RecordNotFoundError: if record_id does not exist.
             GovernanceTransitionError: if the transition is not permitted.
         """
-        record = self._get_or_raise(record_id)
+        record = self._get_mutable_or_raise(record_id)
         previous_status = record.status  # type: ignore[union-attr]
         self._validate_transition(record, record_id, previous_status, GovernanceStatus.REJECTED)
 
@@ -239,6 +240,7 @@ class GovernanceService:
             record.updated_at = now  # type: ignore[union-attr]
 
         self._append_history(record, "rejected", actor, previous_status, GovernanceStatus.REJECTED, reason, notes, now)
+        self._repo.persist()  # KR-5: persist after governance transition
 
         return self._action_response(record, record_id, previous_status, GovernanceStatus.REJECTED)
 
@@ -261,7 +263,7 @@ class GovernanceService:
             RecordNotFoundError: if record_id does not exist.
             GovernanceTransitionError: if the transition is not permitted.
         """
-        record = self._get_or_raise(record_id)
+        record = self._get_mutable_or_raise(record_id)
         previous_status = record.status  # type: ignore[union-attr]
         self._validate_transition(record, record_id, previous_status, GovernanceStatus.DEPRECATED)
 
@@ -275,6 +277,7 @@ class GovernanceService:
             record.updated_at = now  # type: ignore[union-attr]
 
         self._append_history(record, "deprecated", actor, previous_status, GovernanceStatus.DEPRECATED, reason, notes, now)
+        self._repo.persist()  # KR-5: persist after governance transition
 
         return self._action_response(record, record_id, previous_status, GovernanceStatus.DEPRECATED)
 
@@ -283,7 +286,23 @@ class GovernanceService:
     # ------------------------------------------------------------------
 
     def _get_or_raise(self, record_id: str) -> GovernedRecord:
+        """Return a record for read-only use (does not promote to managed store)."""
         record = self._repo.get_by_id(record_id)
+        if record is None:
+            raise RecordNotFoundError(record_id)
+        return record
+
+    def _get_mutable_or_raise(self, record_id: str) -> GovernedRecord:
+        """Return a mutable record for governance mutation.
+
+        If the record currently lives only in the seed store, it is first
+        promoted into the managed store so the subsequent status mutation
+        will be captured by ``repo.persist()``.
+
+        Raises:
+            RecordNotFoundError: if record_id does not exist.
+        """
+        record = self._repo.prepare_for_mutation(record_id)
         if record is None:
             raise RecordNotFoundError(record_id)
         return record

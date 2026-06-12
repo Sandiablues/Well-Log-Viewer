@@ -40,7 +40,7 @@ from .governance_service import (
 from .import_models import ImportPayload
 from .import_staging_service import stage_import_payload
 from .import_validation_service import validate_import_payload
-from .managed_models import KR2_VERSION, KR3_VERSION, KR4_VERSION
+from .managed_models import KR2_VERSION, KR3_VERSION, KR4_VERSION, KR5_VERSION
 from .managed_repository import ManagedKRRepository
 
 router = APIRouter(prefix="/api/wlv/knowledge/managed", tags=["wlv-knowledge-managed"])
@@ -605,3 +605,36 @@ def list_production_eligible(
         count=len(records),
         records=[_serialize_record(r) for r in records],
     )
+
+
+# ---------------------------------------------------------------------------
+# KR-5 storage health endpoint
+# ---------------------------------------------------------------------------
+
+
+class StorageHealthResponse(BaseModel):
+    """Response for GET /managed/storage/health (KR-5)."""
+
+    kr_version: str
+    storage_enabled: bool
+    storage_path: str
+    storage_schema_version: str
+    persisted_record_count: int
+    persisted_evidence_record_count: int
+
+
+@router.get(
+    "/storage/health",
+    response_model=StorageHealthResponse,
+    summary="KR-5 persistent storage health and record counts",
+)
+def managed_storage_health(
+    repo: ManagedKRRepository = Depends(get_managed_repository),
+) -> StorageHealthResponse:
+    """Return persistent storage health for the managed KR (KR-5).
+
+    Reports the storage file path, schema version, and count of records
+    currently persisted to disk.  Does not include in-memory seed records.
+    """
+    data = repo.get_storage_health()
+    return StorageHealthResponse(**data)
