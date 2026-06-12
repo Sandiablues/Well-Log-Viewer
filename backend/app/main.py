@@ -17,6 +17,7 @@ from .inventory.api_inventory import router as inventory_router
 from .ingestion.api_ingestion import router as ingestion_router
 from .source_intake.router import router as source_intake_router
 from .knowledge.api_knowledge import router as knowledge_router
+from .knowledge.api_managed_knowledge import router as managed_knowledge_router
 
 app = FastAPI(
     title="MultiViewer Well Log Viewer Backend",
@@ -43,6 +44,7 @@ def health() -> dict[str, object]:
 
 app.include_router(system_router)
 app.include_router(knowledge_router)
+app.include_router(managed_knowledge_router)
 app.include_router(inventory_router)
 app.include_router(ingestion_router)
 app.include_router(source_intake_router)
