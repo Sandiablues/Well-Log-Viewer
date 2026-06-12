@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from .identity_gate import clean_identity_value
 from .models import (
     SourceFileCandidate,
     SourceIntakeEvidenceRecord,
@@ -170,7 +171,4 @@ def _normalize_identity(value: str) -> str:
 
 
 def _clean(value: Optional[str]) -> Optional[str]:
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
+    return clean_identity_value(value)

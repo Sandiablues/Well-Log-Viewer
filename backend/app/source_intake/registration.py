@@ -27,6 +27,7 @@ from backend.app.inventory.models import (
 from backend.app.inventory.repository import ManagedWellNotFoundError
 from backend.app.inventory.service import ManagedWellInventoryService
 
+from .identity_gate import clean_identity_value
 from .models import (
     SourceFileCandidate,
     SourceIntakeCandidateRole,
@@ -126,6 +127,9 @@ def register_candidate_to_inventory(
     if existing is not None:
         created_at = existing.created_at
 
+    next_product_groups = _product_groups_from_candidate(candidate)
+    merged_product_groups = _merge_product_groups(existing.product_groups if existing else [], next_product_groups)
+
     record = ManagedWellRecord(
         managed_well_id=managed_well_id,
         well_id=well_id,
@@ -145,7 +149,7 @@ def register_candidate_to_inventory(
         wmdp_available=True,
         source_references=_merge_source_references(existing.source_references if existing else [], source_reference),
         viewer_packages=existing.viewer_packages if existing else [],
-        product_groups=_product_groups_from_candidate(candidate),
+        product_groups=merged_product_groups,
         tags=_merge_tags(existing.tags if existing else [], ["source-intake", "las"]),
         metadata={
             **(existing.metadata if existing else {}),
@@ -242,6 +246,23 @@ def _product_groups_from_candidate(candidate: SourceFileCandidate) -> list[Manag
     ]
 
 
+
+def _merge_product_groups(existing: Iterable[ManagedProductGroup], incoming: Iterable[ManagedProductGroup]) -> list[ManagedProductGroup]:
+    groups: dict[str, ManagedProductGroup] = {}
+    for group in existing:
+        groups[group.group_key] = group.model_copy(deep=True) if hasattr(group, "model_copy") else group.copy(deep=True)
+    for group in incoming:
+        target = groups.get(group.group_key)
+        if target is None:
+            groups[group.group_key] = group
+            continue
+        items = {item.product_id: item for item in target.items}
+        for item in group.items:
+            items[item.product_id] = item
+        target.items = list(items.values())
+    ordered_keys = [definition.group_key for definition in PRODUCT_GROUP_ORDER]
+    return [groups[key] for key in ordered_keys if key in groups]
+
 def _registration_note(candidate: SourceFileCandidate, *, uwi: str | None, approved_by: str | None, approval_note: str | None) -> str:
     parts = [f"Registered from WLV Source Intake candidate {candidate.source_file_id}."]
     if uwi is None:
@@ -305,7 +326,7 @@ def _run_interval(log_header) -> str:
 
 
 def _clean(value: str | None) -> str:
-    return (value or "").strip()
+    return clean_identity_value(value) or ""
 
 
 def _slug(value: str) -> str:

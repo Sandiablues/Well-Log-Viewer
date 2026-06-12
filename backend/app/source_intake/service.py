@@ -16,6 +16,7 @@ from typing import Iterable, Any
 from ..ingestion.las_adapter import LasAdapterError, LasSourceAdapter
 
 from .metadata_resolver import resolve_candidate_metadata
+from .identity_gate import apply_identity_gate
 from .qaqc import run_source_intake_qaqc
 from .registration import register_candidate_to_inventory, registration_block_reason
 
@@ -122,6 +123,10 @@ class WlvSourceIntakeService:
 
         files = list(self._iter_files(root, include_subfolders=use_subfolders))
         candidates = [self._candidate_for_file(repository.repository_id, scan_id, root, file_path) for file_path in files]
+        apply_identity_gate(candidates)
+        for candidate in candidates:
+            candidate.qaqc_status = run_source_intake_qaqc(candidate)
+            candidate.review_required = candidate.review_required or candidate.qaqc_status.review_required
 
         snapshot.candidates = [candidate for candidate in snapshot.candidates if candidate.repository_id != repository_id]
         snapshot.candidates.extend(candidates)
@@ -258,7 +263,10 @@ class WlvSourceIntakeService:
 
     def _iter_files(self, root: Path, include_subfolders: bool) -> Iterable[Path]:
         iterator = root.rglob("*") if include_subfolders else root.iterdir()
-        return sorted((path for path in iterator if path.is_file()), key=lambda path: str(path).lower())
+        return sorted(
+            (path for path in iterator if path.is_file() and not _is_ignored_source_file(path)),
+            key=lambda path: str(path).lower(),
+        )
 
     def _candidate_for_file(self, repository_id: str, scan_id: str, root: Path, file_path: Path) -> SourceFileCandidate:
         checksum = self._sha256(file_path)
@@ -496,3 +504,15 @@ def _string_value(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+
+def _is_ignored_source_file(path: Path) -> bool:
+    ignored_names = {".ds_store", "thumbs.db", "desktop.ini"}
+    ignored_dirs = {"__macosx", ".git", ".svn", ".hg"}
+    parts = [part.lower() for part in path.parts]
+    if any(part in ignored_dirs for part in parts):
+        return True
+    if path.name.lower() in ignored_names:
+        return True
+    return False

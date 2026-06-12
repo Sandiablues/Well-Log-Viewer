@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from .models import (
     ManagedInventoryHealth,
@@ -27,9 +27,11 @@ from .models import (
 )
 from .repository import ManagedInventoryStoreError, ManagedWellNotFoundError
 from .service import ManagedWellInventoryService
+from .curve_sample_service import CurveSampleService, CurveSampleServiceError
 
 router = APIRouter(prefix="/api/wlv/inventory", tags=["wlv-inventory"])
 _service = ManagedWellInventoryService()
+_curve_sample_service = CurveSampleService(repository=_service.repository)
 
 
 @router.get("/health", response_model=ManagedInventoryHealth, summary="Managed Well Inventory health")
@@ -166,6 +168,34 @@ def get_managed_well_viewer_package(managed_well_id: str) -> dict[str, Any]:
     except ManagedInventoryStoreError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
+
+
+
+@router.get(
+    "/wells/{managed_well_id}/curve-samples",
+    response_model=dict[str, Any],
+    summary="Fetch product-id-backed curve samples for WDV rendering",
+)
+def get_managed_well_curve_samples(
+    managed_well_id: str,
+    product_id: str = Query(..., min_length=1),
+    max_samples: int = Query(12000, ge=100, le=100000),
+) -> dict[str, Any]:
+    try:
+        return _curve_sample_service.get_curve_samples(
+            managed_well_id=managed_well_id,
+            product_id=product_id,
+            max_samples=max_samples,
+        )
+    except ManagedWellNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Managed well or product not found: {exc.args[0]}",
+        ) from exc
+    except CurveSampleServiceError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 @router.post(
     "/wells/register-seed",

@@ -5838,3 +5838,102 @@ button.wlv-view-range-readout,
 .wlv-empty-viewer-card p + p {
   margin-top: 8px;
 }
+
+
+/* WLV-WDV-DUPLICATE-CURVE-MODEL-1 */
+.wlv-duplicate-curve-block {
+  margin-bottom: 3px;
+}
+
+.wlv-curve-duplicate-summary {
+  cursor: pointer;
+}
+
+.wlv-curve-duplicate-summary:not(.checked-in-track):not(.inventory-selected):not(.assigned) {
+  background: #171717;
+  color: #d4d4d8;
+}
+
+.wlv-duplicate-expander {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: #a1a1aa;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.wlv-duplicate-instance-list {
+  margin-left: 10px;
+  padding-left: 7px;
+  border-left: 1px solid #2f3338;
+}
+
+.wlv-curve-row.duplicate-instance {
+  grid-template-columns: 22px 52px 1fr 44px 24px;
+  margin-bottom: 2px;
+}
+
+.wlv-duplicate-group-note {
+  margin: -1px 0 3px 30px;
+  color: #22c55e;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+
+
+/* WLV-WDV-CURVE-INVENTORY-RESIZE-1 — resizable WDV curve inventory panel. */
+.wlv-curve-inventory-shell {
+  position: relative;
+  min-width: 300px;
+  max-width: 680px;
+  min-height: 0;
+  overflow: hidden;
+  background: #111111;
+  border-right: 1px solid #2d2d2d;
+}
+
+.wlv-curve-inventory-shell .wlv-curve-inventory {
+  width: 100%;
+  height: 100%;
+  border-right: 0;
+}
+
+.wlv-curve-inventory-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 9px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: col-resize;
+  z-index: 30;
+}
+
+.wlv-curve-inventory-resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: rgba(96, 165, 250, 0.22);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.wlv-curve-inventory-resize-handle:hover::before,
+.wlv-prototype-workspace.curve-inventory-resize-active .wlv-curve-inventory-resize-handle::before {
+  opacity: 1;
+}
+
+.wlv-prototype-workspace.curve-inventory-resize-active,
+.wlv-prototype-workspace.curve-inventory-resize-active * {
+  cursor: col-resize !important;
+  user-select: none;
+}

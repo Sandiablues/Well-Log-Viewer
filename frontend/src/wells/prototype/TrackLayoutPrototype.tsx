@@ -1050,6 +1050,31 @@ type MockCurveSample = {
   value: number;
 };
 
+
+type ProductCurveSamplesResponse = {
+  ok?: boolean;
+  product_id: string;
+  depth_min?: number | null;
+  depth_max?: number | null;
+  sample_count?: number | null;
+  returned_sample_count?: number | null;
+  samples?: [number, number][];
+};
+
+let backendProductCurveSamplesByCurveId: Record<string, MockCurveSample[]> = {};
+
+function setBackendProductCurveSamples(curveId: string, samples: MockCurveSample[]): void {
+  backendProductCurveSamplesByCurveId = {
+    ...backendProductCurveSamplesByCurveId,
+    [curveId]: samples,
+  };
+}
+
+function backendProductCurveSamples(curveId: string): MockCurveSample[] | null {
+  const samples = backendProductCurveSamplesByCurveId[curveId];
+  return samples?.length ? samples : null;
+}
+
 function depthToY(depth: number, viewRange: DepthViewRange, bodyHeightPx = TRACK_BODY_HEIGHT_PX): number {
   const span = Math.max(1, viewRange.max - viewRange.min);
   const t = (depth - viewRange.min) / span;
@@ -1239,12 +1264,30 @@ function renderLogarithmicGrid(track: CurveTrack, trackWidth: number, bodyHeight
   );
 }
 
+function isManagedProductCurve(curve: CurveCatalogItem): boolean {
+  return curve.curveId.startsWith('source-intake-curve:') || curve.curveId.startsWith('product:');
+}
+
+function sampleKeysForCurve(curve: CurveCatalogItem): string[] {
+  // Managed/product-backed curves must render from backend product_id samples.
+  // Prototype mnemonic aliases are deliberately not used for managed curves
+  // because they can draw a real product at the wrong depth.
+  if (isManagedProductCurve(curve)) return [];
+  const keys = [curve.curveId, curve.mnemonic];
+  return keys.filter((key, index, allKeys) => Boolean(key) && allKeys.indexOf(key) === index);
+}
+
 function makeMockCurveSamples(
   curve: CurveCatalogItem,
   _assignment: CurveAssignment,
   _trackPosition: number,
 ): MockCurveSample[] {
-  const samples = realCurveSamplesByCurveId[curve.curveId] ?? [];
+  const backendSamples = backendProductCurveSamples(curve.curveId);
+  if (backendSamples) return backendSamples;
+
+  const samples = sampleKeysForCurve(curve)
+    .map((key) => realCurveSamplesByCurveId[key])
+    .find((candidate) => candidate?.length) ?? [];
   const output: MockCurveSample[] = [];
 
   for (const sample of samples as unknown[]) {
@@ -1268,7 +1311,7 @@ function makeMockCurveSamples(
         sampleRecord.values?.MD ??
         sampleRecord.values?.TDEP;
 
-      curveValue = sampleRecord.value ?? sampleRecord.values?.[curve.curveId];
+      curveValue = sampleRecord.value ?? sampleRecord.values?.[curve.curveId] ?? sampleRecord.values?.[curve.mnemonic];
     }
 
     if (
@@ -1432,6 +1475,26 @@ function lithologyPattern(unit: string): string {
 
 type CurveInventoryTab = 'all' | 'selected' | 'aliases';
 
+// WLV-WDV-CURVE-INVENTORY-RESIZE-1
+// Keep the current WDV curve inventory width as the minimum/default and allow
+// the user to widen it to the right without changing backend/session state.
+const CURVE_INVENTORY_DEFAULT_WIDTH_PX = 300;
+const CURVE_INVENTORY_MIN_WIDTH_PX = CURVE_INVENTORY_DEFAULT_WIDTH_PX;
+const CURVE_INVENTORY_MAX_WIDTH_PX = 680;
+
+type CurveInventoryResizeState = {
+  startX: number;
+  startWidth: number;
+};
+
+function clampCurveInventoryWidth(widthPx: number): number {
+  return Math.max(
+    CURVE_INVENTORY_MIN_WIDTH_PX,
+    Math.min(CURVE_INVENTORY_MAX_WIDTH_PX, Math.round(widthPx)),
+  );
+}
+
+
 function CurveInventory({
   availableCurves,
   curveUsageCounts,
@@ -1454,23 +1517,17 @@ function CurveInventory({
   onToggleCurveInSelectedTrack: (curveId: string, checked: boolean) => void;
 }) {
   const [activeInventoryTab, setActiveInventoryTab] = useState<CurveInventoryTab>(preferredInventoryTab);
+  const [expandedDuplicateGroups, setExpandedDuplicateGroups] = useState<Set<string>>(() => new Set());
 
-  // WLV-WDV-REBUILD-1A-INVENTORY-TAB:
-  // Empty WDV + WMDP-loaded data defaults to Loaded Curves.
-  // Once visible tracks exist, refresh/default view returns to Selected.
   useEffect(() => {
     setActiveInventoryTab(preferredInventoryTab);
   }, [preferredInventoryTab]);
 
   const displayedCurves = useMemo(() => {
-    if (activeInventoryTab === 'aliases') {
-      return [];
-    }
-
+    if (activeInventoryTab === 'aliases') return [];
     if (activeInventoryTab === 'selected') {
       return availableCurves.filter((curve) => visibleTrackCurveIds.has(curve.curveId));
     }
-
     return availableCurves.filter((curve) => (curveUsageCounts.get(curve.curveId) ?? 0) > 0);
   }, [activeInventoryTab, availableCurves, curveUsageCounts, visibleTrackCurveIds]);
 
@@ -1478,6 +1535,25 @@ function CurveInventory({
     () => Array.from(new Set(displayedCurves.map((curve) => curve.curveClass))).filter((group) => group !== 'depth'),
     [displayedCurves],
   );
+
+  const curvesByGroupAndMnemonic = useMemo(() => {
+    const grouped = new Map<string, Map<string, CurveCatalogItem[]>>();
+    displayedCurves.forEach((curve) => {
+      const classKey = curve.curveClass;
+      const mnemonicKey = curve.mnemonic || curve.curveId;
+      const classGroup = grouped.get(classKey) ?? new Map<string, CurveCatalogItem[]>();
+      const mnemonicGroup = classGroup.get(mnemonicKey) ?? [];
+      mnemonicGroup.push(curve);
+      mnemonicGroup.sort((left, right) => {
+        const leftDescription = `${left.description || ''} ${left.unit || ''}`;
+        const rightDescription = `${right.description || ''} ${right.unit || ''}`;
+        return leftDescription.localeCompare(rightDescription);
+      });
+      classGroup.set(mnemonicKey, mnemonicGroup);
+      grouped.set(classKey, classGroup);
+    });
+    return grouped;
+  }, [displayedCurves]);
 
   const selectedCurveCount = useMemo(
     () => availableCurves.filter((curve) => visibleTrackCurveIds.has(curve.curveId)).length,
@@ -1491,6 +1567,100 @@ function CurveInventory({
 
   const inventoryCount = loadedProductCount;
 
+  const toggleDuplicateGroup = (groupKey: string) => {
+    setExpandedDuplicateGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
+  };
+
+  const renderCurveRow = (curve: CurveCatalogItem, options?: { duplicateInstance?: boolean }) => {
+    const usageCount = curveUsageCounts.get(curve.curveId) ?? 0;
+    const usedAnywhere = visibleTrackCurveIds.has(curve.curveId);
+    const checkedInSelectedTrack = selectedTrackCurveIds.has(curve.curveId);
+    const highlightAsSelected = activeInventoryTab === 'selected' || (activeInventoryTab !== 'all' && selectedCurveIds.has(curve.curveId));
+
+    return (
+      <div
+        key={curve.curveId}
+        role="button"
+        tabIndex={0}
+        className={`wlv-curve-row ${options?.duplicateInstance ? 'duplicate-instance' : ''} ${usedAnywhere ? 'assigned' : ''} ${checkedInSelectedTrack ? 'checked-in-track' : ''} ${highlightAsSelected ? 'inventory-selected' : ''} ${curve.recognised ? '' : 'unrecognised'}`}
+        draggable
+        onClick={() => onSelectCurve(curve.curveId)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onSelectCurve(curve.curveId);
+          }
+        }}
+        onDragStart={(event) => {
+          event.dataTransfer.setData('application/json', serialiseCurveDrag({ dragType: 'curve', curveId: curve.curveId }));
+          event.dataTransfer.effectAllowed = 'move';
+        }}
+      >
+        <button
+          type="button"
+          className={`wlv-checkbox ${checkedInSelectedTrack ? 'checked' : ''}`}
+          disabled={!assignmentEnabled}
+          aria-label={`${checkedInSelectedTrack ? 'Remove' : 'Add'} ${curve.mnemonic} ${checkedInSelectedTrack ? 'from' : 'to'} selected track`}
+          title={assignmentEnabled ? 'Assign/remove curve for selected track' : 'Select a curve track to assign curves'}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (!assignmentEnabled) return;
+            onToggleCurveInSelectedTrack(curve.curveId, !checkedInSelectedTrack);
+          }}
+        >
+          {checkedInSelectedTrack ? '✓' : ''}
+        </button>
+        <strong>{curve.mnemonic}</strong>
+        <span>{curve.description}</span>
+        <em>{curve.unit}</em>
+        {activeInventoryTab !== 'all' && usageCount > 1 && <span className="wlv-curve-count" title="Curve is used in multiple tracks">{usageCount}</span>}
+      </div>
+    );
+  };
+
+  const renderLoadedMnemonicGroup = (group: string, mnemonic: string, curves: CurveCatalogItem[]) => {
+    if (activeInventoryTab !== 'all' || curves.length === 1) {
+      return curves.map((curve) => renderCurveRow(curve));
+    }
+
+    const groupKey = `${group}:${mnemonic}`;
+    const expanded = expandedDuplicateGroups.has(groupKey);
+    const assignedCount = curves.filter((curve) => visibleTrackCurveIds.has(curve.curveId)).length;
+    const checkedCount = curves.filter((curve) => selectedTrackCurveIds.has(curve.curveId)).length;
+    const units = Array.from(new Set(curves.map((curve) => curve.unit).filter(Boolean)));
+    const intervals = Array.from(new Set(curves.map((curve) => curve.description).filter(Boolean)));
+    const summaryText = `${curves.length} instances${intervals.length ? ` · ${intervals.length} intervals/runs` : ''}`;
+
+    return (
+      <div key={groupKey} className="wlv-duplicate-curve-block">
+        <button
+          type="button"
+          className={`wlv-curve-row wlv-curve-duplicate-summary ${expanded ? 'expanded' : ''} ${checkedCount > 0 ? 'checked-in-track' : ''}`}
+          onClick={() => toggleDuplicateGroup(groupKey)}
+          aria-expanded={expanded}
+          title="Expand duplicate mnemonic instances"
+        >
+          <span className="wlv-duplicate-expander">{expanded ? '▾' : '▸'}</span>
+          <strong>{mnemonic}</strong>
+          <span>{summaryText}</span>
+          <em>{units.length ? units.join(' / ') : ''}</em>
+          <span className="wlv-curve-count" title="Loaded curve product instances">{curves.length}</span>
+        </button>
+        {assignedCount > 0 && <div className="wlv-duplicate-group-note">{assignedCount} assigned to visible tracks</div>}
+        {expanded && (
+          <div className="wlv-duplicate-instance-list">
+            {curves.map((curve) => renderCurveRow(curve, { duplicateInstance: true }))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <aside className="wlv-curve-inventory">
       <div className="wlv-panel-heading">
@@ -1502,98 +1672,34 @@ function CurveInventory({
         <button type="button" title="Filter curves">Filter</button>
       </div>
       <div className="wlv-inventory-tabs">
-        <button
-          type="button"
-          className={activeInventoryTab === 'all' ? 'active' : ''}
-          onClick={() => setActiveInventoryTab('all')}
-        >
-          Loaded Curves
-        </button>
-        <button
-          type="button"
-          className={activeInventoryTab === 'selected' ? 'active' : ''}
-          onClick={() => setActiveInventoryTab('selected')}
-        >
-          Selected <span className="wlv-tab-count">{selectedCurveCount}</span>
-        </button>
-        <button
-          type="button"
-          className={activeInventoryTab === 'aliases' ? 'active' : ''}
-          onClick={() => setActiveInventoryTab('aliases')}
-        >
-          Aliases
-        </button>
+        <button type="button" className={activeInventoryTab === 'all' ? 'active' : ''} onClick={() => setActiveInventoryTab('all')}>Loaded</button>
+        <button type="button" className={activeInventoryTab === 'selected' ? 'active' : ''} onClick={() => setActiveInventoryTab('selected')}>Selected <span className="wlv-tab-count">{selectedCurveCount}</span></button>
+        <button type="button" className={activeInventoryTab === 'aliases' ? 'active' : ''} onClick={() => setActiveInventoryTab('aliases')}>Aliases</button>
       </div>
       {!assignmentEnabled && (
-        <div className="wlv-curve-assignment-hint">
-          Select a curve track to assign curves. Highlighted rows are already used elsewhere in the layout.
-        </div>
+        <div className="wlv-curve-assignment-hint">Select a curve track to assign curves. Loaded rows stay neutral; selected/assigned rows are highlighted only after you assign them.</div>
+      )}
+      {activeInventoryTab === 'all' && (
+        <div className="wlv-curve-assignment-hint">Duplicate mnemonics are grouped. Expand a group to choose individual curve products by run or interval.</div>
       )}
       {activeInventoryTab === 'selected' && selectedCurveCount === 0 && (
-        <div className="wlv-curve-assignment-hint">
-          No curves are currently assigned to visible tracks.
-        </div>
+        <div className="wlv-curve-assignment-hint">No curves are currently assigned to visible tracks.</div>
       )}
       {activeInventoryTab === 'aliases' && (
-        <div className="wlv-curve-assignment-hint">
-          Alias grouping is not available in this prototype fixture yet.
-        </div>
+        <div className="wlv-curve-assignment-hint">Alias grouping is not available in this prototype fixture yet.</div>
       )}
       <div className="wlv-inventory-list">
-        {groups.map((group) => (
-          <section key={group} className="wlv-curve-group">
-            <div className="wlv-curve-group-title">{group}</div>
-            {displayedCurves.filter((curve) => curve.curveClass === group).map((curve) => {
-              const usageCount = curveUsageCounts.get(curve.curveId) ?? 0;
-              const usedAnywhere = usageCount > 0;
-              const checkedInSelectedTrack = selectedTrackCurveIds.has(curve.curveId);
-
-              return (
-                <div
-                  key={curve.curveId}
-                  role="button"
-                  tabIndex={0}
-                  className={`wlv-curve-row ${usedAnywhere ? 'assigned' : ''} ${checkedInSelectedTrack ? 'checked-in-track' : ''} ${selectedCurveIds.has(curve.curveId) ? 'inventory-selected' : ''} ${curve.recognised ? '' : 'unrecognised'}`}
-                  draggable
-                  onClick={() => onSelectCurve(curve.curveId)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      onSelectCurve(curve.curveId);
-                    }
-                  }}
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData('application/json', serialiseCurveDrag({ dragType: 'curve', curveId: curve.curveId }));
-                    event.dataTransfer.effectAllowed = 'move';
-                  }}
-                >
-                  <button
-                    type="button"
-                    className={`wlv-checkbox ${checkedInSelectedTrack ? 'checked' : ''}`}
-                    disabled={!assignmentEnabled}
-                    aria-label={`${checkedInSelectedTrack ? 'Remove' : 'Add'} ${curve.mnemonic} ${checkedInSelectedTrack ? 'from' : 'to'} selected track`}
-                    title={assignmentEnabled ? 'Assign/remove curve for selected track' : 'Select a curve track to assign curves'}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (!assignmentEnabled) return;
-                      onToggleCurveInSelectedTrack(curve.curveId, !checkedInSelectedTrack);
-                    }}
-                  >
-                    {checkedInSelectedTrack ? '✓' : ''}
-                  </button>
-                  <strong>{curve.mnemonic}</strong>
-                  <span>{curve.description}</span>
-                  <em>{curve.unit}</em>
-                  {usageCount > 1 && <span className="wlv-curve-count" title="Curve is used in multiple tracks">{usageCount}</span>}
-                </div>
-              );
-            })}
-          </section>
-        ))}
+        {groups.map((group) => {
+          const mnemonicGroups = curvesByGroupAndMnemonic.get(group) ?? new Map<string, CurveCatalogItem[]>();
+          return (
+            <section key={group} className="wlv-curve-group">
+              <div className="wlv-curve-group-title">{group}</div>
+              {Array.from(mnemonicGroups.entries()).map(([mnemonic, curves]) => renderLoadedMnemonicGroup(group, mnemonic, curves))}
+            </section>
+          );
+        })}
       </div>
-      <div className="wlv-drop-help">
-        Drag curves into curve tracks. Drag curve headers between tracks to move assignments.
-      </div>
+      <div className="wlv-drop-help">Drag curves into curve tracks. Drag curve headers between tracks to move assignments.</div>
     </aside>
   );
 }
@@ -3107,6 +3213,7 @@ export function TrackLayoutPrototype() {
   const [managedViewerWellId, setManagedViewerWellId] = useState<string | null>(null);
   const [, setViewerPackageLoad] = useState<BackendViewerPackageLoadResult | null>(null);
   const [wdvPackageState, setWdvPackageState] = useState<WdvPackageState>(() => emptyWdvPackageState());
+  const [, setProductCurveSamplesVersion] = useState(0);
 
   // WLV-WDV-REBUILD-1: WMDP load creates WDV availability only.
   // It must not auto-populate visible well-log tracks.
@@ -3151,6 +3258,7 @@ export function TrackLayoutPrototype() {
   const [pendingAddTrackCurveIds, setPendingAddTrackCurveIds] = useState<string[]>([]);
   const [openCurveMenu, setOpenCurveMenu] = useState<{ trackId: string; assignmentId: string } | null>(null);
   const [viewDepthRange, setViewDepthRange] = useState<DepthViewRange>(DEFAULT_DEPTH_RANGE);
+  const appliedBackendDepthDomainKeyRef = useRef<string | null>(null);
   const [, setViewHistory] = useState<DepthViewRange[]>([]);
   const [goToDepthValue, setGoToDepthValue] = useState('');
   const [goToDepthMarker, setGoToDepthMarker] = useState<number | null>(null);
@@ -3158,10 +3266,37 @@ export function TrackLayoutPrototype() {
   const [intervalSelection, setIntervalSelection] = useState<IntervalSelectionState | null>(null);
   const [dragPanState, setDragPanState] = useState<DragPanState | null>(null);
   const [trackResizeState, setTrackResizeState] = useState<TrackResizeState | null>(null);
+  const [curveInventoryWidthPx, setCurveInventoryWidthPx] = useState(CURVE_INVENTORY_DEFAULT_WIDTH_PX);
+  const [curveInventoryResizeState, setCurveInventoryResizeState] = useState<CurveInventoryResizeState | null>(null);
   const hasLoadedViewerWell = Boolean(managedViewerWellId);
   const [trackBackdropMode, setTrackBackdropMode] = useState<TrackBackdropMode>('light');
 
+  const activeFullDepthRange = useMemo(
+    () => wdvPackageState.depthRange ?? FULL_DEPTH_RANGE,
+    [wdvPackageState.depthRange],
+  );
+  const activeFullDepthRangeKey = `${activeFullDepthRange.min}:${activeFullDepthRange.max}`;
+  const hasBackendDepthRange = Boolean(wdvPackageState.depthRange);
+  const activeDefaultDepthRange = useMemo(
+    () => (wdvPackageState.depthRange ? activeFullDepthRange : clampDepthRange(DEFAULT_DEPTH_RANGE, activeFullDepthRange)),
+    [activeFullDepthRange, wdvPackageState.depthRange],
+  );
+
   const visibleDepthTicks = useMemo(() => makeDepthTicks(viewDepthRange), [viewDepthRange]);
+
+  useEffect(() => {
+    setViewDepthRange((current) => {
+      const clipped = clampDepthRange(current, activeFullDepthRange);
+
+      if (hasBackendDepthRange && appliedBackendDepthDomainKeyRef.current !== activeFullDepthRangeKey) {
+        appliedBackendDepthDomainKeyRef.current = activeFullDepthRangeKey;
+        return { ...activeFullDepthRange };
+      }
+
+      appliedBackendDepthDomainKeyRef.current = activeFullDepthRangeKey;
+      return clipped;
+    });
+  }, [activeFullDepthRange, activeFullDepthRangeKey, hasBackendDepthRange]);
 
   useEffect(() => {
     if (!trackResizeState) return undefined;
@@ -3190,12 +3325,41 @@ export function TrackLayoutPrototype() {
   }, [trackResizeState]);
 
   useEffect(() => {
+    if (!curveInventoryResizeState) return undefined;
+
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const delta = event.clientX - curveInventoryResizeState.startX;
+      setCurveInventoryWidthPx(clampCurveInventoryWidth(curveInventoryResizeState.startWidth + delta));
+    };
+
+    const handleMouseUp = () => {
+      setCurveInventoryResizeState(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+    };
+  }, [curveInventoryResizeState]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       setIntervalZoomActive(false);
       setIntervalSelection(null);
       setDragPanState(null);
       setTrackResizeState(null);
+      setCurveInventoryResizeState(null);
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -3214,9 +3378,22 @@ export function TrackLayoutPrototype() {
   const canAdjustSelectedCurveTrackWidthUp = Boolean(selectedCurveTrack && selectedCurveTrack.widthPx < CURVE_TRACK_MAX_WIDTH);
 
   const activeViewerCurves = useMemo(() => wdvPackageState.availableCurves, [wdvPackageState]);
-  const activeCurveCatalog = useMemo(() => (
-    activeViewerCurves.length > 0 ? activeViewerCurves : curveCatalog
-  ), [activeViewerCurves]);
+  const activeCurveCatalog = useMemo(() => {
+    // WLV-WDV-CURVE-ASSIGNMENT-IDENTITY-1:
+    // Loaded backend curve products must be registered in the same catalog
+    // used by track rendering/properties code before any assignment is made.
+    // This preserves duplicate mnemonics as distinct product-backed curveIds.
+    const mutableCatalog = curveCatalog as CurveCatalogItem[];
+    const existingCurveIds = new Set(mutableCatalog.map((curve) => curve.curveId));
+
+    activeViewerCurves.forEach((curve) => {
+      if (!curve.curveId || existingCurveIds.has(curve.curveId)) return;
+      mutableCatalog.push(curve);
+      existingCurveIds.add(curve.curveId);
+    });
+
+    return [...mutableCatalog];
+  }, [activeViewerCurves]);
   const curveUsageCounts = useMemo(() => wdvPackageState.curveUsageCounts, [wdvPackageState]);
 
   const selectedTrackCurveIds = useMemo(() => {
@@ -3235,6 +3412,46 @@ export function TrackLayoutPrototype() {
     });
     return ids;
   }, [tracks]);
+  const visibleTrackCurveIdsKey = useMemo(() => Array.from(visibleTrackCurveIds).sort().join('|'), [visibleTrackCurveIds]);
+
+  useEffect(() => {
+    if (!managedViewerWellId || !visibleTrackCurveIdsKey) return undefined;
+
+    const productCurveIds = Array.from(visibleTrackCurveIds).filter((curveId) => (
+      (curveId.startsWith('source-intake-curve:') || curveId.startsWith('product:'))
+      && !backendProductCurveSamples(curveId)
+    ));
+    if (!productCurveIds.length) return undefined;
+
+    let cancelled = false;
+    void Promise.all(productCurveIds.map(async (curveId) => {
+      const response = await fetchWlvJson<ProductCurveSamplesResponse>(
+        `/api/wlv/inventory/wells/${encodeURIComponent(managedViewerWellId)}/curve-samples?product_id=${encodeURIComponent(curveId)}`,
+      );
+      const samples = (response.samples ?? [])
+        .filter((sample): sample is [number, number] => (
+          Array.isArray(sample)
+          && typeof sample[0] === 'number'
+          && Number.isFinite(sample[0])
+          && typeof sample[1] === 'number'
+          && Number.isFinite(sample[1])
+        ))
+        .map(([depth, value]) => ({ depth, value }));
+      return { curveId, samples };
+    })).then((results) => {
+      if (cancelled) return;
+      results.forEach(({ curveId, samples }) => {
+        if (samples.length) setBackendProductCurveSamples(curveId, samples);
+      });
+      setProductCurveSamplesVersion((version) => version + 1);
+    }).catch((error) => {
+      console.warn('Unable to load backend product curve samples', error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [managedViewerWellId, visibleTrackCurveIds, visibleTrackCurveIdsKey]);
 
   const updateTrack = (trackId: string, patch: Partial<WellLogTrack>) => {
     setTracks((current) => current.map((track) => (track.trackId === trackId ? { ...track, ...patch } as WellLogTrack : track)));
@@ -3372,7 +3589,7 @@ export function TrackLayoutPrototype() {
 
   const setDepthView = (nextRange: DepthViewRange, recordHistory = true) => {
     setViewDepthRange((current) => {
-      const clipped = clampDepthRange(nextRange);
+      const clipped = clampDepthRange(nextRange, activeFullDepthRange);
 
       if (rangesEqual(current, clipped)) {
         return current;
@@ -3388,7 +3605,7 @@ export function TrackLayoutPrototype() {
 
   const zoomDepth = (factor: number) => {
     const center = (viewDepthRange.min + viewDepthRange.max) / 2;
-    const nextSpan = Math.max(80, Math.min(FULL_DEPTH_RANGE.max - FULL_DEPTH_RANGE.min, (viewDepthRange.max - viewDepthRange.min) * factor));
+    const nextSpan = Math.max(80, Math.min(activeFullDepthRange.max - activeFullDepthRange.min, (viewDepthRange.max - viewDepthRange.min) * factor));
     setDepthView({
       min: center - nextSpan / 2,
       max: center + nextSpan / 2,
@@ -3405,11 +3622,11 @@ export function TrackLayoutPrototype() {
   };
 
   const fitDepth = () => {
-    setDepthView(FULL_DEPTH_RANGE);
+    setDepthView(activeFullDepthRange);
   };
 
   const resetDepthView = () => {
-    setViewDepthRange(DEFAULT_DEPTH_RANGE);
+    setViewDepthRange(activeDefaultDepthRange);
     setViewHistory([]);
     setIntervalZoomActive(false);
     setIntervalSelection(null);
@@ -3422,7 +3639,7 @@ export function TrackLayoutPrototype() {
     const target = Number.parseFloat(goToDepthValue);
     if (!Number.isFinite(target)) return;
 
-    const clampedTarget = clampValue(target, FULL_DEPTH_RANGE.min, FULL_DEPTH_RANGE.max);
+    const clampedTarget = clampValue(target, activeFullDepthRange.min, activeFullDepthRange.max);
     const currentSpan = viewDepthRange.max - viewDepthRange.min;
     const reviewSpan = currentSpan > GO_TO_REVIEW_WINDOW_M
       ? GO_TO_REVIEW_WINDOW_M
@@ -3453,7 +3670,7 @@ export function TrackLayoutPrototype() {
     setViewDepthRange(clampDepthRange({
       min: dragPanState.startRange.min + depthShift,
       max: dragPanState.startRange.max + depthShift,
-    }));
+    }, activeFullDepthRange));
   };
 
   const endDragPan = () => {
@@ -3538,7 +3755,11 @@ export function TrackLayoutPrototype() {
     setOpenCurveMenu(null);
 
     if (checked) {
-      const curve = curveById(activeCurveCatalog, curveId);
+      const curve = activeCurveCatalog.find((item) => item.curveId === curveId);
+      if (!curve) {
+        console.warn('Blocked curve assignment for unknown curve id', curveId);
+        return;
+      }
       const newAssignment = makeCurveAssignment(curve, selectedTrack.curves.length);
 
       setTracks((current) => current.map((track) => {
@@ -3582,7 +3803,11 @@ export function TrackLayoutPrototype() {
         return track;
       });
 
-      const curve = curveById(activeCurveCatalog, payload.curveId);
+      const curve = activeCurveCatalog.find((item) => item.curveId === payload.curveId);
+      if (!curve) {
+        console.warn('Blocked curve assignment for unknown curve id', payload.curveId);
+        return reindexTracks(working);
+      }
       const assignment = movingAssignment ?? makeCurveAssignment(curve, 0);
 
       working = working.map((track) => {
@@ -3663,7 +3888,7 @@ export function TrackLayoutPrototype() {
         selectedTrack={selectedTrack}
         pendingAddTrackCurveCount={pendingAddTrackCurveIds.length}
         viewDepthRange={viewDepthRange}
-        fullDepthRange={FULL_DEPTH_RANGE}
+        fullDepthRange={activeFullDepthRange}
         viewDepthReadoutEnabled={tracks.length > 0}
         intervalZoomActive={intervalZoomActive}
         goToDepthValue={goToDepthValue}
@@ -3706,7 +3931,11 @@ export function TrackLayoutPrototype() {
         }}
       />
 
-      <div className={`wlv-prototype-workspace wlv-track-backdrop-${trackBackdropMode}`}>
+      <div
+        className={`wlv-prototype-workspace wlv-track-backdrop-${trackBackdropMode} ${curveInventoryResizeState ? 'curve-inventory-resize-active' : ''}`}
+        style={{ gridTemplateColumns: `${curveInventoryWidthPx}px minmax(0, 1fr) 330px` }}
+      >
+        <div className="wlv-curve-inventory-shell" style={{ width: curveInventoryWidthPx }}>
         <CurveInventory
           availableCurves={activeViewerCurves}
           curveUsageCounts={curveUsageCounts}
@@ -3745,6 +3974,18 @@ export function TrackLayoutPrototype() {
             }
           }}
         />
+        <button
+          type="button"
+          className="wlv-curve-inventory-resize-handle"
+          aria-label="Resize curve inventory panel"
+          title="Drag to widen Curve Inventory"
+          onMouseDown={(event) => {
+            event.preventDefault();
+            setCurveInventoryResizeState({ startX: event.clientX, startWidth: curveInventoryWidthPx });
+          }}
+          onDoubleClick={() => setCurveInventoryWidthPx(CURVE_INVENTORY_DEFAULT_WIDTH_PX)}
+        />
+        </div>
         {tracks.length === 0 ? (
           <section className="wlv-loaded-curves-ready-state" aria-label="Loaded curves ready">
             <div className="wlv-loaded-curves-ready-card">
