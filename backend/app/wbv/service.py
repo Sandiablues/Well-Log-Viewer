@@ -1,8 +1,8 @@
 """3D Wellbore Viewer backend service boundary.
 
 WBV consumes Managed Well Inventory state and WDV load-session contracts. It does
-not calculate trajectory geometry in this block and it must never fabricate a 3D
-well path when no backend-owned deviation/trajectory package exists.
+not read raw DLIS/LIS files in the live viewer path and it must never fabricate a
+3D well path when no backend-owned trajectory package exists.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from backend.app.inventory.models import ManagedProductGroupItem, ManagedWdvState, ManagedWmdpState, ManagedWellRecord
-from backend.app.inventory.repository import ManagedWellInventoryRepository, ManagedWellNotFoundError
+from backend.app.inventory.repository import ManagedWellInventoryRepository
 
 from .models import (
     WbvAvailableLayers,
@@ -22,6 +22,9 @@ from .models import (
     WbvViewerState,
     WbvWarning,
 )
+
+
+_VERTICAL_TRAJECTORY_CLASS = "vertical_trajectory_candidate"
 
 
 class WbvService:
@@ -77,12 +80,12 @@ class WbvService:
             well_name=record.well_name,
             viewer_state=state,
             coordinate_mode=coordinate_mode,
-            depth_unit=record.depth_unit or "ft",
-            angle_unit=str(record.metadata.get("angle_unit") or "deg") if isinstance(record.metadata, dict) else "deg",
+            depth_unit=record.depth_unit or self._trajectory_depth_unit(record) or "ft",
+            angle_unit=str(record.metadata.get("angle_unit") or self._raw_trajectory_metadata(record).get("angle_unit") or "deg") if isinstance(record.metadata, dict) else "deg",
             datum=self._datum(record),
             crs=self._crs(record),
             trajectory=trajectory,
-            bounding_box=self._dict_metadata(record, "wbv_bounding_box"),
+            bounding_box=self._bounding_box(record),
             axes=self._dict_metadata(record, "wbv_axes"),
             available_layers=layers,
             markers=self._list_metadata(record, "wbv_markers"),
@@ -147,9 +150,23 @@ class WbvService:
             )
             return WbvViewerState.MISSING_SURVEY, WbvCoordinateMode.UNAVAILABLE, warnings
 
+        warnings.extend(self._trajectory_warnings(record))
+
         coordinate_mode = self._coordinate_mode(record)
         if coordinate_mode == WbvCoordinateMode.UNAVAILABLE:
             return WbvViewerState.NEEDS_REVIEW, coordinate_mode, warnings
+
+        if trajectory.trajectory_class == _VERTICAL_TRAJECTORY_CLASS or trajectory.viewer_state == WbvViewerState.AVAILABLE_VERTICAL.value:
+            warnings.append(
+                WbvWarning(
+                    code="vertical_trajectory_candidate",
+                    severity="info",
+                    message="A backend-owned trajectory package is available, but this source represents a vertical wellbore section.",
+                    target="metadata.wbv_trajectory_package.trajectory_class",
+                )
+            )
+            return WbvViewerState.AVAILABLE_VERTICAL, coordinate_mode, warnings
+
         if coordinate_mode == WbvCoordinateMode.RELATIVE:
             return WbvViewerState.RELATIVE_ONLY, coordinate_mode, warnings
         return WbvViewerState.AVAILABLE, coordinate_mode, warnings
@@ -189,29 +206,83 @@ class WbvService:
         )
 
     def _trajectory_package(self, record: ManagedWellRecord) -> WbvTrajectoryPackage:
-        raw = record.metadata.get("wbv_trajectory_package")
-        if not isinstance(raw, dict):
-            raw = record.metadata.get("trajectory_package")
-        if not isinstance(raw, dict):
+        raw = self._raw_trajectory_metadata(record)
+        if not raw:
             return WbvTrajectoryPackage()
 
         stations = raw.get("stations", [])
         render_points = raw.get("render_points", [])
+        warnings = raw.get("warnings", [])
         return WbvTrajectoryPackage(
             method=str(raw.get("method") or "") or None,
-            source=str(raw.get("source") or "") or None,
+            source=str(raw.get("source") or raw.get("source_type") or "") or None,
+            trajectory_class=str(raw.get("trajectory_class") or "") or None,
+            viewer_state=str(raw.get("viewer_state") or "") or None,
+            station_count=self._optional_int(raw.get("station_count")),
+            source_station_count=self._optional_int(raw.get("source_station_count")),
+            fixture_sampling=dict(raw.get("fixture_sampling") or {}) if isinstance(raw.get("fixture_sampling"), dict) else {},
             stations=stations if isinstance(stations, list) else [],
             render_points=render_points if isinstance(render_points, list) else [],
+            warnings=[item for item in warnings if isinstance(item, dict)] if isinstance(warnings, list) else [],
         )
+
+    def _raw_trajectory_metadata(self, record: ManagedWellRecord) -> dict[str, Any]:
+        raw = record.metadata.get("wbv_trajectory_package") if isinstance(record.metadata, dict) else None
+        if not isinstance(raw, dict):
+            raw = record.metadata.get("trajectory_package") if isinstance(record.metadata, dict) else None
+        return dict(raw) if isinstance(raw, dict) else {}
+
+    def _trajectory_warnings(self, record: ManagedWellRecord) -> list[WbvWarning]:
+        raw = self._raw_trajectory_metadata(record)
+        source_warnings = raw.get("warnings", [])
+        warnings: list[WbvWarning] = []
+        if not isinstance(source_warnings, list):
+            return warnings
+
+        for index, item in enumerate(source_warnings):
+            if not isinstance(item, dict):
+                continue
+            code = str(item.get("code") or f"trajectory_warning_{index}")
+            severity = str(item.get("severity") or "warning").lower()
+            if severity not in {"info", "warning", "error"}:
+                severity = "warning"
+            message = str(item.get("message") or code)
+            target = item.get("target")
+            warnings.append(
+                WbvWarning(
+                    code=code,
+                    severity=severity,  # type: ignore[arg-type]
+                    message=message,
+                    target=str(target) if target is not None else "metadata.wbv_trajectory_package.warnings",
+                )
+            )
+        return warnings
 
     def _coordinate_mode(self, record: ManagedWellRecord) -> WbvCoordinateMode:
         raw = str(record.metadata.get("wbv_coordinate_mode") or "").strip().lower()
         if raw in {mode.value for mode in WbvCoordinateMode}:
             return WbvCoordinateMode(raw)
+        raw_trajectory = self._raw_trajectory_metadata(record)
+        trajectory_mode = str(raw_trajectory.get("coordinate_mode") or "").strip().lower()
+        if trajectory_mode in {mode.value for mode in WbvCoordinateMode}:
+            return WbvCoordinateMode(trajectory_mode)
         trajectory = self._trajectory_package(record)
         if trajectory.render_points:
             return WbvCoordinateMode.RELATIVE
         return WbvCoordinateMode.UNAVAILABLE
+
+    def _trajectory_depth_unit(self, record: ManagedWellRecord) -> str | None:
+        raw = self._raw_trajectory_metadata(record)
+        unit = raw.get("depth_unit")
+        return str(unit) if unit else None
+
+    def _bounding_box(self, record: ManagedWellRecord) -> dict[str, Any]:
+        explicit = self._dict_metadata(record, "wbv_bounding_box")
+        if explicit:
+            return explicit
+        raw = self._raw_trajectory_metadata(record)
+        bbox = raw.get("bounding_box")
+        return dict(bbox) if isinstance(bbox, dict) else {}
 
     def _loaded_wdv_items(self, record: ManagedWellRecord) -> list[ManagedProductGroupItem]:
         return [
@@ -266,3 +337,12 @@ class WbvService:
         if isinstance(crs, dict):
             return dict(crs)
         return {"epsg": None, "status": "not_available"}
+
+    @staticmethod
+    def _optional_int(value: Any) -> int | None:
+        try:
+            if value is None:
+                return None
+            return int(value)
+        except (TypeError, ValueError):
+            return None

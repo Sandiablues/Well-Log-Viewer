@@ -14,6 +14,7 @@ class WbvViewerState(str, Enum):
     INVALID_SURVEY = "invalid_survey"
     RELATIVE_ONLY = "relative_only"
     AVAILABLE = "available"
+    AVAILABLE_VERTICAL = "available_vertical"
     NEEDS_REVIEW = "needs_review"
     UNAVAILABLE = "unavailable"
 
@@ -55,8 +56,14 @@ class WbvSourceSession(BaseModel):
 class WbvTrajectoryPackage(BaseModel):
     method: str | None = None
     source: str | None = None
+    trajectory_class: str | None = None
+    viewer_state: str | None = None
+    station_count: int | None = None
+    source_station_count: int | None = None
+    fixture_sampling: dict[str, Any] = Field(default_factory=dict)
     stations: list[dict[str, Any]] = Field(default_factory=list)
     render_points: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class WbvSessionContract(BaseModel):
