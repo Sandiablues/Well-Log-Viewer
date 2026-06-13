@@ -1,4 +1,4 @@
-"""Managed KR domain record models for KR-2.
+"""Managed KR domain record models for KR-2 through KR-DATA-MODEL-1.
 
 These dataclasses are backend-internal domain objects representing governed
 records in the Knowledge Repository.  They are separate from the KR-1 Pydantic
@@ -6,15 +6,25 @@ response models in models.py, which remain the stable external API contract.
 
 Record type hierarchy
 ---------------------
-CurveDefinitionRecord  – canonical curve knowledge
-AliasRecord            – mnemonic/alias mapping (context-aware)
-DisplayRuleRecord      – curve rendering display rules
+CurveDefinitionRecord    ��� canonical curve knowledge
+AliasRecord              – mnemonic/alias mapping (context-aware)
+DisplayRuleRecord        – curve rendering display rules
 ClassificationRuleRecord – deterministic classification hints
-TemplateRuleRecord     – future template construction knowledge (empty in KR-2)
-EvidenceRecord         – provenance / source record (no lifecycle status)
+TemplateRuleRecord       – future template construction knowledge (empty in KR-2)
+AliasEnrichmentRecord    – technical-subtype enrichment for existing alias mappings
+                           (KR-DATA-MODEL-1; see alias_enrichment_models.py)
+EvidenceRecord           – provenance / source record (no lifecycle status)
 
 All governed records (all types except EvidenceRecord) carry a GovernanceStatus
 field.  EvidenceRecord is provenance-only and has no governance lifecycle.
+
+KR-DATA-MODEL-1 note
+--------------------
+AliasEnrichmentRecord allows curated catalogue entries to attach a specific
+technical-subtype identity to an existing broad alias/canonical mapping without
+replacing the display canonical curve and without triggering alias conflicts in
+the KR-3 import validator.  The record type "alias_enrichment" is registered in
+GOVERNED_RECORD_TYPES and ALL_RECORD_TYPES below.
 """
 
 from __future__ import annotations
@@ -33,6 +43,7 @@ KR2_VERSION = "kr-2"
 KR3_VERSION = "kr-3"
 KR4_VERSION = "kr-4"
 KR5_VERSION = "kr-5"
+KR_DATA_MODEL_1_VERSION = "kr-data-model-1"
 
 GOVERNED_RECORD_TYPES: frozenset[str] = frozenset(
     {
@@ -41,6 +52,7 @@ GOVERNED_RECORD_TYPES: frozenset[str] = frozenset(
         "display_rule",
         "classification_rule",
         "template_rule",
+        "alias_enrichment",  # KR-DATA-MODEL-1: technical-subtype enrichment records
     }
 )
 

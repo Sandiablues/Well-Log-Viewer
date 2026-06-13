@@ -1089,7 +1089,7 @@ class TestKR2Compatibility:
         data = _standard_client.get("/api/wlv/knowledge/managed/schema").json()
         rt_keys = {rt["record_type"] for rt in data["record_types"]}
         expected = {
-            "curve_definition", "alias", "display_rule",
+            "curve_definition", "alias", "alias_enrichment", "display_rule",
             "classification_rule", "template_rule", "evidence",
         }
         assert expected == rt_keys

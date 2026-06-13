@@ -44,6 +44,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .alias_enrichment_models import AliasEnrichmentRecord
 from .governance import (
     GovernanceStatus,
     PRODUCTION_STATUSES,
@@ -74,6 +75,7 @@ GovernedRecord = (
     | DisplayRuleRecord
     | ClassificationRuleRecord
     | TemplateRuleRecord
+    | AliasEnrichmentRecord  # KR-DATA-MODEL-1
 )
 
 
@@ -316,6 +318,22 @@ class ManagedKRRepository:
                 errors.append("preferred_track_family must be non-empty")
             if record.scale_type not in {"linear", "log"}:
                 errors.append(f"scale_type {record.scale_type!r} must be 'linear' or 'log'")
+        elif isinstance(record, AliasEnrichmentRecord):
+            # KR-DATA-MODEL-1: validate alias enrichment required fields
+            if not record.alias:
+                errors.append("alias must be non-empty")
+            if not record.normalized_alias:
+                errors.append("normalized_alias must be non-empty")
+            if not record.display_canonical_curve_id:
+                errors.append("display_canonical_curve_id must be non-empty")
+            if not record.technical_curve_id:
+                errors.append("technical_curve_id must be non-empty")
+            if not record.technical_display_name:
+                errors.append("technical_display_name must be non-empty")
+            if not record.parent_canonical_curve_id:
+                errors.append("parent_canonical_curve_id must be non-empty")
+            if not (0.0 <= record.confidence <= 1.0):
+                errors.append("confidence must be between 0.0 and 1.0")
         return errors
 
     # ------------------------------------------------------------------
@@ -509,6 +527,16 @@ class ManagedKRRepository:
                 "seed_count": 0,
             },
             {
+                "record_type": "alias_enrichment",
+                "description": (
+                    "Technical-subtype enrichment for an existing alias/canonical mapping "
+                    "(KR-DATA-MODEL-1). Attaches a specific technical identity without "
+                    "replacing the display canonical curve. Does not affect KR-6/7/8."
+                ),
+                "governed": True,
+                "seed_count": 0,
+            },
+            {
                 "record_type": "evidence",
                 "description": "Provenance/source record (no governance lifecycle)",
                 "governed": False,
@@ -525,6 +553,8 @@ class ManagedKRRepository:
                 "approved records override seed records in future KR management blocks",
                 "template_rule records are structurally defined but empty in KR-2",
                 "mutating HTTP endpoints (promote/deprecate/import) are deferred to KR-3+",
+                "alias_enrichment records (KR-DATA-MODEL-1) carry technical-subtype metadata "
+                "for existing alias mappings; they do not affect KR-6/7/8 display resolution",
             ],
         }
 
@@ -556,9 +586,44 @@ class ManagedKRRepository:
                 for rt in {
                     "curve_definition", "alias", "display_rule",
                     "classification_rule", "template_rule",
+                    "alias_enrichment",  # KR-DATA-MODEL-1
                 }
             },
         }
+
+    # ------------------------------------------------------------------
+    # Alias enrichment query (KR-DATA-MODEL-1)
+    # ------------------------------------------------------------------
+
+    def list_alias_enrichments(
+        self,
+        alias: str | None = None,
+        status: GovernanceStatus | None = None,
+    ) -> list[AliasEnrichmentRecord]:
+        """Return alias enrichment records, optionally filtered.
+
+        KR-DATA-MODEL-1 convenience method.  Candidate enrichments are
+        returned unless ``status`` narrows the filter.  Approved enrichments
+        are production-eligible as metadata only — they do not affect KR-6/7/8.
+
+        Args:
+            alias:  If given, filter to enrichments whose normalized_alias
+                    matches the upper-case form of ``alias``.
+            status: If given, filter to enrichments with this governance status.
+
+        Returns:
+            List of AliasEnrichmentRecord instances.
+        """
+        records: list[AliasEnrichmentRecord] = [
+            r for r in self._all_records().values()
+            if isinstance(r, AliasEnrichmentRecord)
+        ]
+        if alias is not None:
+            normalized = alias.strip().upper()
+            records = [r for r in records if r.normalized_alias == normalized]
+        if status is not None:
+            records = [r for r in records if r.status == status]
+        return records
 
     # ------------------------------------------------------------------
     # Storage health (KR-5)

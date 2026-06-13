@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .alias_enrichment_models import AliasEnrichmentRecord
 from .governance import GovernanceStatus
 from .managed_models import (
     AliasRecord,
@@ -135,6 +136,9 @@ def deserialize_record(data: dict[str, Any]) -> Any:
             return ClassificationRuleRecord(**data)
         elif record_type == "template_rule":
             return TemplateRuleRecord(**data)
+        elif record_type == "alias_enrichment":
+            # KR-DATA-MODEL-1: technical-subtype enrichment records
+            return AliasEnrichmentRecord(**data)
         else:
             raise ManagedStorageError(
                 f"Unknown record_type {record_type!r} in storage"
