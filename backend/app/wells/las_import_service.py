@@ -269,6 +269,151 @@ class LasCurveInventoryClassificationResult:
         """Return the WDV template recommendation as a serializable dictionary."""
         return self.wdv_template_recommendation(selected_mnemonics).as_dict()
 
+    def qaqc_summary(self) -> LasCurveInventoryQaqcSummary:
+        """Return a backend-owned QAQC summary for classified LAS curve inventory.
+
+        KR-QAQC-1: This summary is derived from the classified inventory and
+        backend template recommendation contract. It does not mutate KR, does
+        not use frontend inference, and preserves the approved-only runtime
+        knowledge policy from the upstream classification batch.
+        """
+        unknown_mnemonics: list[str] = []
+        review_required_mnemonics: list[str] = []
+        unit_gap_mnemonics: list[str] = []
+        issues: list[dict[str, Any]] = []
+
+        mnemonic_counts: dict[str, int] = {}
+        canonical_counts: dict[str, int] = {}
+        canonical_to_mnemonics: dict[str, list[str]] = {}
+
+        for metadata, classification in zip(
+            self.curve_metadata,
+            self.classification_batch.classifications,
+        ):
+            mnemonic = (metadata.mnemonic or "").strip()
+            normalized_mnemonic = mnemonic.upper()
+            if normalized_mnemonic:
+                mnemonic_counts[normalized_mnemonic] = mnemonic_counts.get(normalized_mnemonic, 0) + 1
+
+            status = getattr(classification, "status", None)
+            canonical_curve_id = getattr(classification, "canonical_curve_id", None)
+            requires_review = bool(getattr(classification, "requires_review", False))
+
+            if canonical_curve_id:
+                canonical_key = str(canonical_curve_id)
+                canonical_counts[canonical_key] = canonical_counts.get(canonical_key, 0) + 1
+                canonical_to_mnemonics.setdefault(canonical_key, []).append(mnemonic)
+
+            if status == "unknown" or canonical_curve_id is None:
+                unknown_mnemonics.append(mnemonic)
+                issues.append(
+                    {
+                        "issue_type": "unknown_curve",
+                        "severity": "review_required",
+                        "mnemonic": mnemonic,
+                        "message": "Curve mnemonic is not resolved by approved runtime knowledge.",
+                    }
+                )
+
+            if requires_review:
+                review_required_mnemonics.append(mnemonic)
+                issues.append(
+                    {
+                        "issue_type": "classification_review_required",
+                        "severity": "review_required",
+                        "mnemonic": mnemonic,
+                        "message": "Curve classification requires backend review before automation.",
+                    }
+                )
+
+            if canonical_curve_id and not (metadata.unit or "").strip():
+                unit_gap_mnemonics.append(mnemonic)
+                issues.append(
+                    {
+                        "issue_type": "unit_gap",
+                        "severity": "warning",
+                        "mnemonic": mnemonic,
+                        "canonical_curve_id": canonical_curve_id,
+                        "message": "Classified curve is missing a source unit.",
+                    }
+                )
+
+        duplicate_mnemonics = sorted(
+            mnemonic for mnemonic, count in mnemonic_counts.items() if count > 1
+        )
+        for mnemonic in duplicate_mnemonics:
+            issues.append(
+                {
+                    "issue_type": "duplicate_mnemonic",
+                    "severity": "warning",
+                    "mnemonic": mnemonic,
+                    "count": mnemonic_counts[mnemonic],
+                    "message": "Duplicate source mnemonic appears in the LAS curve inventory.",
+                }
+            )
+
+        duplicate_canonical_curve_ids = sorted(
+            canonical_id for canonical_id, count in canonical_counts.items() if count > 1
+        )
+        for canonical_id in duplicate_canonical_curve_ids:
+            issues.append(
+                {
+                    "issue_type": "duplicate_curve_category",
+                    "severity": "info",
+                    "canonical_curve_id": canonical_id,
+                    "mnemonics": list(canonical_to_mnemonics.get(canonical_id, [])),
+                    "count": canonical_counts[canonical_id],
+                    "message": "Multiple curves map to the same backend display category.",
+                }
+            )
+
+        canonical_ids = set(canonical_counts.keys())
+        template_gap_groups: list[str] = []
+        if "gamma_ray" not in canonical_ids:
+            template_gap_groups.append("gamma_ray")
+        if not canonical_ids.intersection({"deep_resistivity", "shallow_resistivity"}):
+            template_gap_groups.append("resistivity")
+        if not canonical_ids.intersection({"bulk_density", "neutron_porosity"}):
+            template_gap_groups.append("porosity_density")
+
+        for group in template_gap_groups:
+            issues.append(
+                {
+                    "issue_type": "template_coverage_gap",
+                    "severity": "info",
+                    "template_group": group,
+                    "message": "Recommended WDV template is missing this standard curve group.",
+                }
+            )
+
+        warnings: list[str] = []
+        if unknown_mnemonics:
+            warnings.append("Unknown curves require review before automated display/template workflows.")
+        if duplicate_mnemonics:
+            warnings.append("Duplicate source mnemonics were detected in the curve inventory.")
+        if unit_gap_mnemonics:
+            warnings.append("One or more classified curves are missing source units.")
+        if template_gap_groups:
+            warnings.append("Standard WDV template coverage is incomplete for this curve inventory.")
+
+        return LasCurveInventoryQaqcSummary(
+            curve_count=self.curve_count,
+            issue_count=len(issues),
+            unknown_mnemonics=unknown_mnemonics,
+            review_required_mnemonics=review_required_mnemonics,
+            duplicate_mnemonics=duplicate_mnemonics,
+            duplicate_canonical_curve_ids=duplicate_canonical_curve_ids,
+            unit_gap_mnemonics=unit_gap_mnemonics,
+            template_gap_groups=template_gap_groups,
+            knowledge_policy=self.knowledge_policy,
+            warnings=warnings,
+            issues=issues,
+        )
+
+    def qaqc_summary_dict(self) -> dict[str, Any]:
+        """Return the curve inventory QAQC summary as a serializable dictionary."""
+        return self.qaqc_summary().as_dict()
+
     def _wdv_recommendation_tracks(
         self,
         grouped: dict[str, list[dict[str, Any]]],
@@ -452,6 +597,67 @@ class LasWdvTemplateRecommendation:
             "unresolved_mnemonics": list(self.unresolved_mnemonics),
             "knowledge_policy": dict(self.knowledge_policy),
             "warnings": list(self.warnings),
+        }
+
+
+class LasCurveInventoryQaqcSummary:
+    """Backend-owned QAQC summary for classified LAS curve inventory.
+
+    KR-QAQC-1: This contract summarizes review conditions that downstream MDP
+    and WDV workflows may display or act upon. It is derived from approved-only
+    runtime classification results and source curve metadata only.
+    """
+
+    def __init__(
+        self,
+        *,
+        curve_count: int,
+        issue_count: int,
+        unknown_mnemonics: list[str],
+        review_required_mnemonics: list[str],
+        duplicate_mnemonics: list[str],
+        duplicate_canonical_curve_ids: list[str],
+        unit_gap_mnemonics: list[str],
+        template_gap_groups: list[str],
+        knowledge_policy: dict[str, Any],
+        warnings: list[str],
+        issues: list[dict[str, Any]],
+    ) -> None:
+        self.curve_count = int(curve_count)
+        self.issue_count = int(issue_count)
+        self.unknown_mnemonics = list(unknown_mnemonics)
+        self.review_required_mnemonics = list(review_required_mnemonics)
+        self.duplicate_mnemonics = list(duplicate_mnemonics)
+        self.duplicate_canonical_curve_ids = list(duplicate_canonical_curve_ids)
+        self.unit_gap_mnemonics = list(unit_gap_mnemonics)
+        self.template_gap_groups = list(template_gap_groups)
+        self.knowledge_policy = dict(knowledge_policy)
+        self.warnings = list(warnings)
+        self.issues = list(issues)
+
+    @property
+    def has_issues(self) -> bool:
+        return self.issue_count > 0
+
+    @property
+    def has_review_blockers(self) -> bool:
+        return bool(self.unknown_mnemonics or self.review_required_mnemonics)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "curve_count": self.curve_count,
+            "issue_count": self.issue_count,
+            "has_issues": self.has_issues,
+            "has_review_blockers": self.has_review_blockers,
+            "unknown_mnemonics": list(self.unknown_mnemonics),
+            "review_required_mnemonics": list(self.review_required_mnemonics),
+            "duplicate_mnemonics": list(self.duplicate_mnemonics),
+            "duplicate_canonical_curve_ids": list(self.duplicate_canonical_curve_ids),
+            "unit_gap_mnemonics": list(self.unit_gap_mnemonics),
+            "template_gap_groups": list(self.template_gap_groups),
+            "knowledge_policy": dict(self.knowledge_policy),
+            "warnings": list(self.warnings),
+            "issues": list(self.issues),
         }
 
 
