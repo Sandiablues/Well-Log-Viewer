@@ -6486,3 +6486,127 @@ button.wlv-view-range-readout,
   font-size: 0.82rem;
   line-height: 1.42;
 }
+
+/* WBV-4A — backend trajectory package status display */
+.wlv-wbv-state-pill--available_vertical {
+  border-color: rgba(103, 213, 153, 0.55);
+  color: #67d599;
+}
+
+.wlv-wbv-package-card,
+.wlv-wbv-inspection-card {
+  margin: 0 0 1rem;
+  padding: 0.78rem;
+  border: 1px solid rgba(111, 211, 255, 0.24);
+  border-radius: 13px;
+  background: rgba(4, 10, 15, 0.48);
+}
+
+.wlv-wbv-package-card > span {
+  display: block;
+  margin-bottom: 0.18rem;
+  color: #7e90a3;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.wlv-wbv-package-card > strong {
+  display: block;
+  margin-bottom: 0.65rem;
+  color: #f4f8fb;
+  font-size: 0.95rem;
+}
+
+.wlv-wbv-package-card dl,
+.wlv-wbv-inspection-card dl {
+  margin-bottom: 0;
+}
+
+.wlv-wbv-inspection-card h2 {
+  margin: 0 0 0.65rem;
+  color: #f4f8fb;
+  font-size: 0.95rem;
+}
+
+.wlv-wbv-scene-frame.has-trajectory-package {
+  background:
+    radial-gradient(circle at 50% 48%, rgba(51, 103, 90, 0.28), rgba(0, 0, 0, 0) 42%),
+    radial-gradient(circle at 50% 48%, rgba(50, 79, 99, 0.32), rgba(0, 0, 0, 0) 42%),
+    linear-gradient(180deg, #05080b, #020305);
+}
+
+.wlv-wbv-vertical-preview {
+  position: absolute;
+  z-index: 2;
+  top: 21%;
+  bottom: 24%;
+  left: 50%;
+  width: 38px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.wlv-wbv-vertical-preview__line {
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  left: 50%;
+  width: 4px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(103, 213, 153, 0.92), rgba(111, 211, 255, 0.86));
+  box-shadow: 0 0 18px rgba(103, 213, 153, 0.62);
+}
+
+.wlv-wbv-vertical-preview__top,
+.wlv-wbv-vertical-preview__base {
+  position: absolute;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  transform: translateX(-50%);
+  border: 2px solid rgba(103, 213, 153, 0.92);
+  border-radius: 50%;
+  background: rgba(3, 6, 9, 0.88);
+  box-shadow: 0 0 14px rgba(103, 213, 153, 0.46);
+}
+
+.wlv-wbv-vertical-preview__top {
+  top: 0;
+}
+
+.wlv-wbv-vertical-preview__base {
+  bottom: 0;
+}
+
+.wlv-wbv-scene-message--package {
+  border-color: rgba(103, 213, 153, 0.55);
+  background: rgba(3, 9, 7, 0.86);
+}
+
+.wlv-wbv-sample-points {
+  display: grid;
+  gap: 0.48rem;
+}
+
+.wlv-wbv-sample-point {
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.55rem;
+  border: 1px solid rgba(113, 132, 151, 0.26);
+  border-radius: 10px;
+  background: rgba(12, 17, 24, 0.68);
+}
+
+.wlv-wbv-sample-point strong {
+  color: #dff8ec;
+  font-size: 0.78rem;
+}
+
+.wlv-wbv-sample-point span {
+  color: #9eb0c1;
+  font-size: 0.74rem;
+}
+
