@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchWlvJson } from '../../api/wlvBackendClient';
+import { WellboreTrajectoryRenderer } from './WellboreTrajectoryRenderer';
 
 type WbvViewerState =
   | 'not_loaded'
@@ -347,11 +348,12 @@ export function Wellbore3DPage({ activeManagedWellId, onOpenLogViewer }: Wellbor
             </div>
 
             {hasTrajectory ? (
-              <div className="wlv-wbv-vertical-preview" aria-hidden="true">
-                <span className="wlv-wbv-vertical-preview__top" />
-                <span className="wlv-wbv-vertical-preview__line" />
-                <span className="wlv-wbv-vertical-preview__base" />
-              </div>
+              <WellboreTrajectoryRenderer
+                renderPoints={renderPoints}
+                boundingBox={viewerPackage?.bounding_box}
+                depthUnit={depthUnit}
+                viewerState={viewerState}
+              />
             ) : null}
 
             <div className={`wlv-wbv-scene-message ${hasTrajectory ? 'wlv-wbv-scene-message--package' : ''}`}>

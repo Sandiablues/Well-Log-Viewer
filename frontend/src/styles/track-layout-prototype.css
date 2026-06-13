@@ -6610,3 +6610,45 @@ button.wlv-view-range-readout,
   font-size: 0.74rem;
 }
 
+/* WBV-5C — isolated Three.js trajectory renderer.
+   The renderer consumes backend-owned render_points only. It does not calculate
+   trajectory truth, infer deviation state, or synchronize WDV selections. */
+.wlv-wbv-trajectory-renderer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.wlv-wbv-trajectory-renderer canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.wlv-wbv-renderer-readout {
+  position: absolute;
+  left: 1rem;
+  bottom: 1rem;
+  display: grid;
+  gap: 0.16rem;
+  max-width: min(360px, calc(100% - 2rem));
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(103, 213, 153, 0.46);
+  border-radius: 12px;
+  background: rgba(3, 9, 7, 0.74);
+  color: #dff8ec;
+  font-size: 0.76rem;
+  box-shadow: 0 0 18px rgba(103, 213, 153, 0.16);
+}
+
+.wlv-wbv-renderer-readout strong {
+  color: #f4f8fb;
+  font-size: 0.78rem;
+}
+
+.wlv-wbv-renderer-readout span {
+  color: #9eb0c1;
+  font-size: 0.72rem;
+}
+
