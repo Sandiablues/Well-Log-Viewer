@@ -8,15 +8,15 @@ export function wlvApiBaseUrl(): string {
   const hostname = window.location.hostname || '127.0.0.1';
   const port = window.location.port;
 
-  if (port === '8000') {
+  if (port === '8001') {
     return '';
   }
 
   if (port === '5173' || port === '5174' || port === '5175') {
-    return `${protocol}//${hostname}:8000`;
+    return `${protocol}//${hostname}:8001`;
   }
 
-  return 'http://127.0.0.1:8000';
+  return 'http://127.0.0.1:8001';
 }
 
 function responseContentType(response: Response): string {
