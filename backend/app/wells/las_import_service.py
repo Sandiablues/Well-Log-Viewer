@@ -97,6 +97,135 @@ class LasCurveInventoryClassificationResult:
         }
 
 
+    def mdp_summary(self) -> LasMdpCurveClassificationSummary:
+        """Return a backend-owned summary for MDP/managed inventory display.
+
+        The summary is derived only from this LAS inventory classification
+        result.  It does not call frontend logic and does not read candidate KR
+        records directly.  Runtime knowledge eligibility remains governed by
+        the upstream approved-only classification batch.
+        """
+        display_group_counts: dict[str, int] = {}
+        unknown_mnemonics: list[str] = []
+        review_required_mnemonics: list[str] = []
+        curves: list[dict[str, Any]] = []
+        technical_curve_count = 0
+
+        for metadata, classification in zip(
+            self.curve_metadata,
+            self.classification_batch.classifications,
+        ):
+            mnemonic = (metadata.mnemonic or "").strip()
+            canonical_curve_id = getattr(classification, "canonical_curve_id", None)
+            technical_curve_id = getattr(classification, "technical_curve_id", None)
+            status = getattr(classification, "status", None)
+            requires_review = bool(getattr(classification, "requires_review", False))
+
+            display_group = canonical_curve_id or "unknown"
+            display_group_counts[display_group] = display_group_counts.get(display_group, 0) + 1
+
+            if technical_curve_id:
+                technical_curve_count += 1
+            if status == "unknown":
+                unknown_mnemonics.append(mnemonic)
+            if requires_review:
+                review_required_mnemonics.append(mnemonic)
+
+            curves.append(
+                {
+                    "mnemonic": mnemonic,
+                    "unit": metadata.unit,
+                    "description": metadata.description,
+                    "status": status,
+                    "requires_review": requires_review,
+                    "canonical_curve_id": canonical_curve_id,
+                    "technical_curve_id": technical_curve_id,
+                    "display_name": getattr(classification, "display_name", None),
+                    "product_group": getattr(classification, "product_group", None),
+                    "product_subgroup": getattr(classification, "product_subgroup", None),
+                    "measurement_family": getattr(classification, "measurement_family", None),
+                    "measurement_depth": getattr(classification, "measurement_depth", None),
+                    "tool_family": getattr(classification, "tool_family", None),
+                }
+            )
+
+        return LasMdpCurveClassificationSummary(
+            curve_count=self.curve_count,
+            resolved_count=self.resolved_count,
+            unknown_count=self.unknown_count,
+            review_required_count=self.review_required_count,
+            technical_curve_count=technical_curve_count,
+            display_group_counts=display_group_counts,
+            unknown_mnemonics=unknown_mnemonics,
+            review_required_mnemonics=review_required_mnemonics,
+            knowledge_policy=self.knowledge_policy,
+            curves=curves,
+        )
+
+    def mdp_summary_dict(self) -> dict[str, Any]:
+        """Return the MDP summary as a serializable dictionary."""
+        return self.mdp_summary().as_dict()
+
+
+class LasMdpCurveClassificationSummary:
+    """Backend-owned MDP curve classification summary contract.
+
+    KR-MDP-1-R3: This is a compact summary derived from the approved-only
+    LAS/KR classification result.  It is intended for MDP/managed inventory
+    display and workflow decisions.  It does not classify curves itself, does
+    not parse LAS, does not mutate KR, and does not use frontend inference.
+    """
+
+    def __init__(
+        self,
+        *,
+        curve_count: int,
+        resolved_count: int,
+        unknown_count: int,
+        review_required_count: int,
+        technical_curve_count: int,
+        display_group_counts: dict[str, int],
+        unknown_mnemonics: list[str],
+        review_required_mnemonics: list[str],
+        knowledge_policy: dict[str, Any],
+        curves: list[dict[str, Any]],
+    ) -> None:
+        self.curve_count = int(curve_count)
+        self.resolved_count = int(resolved_count)
+        self.unknown_count = int(unknown_count)
+        self.review_required_count = int(review_required_count)
+        self.technical_curve_count = int(technical_curve_count)
+        self.display_group_counts = dict(display_group_counts)
+        self.unknown_mnemonics = list(unknown_mnemonics)
+        self.review_required_mnemonics = list(review_required_mnemonics)
+        self.knowledge_policy = dict(knowledge_policy)
+        self.curves = list(curves)
+
+    @property
+    def has_unknown_curves(self) -> bool:
+        return self.unknown_count > 0
+
+    @property
+    def has_review_required_curves(self) -> bool:
+        return self.review_required_count > 0
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "curve_count": self.curve_count,
+            "resolved_count": self.resolved_count,
+            "unknown_count": self.unknown_count,
+            "review_required_count": self.review_required_count,
+            "technical_curve_count": self.technical_curve_count,
+            "has_unknown_curves": self.has_unknown_curves,
+            "has_review_required_curves": self.has_review_required_curves,
+            "display_group_counts": dict(self.display_group_counts),
+            "unknown_mnemonics": list(self.unknown_mnemonics),
+            "review_required_mnemonics": list(self.review_required_mnemonics),
+            "knowledge_policy": dict(self.knowledge_policy),
+            "curves": list(self.curves),
+        }
+
+
 class LasImportResult:
     """
     Value object returned by a successful LAS import.
