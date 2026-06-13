@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchWlvJson } from '../../api/wlvBackendClient';
-import { WellboreTrajectoryRenderer } from './WellboreTrajectoryRenderer';
+import { WellboreTrajectoryRenderer, type WbvViewPreset } from './WellboreTrajectoryRenderer';
 
 type WbvViewerState =
   | 'not_loaded'
@@ -143,6 +143,13 @@ const initialState: WbvLoadState = {
   error: null,
 };
 
+const viewPresetLabels: Record<WbvViewPreset, string> = {
+  reset: 'Reset View',
+  fit: 'Fit Well',
+  top: 'Top View',
+  side: 'Side View',
+};
+
 function stateLabel(value: string | null | undefined): string {
   if (!value) return 'unknown';
   return value.replace(/_/g, ' ');
@@ -235,6 +242,7 @@ function sampleRenderPoints(points: WbvRenderPoint[]): WbvRenderPoint[] {
 
 export function Wellbore3DPage({ activeManagedWellId, onOpenLogViewer }: Wellbore3DPageProps) {
   const [state, setState] = useState<WbvLoadState>(initialState);
+  const [viewPreset, setViewPreset] = useState<WbvViewPreset>('fit');
 
   const loadWbvSession = async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
@@ -328,11 +336,18 @@ export function Wellbore3DPage({ activeManagedWellId, onOpenLogViewer }: Wellbor
             </dl>
           </div>
 
-          <div className="wlv-wbv-control-group" aria-label="Reserved view controls">
-            <button type="button" disabled>Reset View</button>
-            <button type="button" disabled>Fit Well</button>
-            <button type="button" disabled>Top View</button>
-            <button type="button" disabled>Side View</button>
+          <div className="wlv-wbv-control-group" aria-label="WBV view controls">
+            {(Object.keys(viewPresetLabels) as WbvViewPreset[]).map((preset) => (
+              <button
+                type="button"
+                key={preset}
+                className={viewPreset === preset ? 'is-active' : ''}
+                disabled={!hasTrajectory}
+                onClick={() => setViewPreset(preset)}
+              >
+                {viewPresetLabels[preset]}
+              </button>
+            ))}
           </div>
         </aside>
 
@@ -353,6 +368,7 @@ export function Wellbore3DPage({ activeManagedWellId, onOpenLogViewer }: Wellbor
                 boundingBox={viewerPackage?.bounding_box}
                 depthUnit={depthUnit}
                 viewerState={viewerState}
+                viewPreset={viewPreset}
               />
             ) : null}
 

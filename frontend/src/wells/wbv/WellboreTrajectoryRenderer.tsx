@@ -31,11 +31,14 @@ type WbvBoundingBox = {
 
 type RendererStatus = 'idle' | 'empty' | 'rendered' | 'error';
 
+export type WbvViewPreset = 'reset' | 'fit' | 'top' | 'side';
+
 type WbvTrajectoryRendererProps = {
   renderPoints: WbvTrajectoryRenderPoint[];
   boundingBox?: WbvBoundingBox;
   depthUnit: string;
   viewerState: string;
+  viewPreset?: WbvViewPreset;
 };
 
 type ScenePoint = {
@@ -119,8 +122,8 @@ function sceneBoxFor(points: THREE.Vector3[]): SceneBox {
 
   const xSpan = Math.abs(maxX - minX);
   const zSpan = Math.abs(maxZ - minZ);
-  const lateralPad = 1.65;
-  const verticalPad = 0.34;
+  const lateralPad = 1.12;
+  const verticalPad = 0.24;
 
   return {
     minX: xSpan < 0.05 ? -lateralPad : minX - 0.45,
@@ -265,6 +268,41 @@ function materialList(material: THREE.Material | THREE.Material[] | undefined): 
   return Array.isArray(material) ? material : [material];
 }
 
+
+function cameraSettingsFor(preset: WbvViewPreset): {
+  position: [number, number, number];
+  up: [number, number, number];
+  viewHeight: number;
+} {
+  switch (preset) {
+    case 'top':
+      return {
+        position: [0, 10, 0.01],
+        up: [0, 0, -1],
+        viewHeight: 4.9,
+      };
+    case 'side':
+      return {
+        position: [10, 0.35, 0.01],
+        up: [0, 1, 0],
+        viewHeight: 7.4,
+      };
+    case 'fit':
+      return {
+        position: [4.6, 3.1, 8.2],
+        up: [0, 1, 0],
+        viewHeight: 7.6,
+      };
+    case 'reset':
+    default:
+      return {
+        position: [5.2, 3.8, 9.2],
+        up: [0, 1, 0],
+        viewHeight: 8.2,
+      };
+  }
+}
+
 function disposeObject(object: THREE.Object3D): void {
   object.traverse((child: THREE.Object3D) => {
     const materialHolder = child as THREE.Object3D & { material?: THREE.Material | THREE.Material[] };
@@ -285,6 +323,7 @@ export function WellboreTrajectoryRenderer({
   boundingBox: _boundingBox,
   depthUnit,
   viewerState,
+  viewPreset = 'reset',
 }: WbvTrajectoryRendererProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -316,8 +355,9 @@ export function WellboreTrajectoryRenderer({
       scene.add(group);
 
       const camera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.1, 1000);
-      camera.position.set(4.8, 3.6, 9.5);
-      camera.up.set(0, 1, 0);
+      const cameraSettings = cameraSettingsFor(viewPreset);
+      camera.position.set(...cameraSettings.position);
+      camera.up.set(...cameraSettings.up);
       camera.lookAt(0, 0, 0);
 
       renderer = new THREE.WebGLRenderer({
@@ -332,19 +372,19 @@ export function WellboreTrajectoryRenderer({
       const boxMaterial = new THREE.LineBasicMaterial({
         color: 0x6fd3ff,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.48,
       });
       group.add(createBoxEdges(box, boxMaterial));
 
       const planeMaterial = new THREE.LineBasicMaterial({
         color: 0x4ca6cc,
         transparent: true,
-        opacity: 0.34,
+        opacity: 0.16,
       });
       const tickMaterial = new THREE.LineBasicMaterial({
         color: 0xc6f6ff,
         transparent: true,
-        opacity: 0.82,
+        opacity: 0.52,
       });
 
       depthTicks.forEach((tick) => {
@@ -355,7 +395,7 @@ export function WellboreTrajectoryRenderer({
         const label = createTextSprite(`MD ${tick.label}`, {
           color: '#c6f6ff',
           background: 'rgba(3, 8, 12, 0.64)',
-          scale: 0.24,
+          scale: 0.18,
         });
         label.position.set(box.minX - 0.86, y, box.maxZ + 0.2);
         group.add(label);
@@ -364,9 +404,9 @@ export function WellboreTrajectoryRenderer({
       const curve = new THREE.CatmullRomCurve3(normalizedPoints, false, 'catmullrom', 0.04);
       const tubeGeometry = new THREE.TubeGeometry(
         curve,
-        Math.max(32, Math.min(240, normalizedPoints.length * 3)),
-        0.07,
-        12,
+        Math.max(32, Math.min(220, normalizedPoints.length * 3)),
+        0.024,
+        10,
         false,
       );
       const tubeMaterial = new THREE.MeshBasicMaterial({
@@ -378,15 +418,15 @@ export function WellboreTrajectoryRenderer({
 
       const glowGeometry = new THREE.TubeGeometry(
         curve,
-        Math.max(32, Math.min(240, normalizedPoints.length * 2)),
-        0.12,
-        12,
+        Math.max(32, Math.min(220, normalizedPoints.length * 2)),
+        0.055,
+        10,
         false,
       );
       const glowMaterial = new THREE.MeshBasicMaterial({
         color: 0x67d599,
         transparent: true,
-        opacity: 0.18,
+        opacity: 0.12,
       });
       group.add(new THREE.Mesh(glowGeometry, glowMaterial));
 
@@ -394,19 +434,19 @@ export function WellboreTrajectoryRenderer({
       const lineMaterial = new THREE.LineBasicMaterial({
         color: 0xe7fbff,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.82,
       });
       group.add(new THREE.Line(lineGeometry, lineMaterial));
 
       const topMarker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.13, 24, 24),
+        new THREE.SphereGeometry(0.055, 20, 20),
         new THREE.MeshBasicMaterial({ color: 0xc6f6ff }),
       );
       topMarker.position.copy(normalizedPoints[0]);
       group.add(topMarker);
 
       const baseMarker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.13, 24, 24),
+        new THREE.SphereGeometry(0.055, 20, 20),
         new THREE.MeshBasicMaterial({ color: 0x67d599 }),
       );
       baseMarker.position.copy(normalizedPoints[normalizedPoints.length - 1]);
@@ -415,7 +455,7 @@ export function WellboreTrajectoryRenderer({
       const topLabel = createTextSprite(`Top ${formatDepth(renderPoints[0]?.md ?? renderPoints[0]?.tvd, depthUnit)}`, {
         color: '#e7fbff',
         background: 'rgba(3, 8, 12, 0.68)',
-        scale: 0.27,
+        scale: 0.2,
       });
       topLabel.position.set(box.maxX + 0.72, normalizedPoints[0].y, box.maxZ + 0.24);
       group.add(topLabel);
@@ -423,20 +463,20 @@ export function WellboreTrajectoryRenderer({
       const baseLabel = createTextSprite(`Base ${formatDepth(renderPoints[renderPoints.length - 1]?.md ?? renderPoints[renderPoints.length - 1]?.tvd, depthUnit)}`, {
         color: '#dff8ec',
         background: 'rgba(3, 8, 12, 0.68)',
-        scale: 0.27,
+        scale: 0.2,
       });
       baseLabel.position.set(box.maxX + 0.78, normalizedPoints[normalizedPoints.length - 1].y, box.maxZ + 0.24);
       group.add(baseLabel);
 
-      const xLabel = createTextSprite('X / EAST', { color: '#80dcff', scale: 0.27 });
+      const xLabel = createTextSprite('X / EAST', { color: '#80dcff', scale: 0.2 });
       xLabel.position.set(box.maxX + 0.52, box.minY, box.maxZ + 0.2);
       group.add(xLabel);
 
-      const yLabel = createTextSprite('Y / NORTH', { color: '#80dcff', scale: 0.27 });
+      const yLabel = createTextSprite('Y / NORTH', { color: '#80dcff', scale: 0.2 });
       yLabel.position.set(box.minX - 0.52, box.minY, box.maxZ + 0.2);
       group.add(yLabel);
 
-      const zLabel = createTextSprite('Z / TVD', { color: '#80dcff', scale: 0.29 });
+      const zLabel = createTextSprite('Z / TVD', { color: '#80dcff', scale: 0.21 });
       zLabel.position.set(box.maxX + 0.56, box.maxY, box.minZ - 0.2);
       group.add(zLabel);
 
@@ -451,7 +491,7 @@ export function WellboreTrajectoryRenderer({
         const width = Math.max(1, host.clientWidth);
         const height = Math.max(1, host.clientHeight);
         const aspect = width / height;
-        const viewHeight = 8.8;
+        const viewHeight = cameraSettings.viewHeight;
         camera.left = -viewHeight * aspect * 0.5;
         camera.right = viewHeight * aspect * 0.5;
         camera.top = viewHeight * 0.5;
@@ -480,7 +520,7 @@ export function WellboreTrajectoryRenderer({
       renderer?.dispose();
       return undefined;
     }
-  }, [depthTicks, depthUnit, renderPoints, scenePoints]);
+  }, [depthTicks, depthUnit, renderPoints, scenePoints, viewPreset]);
 
   const pointCount = renderPoints.length.toLocaleString();
 
@@ -495,7 +535,7 @@ export function WellboreTrajectoryRenderer({
       <canvas ref={canvasRef} aria-hidden="true" />
       <div className="wlv-wbv-renderer-readout" aria-live="polite">
         <strong>{status === 'rendered' ? '3D trajectory rendered' : `3D trajectory renderer: ${status}`}</strong>
-        <span>{pointCount} backend render points · {depthUnit} · backend-owned package</span>
+        <span>{pointCount} backend render points · {depthUnit} · {viewPreset} view</span>
       </div>
     </div>
   );

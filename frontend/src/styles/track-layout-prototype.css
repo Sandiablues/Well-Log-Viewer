@@ -6717,3 +6717,25 @@ button.wlv-view-range-readout,
 .wlv-wbv-renderer-readout strong {
   color: #e7fbff;
 }
+
+/* WBV-5E — view controls and visual scale refinement.
+   Frontend display only: consumes backend-owned render_points.
+   No trajectory truth, mouse tracking, WDV sync, or backend state is inferred here. */
+.wlv-wbv-control-group button:not(:disabled) {
+  cursor: pointer;
+}
+
+.wlv-wbv-control-group button.is-active {
+  border-color: rgba(103, 213, 153, 0.72);
+  color: #dff8ec;
+  box-shadow: 0 0 16px rgba(103, 213, 153, 0.16);
+}
+
+.wlv-wbv-control-group button:not(:disabled):hover {
+  border-color: rgba(111, 211, 255, 0.66);
+  color: #e7fbff;
+}
+
+.wlv-wbv-renderer-readout span {
+  color: #9fb0bf;
+}
