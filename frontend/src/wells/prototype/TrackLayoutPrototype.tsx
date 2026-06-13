@@ -6,6 +6,7 @@ import { curveCatalog, defaultDepthRange, depthUnitLabel, fullDepthRange, realCu
 import { lithologyIntervals21_31, lithologySource } from './lithologyTrackData';
 import { WellLogPropertiesPanelSlot } from './WellLogPropertiesPanelSlot';
 import { SourceIntakeWorkbench } from '../source-intake/SourceIntakeWorkbench';
+import { Wellbore3DPage } from '../wbv/Wellbore3DPage';
 import { loadBackendViewerPackageWithFallback, type BackendViewerPackageLoadResult } from './backendViewerPackageAdapter';
 import { buildWdvPackageState, emptyWdvPackageState, type WdvPackageState } from './wdvPackageState';
 import { useTrackBodyGeometry } from './useTrackBodyGeometry';
@@ -39,7 +40,7 @@ type DepthViewRange = {
 };
 
 
-type DemoNavView = 'log-viewer' | 'data' | 'sources';
+type DemoNavView = 'log-viewer' | 'data' | 'sources' | 'wellbore-3d';
 
 type ManagedInventorySourceReference = {
   source_id: string;
@@ -1030,7 +1031,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
   );
 }
 
-type DemoNavIconKey = 'log-viewer' | 'data' | 'sources' | 'toolbox' | 'settings';
+type DemoNavIconKey = 'log-viewer' | 'data' | 'sources' | 'wellbore-3d' | 'toolbox' | 'settings';
 
 type DemoNavItem = {
   label: string;
@@ -1077,6 +1078,20 @@ function DemoRailIcon({ icon }: { icon: DemoNavIconKey }) {
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
         <polyline points="17 8 12 3 7 8" />
         <line x1="12" y1="3" x2="12" y2="15" />
+      </svg>
+    );
+  }
+
+  if (icon === 'wellbore-3d') {
+    return (
+      <svg {...commonProps} aria-hidden="true">
+        <path d="M4 18.5l5-3.2 5 2.4 6-3.7" />
+        <path d="M6 5.5h12v12H6z" opacity="0.35" />
+        <path d="M8 16c1.4-1.8 2.2-3.8 2.1-6.1" />
+        <path d="M10.1 9.9c-.1-2.1 1.1-3.8 3.2-4.6" />
+        <path d="M13.3 5.3c2.4.5 3.6 2.4 3.3 5.2" />
+        <circle cx="8" cy="16" r="1.2" />
+        <circle cx="16.5" cy="10.5" r="1.2" />
       </svg>
     );
   }
@@ -1135,6 +1150,7 @@ function DemoShellRail({
 }) {
   const topItems: DemoNavItem[] = [
     { label: 'Log Viewer', icon: 'log-viewer', view: 'log-viewer' },
+    { label: '3D Wellbore', icon: 'wellbore-3d', view: 'wellbore-3d' },
     { label: 'Data', icon: 'data', view: 'data' },
   ];
 
@@ -3957,12 +3973,23 @@ export function TrackLayoutPrototype() {
           <ManagedWellInventoryPage onOpenLogViewer={openManagedWellLogViewer} onClearLogViewer={clearManagedWellLogViewer} activeManagedWellId={managedViewerWellId} />
         ) : activeView === 'sources' ? (
           <SourceIntakeWorkbench />
+        ) : activeView === 'wellbore-3d' ? (
+          <Wellbore3DPage activeManagedWellId={managedViewerWellId} onOpenLogViewer={() => setActiveView('log-viewer')} />
         ) : (
         <div className="wlv-prototype-root">
       <header className="wlv-app-header">
         <div className="wlv-app-title">
           <strong>Well Log Viewer</strong>
         </div>
+        <button
+          type="button"
+          className="wlv-wdv-3d-badge"
+          onClick={() => setActiveView('wellbore-3d')}
+          title="Open 3D Wellbore Viewer"
+          aria-label="Open 3D Wellbore Viewer"
+        >
+          3D
+        </button>
       </header>
 
       {!hasLoadedViewerWell ? (

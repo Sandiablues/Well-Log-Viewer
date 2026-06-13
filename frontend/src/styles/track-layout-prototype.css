@@ -6157,3 +6157,332 @@ button.wlv-view-range-readout,
 }
 
 /* WLV-MDP-PRODUCT-ROW-LAYOUT-CONTRACT-R5-END */
+
+/* WBV-2 — 3D Wellbore Viewer page shell */
+.wlv-wdv-3d-badge {
+  margin-left: auto;
+  padding: 0.42rem 0.78rem;
+  border: 1px solid rgba(111, 211, 255, 0.72);
+  border-radius: 999px;
+  background: transparent;
+  color: #6fd3ff;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.wlv-wdv-3d-badge:hover {
+  border-color: rgba(149, 226, 255, 0.95);
+  color: #a8e9ff;
+}
+
+.wlv-wbv-page {
+  min-height: 100%;
+  padding: 1.15rem;
+  background: #0c1117;
+  color: #dce7f0;
+}
+
+.wlv-wbv-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(113, 132, 151, 0.34);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(22, 30, 39, 0.96), rgba(12, 17, 24, 0.96));
+}
+
+.wlv-page-kicker {
+  display: inline-block;
+  margin-bottom: 0.32rem;
+  color: #6fd3ff;
+  font-size: 0.73rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.wlv-wbv-header h1 {
+  margin: 0 0 0.4rem;
+  color: #f6f9fc;
+  font-size: 1.35rem;
+}
+
+.wlv-wbv-header p {
+  margin: 0;
+  max-width: 760px;
+  color: #9dadbf;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.wlv-wbv-header-actions {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.wlv-wbv-header-actions button,
+.wlv-wbv-control-group button {
+  border: 1px solid rgba(113, 132, 151, 0.55);
+  border-radius: 999px;
+  background: transparent;
+  color: #dce7f0;
+  font-size: 0.8rem;
+  font-weight: 800;
+  padding: 0.45rem 0.72rem;
+}
+
+.wlv-wbv-header-actions button:not(:disabled),
+.wlv-wbv-control-group button:not(:disabled) {
+  cursor: pointer;
+}
+
+.wlv-wbv-header-actions button:hover:not(:disabled),
+.wlv-wbv-control-group button:hover:not(:disabled) {
+  border-color: rgba(111, 211, 255, 0.8);
+  color: #6fd3ff;
+}
+
+.wlv-wbv-state-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.95rem;
+  padding: 0.35rem 0.72rem;
+  border: 1px solid rgba(245, 178, 86, 0.54);
+  border-radius: 999px;
+  color: #f5b256;
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.wlv-wbv-state-pill--available,
+.wlv-wbv-state-pill--relative_only {
+  border-color: rgba(103, 213, 153, 0.55);
+  color: #67d599;
+}
+
+.wlv-wbv-state-pill--not_loaded,
+.wlv-wbv-state-pill--missing_survey,
+.wlv-wbv-state-pill--invalid_survey,
+.wlv-wbv-state-pill--unavailable {
+  border-color: rgba(245, 178, 86, 0.55);
+  color: #f5b256;
+}
+
+.wlv-wbv-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(520px, 1fr) minmax(240px, 320px);
+  gap: 1rem;
+  min-height: calc(100vh - 180px);
+}
+
+.wlv-wbv-panel {
+  border: 1px solid rgba(113, 132, 151, 0.34);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(18, 25, 33, 0.98), rgba(9, 13, 18, 0.98));
+  padding: 0.95rem;
+  overflow: auto;
+}
+
+.wlv-wbv-panel-heading {
+  display: grid;
+  gap: 0.25rem;
+  margin-bottom: 0.9rem;
+}
+
+.wlv-wbv-panel-heading span {
+  color: #7e90a3;
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.wlv-wbv-panel-heading strong {
+  color: #f4f8fb;
+  font-size: 0.98rem;
+}
+
+.wlv-wbv-control-list {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.wlv-wbv-control-list label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: #dce7f0;
+  font-size: 0.86rem;
+}
+
+.wlv-wbv-control-list label.is-disabled {
+  color: #6f7f8f;
+}
+
+.wlv-wbv-control-list input {
+  accent-color: #6fd3ff;
+}
+
+.wlv-wbv-control-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.wlv-wbv-scene-shell {
+  min-width: 0;
+  border: 1px solid rgba(92, 114, 136, 0.44);
+  border-radius: 18px;
+  overflow: hidden;
+  background: #020305;
+}
+
+.wlv-wbv-scene-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 640px;
+  height: 100%;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(50, 79, 99, 0.32), rgba(0, 0, 0, 0) 42%),
+    linear-gradient(180deg, #05080b, #020305);
+}
+
+.wlv-wbv-bounding-box {
+  position: absolute;
+  width: min(58vw, 560px);
+  height: 360px;
+  transform: perspective(820px) rotateX(58deg) rotateZ(-36deg);
+  border: 1px solid rgba(111, 211, 255, 0.72);
+  box-shadow: 0 0 28px rgba(102, 210, 255, 0.18);
+}
+
+.wlv-wbv-bounding-box__top,
+.wlv-wbv-bounding-box__front,
+.wlv-wbv-bounding-box__side {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(111, 211, 255, 0.32);
+}
+
+.wlv-wbv-bounding-box__top {
+  transform: translate3d(0, -86px, 0);
+}
+
+.wlv-wbv-bounding-box__front {
+  transform: translate3d(0, 86px, 0);
+}
+
+.wlv-wbv-bounding-box__side {
+  transform: translate3d(86px, 0, 0);
+}
+
+.wlv-wbv-axis-label {
+  position: absolute;
+  z-index: 2;
+  color: #80dcff;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 8px rgba(102, 210, 255, 0.5);
+}
+
+.wlv-wbv-axis-label--x { right: 14%; bottom: 22%; }
+.wlv-wbv-axis-label--y { left: 18%; bottom: 28%; }
+.wlv-wbv-axis-label--z { right: 17%; top: 18%; }
+
+.wlv-wbv-scene-message {
+  position: relative;
+  z-index: 3;
+  max-width: 440px;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid rgba(245, 178, 86, 0.55);
+  border-radius: 16px;
+  background: rgba(3, 6, 9, 0.82);
+  text-align: center;
+}
+
+.wlv-wbv-scene-message h2 {
+  margin: 0 0 0.45rem;
+  color: #f7fafc;
+  font-size: 1.05rem;
+}
+
+.wlv-wbv-scene-message p {
+  margin: 0;
+  color: #b9c6d4;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.wlv-wbv-session-list {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 0.45rem 0.7rem;
+  margin: 0 0 1rem;
+  font-size: 0.84rem;
+}
+
+.wlv-wbv-session-list dt {
+  color: #8192a4;
+  font-weight: 800;
+}
+
+.wlv-wbv-session-list dd {
+  margin: 0;
+  color: #dce7f0;
+  overflow-wrap: anywhere;
+}
+
+.wlv-wbv-warning-list h2 {
+  margin: 0 0 0.6rem;
+  color: #f4f8fb;
+  font-size: 0.95rem;
+}
+
+.wlv-wbv-warning-list > p {
+  margin: 0;
+  color: #8fa1b5;
+  font-size: 0.84rem;
+}
+
+.wlv-wbv-warning-card {
+  margin-bottom: 0.65rem;
+  padding: 0.7rem;
+  border: 1px solid rgba(245, 178, 86, 0.44);
+  border-radius: 12px;
+  background: rgba(22, 15, 7, 0.38);
+}
+
+.wlv-wbv-warning-card strong {
+  display: block;
+  color: #f5b256;
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.wlv-wbv-warning-card span {
+  display: inline-block;
+  margin: 0.2rem 0;
+  color: #9eb0c1;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.wlv-wbv-warning-card p {
+  margin: 0;
+  color: #d4dde7;
+  font-size: 0.82rem;
+  line-height: 1.42;
+}
