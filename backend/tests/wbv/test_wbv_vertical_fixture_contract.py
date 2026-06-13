@@ -99,3 +99,30 @@ def test_downlog_vertical_fixture_surfaces_through_active_wbv_session(tmp_path: 
     assert session.available_layers.trajectory is True
     assert session.available_layers.loaded_curves is True
     assert any(warning.code == "vertical_trajectory_candidate" for warning in session.warnings)
+
+
+def test_forge_runtime_seed_surfaces_vertical_package_without_record_metadata(tmp_path: Path) -> None:
+    repository = ManagedWellInventoryRepository(storage_path=tmp_path / "inventory.json")
+    inventory = ManagedWellInventoryService(repository=repository)
+    record = _record("managed-well:wlv-intake-uwi-2700190539", ["GR"])
+    record.well_id = "wlv-intake-uwi-2700190539"
+    record.well_name = "Forge 21-31"
+    repository.upsert_record(record)
+
+    inventory.load_managed_well_to_wdv(record.managed_well_id, product_ids=["GR"])
+    service = WbvService(repository=repository)
+    package = service.get_viewer_package(record.managed_well_id)
+    session = service.get_session()
+
+    assert package.viewer_state == WbvViewerState.AVAILABLE_VERTICAL
+    assert package.coordinate_mode == WbvCoordinateMode.RELATIVE
+    assert package.available_layers.trajectory is True
+    assert package.trajectory.trajectory_class == "vertical_trajectory_candidate"
+    assert package.trajectory.viewer_state == "available_vertical"
+    assert len(package.trajectory.render_points) >= 100
+    assert package.bounding_box["md"]["min"] == package.trajectory.render_points[0]["md"]
+    assert not any(warning.code == "missing_deviation_survey" for warning in package.warnings)
+    assert session.active_managed_well_id == record.managed_well_id
+    assert session.viewer_state == WbvViewerState.AVAILABLE_VERTICAL
+    assert session.available_layers.trajectory is True
+

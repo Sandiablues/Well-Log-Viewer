@@ -1,0 +1,2745 @@
+{
+  "contract_kind": "wbv_trajectory_package_fixture",
+  "contract_version": "wbv_trajectory_package_fixture_v1",
+  "source_fixture": "forge_21_31_downlog_vertical_from_dlis_0d",
+  "source_type": "dlis",
+  "source_relative_path": "21-31_WirelineLogs/Ormat_Forge21-31_8.5inchsection/Ormat_Forge 21-31_8.5 inch section/PT Survey/DLIS/Forge_21-31_Temp_Pressure_Survey_ConCu_R04_L002Down_Downlog.dlis",
+  "frame": "60B",
+  "method": "source_departure_tvd_preview",
+  "source": "dlis_frame_60b_depth_resolved_preview",
+  "coordinate_mode": "relative",
+  "depth_unit": "ft",
+  "angle_unit": "deg",
+  "viewer_state": "available_vertical",
+  "trajectory_class": "vertical_trajectory_candidate",
+  "classification_message": "Usable trajectory/depth package extracted, but the well path is vertical in this source: inclination, azimuth, dogleg, east departure, and north departure are all zero.",
+  "canonical_depth_resolution": {
+    "canonical_md_source": "DEPTH",
+    "canonical_md_unit": "ft",
+    "canonical_md_rule": "Use DEPTH[ft] as canonical logged MD/depth because it is the DLIS frame depth channel and aligns with TVD/TVDSS. Collapse duplicate DEPTH rows by keeping the last sample per DEPTH. Retain MD[0.1 in] converted to ft and IDWD[ft] as depth evidence.",
+    "depth_channel_stats": {
+      "DEPTH_ft": {
+        "null_count": 0,
+        "non_null_count": 4367,
+        "min": 5987.2001953125,
+        "max": 8145.00439453125,
+        "first": 5987.2001953125,
+        "last": 8145.00439453125,
+        "strictly_increasing": false,
+        "nondecreasing": true,
+        "duplicate_count": 50
+      },
+      "MD_0_1in_converted_ft": {
+        "null_count": 0,
+        "non_null_count": 4367,
+        "min": 5962.0,
+        "max": 8145.0,
+        "first": 5962.0,
+        "last": 8145.0,
+        "strictly_increasing": true,
+        "nondecreasing": true,
+        "duplicate_count": 0
+      },
+      "IDWD_ft": {
+        "null_count": 0,
+        "non_null_count": 4367,
+        "min": 5989.89990234375,
+        "max": 8147.7041015625,
+        "first": 5989.89990234375,
+        "last": 8147.7041015625,
+        "strictly_increasing": false,
+        "nondecreasing": true,
+        "duplicate_count": 50
+      }
+    },
+    "warnings": [
+      {
+        "code": "duplicate_depth_rows_collapsed",
+        "severity": "warning",
+        "duplicate_count": 50,
+        "message": "DEPTH[ft] contains duplicate rows; last sample per DEPTH is retained."
+      },
+      {
+        "code": "alternate_md_strictly_increasing",
+        "severity": "info",
+        "message": "MD[0.1 in] converted to ft is strictly increasing and retained as evidence."
+      }
+    ]
+  },
+  "source_station_count": 4317,
+  "station_count": 101,
+  "fixture_sampling": {
+    "strategy": "deterministic_101_point_sample_plus_endpoints",
+    "source_station_count": 4317,
+    "sampled_station_count": 101
+  },
+  "bounding_box": {
+    "x": {
+      "min": 0.0,
+      "max": 0.0
+    },
+    "y": {
+      "min": 0.0,
+      "max": 0.0
+    },
+    "z": {
+      "min": -8145.00390625,
+      "max": -5987.2001953125
+    },
+    "md": {
+      "min": 5987.2001953125,
+      "max": 8145.00439453125
+    },
+    "tvd": {
+      "min": 5987.2001953125,
+      "max": 8145.00390625
+    }
+  },
+  "warnings": [
+    {
+      "code": "duplicate_depth_rows_collapsed",
+      "severity": "warning",
+      "duplicate_count": 50,
+      "message": "DEPTH[ft] contains duplicate rows; last sample per DEPTH is retained."
+    },
+    {
+      "code": "alternate_md_strictly_increasing",
+      "severity": "info",
+      "message": "MD[0.1 in] converted to ft is strictly increasing and retained as evidence."
+    },
+    {
+      "code": "vertical_trajectory_candidate",
+      "severity": "info",
+      "message": "Usable trajectory/depth package extracted, but the well path is vertical in this source: inclination, azimuth, dogleg, east departure, and north departure are all zero."
+    }
+  ],
+  "stations": [],
+  "render_points": [
+    {
+      "station_index": 0,
+      "md": 5987.2001953125,
+      "tvd": 5987.2001953125,
+      "tvdss": 2037.2000732421875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -5987.2001953125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 0,
+        "source_row_end": 50,
+        "collapsed_row_count": 51,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 5987.0,
+          "idwd_ft_last": 5989.89990234375
+        }
+      }
+    },
+    {
+      "station_index": 43,
+      "md": 6008.50390625,
+      "tvd": 6008.50390625,
+      "tvdss": 2058.50390625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6008.50390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 93,
+        "source_row_end": 93,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6008.5,
+          "idwd_ft_last": 6011.2041015625
+        }
+      }
+    },
+    {
+      "station_index": 86,
+      "md": 6030.00537109375,
+      "tvd": 6030.0048828125,
+      "tvdss": 2080.00537109375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6030.0048828125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 136,
+        "source_row_end": 136,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6030.0,
+          "idwd_ft_last": 6032.705078125
+        }
+      }
+    },
+    {
+      "station_index": 129,
+      "md": 6051.50390625,
+      "tvd": 6051.50390625,
+      "tvdss": 2101.50390625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6051.50390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 179,
+        "source_row_end": 179,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6051.5,
+          "idwd_ft_last": 6054.20361328125
+        }
+      }
+    },
+    {
+      "station_index": 173,
+      "md": 6073.50439453125,
+      "tvd": 6073.50439453125,
+      "tvdss": 2123.504638671875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6073.50439453125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 223,
+        "source_row_end": 223,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6073.5,
+          "idwd_ft_last": 6076.20458984375
+        }
+      }
+    },
+    {
+      "station_index": 216,
+      "md": 6095.00634765625,
+      "tvd": 6095.00634765625,
+      "tvdss": 2145.006591796875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6095.00634765625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 266,
+        "source_row_end": 266,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6095.0,
+          "idwd_ft_last": 6097.70654296875
+        }
+      }
+    },
+    {
+      "station_index": 259,
+      "md": 6116.50341796875,
+      "tvd": 6116.50341796875,
+      "tvdss": 2166.503662109375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6116.50341796875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 309,
+        "source_row_end": 309,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6116.5,
+          "idwd_ft_last": 6119.20361328125
+        }
+      }
+    },
+    {
+      "station_index": 302,
+      "md": 6138.0009765625,
+      "tvd": 6138.00146484375,
+      "tvdss": 2188.001220703125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6138.00146484375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 352,
+        "source_row_end": 352,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6138.0,
+          "idwd_ft_last": 6140.701171875
+        }
+      }
+    },
+    {
+      "station_index": 345,
+      "md": 6159.505859375,
+      "tvd": 6159.505859375,
+      "tvdss": 2209.505615234375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6159.505859375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 395,
+        "source_row_end": 395,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6159.5,
+          "idwd_ft_last": 6162.20556640625
+        }
+      }
+    },
+    {
+      "station_index": 388,
+      "md": 6181.00634765625,
+      "tvd": 6181.0068359375,
+      "tvdss": 2231.006591796875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6181.0068359375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 438,
+        "source_row_end": 438,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6181.0,
+          "idwd_ft_last": 6183.70654296875
+        }
+      }
+    },
+    {
+      "station_index": 432,
+      "md": 6203.005859375,
+      "tvd": 6203.005859375,
+      "tvdss": 2253.005859375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6203.005859375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 482,
+        "source_row_end": 482,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6203.0,
+          "idwd_ft_last": 6205.7060546875
+        }
+      }
+    },
+    {
+      "station_index": 475,
+      "md": 6224.5009765625,
+      "tvd": 6224.5009765625,
+      "tvdss": 2274.5009765625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6224.5009765625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 525,
+        "source_row_end": 525,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6224.5,
+          "idwd_ft_last": 6227.20068359375
+        }
+      }
+    },
+    {
+      "station_index": 518,
+      "md": 6246.0048828125,
+      "tvd": 6246.0048828125,
+      "tvdss": 2296.0048828125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6246.0048828125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 568,
+        "source_row_end": 568,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6246.0,
+          "idwd_ft_last": 6248.70458984375
+        }
+      }
+    },
+    {
+      "station_index": 561,
+      "md": 6267.50244140625,
+      "tvd": 6267.50244140625,
+      "tvdss": 2317.50244140625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6267.50244140625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 611,
+        "source_row_end": 611,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6267.5,
+          "idwd_ft_last": 6270.2021484375
+        }
+      }
+    },
+    {
+      "station_index": 604,
+      "md": 6289.00146484375,
+      "tvd": 6289.00146484375,
+      "tvdss": 2339.00146484375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6289.00146484375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 654,
+        "source_row_end": 654,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6289.0,
+          "idwd_ft_last": 6291.70166015625
+        }
+      }
+    },
+    {
+      "station_index": 647,
+      "md": 6310.501953125,
+      "tvd": 6310.501953125,
+      "tvdss": 2360.501953125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6310.501953125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 697,
+        "source_row_end": 697,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6310.5,
+          "idwd_ft_last": 6313.2021484375
+        }
+      }
+    },
+    {
+      "station_index": 691,
+      "md": 6332.49951171875,
+      "tvd": 6332.49951171875,
+      "tvdss": 2382.499755859375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6332.49951171875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 741,
+        "source_row_end": 741,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6332.5,
+          "idwd_ft_last": 6335.19970703125
+        }
+      }
+    },
+    {
+      "station_index": 734,
+      "md": 6354.0029296875,
+      "tvd": 6354.0029296875,
+      "tvdss": 2404.0029296875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6354.0029296875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 784,
+        "source_row_end": 784,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6354.0,
+          "idwd_ft_last": 6356.703125
+        }
+      }
+    },
+    {
+      "station_index": 777,
+      "md": 6375.50927734375,
+      "tvd": 6375.50927734375,
+      "tvdss": 2425.50927734375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6375.50927734375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 827,
+        "source_row_end": 827,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6375.5,
+          "idwd_ft_last": 6378.208984375
+        }
+      }
+    },
+    {
+      "station_index": 820,
+      "md": 6397.00390625,
+      "tvd": 6397.00390625,
+      "tvdss": 2447.00390625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6397.00390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 870,
+        "source_row_end": 870,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6397.0,
+          "idwd_ft_last": 6399.70361328125
+        }
+      }
+    },
+    {
+      "station_index": 863,
+      "md": 6418.50341796875,
+      "tvd": 6418.50341796875,
+      "tvdss": 2468.503662109375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6418.50341796875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 913,
+        "source_row_end": 913,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6418.5,
+          "idwd_ft_last": 6421.20361328125
+        }
+      }
+    },
+    {
+      "station_index": 906,
+      "md": 6440.00537109375,
+      "tvd": 6440.00537109375,
+      "tvdss": 2490.005615234375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6440.00537109375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 956,
+        "source_row_end": 956,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6440.0,
+          "idwd_ft_last": 6442.70556640625
+        }
+      }
+    },
+    {
+      "station_index": 950,
+      "md": 6462.00634765625,
+      "tvd": 6462.0068359375,
+      "tvdss": 2512.0068359375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6462.0068359375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1000,
+        "source_row_end": 1000,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6462.0,
+          "idwd_ft_last": 6464.70654296875
+        }
+      }
+    },
+    {
+      "station_index": 993,
+      "md": 6483.50048828125,
+      "tvd": 6483.50048828125,
+      "tvdss": 2533.500732421875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6483.50048828125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1043,
+        "source_row_end": 1043,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6483.5,
+          "idwd_ft_last": 6486.2001953125
+        }
+      }
+    },
+    {
+      "station_index": 1036,
+      "md": 6505.00341796875,
+      "tvd": 6505.00341796875,
+      "tvdss": 2555.00341796875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6505.00341796875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1086,
+        "source_row_end": 1086,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6505.0,
+          "idwd_ft_last": 6507.703125
+        }
+      }
+    },
+    {
+      "station_index": 1079,
+      "md": 6526.50390625,
+      "tvd": 6526.50390625,
+      "tvdss": 2576.50390625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6526.50390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1129,
+        "source_row_end": 1129,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6526.5,
+          "idwd_ft_last": 6529.20361328125
+        }
+      }
+    },
+    {
+      "station_index": 1122,
+      "md": 6548.005859375,
+      "tvd": 6548.005859375,
+      "tvdss": 2598.005859375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6548.005859375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1172,
+        "source_row_end": 1172,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6548.0,
+          "idwd_ft_last": 6550.7060546875
+        }
+      }
+    },
+    {
+      "station_index": 1165,
+      "md": 6569.50537109375,
+      "tvd": 6569.5048828125,
+      "tvdss": 2619.50537109375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6569.5048828125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1215,
+        "source_row_end": 1215,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6569.5,
+          "idwd_ft_last": 6572.205078125
+        }
+      }
+    },
+    {
+      "station_index": 1208,
+      "md": 6591.00390625,
+      "tvd": 6591.00390625,
+      "tvdss": 2641.00390625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6591.00390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1258,
+        "source_row_end": 1258,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6591.0,
+          "idwd_ft_last": 6593.7041015625
+        }
+      }
+    },
+    {
+      "station_index": 1252,
+      "md": 6613.005859375,
+      "tvd": 6613.005859375,
+      "tvdss": 2663.005859375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6613.005859375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1302,
+        "source_row_end": 1302,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6613.0,
+          "idwd_ft_last": 6615.7060546875
+        }
+      }
+    },
+    {
+      "station_index": 1295,
+      "md": 6634.50537109375,
+      "tvd": 6634.50537109375,
+      "tvdss": 2684.505615234375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6634.50537109375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1345,
+        "source_row_end": 1345,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6634.5,
+          "idwd_ft_last": 6637.20556640625
+        }
+      }
+    },
+    {
+      "station_index": 1338,
+      "md": 6656.00048828125,
+      "tvd": 6656.0009765625,
+      "tvdss": 2706.0009765625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6656.0009765625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1388,
+        "source_row_end": 1388,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6656.0,
+          "idwd_ft_last": 6658.70068359375
+        }
+      }
+    },
+    {
+      "station_index": 1381,
+      "md": 6677.5048828125,
+      "tvd": 6677.5048828125,
+      "tvdss": 2727.5048828125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6677.5048828125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1431,
+        "source_row_end": 1431,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6677.5,
+          "idwd_ft_last": 6680.205078125
+        }
+      }
+    },
+    {
+      "station_index": 1424,
+      "md": 6698.99951171875,
+      "tvd": 6698.99951171875,
+      "tvdss": 2748.99951171875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6698.99951171875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1474,
+        "source_row_end": 1474,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6699.0,
+          "idwd_ft_last": 6701.69921875
+        }
+      }
+    },
+    {
+      "station_index": 1467,
+      "md": 6720.50634765625,
+      "tvd": 6720.50634765625,
+      "tvdss": 2770.506591796875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6720.50634765625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1517,
+        "source_row_end": 1517,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6720.5,
+          "idwd_ft_last": 6723.20654296875
+        }
+      }
+    },
+    {
+      "station_index": 1511,
+      "md": 6742.50048828125,
+      "tvd": 6742.5009765625,
+      "tvdss": 2792.500732421875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6742.5009765625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1561,
+        "source_row_end": 1561,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6742.5,
+          "idwd_ft_last": 6745.20068359375
+        }
+      }
+    },
+    {
+      "station_index": 1554,
+      "md": 6764.0048828125,
+      "tvd": 6764.0048828125,
+      "tvdss": 2814.0048828125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6764.0048828125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1604,
+        "source_row_end": 1604,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6764.0,
+          "idwd_ft_last": 6766.70458984375
+        }
+      }
+    },
+    {
+      "station_index": 1597,
+      "md": 6785.50341796875,
+      "tvd": 6785.50341796875,
+      "tvdss": 2835.50341796875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6785.50341796875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1647,
+        "source_row_end": 1647,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6785.5,
+          "idwd_ft_last": 6788.20361328125
+        }
+      }
+    },
+    {
+      "station_index": 1640,
+      "md": 6807.00830078125,
+      "tvd": 6807.00830078125,
+      "tvdss": 2857.00830078125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6807.00830078125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1690,
+        "source_row_end": 1690,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6807.0,
+          "idwd_ft_last": 6809.70849609375
+        }
+      }
+    },
+    {
+      "station_index": 1683,
+      "md": 6828.50732421875,
+      "tvd": 6828.5068359375,
+      "tvdss": 2878.50732421875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6828.5068359375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1733,
+        "source_row_end": 1733,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6828.5,
+          "idwd_ft_last": 6831.20703125
+        }
+      }
+    },
+    {
+      "station_index": 1726,
+      "md": 6850.00390625,
+      "tvd": 6850.00341796875,
+      "tvdss": 2900.00390625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6850.00341796875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1776,
+        "source_row_end": 1776,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6850.0,
+          "idwd_ft_last": 6852.70361328125
+        }
+      }
+    },
+    {
+      "station_index": 1770,
+      "md": 6871.99951171875,
+      "tvd": 6871.99951171875,
+      "tvdss": 2921.99951171875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6871.99951171875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1820,
+        "source_row_end": 1820,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6872.0,
+          "idwd_ft_last": 6874.69970703125
+        }
+      }
+    },
+    {
+      "station_index": 1813,
+      "md": 6893.50341796875,
+      "tvd": 6893.50341796875,
+      "tvdss": 2943.503662109375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6893.50341796875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1863,
+        "source_row_end": 1863,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6893.5,
+          "idwd_ft_last": 6896.20361328125
+        }
+      }
+    },
+    {
+      "station_index": 1856,
+      "md": 6915.005859375,
+      "tvd": 6915.005859375,
+      "tvdss": 2965.006103515625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6915.005859375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1906,
+        "source_row_end": 1906,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6915.0,
+          "idwd_ft_last": 6917.7060546875
+        }
+      }
+    },
+    {
+      "station_index": 1899,
+      "md": 6936.50048828125,
+      "tvd": 6936.50048828125,
+      "tvdss": 2986.500732421875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6936.50048828125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1949,
+        "source_row_end": 1949,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6936.5,
+          "idwd_ft_last": 6939.2001953125
+        }
+      }
+    },
+    {
+      "station_index": 1942,
+      "md": 6958.0,
+      "tvd": 6958.0,
+      "tvdss": 3008.000244140625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6958.0,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 1992,
+        "source_row_end": 1992,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6958.0,
+          "idwd_ft_last": 6960.7001953125
+        }
+      }
+    },
+    {
+      "station_index": 1985,
+      "md": 6979.5087890625,
+      "tvd": 6979.5087890625,
+      "tvdss": 3029.509033203125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -6979.5087890625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2035,
+        "source_row_end": 2035,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 6979.5,
+          "idwd_ft_last": 6982.208984375
+        }
+      }
+    },
+    {
+      "station_index": 2029,
+      "md": 7001.5078125,
+      "tvd": 7001.5078125,
+      "tvdss": 3051.5078125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7001.5078125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2079,
+        "source_row_end": 2079,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7001.5,
+          "idwd_ft_last": 7004.20751953125
+        }
+      }
+    },
+    {
+      "station_index": 2072,
+      "md": 7023.00537109375,
+      "tvd": 7023.00537109375,
+      "tvdss": 3073.00537109375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7023.00537109375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2122,
+        "source_row_end": 2122,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7023.0,
+          "idwd_ft_last": 7025.705078125
+        }
+      }
+    },
+    {
+      "station_index": 2115,
+      "md": 7044.50390625,
+      "tvd": 7044.50390625,
+      "tvdss": 3094.504150390625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7044.50390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2165,
+        "source_row_end": 2165,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7044.5,
+          "idwd_ft_last": 7047.2041015625
+        }
+      }
+    },
+    {
+      "station_index": 2158,
+      "md": 7066.005859375,
+      "tvd": 7066.00537109375,
+      "tvdss": 3116.005859375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7066.00537109375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2208,
+        "source_row_end": 2208,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7066.0,
+          "idwd_ft_last": 7068.7060546875
+        }
+      }
+    },
+    {
+      "station_index": 2201,
+      "md": 7087.50390625,
+      "tvd": 7087.50390625,
+      "tvdss": 3137.50390625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7087.50390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2251,
+        "source_row_end": 2251,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7087.5,
+          "idwd_ft_last": 7090.2041015625
+        }
+      }
+    },
+    {
+      "station_index": 2244,
+      "md": 7109.00732421875,
+      "tvd": 7109.00732421875,
+      "tvdss": 3159.00732421875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7109.00732421875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2294,
+        "source_row_end": 2294,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7109.0,
+          "idwd_ft_last": 7111.70703125
+        }
+      }
+    },
+    {
+      "station_index": 2287,
+      "md": 7130.50244140625,
+      "tvd": 7130.50244140625,
+      "tvdss": 3180.50244140625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7130.50244140625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2337,
+        "source_row_end": 2337,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7130.5,
+          "idwd_ft_last": 7133.2021484375
+        }
+      }
+    },
+    {
+      "station_index": 2331,
+      "md": 7152.5029296875,
+      "tvd": 7152.50341796875,
+      "tvdss": 3202.5029296875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7152.50341796875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2381,
+        "source_row_end": 2381,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7152.5,
+          "idwd_ft_last": 7155.203125
+        }
+      }
+    },
+    {
+      "station_index": 2374,
+      "md": 7174.00732421875,
+      "tvd": 7174.00732421875,
+      "tvdss": 3224.007568359375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7174.00732421875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2424,
+        "source_row_end": 2424,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7174.0,
+          "idwd_ft_last": 7176.70751953125
+        }
+      }
+    },
+    {
+      "station_index": 2417,
+      "md": 7195.5,
+      "tvd": 7195.50048828125,
+      "tvdss": 3245.500244140625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7195.50048828125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2467,
+        "source_row_end": 2467,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7195.5,
+          "idwd_ft_last": 7198.2001953125
+        }
+      }
+    },
+    {
+      "station_index": 2460,
+      "md": 7217.0048828125,
+      "tvd": 7217.00537109375,
+      "tvdss": 3267.0048828125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7217.00537109375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2510,
+        "source_row_end": 2510,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7217.0,
+          "idwd_ft_last": 7219.70458984375
+        }
+      }
+    },
+    {
+      "station_index": 2503,
+      "md": 7238.5048828125,
+      "tvd": 7238.50537109375,
+      "tvdss": 3288.505126953125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7238.50537109375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2553,
+        "source_row_end": 2553,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7238.5,
+          "idwd_ft_last": 7241.205078125
+        }
+      }
+    },
+    {
+      "station_index": 2546,
+      "md": 7260.00439453125,
+      "tvd": 7260.00439453125,
+      "tvdss": 3310.00439453125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7260.00439453125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2596,
+        "source_row_end": 2596,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7260.0,
+          "idwd_ft_last": 7262.7041015625
+        }
+      }
+    },
+    {
+      "station_index": 2590,
+      "md": 7282.001953125,
+      "tvd": 7282.001953125,
+      "tvdss": 3332.002197265625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7282.001953125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2640,
+        "source_row_end": 2640,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7282.0,
+          "idwd_ft_last": 7284.70166015625
+        }
+      }
+    },
+    {
+      "station_index": 2633,
+      "md": 7303.50390625,
+      "tvd": 7303.50439453125,
+      "tvdss": 3353.504150390625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7303.50439453125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2683,
+        "source_row_end": 2683,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7303.5,
+          "idwd_ft_last": 7306.2041015625
+        }
+      }
+    },
+    {
+      "station_index": 2676,
+      "md": 7325.005859375,
+      "tvd": 7325.00634765625,
+      "tvdss": 3375.00634765625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7325.00634765625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2726,
+        "source_row_end": 2726,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7325.0,
+          "idwd_ft_last": 7327.7060546875
+        }
+      }
+    },
+    {
+      "station_index": 2719,
+      "md": 7346.50439453125,
+      "tvd": 7346.50390625,
+      "tvdss": 3396.50439453125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7346.50390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2769,
+        "source_row_end": 2769,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7346.5,
+          "idwd_ft_last": 7349.2041015625
+        }
+      }
+    },
+    {
+      "station_index": 2762,
+      "md": 7368.00341796875,
+      "tvd": 7368.00390625,
+      "tvdss": 3418.00390625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7368.00390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2812,
+        "source_row_end": 2812,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7368.0,
+          "idwd_ft_last": 7370.70361328125
+        }
+      }
+    },
+    {
+      "station_index": 2805,
+      "md": 7389.50439453125,
+      "tvd": 7389.50390625,
+      "tvdss": 3439.50439453125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7389.50390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2855,
+        "source_row_end": 2855,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7389.5,
+          "idwd_ft_last": 7392.2041015625
+        }
+      }
+    },
+    {
+      "station_index": 2849,
+      "md": 7411.505859375,
+      "tvd": 7411.50537109375,
+      "tvdss": 3461.505859375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7411.50537109375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2899,
+        "source_row_end": 2899,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7411.5,
+          "idwd_ft_last": 7414.20556640625
+        }
+      }
+    },
+    {
+      "station_index": 2892,
+      "md": 7433.00146484375,
+      "tvd": 7433.00146484375,
+      "tvdss": 3483.001220703125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7433.00146484375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2942,
+        "source_row_end": 2942,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7433.0,
+          "idwd_ft_last": 7435.701171875
+        }
+      }
+    },
+    {
+      "station_index": 2935,
+      "md": 7454.50390625,
+      "tvd": 7454.50390625,
+      "tvdss": 3504.504150390625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7454.50390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 2985,
+        "source_row_end": 2985,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7454.5,
+          "idwd_ft_last": 7457.2041015625
+        }
+      }
+    },
+    {
+      "station_index": 2978,
+      "md": 7476.0078125,
+      "tvd": 7476.00830078125,
+      "tvdss": 3526.00830078125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7476.00830078125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3028,
+        "source_row_end": 3028,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7476.0,
+          "idwd_ft_last": 7478.7080078125
+        }
+      }
+    },
+    {
+      "station_index": 3021,
+      "md": 7497.50390625,
+      "tvd": 7497.50390625,
+      "tvdss": 3547.50390625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7497.50390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3071,
+        "source_row_end": 3071,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7497.5,
+          "idwd_ft_last": 7500.20361328125
+        }
+      }
+    },
+    {
+      "station_index": 3064,
+      "md": 7519.00537109375,
+      "tvd": 7519.0048828125,
+      "tvdss": 3569.005615234375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7519.0048828125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3114,
+        "source_row_end": 3114,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7519.0,
+          "idwd_ft_last": 7521.70556640625
+        }
+      }
+    },
+    {
+      "station_index": 3108,
+      "md": 7541.00537109375,
+      "tvd": 7541.0048828125,
+      "tvdss": 3591.00537109375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7541.0048828125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3158,
+        "source_row_end": 3158,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7541.0,
+          "idwd_ft_last": 7543.705078125
+        }
+      }
+    },
+    {
+      "station_index": 3151,
+      "md": 7562.5,
+      "tvd": 7562.5,
+      "tvdss": 3612.500244140625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7562.5,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3201,
+        "source_row_end": 3201,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7562.5,
+          "idwd_ft_last": 7565.2001953125
+        }
+      }
+    },
+    {
+      "station_index": 3194,
+      "md": 7584.0048828125,
+      "tvd": 7584.0048828125,
+      "tvdss": 3634.0048828125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7584.0048828125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3244,
+        "source_row_end": 3244,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7584.0,
+          "idwd_ft_last": 7586.70458984375
+        }
+      }
+    },
+    {
+      "station_index": 3237,
+      "md": 7605.50927734375,
+      "tvd": 7605.50927734375,
+      "tvdss": 3655.50927734375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7605.50927734375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3287,
+        "source_row_end": 3287,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7605.5,
+          "idwd_ft_last": 7608.208984375
+        }
+      }
+    },
+    {
+      "station_index": 3280,
+      "md": 7627.0048828125,
+      "tvd": 7627.00439453125,
+      "tvdss": 3677.0048828125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7627.00439453125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3330,
+        "source_row_end": 3330,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7627.0,
+          "idwd_ft_last": 7629.70458984375
+        }
+      }
+    },
+    {
+      "station_index": 3323,
+      "md": 7648.5068359375,
+      "tvd": 7648.5068359375,
+      "tvdss": 3698.507080078125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7648.5068359375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3373,
+        "source_row_end": 3373,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7648.5,
+          "idwd_ft_last": 7651.20703125
+        }
+      }
+    },
+    {
+      "station_index": 3366,
+      "md": 7670.00439453125,
+      "tvd": 7670.00439453125,
+      "tvdss": 3720.004150390625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7670.00439453125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3416,
+        "source_row_end": 3416,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7670.0,
+          "idwd_ft_last": 7672.7041015625
+        }
+      }
+    },
+    {
+      "station_index": 3410,
+      "md": 7692.00146484375,
+      "tvd": 7692.00146484375,
+      "tvdss": 3742.001708984375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7692.00146484375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3460,
+        "source_row_end": 3460,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7692.0,
+          "idwd_ft_last": 7694.70166015625
+        }
+      }
+    },
+    {
+      "station_index": 3453,
+      "md": 7713.5078125,
+      "tvd": 7713.5078125,
+      "tvdss": 3763.5078125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7713.5078125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3503,
+        "source_row_end": 3503,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7713.5,
+          "idwd_ft_last": 7716.2080078125
+        }
+      }
+    },
+    {
+      "station_index": 3496,
+      "md": 7735.0068359375,
+      "tvd": 7735.0068359375,
+      "tvdss": 3785.006591796875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7735.0068359375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3546,
+        "source_row_end": 3546,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7735.0,
+          "idwd_ft_last": 7737.70654296875
+        }
+      }
+    },
+    {
+      "station_index": 3539,
+      "md": 7756.5078125,
+      "tvd": 7756.5078125,
+      "tvdss": 3806.508056640625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7756.5078125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3589,
+        "source_row_end": 3589,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7756.5,
+          "idwd_ft_last": 7759.2080078125
+        }
+      }
+    },
+    {
+      "station_index": 3582,
+      "md": 7778.0078125,
+      "tvd": 7778.0078125,
+      "tvdss": 3828.007568359375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7778.0078125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3632,
+        "source_row_end": 3632,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7778.0,
+          "idwd_ft_last": 7780.70751953125
+        }
+      }
+    },
+    {
+      "station_index": 3625,
+      "md": 7799.5078125,
+      "tvd": 7799.5078125,
+      "tvdss": 3849.508056640625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7799.5078125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3675,
+        "source_row_end": 3675,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7799.5,
+          "idwd_ft_last": 7802.2080078125
+        }
+      }
+    },
+    {
+      "station_index": 3669,
+      "md": 7821.50439453125,
+      "tvd": 7821.50390625,
+      "tvdss": 3871.50439453125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7821.50390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3719,
+        "source_row_end": 3719,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7821.5,
+          "idwd_ft_last": 7824.2041015625
+        }
+      }
+    },
+    {
+      "station_index": 3712,
+      "md": 7843.00146484375,
+      "tvd": 7843.00146484375,
+      "tvdss": 3893.001220703125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7843.00146484375,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3762,
+        "source_row_end": 3762,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7843.0,
+          "idwd_ft_last": 7845.701171875
+        }
+      }
+    },
+    {
+      "station_index": 3755,
+      "md": 7864.5029296875,
+      "tvd": 7864.50341796875,
+      "tvdss": 3914.5029296875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7864.50341796875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3805,
+        "source_row_end": 3805,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7864.5,
+          "idwd_ft_last": 7867.203125
+        }
+      }
+    },
+    {
+      "station_index": 3798,
+      "md": 7886.0087890625,
+      "tvd": 7886.0087890625,
+      "tvdss": 3936.008544921875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7886.0087890625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3848,
+        "source_row_end": 3848,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7886.0,
+          "idwd_ft_last": 7888.70849609375
+        }
+      }
+    },
+    {
+      "station_index": 3841,
+      "md": 7907.50244140625,
+      "tvd": 7907.50244140625,
+      "tvdss": 3957.502197265625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7907.50244140625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3891,
+        "source_row_end": 3891,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7907.5,
+          "idwd_ft_last": 7910.2021484375
+        }
+      }
+    },
+    {
+      "station_index": 3884,
+      "md": 7929.0048828125,
+      "tvd": 7929.0048828125,
+      "tvdss": 3979.0048828125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7929.0048828125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3934,
+        "source_row_end": 3934,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7929.0,
+          "idwd_ft_last": 7931.70458984375
+        }
+      }
+    },
+    {
+      "station_index": 3928,
+      "md": 7951.00634765625,
+      "tvd": 7951.00634765625,
+      "tvdss": 4001.00634765625,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7951.00634765625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 3978,
+        "source_row_end": 3978,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7951.0,
+          "idwd_ft_last": 7953.7060546875
+        }
+      }
+    },
+    {
+      "station_index": 3971,
+      "md": 7972.50341796875,
+      "tvd": 7972.50341796875,
+      "tvdss": 4022.503173828125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7972.50341796875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 4021,
+        "source_row_end": 4021,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7972.5,
+          "idwd_ft_last": 7975.203125
+        }
+      }
+    },
+    {
+      "station_index": 4014,
+      "md": 7994.00244140625,
+      "tvd": 7994.0029296875,
+      "tvdss": 4044.0029296875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -7994.0029296875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 4064,
+        "source_row_end": 4064,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 7994.0,
+          "idwd_ft_last": 7996.70263671875
+        }
+      }
+    },
+    {
+      "station_index": 4057,
+      "md": 8015.50146484375,
+      "tvd": 8015.501953125,
+      "tvdss": 4065.501708984375,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -8015.501953125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 4107,
+        "source_row_end": 4107,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 8015.5,
+          "idwd_ft_last": 8018.20166015625
+        }
+      }
+    },
+    {
+      "station_index": 4100,
+      "md": 8037.01025390625,
+      "tvd": 8037.01025390625,
+      "tvdss": 4087.010498046875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -8037.01025390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 4150,
+        "source_row_end": 4150,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 8037.0,
+          "idwd_ft_last": 8039.71044921875
+        }
+      }
+    },
+    {
+      "station_index": 4143,
+      "md": 8058.498046875,
+      "tvd": 8058.498046875,
+      "tvdss": 4108.498046875,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -8058.498046875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 4193,
+        "source_row_end": 4193,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 8058.5,
+          "idwd_ft_last": 8061.19775390625
+        }
+      }
+    },
+    {
+      "station_index": 4187,
+      "md": 8080.5,
+      "tvd": 8080.50048828125,
+      "tvdss": 4130.50048828125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -8080.50048828125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 4237,
+        "source_row_end": 4237,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 8080.5,
+          "idwd_ft_last": 8083.2001953125
+        }
+      }
+    },
+    {
+      "station_index": 4230,
+      "md": 8102.00048828125,
+      "tvd": 8102.00048828125,
+      "tvdss": 4152.00048828125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -8102.00048828125,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 4280,
+        "source_row_end": 4280,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 8102.0,
+          "idwd_ft_last": 8104.7001953125
+        }
+      }
+    },
+    {
+      "station_index": 4273,
+      "md": 8123.5,
+      "tvd": 8123.49951171875,
+      "tvdss": 4173.50048828125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -8123.49951171875,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 4323,
+        "source_row_end": 4323,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 8123.5,
+          "idwd_ft_last": 8126.2001953125
+        }
+      }
+    },
+    {
+      "station_index": 4316,
+      "md": 8145.00439453125,
+      "tvd": 8145.00390625,
+      "tvdss": 4195.00439453125,
+      "x": 0.0,
+      "y": 0.0,
+      "z": -8145.00390625,
+      "inclination": 0.0,
+      "azimuth": 0.0,
+      "dogleg_severity": 0.0,
+      "east_departure": 0.0,
+      "north_departure": 0.0,
+      "source": {
+        "frame": "60B",
+        "canonical_md_channel": "DEPTH",
+        "canonical_md_unit": "ft",
+        "source_row_start": 4366,
+        "source_row_end": 4366,
+        "collapsed_row_count": 1,
+        "alternate_depth_channels": {
+          "md_0_1in_converted_ft_last": 8145.0,
+          "idwd_ft_last": 8147.7041015625
+        }
+      }
+    }
+  ]
+}

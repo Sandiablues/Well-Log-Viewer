@@ -12,6 +12,8 @@ from typing import Any
 from backend.app.inventory.models import ManagedProductGroupItem, ManagedWdvState, ManagedWmdpState, ManagedWellRecord
 from backend.app.inventory.repository import ManagedWellInventoryRepository
 
+from .trajectory_seed_registry import resolve_seed_trajectory_package
+
 from .models import (
     WbvAvailableLayers,
     WbvCoordinateMode,
@@ -230,8 +232,11 @@ class WbvService:
         raw = record.metadata.get("wbv_trajectory_package") if isinstance(record.metadata, dict) else None
         if not isinstance(raw, dict):
             raw = record.metadata.get("trajectory_package") if isinstance(record.metadata, dict) else None
-        return dict(raw) if isinstance(raw, dict) else {}
+        if isinstance(raw, dict):
+            return dict(raw)
 
+        seed = resolve_seed_trajectory_package(record)
+        return dict(seed) if isinstance(seed, dict) else {}
     def _trajectory_warnings(self, record: ManagedWellRecord) -> list[WbvWarning]:
         raw = self._raw_trajectory_metadata(record)
         source_warnings = raw.get("warnings", [])
