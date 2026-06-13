@@ -166,6 +166,157 @@ class LasCurveInventoryClassificationResult:
         """Return the MDP summary as a serializable dictionary."""
         return self.mdp_summary().as_dict()
 
+    def wdv_template_recommendation(
+        self,
+        selected_mnemonics: Optional[List[str]] = None,
+    ) -> LasWdvTemplateRecommendation:
+        """Return a backend-owned WDV template recommendation.
+
+        KR-TEMPLATE-1: This method derives a controlled Well Data Viewer
+        template recommendation from the already-classified LAS curve inventory.
+        It does not populate frontend tracks, does not mutate KR, and does not
+        allow candidate knowledge to influence runtime truth.  The optional
+        selected_mnemonics argument supports a build-from-selected workflow while
+        preserving backend ownership of template logic.
+        """
+        selected_lookup: Optional[set[str]] = None
+        if selected_mnemonics is not None:
+            selected_lookup = {
+                item.strip().upper()
+                for item in selected_mnemonics
+                if item is not None and item.strip()
+            }
+
+        selected_curves: list[dict[str, Any]] = []
+        unresolved_mnemonics: list[str] = []
+        grouped: dict[str, list[dict[str, Any]]] = {}
+
+        for metadata, classification in zip(
+            self.curve_metadata,
+            self.classification_batch.classifications,
+        ):
+            mnemonic = (metadata.mnemonic or "").strip()
+            normalized = mnemonic.upper()
+            if selected_lookup is not None and normalized not in selected_lookup:
+                continue
+
+            status = getattr(classification, "status", None)
+            canonical_curve_id = getattr(classification, "canonical_curve_id", None)
+            curve_payload = {
+                "mnemonic": mnemonic,
+                "unit": metadata.unit,
+                "description": metadata.description,
+                "status": status,
+                "canonical_curve_id": canonical_curve_id,
+                "technical_curve_id": getattr(classification, "technical_curve_id", None),
+                "display_name": getattr(classification, "display_name", None),
+                "product_group": getattr(classification, "product_group", None),
+                "product_subgroup": getattr(classification, "product_subgroup", None),
+                "measurement_family": getattr(classification, "measurement_family", None),
+                "measurement_depth": getattr(classification, "measurement_depth", None),
+                "tool_family": getattr(classification, "tool_family", None),
+            }
+            selected_curves.append(curve_payload)
+
+            if status == "unknown" or canonical_curve_id is None:
+                unresolved_mnemonics.append(mnemonic)
+                continue
+
+            grouped.setdefault(str(canonical_curve_id), []).append(curve_payload)
+
+        tracks = self._wdv_recommendation_tracks(grouped)
+        canonical_ids = set(grouped.keys())
+        has_gamma = "gamma_ray" in canonical_ids
+        has_resistivity = bool(canonical_ids.intersection({"deep_resistivity", "shallow_resistivity"}))
+        has_porosity = bool(canonical_ids.intersection({"bulk_density", "neutron_porosity"}))
+
+        if has_gamma and has_resistivity and has_porosity:
+            template_id = "triple_combo"
+            template_name = "Triple Combo"
+        elif tracks:
+            template_id = "curve_inventory"
+            template_name = "Classified Curve Inventory"
+        else:
+            template_id = "empty"
+            template_name = "No Template Recommendation"
+
+        warnings: list[str] = []
+        if unresolved_mnemonics:
+            warnings.append("Unresolved curves require review before template automation.")
+        if selected_lookup is not None and not selected_curves:
+            warnings.append("No selected mnemonics matched the classified LAS inventory.")
+
+        return LasWdvTemplateRecommendation(
+            template_id=template_id,
+            template_name=template_name,
+            recommendation_mode=(
+                "build_from_selected"
+                if selected_mnemonics is not None
+                else "auto_build"
+            ),
+            available_curve_count=self.curve_count,
+            selected_curve_count=len(selected_curves),
+            tracks=tracks,
+            unresolved_mnemonics=unresolved_mnemonics,
+            knowledge_policy=self.knowledge_policy,
+            warnings=warnings,
+        )
+
+    def wdv_template_recommendation_dict(
+        self,
+        selected_mnemonics: Optional[List[str]] = None,
+    ) -> dict[str, Any]:
+        """Return the WDV template recommendation as a serializable dictionary."""
+        return self.wdv_template_recommendation(selected_mnemonics).as_dict()
+
+    def _wdv_recommendation_tracks(
+        self,
+        grouped: dict[str, list[dict[str, Any]]],
+    ) -> list[LasWdvTemplateTrackRecommendation]:
+        track_rules = [
+            ("gamma_ray", "Gamma Ray", ["gamma_ray"]),
+            ("resistivity", "Resistivity", ["deep_resistivity", "shallow_resistivity"]),
+            ("porosity_density", "Porosity / Density", ["bulk_density", "neutron_porosity"]),
+            ("sonic", "Sonic", ["sonic"]),
+        ]
+        consumed: set[str] = set()
+        tracks: list[LasWdvTemplateTrackRecommendation] = []
+
+        for track_id, label, canonical_ids in track_rules:
+            track_curves: list[dict[str, Any]] = []
+            for canonical_id in canonical_ids:
+                track_curves.extend(grouped.get(canonical_id, []))
+                if canonical_id in grouped:
+                    consumed.add(canonical_id)
+            if track_curves:
+                tracks.append(
+                    LasWdvTemplateTrackRecommendation(
+                        track_id=track_id,
+                        label=label,
+                        curve_mnemonics=[curve["mnemonic"] for curve in track_curves],
+                        canonical_curve_ids=[
+                            str(curve["canonical_curve_id"])
+                            for curve in track_curves
+                            if curve.get("canonical_curve_id")
+                        ],
+                        reason="Matched approved runtime curve classification.",
+                    )
+                )
+
+        for canonical_id in sorted(set(grouped.keys()) - consumed):
+            curves = grouped[canonical_id]
+            tracks.append(
+                LasWdvTemplateTrackRecommendation(
+                    track_id=f"other_{canonical_id}",
+                    label=str(canonical_id).replace("_", " ").title(),
+                    curve_mnemonics=[curve["mnemonic"] for curve in curves],
+                    canonical_curve_ids=[canonical_id],
+                    reason="Classified curve does not map to a standard WDV template track yet.",
+                )
+            )
+
+        return tracks
+
 
 class LasMdpCurveClassificationSummary:
     """Backend-owned MDP curve classification summary contract.
@@ -223,6 +374,84 @@ class LasMdpCurveClassificationSummary:
             "review_required_mnemonics": list(self.review_required_mnemonics),
             "knowledge_policy": dict(self.knowledge_policy),
             "curves": list(self.curves),
+        }
+
+
+class LasWdvTemplateTrackRecommendation:
+    """Backend-owned WDV track recommendation contract."""
+
+    def __init__(
+        self,
+        *,
+        track_id: str,
+        label: str,
+        curve_mnemonics: list[str],
+        canonical_curve_ids: list[str],
+        reason: str,
+    ) -> None:
+        self.track_id = track_id
+        self.label = label
+        self.curve_mnemonics = list(curve_mnemonics)
+        self.canonical_curve_ids = list(canonical_curve_ids)
+        self.reason = reason
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "track_id": self.track_id,
+            "label": self.label,
+            "curve_mnemonics": list(self.curve_mnemonics),
+            "canonical_curve_ids": list(self.canonical_curve_ids),
+            "reason": self.reason,
+        }
+
+
+class LasWdvTemplateRecommendation:
+    """Backend-owned WDV template recommendation contract.
+
+    KR-TEMPLATE-1: This object describes what the backend recommends the WDV
+    may offer to load.  It is not a frontend rendering instruction and does not
+    auto-populate tracks.
+    """
+
+    def __init__(
+        self,
+        *,
+        template_id: str,
+        template_name: str,
+        recommendation_mode: str,
+        available_curve_count: int,
+        selected_curve_count: int,
+        tracks: list[LasWdvTemplateTrackRecommendation],
+        unresolved_mnemonics: list[str],
+        knowledge_policy: dict[str, Any],
+        warnings: list[str],
+    ) -> None:
+        self.template_id = template_id
+        self.template_name = template_name
+        self.recommendation_mode = recommendation_mode
+        self.available_curve_count = int(available_curve_count)
+        self.selected_curve_count = int(selected_curve_count)
+        self.tracks = list(tracks)
+        self.unresolved_mnemonics = list(unresolved_mnemonics)
+        self.knowledge_policy = dict(knowledge_policy)
+        self.warnings = list(warnings)
+
+    @property
+    def has_recommendation(self) -> bool:
+        return bool(self.tracks)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "template_id": self.template_id,
+            "template_name": self.template_name,
+            "recommendation_mode": self.recommendation_mode,
+            "available_curve_count": self.available_curve_count,
+            "selected_curve_count": self.selected_curve_count,
+            "has_recommendation": self.has_recommendation,
+            "tracks": [track.as_dict() for track in self.tracks],
+            "unresolved_mnemonics": list(self.unresolved_mnemonics),
+            "knowledge_policy": dict(self.knowledge_policy),
+            "warnings": list(self.warnings),
         }
 
 
