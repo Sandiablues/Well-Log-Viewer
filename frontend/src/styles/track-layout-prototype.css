@@ -6652,3 +6652,31 @@ button.wlv-view-range-readout,
   font-size: 0.72rem;
 }
 
+/* WBV-5D — Three.js scene framing, bounding box, and axis-label handoff.
+   Frontend display only: consumes backend-owned render_points and bounding_box.
+   No trajectory truth, mouse tracking, WDV sync, or backend state is inferred here. */
+.wlv-wbv-scene-frame.has-trajectory-package > .wlv-wbv-bounding-box,
+.wlv-wbv-scene-frame.has-trajectory-package > .wlv-wbv-axis-label {
+  opacity: 0;
+}
+
+.wlv-wbv-scene-frame.has-trajectory-package .wlv-wbv-scene-message--package {
+  display: none;
+}
+
+.wlv-wbv-scene-frame.has-trajectory-package .wlv-wbv-trajectory-renderer {
+  z-index: 4;
+}
+
+.wlv-wbv-renderer-readout {
+  left: 0.85rem;
+  bottom: 0.85rem;
+  border-color: rgba(111, 211, 255, 0.32);
+  background: rgba(3, 8, 12, 0.68);
+  box-shadow: 0 0 20px rgba(111, 211, 255, 0.12);
+}
+
+.wlv-wbv-renderer-readout strong {
+  color: #e7fbff;
+}
+

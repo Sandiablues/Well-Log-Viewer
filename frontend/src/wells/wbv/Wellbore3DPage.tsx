@@ -376,7 +376,7 @@ export function Wellbore3DPage({ activeManagedWellId, onOpenLogViewer }: Wellbor
                 <>
                   <h2>{verticalTrajectory ? 'Vertical trajectory package loaded' : 'Trajectory package loaded'}</h2>
                   <p>
-                    {renderPoints.length.toLocaleString()} backend-owned render points are available. The line shown is a package-status preview only; real 3D rendering remains reserved for the renderer block.
+                    {renderPoints.length.toLocaleString()} backend-owned render points are rendered from the WBV trajectory package. The scene framing, labels, and bounding box are frontend display elements only.
                   </p>
                 </>
               )}
