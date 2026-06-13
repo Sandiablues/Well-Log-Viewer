@@ -1,0 +1,788 @@
+{
+  "_reconciliation_meta": {
+    "source_package": "kr_data_1",
+    "reconciled_package": "kr_data_1r",
+    "reconciliation_model": "KR-DATA-MODEL-1",
+    "reconciled_at": "2026-06-13",
+    "total_aliases_examined": 38,
+    "new_curve_definition": 34,
+    "new_alias": 0,
+    "seed_confirmation": 0,
+    "safe_alias_enrichment": 4,
+    "true_alias_conflict": 0,
+    "unsupported_schema_item": 0,
+    "note": "alias_enrichment_records section below is informational metadata. It is not part of the KR-3 ImportPayload schema and is silently ignored by POST /import/preview and /import/stage. Alias enrichment records are staged separately via CuratedKRReconciliationService.stage_enrichment_records()."
+  },
+  "source": {
+    "source_type": "manual_import",
+    "source_label": "KR-DATA-1R Reconciled Curated Well-Log Knowledge Import",
+    "source_reference": "kr_data_1r_reconciled_import_20260613",
+    "source_file": "kr_data_1r_reconciled_import_payload.json",
+    "notes": "Reconciled from kr_data_1_curated_import_payload.json using KR-DATA-MODEL-1 alias enrichment model. Four broad-to-specific alias cases (ILD, ILM, LLD, LLS) have been removed from curve_definitions and reclassified as safe_alias_enrichment records. These aliases already exist in seed KR mapped to broad display canonicals (deep_resistivity, shallow_resistivity). The curated entries provide specific technical subtypes (deep_induction_resistivity, medium_induction_resistivity, deep_laterolog_resistivity, shallow_laterolog_resistivity) under the same product_subgroup=resistivity. Per KR-DATA-MODEL-1 design, these are alias_enrichment candidates, not alias conflicts. All remaining 34 aliases are new (not in seed KR) and stage as new curve definition or alias candidates. All records enter as status=CANDIDATE. No seed records are modified. No records auto-approved."
+  },
+  "curve_definitions": [
+    {
+      "canonical_curve_id": "spectral_gamma_ray",
+      "display_name": "Spectral Gamma Ray",
+      "family": "spectral_gamma_ray",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "gamma_ray",
+      "default_unit": "API",
+      "description": "Composite spectral gamma ray curve combining uranium (U), thorium (Th), and potassium (K) contributions. Distinguishes radioactive lithology components (shales, evaporites, feldspathic sands). Distinct from simple total GR (canonical_curve_id='gamma_ray') which is already seeded. Source: Curve_catalogue_UPDATED_CONTENT_KR.csv, alias_group=spectral_gamma + gamma_ray (SGR row), KR Primary Bucket=Gamma Ray, KR Confidence=High. Alias set is safe: confirmed absent from existing seed records per test suite reference (test_kr3_import_staging.py spectral_gamma_ray fixture).",
+      "aliases": [
+        "SGR",
+        "HCGR",
+        "CGR",
+        "THOR",
+        "URAN",
+        "POTA",
+        "TURA"
+      ]
+    },
+    {
+      "canonical_curve_id": "deep_induction_resistivity",
+      "display_name": "Deep Induction Resistivity",
+      "family": "deep_induction_resistivity",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "resistivity",
+      "default_unit": "ohm.m",
+      "description": "Deep induction measurement of formation resistivity. Reads deepest into the formation, minimally affected by mud filtrate invasion. Tool types: dual induction (ILd), HDRS (Baker Hughes), array induction deep channel. RECONCILIATION NOTE (KR-DATA-1R): ILD has been removed from this aliases list. ILD exists in seed KR mapped to display canonical 'deep_resistivity'. Under KR-DATA-MODEL-1, ILD is classified as safe_alias_enrichment — display canonical is preserved, technical subtype 'deep_induction_resistivity' is added as enrichment metadata. HDRS and RILD are not in seed KR and stage as new alias candidates. Source: Curve_catalogue_UPDATED_CONTENT_KR.csv, KR Confidence=High.",
+      "aliases": [
+        "HDRS",
+        "RILD"
+      ]
+    },
+    {
+      "canonical_curve_id": "medium_induction_resistivity",
+      "display_name": "Medium Induction Resistivity",
+      "family": "medium_induction_resistivity",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "resistivity",
+      "default_unit": "ohm.m",
+      "description": "Medium induction resistivity. Intermediate radial depth of investigation. Paired with deep induction for invasion analysis. RECONCILIATION NOTE (KR-DATA-1R): ILM has been removed from this aliases list. ILM exists in seed KR mapped to display canonical 'shallow_resistivity'. Under KR-DATA-MODEL-1, ILM is classified as safe_alias_enrichment — display canonical is preserved, technical subtype 'medium_induction_resistivity' is added as enrichment metadata. HMRS is not in seed KR and stages as a new alias candidate. Source: Curve_catalogue_UPDATED_CONTENT_KR.csv, KR Confidence=High.",
+      "aliases": [
+        "HMRS"
+      ]
+    },
+    {
+      "canonical_curve_id": "deep_laterolog_resistivity",
+      "display_name": "Deep Laterolog Resistivity",
+      "family": "deep_laterolog_resistivity",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "resistivity",
+      "default_unit": "ohm.m",
+      "description": "Deep laterolog measurement. Preferred in saline mud / high-contrast formations where induction tools underperform. Tool types: LLd (Schlumberger), HDLL (Baker Hughes), DEPTR. Display scale from REF-RESISTIVITY_-_LATEROLOG-DEEP_LATEROLOG: Log 0.2-2000 ohm.m. RECONCILIATION NOTE (KR-DATA-1R): LLD has been removed from this aliases list. LLD exists in seed KR mapped to display canonical 'deep_resistivity'. Under KR-DATA-MODEL-1, LLD is classified as safe_alias_enrichment — display canonical is preserved, technical subtype 'deep_laterolog_resistivity' is added as enrichment metadata. LLDA is not in seed KR and stages as a new alias candidate. Source: Curve_catalogue_UPDATED_CONTENT_KR.csv, KR Confidence=High.",
+      "aliases": [
+        "LLDA"
+      ]
+    },
+    {
+      "canonical_curve_id": "shallow_laterolog_resistivity",
+      "display_name": "Shallow Laterolog Resistivity",
+      "family": "shallow_laterolog_resistivity",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "resistivity",
+      "default_unit": "ohm.m",
+      "description": "Shallow laterolog / spherically-focused measurement. Shallow depth of investigation, reads near-borehole zone. Paired with deep laterolog for invasion profile. Includes spherically focused log (SFL/SFLU) and RS (shallow resistivity generic). RECONCILIATION NOTE (KR-DATA-1R): LLS has been removed from this aliases list. LLS exists in seed KR mapped to display canonical 'shallow_resistivity'. Under KR-DATA-MODEL-1, LLS is classified as safe_alias_enrichment — display canonical is preserved, technical subtype 'shallow_laterolog_resistivity' is added as enrichment metadata. LLSA, RS, SFL, SFLU are not in seed KR and stage as new alias candidates. Source: Curve_catalogue_UPDATED_CONTENT_KR.csv, KR Confidence=High.",
+      "aliases": [
+        "LLSA",
+        "RS",
+        "SFL",
+        "SFLU"
+      ]
+    },
+    {
+      "canonical_curve_id": "micro_resistivity_pad",
+      "display_name": "Micro-Resistivity Pad Log",
+      "family": "micro_resistivity",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "resistivity",
+      "default_unit": "ohm.m",
+      "description": "Shallow pad-contact resistivity. Reads the flushed zone immediately adjacent to the borehole. Used for Rxo determination and moveable hydrocarbon analysis. Tool types: micro-spherically focused log (MSFL), microlaterolog (MLL). Display scale from REF-RESISTIVITY_-_MICRO___PAD-MICROLOG_INVERSE_1_X1: Linear 0-20 ohm.m. MSFL, MLL, RMSL, RMLL are not present in seed KR alias records. Source: Curve_catalogue_UPDATED_CONTENT_KR.csv, KR Confidence=High.",
+      "aliases": [
+        "MSFL",
+        "MLL",
+        "RMSL",
+        "RMLL"
+      ]
+    },
+    {
+      "canonical_curve_id": "density_correction_drho",
+      "display_name": "Density Correction (DRHO)",
+      "family": "density_correction",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "density_neutron_porosity",
+      "default_unit": "g/cc",
+      "description": "Bulk density spine-and-ribs correction curve. Quantifies the difference between long-spaced and short-spaced detector counts; indicates borehole rugosity and measurement quality for the RHOB curve. Large DRHO values (>0.05 g/cc) flag unreliable density readings. SAFE TO STAGE: alias_group=density_correction in PWLS catalogue is distinct from alias_group=density. DRHO is not present in the existing 'density' seed. Display scale from REF-DENSITY-DENSITY_CORRECTION: Linear -0.15 to 0.15 g/cc. Source: Curve_catalogue_UPDATED_CONTENT_KR.csv, KR Confidence=High.",
+      "aliases": [
+        "DRHO"
+      ]
+    },
+    {
+      "canonical_curve_id": "multi_arm_caliper_xy",
+      "display_name": "Multi-Arm Caliper (XY Axes)",
+      "family": "caliper",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "borehole_geometry_imaging",
+      "default_unit": "in",
+      "description": "Multi-arm caliper measurements on orthogonal XY axes from 4-arm or 6-arm caliper tools. Captures borehole shape and ovality; used for breakout analysis and cement volume estimation. C13 = caliper arms 1+3 average; C24 = caliper arms 2+4 average; CXY/CALX/CALY = XY axis calipers. RECONCILIATION NOTE (KR-DATA-1R): C13, C24, CXY, CALX, CALY, CAL4 are not in the confirmed seed KR alias list. These stage as new alias candidates under 'multi_arm_caliper_xy'. If a live preview returns alias_conflicts_with_existing_record for any caliper mnemonic, those aliases may require safe_alias_enrichment treatment against the seed 'caliper' canonical in a future reconciliation pass. Display scale from REF-CALIPER-1_ARM_CALIPER: Linear 6-16 in. Source: Curve_catalogue_UPDATED_CONTENT_KR.csv, KR Confidence=High.",
+      "aliases": [
+        "C13",
+        "C24",
+        "CXY",
+        "CALX",
+        "CALY",
+        "CAL4"
+      ]
+    },
+    {
+      "canonical_curve_id": "borehole_temperature_log",
+      "display_name": "Borehole Temperature",
+      "family": "borehole_temperature",
+      "product_group": "pressure_production_fluid_data",
+      "product_subgroup": "other_pressure_fluid_review",
+      "default_unit": "degF",
+      "description": "Borehole temperature versus depth. Measures formation fluid temperature during logging. Used for fluid gradient analysis, formation evaluation corrections, and completion design. SAFE TO STAGE: alias_group=temperature in the PWLS catalogue. No temperature curve exists in the existing seed layer. BHT (bottom-hole temperature), BTMP, BHTE all confirmed in alias_group=temperature at KR Confidence=High. Display scale from REF-DEPTH___AUXILIARY___ENVIRONMENTAL-BOREHOLE_TEMPERATURE: Linear 0-400 degF. Source: Curve_catalogue_UPDATED_CONTENT_KR.csv, KR Confidence=High.",
+      "aliases": [
+        "BHT",
+        "BTMP",
+        "BHTE"
+      ]
+    },
+    {
+      "canonical_curve_id": "cement_bond_log_amplitude",
+      "display_name": "Cement Bond Log Amplitude",
+      "family": "cement_bond",
+      "product_group": "cased_hole_logs",
+      "product_subgroup": "cement_evaluation",
+      "default_unit": "mV",
+      "description": "First-arrival amplitude measurement from acoustic cement bond logging. Low amplitude (near zero) indicates good cement bond between casing and formation. High amplitude indicates poor bond or free pipe. Run alongside VDL waveform for full evaluation. SAFE TO STAGE: No existing seed records for cased-hole curves. alias_group=completion_integrity in PWLS catalogue, KR Confidence=Medium. Candidate confidence: MEDIUM — recommend independent domain expert review before approval. Display scale from REF-CEMENT_BOND___CASING-PIPE_SIGNAL: Linear 0-100 mV. Source: Curve_catalogue_UPDATED_CONTENT_KR.csv, KR Confidence=Medium.",
+      "aliases": [
+        "CBL",
+        "CBLA",
+        "AMPL"
+      ]
+    },
+    {
+      "canonical_curve_id": "casing_collar_locator",
+      "display_name": "Casing Collar Locator",
+      "family": "collar_locator",
+      "product_group": "cased_hole_logs",
+      "product_subgroup": "cement_evaluation",
+      "default_unit": "mV",
+      "description": "Electromagnetic collar detector. Produces a signal spike at each casing collar joint. Used for depth correlation and perforation placement in cased-hole operations. SAFE TO STAGE: No existing seed records for cased-hole curves. alias_group=completion_integrity in PWLS catalogue, KR Confidence=Medium. Display scale from REF-CEMENT_BOND___CASING-COLLAR_LOCATOR: Linear -100 to 100 mV. Source: Curve_catalogue_UPDATED_CONTENT_KR.csv, KR Confidence=Medium.",
+      "aliases": [
+        "CCL"
+      ]
+    },
+    {
+      "canonical_curve_id": "variable_density_log",
+      "display_name": "Variable Density Log (VDL)",
+      "family": "variable_density",
+      "product_group": "cased_hole_logs",
+      "product_subgroup": "cement_evaluation",
+      "default_unit": "mV",
+      "description": "Full-waveform acoustic display for cement evaluation. Shows cement bond quality via amplitude and waveform character across the casing. Displayed as a grey-scale image (wiggle-to-density). Run alongside CBL amplitude for complete cement evaluation. SAFE TO STAGE: No existing seed records for cased-hole curves. alias_group=completion_integrity in PWLS catalogue, KR Confidence=Medium. Display scale: Linear 0-100 mV (reference: REF-CEMENT_BOND___CASING-PIPE_SIGNAL proxy). Source: Curve_catalogue_UPDATED_CONTENT_KR.csv, KR Confidence=Medium.",
+      "aliases": [
+        "VDL"
+      ]
+    }
+  ],
+  "display_rules": [
+    {
+      "canonical_curve_id": "spectral_gamma_ray",
+      "preferred_track_family": "gamma_ray_sp",
+      "scale_type": "linear",
+      "display_min": 0.0,
+      "display_max": 300.0,
+      "default_unit": "API",
+      "reverse_scale": false,
+      "overlay_group": null
+    },
+    {
+      "canonical_curve_id": "deep_induction_resistivity",
+      "preferred_track_family": "resistivity",
+      "scale_type": "log",
+      "display_min": 0.2,
+      "display_max": 2000.0,
+      "default_unit": "ohm.m",
+      "reverse_scale": false,
+      "overlay_group": "resistivity_deep_medium"
+    },
+    {
+      "canonical_curve_id": "medium_induction_resistivity",
+      "preferred_track_family": "resistivity",
+      "scale_type": "log",
+      "display_min": 0.2,
+      "display_max": 2000.0,
+      "default_unit": "ohm.m",
+      "reverse_scale": false,
+      "overlay_group": "resistivity_deep_medium"
+    },
+    {
+      "canonical_curve_id": "deep_laterolog_resistivity",
+      "preferred_track_family": "resistivity",
+      "scale_type": "log",
+      "display_min": 0.2,
+      "display_max": 2000.0,
+      "default_unit": "ohm.m",
+      "reverse_scale": false,
+      "overlay_group": "resistivity_laterolog"
+    },
+    {
+      "canonical_curve_id": "shallow_laterolog_resistivity",
+      "preferred_track_family": "resistivity",
+      "scale_type": "log",
+      "display_min": 0.2,
+      "display_max": 2000.0,
+      "default_unit": "ohm.m",
+      "reverse_scale": false,
+      "overlay_group": "resistivity_laterolog"
+    },
+    {
+      "canonical_curve_id": "micro_resistivity_pad",
+      "preferred_track_family": "resistivity",
+      "scale_type": "linear",
+      "display_min": 0.0,
+      "display_max": 20.0,
+      "default_unit": "ohm.m",
+      "reverse_scale": false,
+      "overlay_group": null
+    },
+    {
+      "canonical_curve_id": "density_correction_drho",
+      "preferred_track_family": "density_neutron",
+      "scale_type": "linear",
+      "display_min": -0.15,
+      "display_max": 0.15,
+      "default_unit": "g/cc",
+      "reverse_scale": false,
+      "overlay_group": null
+    },
+    {
+      "canonical_curve_id": "multi_arm_caliper_xy",
+      "preferred_track_family": "caliper",
+      "scale_type": "linear",
+      "display_min": 6.0,
+      "display_max": 16.0,
+      "default_unit": "in",
+      "reverse_scale": false,
+      "overlay_group": "caliper_xy_pair"
+    },
+    {
+      "canonical_curve_id": "borehole_temperature_log",
+      "preferred_track_family": "borehole_temperature",
+      "scale_type": "linear",
+      "display_min": 0.0,
+      "display_max": 400.0,
+      "default_unit": "degF",
+      "reverse_scale": false,
+      "overlay_group": null
+    },
+    {
+      "canonical_curve_id": "cement_bond_log_amplitude",
+      "preferred_track_family": "cement_bond",
+      "scale_type": "linear",
+      "display_min": 0.0,
+      "display_max": 100.0,
+      "default_unit": "mV",
+      "reverse_scale": false,
+      "overlay_group": "cbl_ccl_vdl"
+    },
+    {
+      "canonical_curve_id": "casing_collar_locator",
+      "preferred_track_family": "cement_bond",
+      "scale_type": "linear",
+      "display_min": -100.0,
+      "display_max": 100.0,
+      "default_unit": "mV",
+      "reverse_scale": false,
+      "overlay_group": "cbl_ccl_vdl"
+    },
+    {
+      "canonical_curve_id": "variable_density_log",
+      "preferred_track_family": "cement_bond",
+      "scale_type": "linear",
+      "display_min": 0.0,
+      "display_max": 100.0,
+      "default_unit": "mV",
+      "reverse_scale": false,
+      "overlay_group": "cbl_ccl_vdl"
+    }
+  ],
+  "classification_rules": [
+    {
+      "rule_key": "mnemonic_sgr_spectral_gamma_ray",
+      "match_type": "mnemonic_exact",
+      "match_value": "SGR",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "gamma_ray",
+      "curve_family": "spectral_gamma_ray",
+      "confidence": 0.95,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_hcgr_spectral_gamma_ray",
+      "match_type": "mnemonic_exact",
+      "match_value": "HCGR",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "gamma_ray",
+      "curve_family": "spectral_gamma_ray",
+      "confidence": 0.92,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_cgr_spectral_gamma_ray",
+      "match_type": "mnemonic_exact",
+      "match_value": "CGR",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "gamma_ray",
+      "curve_family": "spectral_gamma_ray",
+      "confidence": 0.88,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_ild_deep_induction",
+      "match_type": "mnemonic_exact",
+      "match_value": "ILD",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "resistivity",
+      "curve_family": "deep_induction_resistivity",
+      "confidence": 0.9,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_hdrs_deep_induction",
+      "match_type": "mnemonic_exact",
+      "match_value": "HDRS",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "resistivity",
+      "curve_family": "deep_induction_resistivity",
+      "confidence": 0.95,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_rild_deep_induction",
+      "match_type": "mnemonic_exact",
+      "match_value": "RILD",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "resistivity",
+      "curve_family": "deep_induction_resistivity",
+      "confidence": 0.9,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_ilm_medium_induction",
+      "match_type": "mnemonic_exact",
+      "match_value": "ILM",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "resistivity",
+      "curve_family": "medium_induction_resistivity",
+      "confidence": 0.9,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_hmrs_medium_induction",
+      "match_type": "mnemonic_exact",
+      "match_value": "HMRS",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "resistivity",
+      "curve_family": "medium_induction_resistivity",
+      "confidence": 0.95,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_lld_deep_laterolog",
+      "match_type": "mnemonic_exact",
+      "match_value": "LLD",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "resistivity",
+      "curve_family": "deep_laterolog_resistivity",
+      "confidence": 0.9,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_lls_shallow_laterolog",
+      "match_type": "mnemonic_exact",
+      "match_value": "LLS",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "resistivity",
+      "curve_family": "shallow_laterolog_resistivity",
+      "confidence": 0.9,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_msfl_micro_resistivity",
+      "match_type": "mnemonic_exact",
+      "match_value": "MSFL",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "resistivity",
+      "curve_family": "micro_resistivity",
+      "confidence": 0.9,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_mll_micro_resistivity",
+      "match_type": "mnemonic_exact",
+      "match_value": "MLL",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "resistivity",
+      "curve_family": "micro_resistivity",
+      "confidence": 0.88,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_drho_density_correction",
+      "match_type": "mnemonic_exact",
+      "match_value": "DRHO",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "density_neutron_porosity",
+      "curve_family": "density_correction",
+      "confidence": 0.97,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_c13_multi_arm_caliper",
+      "match_type": "mnemonic_exact",
+      "match_value": "C13",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "borehole_geometry_imaging",
+      "curve_family": "caliper",
+      "confidence": 0.85,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_c24_multi_arm_caliper",
+      "match_type": "mnemonic_exact",
+      "match_value": "C24",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "borehole_geometry_imaging",
+      "curve_family": "caliper",
+      "confidence": 0.85,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_bht_borehole_temperature",
+      "match_type": "mnemonic_exact",
+      "match_value": "BHT",
+      "product_group": "pressure_production_fluid_data",
+      "product_subgroup": "other_pressure_fluid_review",
+      "curve_family": "borehole_temperature",
+      "confidence": 0.95,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_cbl_cement_bond",
+      "match_type": "mnemonic_exact",
+      "match_value": "CBL",
+      "product_group": "cased_hole_logs",
+      "product_subgroup": "cement_evaluation",
+      "curve_family": "cement_bond",
+      "confidence": 0.85,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_ccl_collar_locator",
+      "match_type": "mnemonic_exact",
+      "match_value": "CCL",
+      "product_group": "cased_hole_logs",
+      "product_subgroup": "cement_evaluation",
+      "curve_family": "collar_locator",
+      "confidence": 0.9,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "mnemonic_vdl_variable_density",
+      "match_type": "mnemonic_exact",
+      "match_value": "VDL",
+      "product_group": "cased_hole_logs",
+      "product_subgroup": "cement_evaluation",
+      "curve_family": "variable_density",
+      "confidence": 0.85,
+      "context_requirements": []
+    },
+    {
+      "rule_key": "las2_required_sections_rule",
+      "match_type": "las_section_rule",
+      "match_value": "LAS2_REQUIRED_SECTIONS",
+      "product_group": "other_review_required",
+      "product_subgroup": "other_review_required",
+      "curve_family": null,
+      "confidence": 0.95,
+      "context_requirements": [
+        "LAS 2.0 required sections: ~VERSION, ~WELL, ~CURVE, ~ASCII. A LAS 2.0 file missing any of these sections is structurally invalid. ~PARAMETER and ~OTHER are optional. Source: LAS_Standards_Staging_KR.docx, Table 3 (Required/Optional Sections)."
+      ]
+    },
+    {
+      "rule_key": "las2_curve_evidence_rule",
+      "match_type": "las_qaqc_rule",
+      "match_value": "LAS2_CURVE_EVIDENCE",
+      "product_group": "other_review_required",
+      "product_subgroup": "other_review_required",
+      "curve_family": null,
+      "confidence": 0.93,
+      "context_requirements": [
+        "LAS 2.0 ~CURVE section provides curve mnemonic, unit, API code, and description. The mnemonic in ~CURVE is the canonical identifier for KR alias lookup. Unit field is informational only — do not override KR display_unit with LAS unit without review. Source: LAS_Standards_Staging_KR.docx, Table 4 (Curve Section Structure). KR principle: LAS provides evidence; KR supplies approved display behaviour."
+      ]
+    },
+    {
+      "rule_key": "las2_index_mnemonic_rule",
+      "match_type": "las_qaqc_rule",
+      "match_value": "LAS2_INDEX_MNEMONICS",
+      "product_group": "other_review_required",
+      "product_subgroup": "other_review_required",
+      "curve_family": null,
+      "confidence": 0.92,
+      "context_requirements": [
+        "LAS 2.0 depth/time index mnemonics: DEPT (depth, ft or m), DEPTH (alt), TIME, MD, TVDSS. The first curve listed in ~CURVE is the index curve. Index curves should NOT be classified as log data curves by the KR. Source: LAS_Standards_Staging_KR.docx, Table 5 (Index Mnemonics)."
+      ]
+    },
+    {
+      "rule_key": "las2_last_colon_delimiter_rule",
+      "match_type": "las_parser_rule",
+      "match_value": "LAS2_LAST_COLON_DESCRIPTION",
+      "product_group": "other_review_required",
+      "product_subgroup": "other_review_required",
+      "curve_family": null,
+      "confidence": 0.97,
+      "context_requirements": [
+        "LAS 2.0 parsing rule: in every header line, the LAST colon is the delimiter between the value/unit block and the description field. Parser must find the LAST colon, not the first. Mnemonics may contain colons before the delimiter. Source: LAS_Standards_Staging_KR.docx, Table 2 (LAS 2.0 Header Format Rules)."
+      ]
+    },
+    {
+      "rule_key": "las2_unit_missing_qaqc_rule",
+      "match_type": "las_qaqc_rule",
+      "match_value": "LAS2_UNIT_MISSING",
+      "product_group": "other_review_required",
+      "product_subgroup": "other_review_required",
+      "curve_family": null,
+      "confidence": 0.9,
+      "context_requirements": [
+        "QAQC rule: if a curve's unit field in ~CURVE is blank or absent, flag as quality issue. Do not infer unit from mnemonic name alone. Fall back to KR default_unit if the curve is matched to a canonical curve definition. Otherwise mark as unit=UNKNOWN. Source: LAS_Standards_Staging_KR.docx, Table 7 (QAQC Flags)."
+      ]
+    },
+    {
+      "rule_key": "las3_log_domain_to_openhole_rule",
+      "match_type": "las_domain_mapping",
+      "match_value": "LAS3_DOMAIN_LOG_ASCII_TO_OPENHOLE",
+      "product_group": "open_hole_logs",
+      "product_subgroup": "other_open_hole_review",
+      "curve_family": null,
+      "confidence": 0.8,
+      "context_requirements": [
+        "LAS 3.0 domain mapping: ~Log and ~ASCII domain blocks map to product_group='open_hole_logs' or 'cased_hole_logs' depending on well context. Default classification is 'open_hole_logs' when well context is absent. Refine using cased-hole mnemonic rules (CBL, CCL, VDL) to reclassify to cased_hole_logs. Source: LAS_Standards_Staging_KR.docx, Table 8 (LAS 3.0 Domain-to-Product-Group Mapping)."
+      ]
+    },
+    {
+      "rule_key": "las3_core_domain_to_lithology_rule",
+      "match_type": "las_domain_mapping",
+      "match_value": "LAS3_DOMAIN_CORE_TO_LITHOLOGY",
+      "product_group": "lithology_core_markers",
+      "product_subgroup": "other_geology_review",
+      "curve_family": null,
+      "confidence": 0.85,
+      "context_requirements": [
+        "LAS 3.0 domain mapping: ~Core domain blocks and ~Tops blocks map to product_group='lithology_core_markers'. Source: LAS_Standards_Staging_KR.docx, Table 8 (LAS 3.0 Domain-to-Product-Group Mapping)."
+      ]
+    },
+    {
+      "rule_key": "las3_array_grouping_rule",
+      "match_type": "las_parser_rule",
+      "match_value": "LAS3_ARRAY_GROUPING",
+      "product_group": "other_review_required",
+      "product_subgroup": "other_review_required",
+      "curve_family": null,
+      "confidence": 0.88,
+      "context_requirements": [
+        "LAS 3.0 array data grouping: multi-component curves (e.g. waveform, image) are grouped into ~Array blocks. Each component curve within the array block shares a single channel association declaration. Do not split array-grouped curves into separate KR definitions. Source: LAS_Standards_Staging_KR.docx, Table 11 (LAS 3.0 Array Grouping Rules)."
+      ]
+    }
+  ],
+  "template_rules": [
+    {
+      "template_key": "basic_triple_combo_openhole",
+      "template_label": "Basic Triple Combo Open-Hole Display",
+      "track_order": [
+        "gamma_ray_sp",
+        "resistivity",
+        "density_neutron",
+        "sonic"
+      ],
+      "required_curve_families": [
+        "gamma_ray",
+        "resistivity"
+      ],
+      "preferred_curve_families": [
+        "density",
+        "neutron_porosity",
+        "sonic"
+      ],
+      "fallback_curve_families": [
+        "caliper",
+        "photoelectric_factor"
+      ],
+      "overlay_rules": [
+        {
+          "track": "density_neutron",
+          "overlay_families": [
+            "density",
+            "neutron_porosity"
+          ],
+          "note": "Standard density-neutron crossplot overlay on shared track. Density left-hand scale (1.95-2.95 g/cc), neutron right-hand scale (45 to -15 pu, reversed)."
+        }
+      ],
+      "missing_curve_behavior": "skip"
+    },
+    {
+      "template_key": "full_suite_openhole",
+      "template_label": "Full Open-Hole Display Suite",
+      "track_order": [
+        "gamma_ray_sp",
+        "caliper",
+        "resistivity",
+        "density_neutron",
+        "sonic",
+        "formation_pressure"
+      ],
+      "required_curve_families": [
+        "gamma_ray"
+      ],
+      "preferred_curve_families": [
+        "resistivity",
+        "density",
+        "neutron_porosity",
+        "sonic",
+        "caliper",
+        "spontaneous_potential"
+      ],
+      "fallback_curve_families": [
+        "photoelectric_factor",
+        "formation_pressure",
+        "spectral_gamma_ray"
+      ],
+      "overlay_rules": [
+        {
+          "track": "density_neutron",
+          "overlay_families": [
+            "density",
+            "neutron_porosity"
+          ],
+          "note": "Density-neutron overlay. Crossover indicates gas-bearing zones."
+        },
+        {
+          "track": "resistivity",
+          "overlay_families": [
+            "deep_induction_resistivity",
+            "medium_induction_resistivity"
+          ],
+          "note": "Deep/medium resistivity overlay for invasion profile analysis."
+        }
+      ],
+      "missing_curve_behavior": "skip"
+    },
+    {
+      "template_key": "cased_hole_cement_evaluation",
+      "template_label": "Cased Hole Cement Evaluation Suite",
+      "track_order": [
+        "cased_gamma_ray",
+        "collar_locator",
+        "cement_bond",
+        "variable_density"
+      ],
+      "required_curve_families": [
+        "cement_bond"
+      ],
+      "preferred_curve_families": [
+        "gamma_ray",
+        "collar_locator",
+        "variable_density"
+      ],
+      "fallback_curve_families": [],
+      "overlay_rules": [
+        {
+          "track": "cement_bond",
+          "overlay_families": [
+            "cement_bond_log_amplitude",
+            "casing_collar_locator"
+          ],
+          "note": "CBL amplitude with CCL depth correlation overlay."
+        }
+      ],
+      "missing_curve_behavior": "skip"
+    }
+  ],
+  "alias_enrichment_records": [
+    {
+      "_note": "INFORMATIONAL — not part of KR-3 ImportPayload schema. Ignored by import/preview and import/stage endpoints. Stage via CuratedKRReconciliationService.stage_enrichment_records() after ImportPayload staging is complete.",
+      "record_type": "alias_enrichment",
+      "record_id": "kr_data_1r_ILD_deep_induction_resistivity",
+      "alias": "ILD",
+      "normalized_alias": "ILD",
+      "display_canonical_curve_id": "deep_resistivity",
+      "technical_curve_id": "deep_induction_resistivity",
+      "technical_display_name": "Deep Induction Resistivity",
+      "parent_canonical_curve_id": "deep_resistivity",
+      "measurement_family": "induction",
+      "measurement_depth": "deep",
+      "tool_family": "induction_resistivity",
+      "selection_priority": 1,
+      "confidence": 0.9,
+      "source_reference": "kr_data_1r_reconciled_import_20260613",
+      "review_notes": "Curated catalogue refines broad seed 'deep_resistivity' alias. ILD is the Schlumberger dual-induction deep channel mnemonic. Technical subtype: deep_induction_resistivity. Display canonical unchanged — KR-6/7/8 still resolve ILD to deep_resistivity. This enrichment adds technical subtype metadata only."
+    },
+    {
+      "_note": "INFORMATIONAL — not part of KR-3 ImportPayload schema.",
+      "record_type": "alias_enrichment",
+      "record_id": "kr_data_1r_ILM_medium_induction_resistivity",
+      "alias": "ILM",
+      "normalized_alias": "ILM",
+      "display_canonical_curve_id": "shallow_resistivity",
+      "technical_curve_id": "medium_induction_resistivity",
+      "technical_display_name": "Medium Induction Resistivity",
+      "parent_canonical_curve_id": "shallow_resistivity",
+      "measurement_family": "induction",
+      "measurement_depth": "medium",
+      "tool_family": "induction_resistivity",
+      "selection_priority": 1,
+      "confidence": 0.9,
+      "source_reference": "kr_data_1r_reconciled_import_20260613",
+      "review_notes": "Curated catalogue refines broad seed 'shallow_resistivity' alias. ILM is the Schlumberger dual-induction medium channel mnemonic. Technical subtype: medium_induction_resistivity. Display canonical unchanged."
+    },
+    {
+      "_note": "INFORMATIONAL — not part of KR-3 ImportPayload schema.",
+      "record_type": "alias_enrichment",
+      "record_id": "kr_data_1r_LLD_deep_laterolog_resistivity",
+      "alias": "LLD",
+      "normalized_alias": "LLD",
+      "display_canonical_curve_id": "deep_resistivity",
+      "technical_curve_id": "deep_laterolog_resistivity",
+      "technical_display_name": "Deep Laterolog Resistivity",
+      "parent_canonical_curve_id": "deep_resistivity",
+      "measurement_family": "laterolog",
+      "measurement_depth": "deep",
+      "tool_family": "laterolog_resistivity",
+      "selection_priority": 2,
+      "confidence": 0.9,
+      "source_reference": "kr_data_1r_reconciled_import_20260613",
+      "review_notes": "Curated catalogue refines broad seed 'deep_resistivity' alias. LLD is the Schlumberger Dual Laterolog deep channel mnemonic. Technical subtype: deep_laterolog_resistivity. Display canonical unchanged."
+    },
+    {
+      "_note": "INFORMATIONAL — not part of KR-3 ImportPayload schema.",
+      "record_type": "alias_enrichment",
+      "record_id": "kr_data_1r_LLS_shallow_laterolog_resistivity",
+      "alias": "LLS",
+      "normalized_alias": "LLS",
+      "display_canonical_curve_id": "shallow_resistivity",
+      "technical_curve_id": "shallow_laterolog_resistivity",
+      "technical_display_name": "Shallow Laterolog Resistivity",
+      "parent_canonical_curve_id": "shallow_resistivity",
+      "measurement_family": "laterolog",
+      "measurement_depth": "shallow",
+      "tool_family": "laterolog_resistivity",
+      "selection_priority": 2,
+      "confidence": 0.9,
+      "source_reference": "kr_data_1r_reconciled_import_20260613",
+      "review_notes": "Curated catalogue refines broad seed 'shallow_resistivity' alias. LLS is the Schlumberger Dual Laterolog shallow channel mnemonic. Technical subtype: shallow_laterolog_resistivity. Display canonical unchanged."
+    }
+  ]
+}
