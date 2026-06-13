@@ -58,6 +58,17 @@ type SceneBox = {
   maxZ: number;
 };
 
+type CameraPlan = {
+  position: THREE.Vector3;
+  up: THREE.Vector3;
+  target: THREE.Vector3;
+  viewHeight: number;
+};
+
+const TARGET_WELL_HEIGHT = 5.35;
+const MIN_DISPLAY_LATERAL_HALF_SPAN = 0.92;
+const MAX_DISPLAY_LATERAL_HALF_SPAN = 1.35;
+
 function finiteNumber(value: number | null | undefined, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
@@ -89,6 +100,21 @@ function scenePointsFromBackend(points: WbvTrajectoryRenderPoint[]): ScenePoint[
   });
 }
 
+function sceneBoxCenter(box: SceneBox): THREE.Vector3 {
+  return new THREE.Vector3(
+    (box.minX + box.maxX) / 2,
+    (box.minY + box.maxY) / 2,
+    (box.minZ + box.maxZ) / 2,
+  );
+}
+
+function sceneBoxSpan(box: SceneBox): { x: number; y: number; z: number; max: number } {
+  const x = Math.abs(box.maxX - box.minX);
+  const y = Math.abs(box.maxY - box.minY);
+  const z = Math.abs(box.maxZ - box.minZ);
+  return { x, y, z, max: Math.max(x, y, z) };
+}
+
 function createNormalizedPoints(points: ScenePoint[]): THREE.Vector3[] {
   const minX = Math.min(...points.map((point) => point.x));
   const maxX = Math.max(...points.map((point) => point.x));
@@ -100,10 +126,8 @@ function createNormalizedPoints(points: ScenePoint[]): THREE.Vector3[] {
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
   const centerZ = (minZ + maxZ) / 2;
-  const xSpan = Math.abs(maxX - minX);
-  const ySpan = Math.abs(maxY - minY);
-  const zSpan = Math.abs(maxZ - minZ);
-  const scale = 6.7 / Math.max(1, xSpan, ySpan, zSpan);
+  const verticalSpan = Math.max(1, Math.abs(maxY - minY));
+  const scale = TARGET_WELL_HEIGHT / verticalSpan;
 
   return points.map((point) => new THREE.Vector3(
     (point.x - centerX) * scale,
@@ -121,17 +145,21 @@ function sceneBoxFor(points: THREE.Vector3[]): SceneBox {
   const maxZ = Math.max(...points.map((point) => point.z));
 
   const xSpan = Math.abs(maxX - minX);
+  const ySpan = Math.abs(maxY - minY);
   const zSpan = Math.abs(maxZ - minZ);
-  const lateralPad = 1.12;
-  const verticalPad = 0.24;
+  const verticalPad = Math.max(0.38, ySpan * 0.075);
+  const lateralHalfSpan = Math.max(
+    MIN_DISPLAY_LATERAL_HALF_SPAN,
+    Math.min(MAX_DISPLAY_LATERAL_HALF_SPAN, ySpan * 0.22),
+  );
 
   return {
-    minX: xSpan < 0.05 ? -lateralPad : minX - 0.45,
-    maxX: xSpan < 0.05 ? lateralPad : maxX + 0.45,
+    minX: xSpan < 0.05 ? -lateralHalfSpan : minX - lateralHalfSpan * 0.24,
+    maxX: xSpan < 0.05 ? lateralHalfSpan : maxX + lateralHalfSpan * 0.24,
     minY: minY - verticalPad,
     maxY: maxY + verticalPad,
-    minZ: zSpan < 0.05 ? -lateralPad : minZ - 0.45,
-    maxZ: zSpan < 0.05 ? lateralPad : maxZ + 0.45,
+    minZ: zSpan < 0.05 ? -lateralHalfSpan : minZ - lateralHalfSpan * 0.24,
+    maxZ: zSpan < 0.05 ? lateralHalfSpan : maxZ + lateralHalfSpan * 0.24,
   };
 }
 
@@ -176,7 +204,7 @@ function createDepthPlane(box: SceneBox, y: number, material: THREE.LineBasicMat
 }
 
 function createCrossTick(y: number, material: THREE.LineBasicMaterial): THREE.LineSegments {
-  const size = 0.26;
+  const size = 0.17;
   const points = [
     new THREE.Vector3(-size, y, 0), new THREE.Vector3(size, y, 0),
     new THREE.Vector3(0, y, -size), new THREE.Vector3(0, y, size),
@@ -192,17 +220,17 @@ function createTextSprite(text: string, options?: { color?: string; background?:
 
   if (context) {
     context.clearRect(0, 0, canvas.width, canvas.height);
-    context.font = '800 34px Inter, Arial, sans-serif';
+    context.font = '800 32px Inter, Arial, sans-serif';
     context.textBaseline = 'middle';
     context.textAlign = 'center';
 
     if (options?.background) {
       context.fillStyle = options.background;
       const x = 34;
-      const y = 42;
+      const y = 44;
       const width = 572;
-      const height = 76;
-      const radius = 22;
+      const height = 72;
+      const radius = 18;
       context.beginPath();
       context.moveTo(x + radius, y);
       context.lineTo(x + width - radius, y);
@@ -217,8 +245,8 @@ function createTextSprite(text: string, options?: { color?: string; background?:
       context.fill();
     }
 
-    context.shadowColor = 'rgba(111, 211, 255, 0.82)';
-    context.shadowBlur = 14;
+    context.shadowColor = 'rgba(111, 211, 255, 0.48)';
+    context.shadowBlur = 8;
     context.fillStyle = options?.color ?? '#b9f3ff';
     context.fillText(text, canvas.width / 2, canvas.height / 2);
   }
@@ -235,7 +263,7 @@ function createTextSprite(text: string, options?: { color?: string; background?:
   });
 
   const sprite = new THREE.Sprite(material);
-  const scale = options?.scale ?? 0.38;
+  const scale = options?.scale ?? 0.27;
   sprite.scale.set(scale * 4.0, scale, 1);
   return sprite;
 }
@@ -268,39 +296,60 @@ function materialList(material: THREE.Material | THREE.Material[] | undefined): 
   return Array.isArray(material) ? material : [material];
 }
 
+function cameraPlanFor(preset: WbvViewPreset, box: SceneBox, aspect: number): CameraPlan {
+  const center = sceneBoxCenter(box);
+  const span = sceneBoxSpan(box);
+  const lateralSpan = Math.max(span.x, span.z, 1);
+  const fitHeight = Math.max(span.y * 1.34, lateralSpan * 1.38, 7.55);
+  const distance = Math.max(18, span.max * 3.5);
 
-function cameraSettingsFor(preset: WbvViewPreset): {
-  position: [number, number, number];
-  up: [number, number, number];
-  viewHeight: number;
-} {
-  switch (preset) {
-    case 'top':
-      return {
-        position: [0, 10, 0.01],
-        up: [0, 0, -1],
-        viewHeight: 4.9,
-      };
-    case 'side':
-      return {
-        position: [10, 0.35, 0.01],
-        up: [0, 1, 0],
-        viewHeight: 7.4,
-      };
-    case 'fit':
-      return {
-        position: [4.6, 3.1, 8.2],
-        up: [0, 1, 0],
-        viewHeight: 7.6,
-      };
-    case 'reset':
-    default:
-      return {
-        position: [5.2, 3.8, 9.2],
-        up: [0, 1, 0],
-        viewHeight: 8.2,
-      };
+  if (preset === 'top') {
+    return {
+      position: center.clone().add(new THREE.Vector3(0, distance, 0.01)),
+      up: new THREE.Vector3(0, 0, -1),
+      target: center,
+      viewHeight: Math.max(lateralSpan * 1.65, 3.9),
+    };
   }
+
+  if (preset === 'side') {
+    return {
+      position: center.clone().add(new THREE.Vector3(distance, 0, 0.01)),
+      up: new THREE.Vector3(0, 1, 0),
+      target: center,
+      viewHeight: Math.max(span.y * 1.24, 7.05),
+    };
+  }
+
+  if (preset === 'fit') {
+    return {
+      position: center.clone().add(new THREE.Vector3(distance * 0.55, distance * 0.24, distance * 0.86)),
+      up: new THREE.Vector3(0, 1, 0),
+      target: center,
+      viewHeight: Math.max(fitHeight, 7.9 / Math.max(0.8, aspect)),
+    };
+  }
+
+  return {
+    position: center.clone().add(new THREE.Vector3(distance * 0.6, distance * 0.32, distance * 0.92)),
+    up: new THREE.Vector3(0, 1, 0),
+    target: center,
+    viewHeight: Math.max(fitHeight * 1.06, 8.1 / Math.max(0.8, aspect)),
+  };
+}
+
+function applyCameraPlan(camera: THREE.OrthographicCamera, plan: CameraPlan, aspect: number): void {
+  const viewHeight = plan.viewHeight;
+  camera.position.copy(plan.position);
+  camera.up.copy(plan.up);
+  camera.left = -viewHeight * aspect * 0.5;
+  camera.right = viewHeight * aspect * 0.5;
+  camera.top = viewHeight * 0.5;
+  camera.bottom = -viewHeight * 0.5;
+  camera.near = 0.1;
+  camera.far = 1000;
+  camera.lookAt(plan.target);
+  camera.updateProjectionMatrix();
 }
 
 function disposeObject(object: THREE.Object3D): void {
@@ -355,10 +404,6 @@ export function WellboreTrajectoryRenderer({
       scene.add(group);
 
       const camera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.1, 1000);
-      const cameraSettings = cameraSettingsFor(viewPreset);
-      camera.position.set(...cameraSettings.position);
-      camera.up.set(...cameraSettings.up);
-      camera.lookAt(0, 0, 0);
 
       renderer = new THREE.WebGLRenderer({
         canvas,
@@ -372,19 +417,19 @@ export function WellboreTrajectoryRenderer({
       const boxMaterial = new THREE.LineBasicMaterial({
         color: 0x6fd3ff,
         transparent: true,
-        opacity: 0.48,
+        opacity: 0.28,
       });
       group.add(createBoxEdges(box, boxMaterial));
 
       const planeMaterial = new THREE.LineBasicMaterial({
         color: 0x4ca6cc,
         transparent: true,
-        opacity: 0.16,
+        opacity: 0.085,
       });
       const tickMaterial = new THREE.LineBasicMaterial({
         color: 0xc6f6ff,
         transparent: true,
-        opacity: 0.52,
+        opacity: 0.32,
       });
 
       depthTicks.forEach((tick) => {
@@ -393,60 +438,46 @@ export function WellboreTrajectoryRenderer({
         group.add(createCrossTick(y, tickMaterial));
 
         const label = createTextSprite(`MD ${tick.label}`, {
-          color: '#c6f6ff',
-          background: 'rgba(3, 8, 12, 0.64)',
-          scale: 0.18,
+          color: '#b9f3ff',
+          background: 'rgba(3, 8, 12, 0.58)',
+          scale: 0.135,
         });
-        label.position.set(box.minX - 0.86, y, box.maxZ + 0.2);
+        label.position.set(box.minX - 0.52, y, box.maxZ + 0.09);
         group.add(label);
       });
 
-      const curve = new THREE.CatmullRomCurve3(normalizedPoints, false, 'catmullrom', 0.04);
-      const tubeGeometry = new THREE.TubeGeometry(
+      const curve = new THREE.CatmullRomCurve3(normalizedPoints, false, 'catmullrom', 0.02);
+      const guideGeometry = new THREE.TubeGeometry(
         curve,
-        Math.max(32, Math.min(220, normalizedPoints.length * 3)),
-        0.024,
-        10,
+        Math.max(40, Math.min(220, normalizedPoints.length * 2)),
+        0.011,
+        8,
         false,
       );
-      const tubeMaterial = new THREE.MeshBasicMaterial({
+      const guideMaterial = new THREE.MeshBasicMaterial({
         color: 0x67d599,
         transparent: true,
-        opacity: 1,
+        opacity: 0.94,
       });
-      group.add(new THREE.Mesh(tubeGeometry, tubeMaterial));
-
-      const glowGeometry = new THREE.TubeGeometry(
-        curve,
-        Math.max(32, Math.min(220, normalizedPoints.length * 2)),
-        0.055,
-        10,
-        false,
-      );
-      const glowMaterial = new THREE.MeshBasicMaterial({
-        color: 0x67d599,
-        transparent: true,
-        opacity: 0.12,
-      });
-      group.add(new THREE.Mesh(glowGeometry, glowMaterial));
+      group.add(new THREE.Mesh(guideGeometry, guideMaterial));
 
       const lineGeometry = new THREE.BufferGeometry().setFromPoints(normalizedPoints);
       const lineMaterial = new THREE.LineBasicMaterial({
         color: 0xe7fbff,
         transparent: true,
-        opacity: 0.82,
+        opacity: 0.72,
       });
       group.add(new THREE.Line(lineGeometry, lineMaterial));
 
       const topMarker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.055, 20, 20),
+        new THREE.SphereGeometry(0.035, 16, 16),
         new THREE.MeshBasicMaterial({ color: 0xc6f6ff }),
       );
       topMarker.position.copy(normalizedPoints[0]);
       group.add(topMarker);
 
       const baseMarker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.055, 20, 20),
+        new THREE.SphereGeometry(0.035, 16, 16),
         new THREE.MeshBasicMaterial({ color: 0x67d599 }),
       );
       baseMarker.position.copy(normalizedPoints[normalizedPoints.length - 1]);
@@ -454,30 +485,30 @@ export function WellboreTrajectoryRenderer({
 
       const topLabel = createTextSprite(`Top ${formatDepth(renderPoints[0]?.md ?? renderPoints[0]?.tvd, depthUnit)}`, {
         color: '#e7fbff',
-        background: 'rgba(3, 8, 12, 0.68)',
-        scale: 0.2,
+        background: 'rgba(3, 8, 12, 0.62)',
+        scale: 0.145,
       });
-      topLabel.position.set(box.maxX + 0.72, normalizedPoints[0].y, box.maxZ + 0.24);
+      topLabel.position.set(box.maxX + 0.58, normalizedPoints[0].y, box.maxZ + 0.12);
       group.add(topLabel);
 
       const baseLabel = createTextSprite(`Base ${formatDepth(renderPoints[renderPoints.length - 1]?.md ?? renderPoints[renderPoints.length - 1]?.tvd, depthUnit)}`, {
         color: '#dff8ec',
-        background: 'rgba(3, 8, 12, 0.68)',
-        scale: 0.2,
+        background: 'rgba(3, 8, 12, 0.62)',
+        scale: 0.145,
       });
-      baseLabel.position.set(box.maxX + 0.78, normalizedPoints[normalizedPoints.length - 1].y, box.maxZ + 0.24);
+      baseLabel.position.set(box.maxX + 0.62, normalizedPoints[normalizedPoints.length - 1].y, box.maxZ + 0.12);
       group.add(baseLabel);
 
-      const xLabel = createTextSprite('X / EAST', { color: '#80dcff', scale: 0.2 });
-      xLabel.position.set(box.maxX + 0.52, box.minY, box.maxZ + 0.2);
+      const xLabel = createTextSprite('X / EAST', { color: '#80dcff', scale: 0.14 });
+      xLabel.position.set(box.maxX + 0.38, box.minY, box.maxZ + 0.08);
       group.add(xLabel);
 
-      const yLabel = createTextSprite('Y / NORTH', { color: '#80dcff', scale: 0.2 });
-      yLabel.position.set(box.minX - 0.52, box.minY, box.maxZ + 0.2);
+      const yLabel = createTextSprite('Y / NORTH', { color: '#80dcff', scale: 0.14 });
+      yLabel.position.set(box.minX - 0.38, box.minY, box.maxZ + 0.08);
       group.add(yLabel);
 
-      const zLabel = createTextSprite('Z / TVD', { color: '#80dcff', scale: 0.21 });
-      zLabel.position.set(box.maxX + 0.56, box.maxY, box.minZ - 0.2);
+      const zLabel = createTextSprite('Z / TVD', { color: '#80dcff', scale: 0.15 });
+      zLabel.position.set(box.maxX + 0.42, box.maxY, box.minZ - 0.08);
       group.add(zLabel);
 
       const renderScene = () => {
@@ -491,12 +522,8 @@ export function WellboreTrajectoryRenderer({
         const width = Math.max(1, host.clientWidth);
         const height = Math.max(1, host.clientHeight);
         const aspect = width / height;
-        const viewHeight = cameraSettings.viewHeight;
-        camera.left = -viewHeight * aspect * 0.5;
-        camera.right = viewHeight * aspect * 0.5;
-        camera.top = viewHeight * 0.5;
-        camera.bottom = -viewHeight * 0.5;
-        camera.updateProjectionMatrix();
+        const plan = cameraPlanFor(viewPreset, box, aspect);
+        applyCameraPlan(camera, plan, aspect);
         renderer.setSize(width, height, false);
       };
 

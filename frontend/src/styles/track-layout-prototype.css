@@ -6739,3 +6739,67 @@ button.wlv-view-range-readout,
 .wlv-wbv-renderer-readout span {
   color: #9fb0bf;
 }
+
+/* WBV-5E-R2 — SDV-style viewport and deterministic camera-fit repair. */
+.wlv-wbv-layout {
+  min-height: 0;
+  align-items: stretch;
+}
+
+.wlv-wbv-panel {
+  max-height: clamp(520px, 66vh, 680px);
+}
+
+.wlv-wbv-scene-shell {
+  height: clamp(520px, 66vh, 680px);
+  min-height: 0;
+}
+
+.wlv-wbv-scene-frame {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.wlv-wbv-scene-frame.has-trajectory-package {
+  background:
+    radial-gradient(circle at 50% 44%, rgba(53, 91, 108, 0.2), rgba(0, 0, 0, 0) 48%),
+    linear-gradient(180deg, #04070a, #010203);
+}
+
+.wlv-wbv-scene-frame.has-trajectory-package .wlv-wbv-trajectory-renderer {
+  inset: 0;
+  z-index: 6;
+  overflow: hidden;
+}
+
+.wlv-wbv-trajectory-renderer canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.wlv-wbv-renderer-readout {
+  top: 0.72rem;
+  bottom: auto;
+  left: 0.72rem;
+  z-index: 3;
+  max-width: min(330px, calc(100% - 1.44rem));
+  padding: 0.46rem 0.58rem;
+  border-color: rgba(111, 211, 255, 0.3);
+  background: rgba(3, 8, 12, 0.64);
+  box-shadow: 0 0 16px rgba(111, 211, 255, 0.09);
+}
+
+.wlv-wbv-renderer-readout strong {
+  color: #e7fbff;
+  font-size: 0.72rem;
+}
+
+.wlv-wbv-renderer-readout span {
+  color: #95a8b8;
+  font-size: 0.68rem;
+}
