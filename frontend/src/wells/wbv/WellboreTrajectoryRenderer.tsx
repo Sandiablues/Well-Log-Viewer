@@ -46,16 +46,6 @@ type ScenePoint = {
   tvd?: number | null;
 };
 
-type SceneExtent = {
-  minX: number;
-  maxX: number;
-  minY: number;
-  maxY: number;
-  minZ: number;
-  maxZ: number;
-  maxSpan: number;
-};
-
 type SceneBox = {
   minX: number;
   maxX: number;
@@ -69,14 +59,6 @@ function finiteNumber(value: number | null | undefined, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-function rangeSpan(range: WbvAxisRange | undefined): number | null {
-  const min = range?.min;
-  const max = range?.max;
-  if (typeof min !== 'number' || typeof max !== 'number') return null;
-  if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
-  return Math.abs(max - min);
-}
-
 function firstFinite(...values: Array<number | null | undefined>): number | null {
   for (const value of values) {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -88,7 +70,11 @@ function scenePointsFromBackend(points: WbvTrajectoryRenderPoint[]): ScenePoint[
   return points.map((point) => {
     const east = finiteNumber(point.x ?? point.east_departure, 0);
     const north = finiteNumber(point.y ?? point.north_departure, 0);
-    const depth = firstFinite(point.tvd, point.md, point.z !== undefined && point.z !== null ? Math.abs(point.z) : null) ?? 0;
+    const depth = firstFinite(
+      point.tvd,
+      point.md,
+      point.z !== undefined && point.z !== null ? Math.abs(point.z) : null,
+    ) ?? 0;
 
     return {
       x: east,
@@ -100,42 +86,21 @@ function scenePointsFromBackend(points: WbvTrajectoryRenderPoint[]): ScenePoint[
   });
 }
 
-function extentFor(points: ScenePoint[], boundingBox: WbvBoundingBox | undefined): SceneExtent {
-  const pointMinX = Math.min(...points.map((point) => point.x));
-  const pointMaxX = Math.max(...points.map((point) => point.x));
-  const pointMinY = Math.min(...points.map((point) => point.y));
-  const pointMaxY = Math.max(...points.map((point) => point.y));
-  const pointMinZ = Math.min(...points.map((point) => point.z));
-  const pointMaxZ = Math.max(...points.map((point) => point.z));
+function createNormalizedPoints(points: ScenePoint[]): THREE.Vector3[] {
+  const minX = Math.min(...points.map((point) => point.x));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const minY = Math.min(...points.map((point) => point.y));
+  const maxY = Math.max(...points.map((point) => point.y));
+  const minZ = Math.min(...points.map((point) => point.z));
+  const maxZ = Math.max(...points.map((point) => point.z));
 
-  const backendVerticalSpan =
-    rangeSpan(boundingBox?.tvd) ??
-    rangeSpan(boundingBox?.md) ??
-    rangeSpan(boundingBox?.z);
-
-  const spans = [
-    Math.abs(pointMaxX - pointMinX),
-    Math.abs(pointMaxY - pointMinY),
-    Math.abs(pointMaxZ - pointMinZ),
-    finiteNumber(backendVerticalSpan, 0),
-  ];
-
-  return {
-    minX: pointMinX,
-    maxX: pointMaxX,
-    minY: pointMinY,
-    maxY: pointMaxY,
-    minZ: pointMinZ,
-    maxZ: pointMaxZ,
-    maxSpan: Math.max(1, ...spans),
-  };
-}
-
-function normalizeScenePoints(points: ScenePoint[], extent: SceneExtent): THREE.Vector3[] {
-  const centerX = (extent.minX + extent.maxX) / 2;
-  const centerY = (extent.minY + extent.maxY) / 2;
-  const centerZ = (extent.minZ + extent.maxZ) / 2;
-  const scale = 7 / extent.maxSpan;
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const centerZ = (minZ + maxZ) / 2;
+  const xSpan = Math.abs(maxX - minX);
+  const ySpan = Math.abs(maxY - minY);
+  const zSpan = Math.abs(maxZ - minZ);
+  const scale = 6.7 / Math.max(1, xSpan, ySpan, zSpan);
 
   return points.map((point) => new THREE.Vector3(
     (point.x - centerX) * scale,
@@ -144,7 +109,7 @@ function normalizeScenePoints(points: ScenePoint[], extent: SceneExtent): THREE.
   ));
 }
 
-function normalizedSceneBox(points: THREE.Vector3[]): SceneBox {
+function sceneBoxFor(points: THREE.Vector3[]): SceneBox {
   const minX = Math.min(...points.map((point) => point.x));
   const maxX = Math.max(...points.map((point) => point.x));
   const minY = Math.min(...points.map((point) => point.y));
@@ -153,37 +118,45 @@ function normalizedSceneBox(points: THREE.Vector3[]): SceneBox {
   const maxZ = Math.max(...points.map((point) => point.z));
 
   const xSpan = Math.abs(maxX - minX);
-  const ySpan = Math.abs(maxY - minY);
   const zSpan = Math.abs(maxZ - minZ);
-  const lateralPad = Math.max(0.95, Math.min(1.75, Math.max(ySpan, 1) * 0.2));
-  const verticalPad = Math.max(0.22, Math.min(0.45, Math.max(ySpan, 1) * 0.045));
+  const lateralPad = 1.65;
+  const verticalPad = 0.34;
 
   return {
-    minX: xSpan < 0.05 ? -lateralPad : minX - lateralPad * 0.35,
-    maxX: xSpan < 0.05 ? lateralPad : maxX + lateralPad * 0.35,
+    minX: xSpan < 0.05 ? -lateralPad : minX - 0.45,
+    maxX: xSpan < 0.05 ? lateralPad : maxX + 0.45,
     minY: minY - verticalPad,
     maxY: maxY + verticalPad,
-    minZ: zSpan < 0.05 ? -lateralPad : minZ - lateralPad * 0.35,
-    maxZ: zSpan < 0.05 ? lateralPad : maxZ + lateralPad * 0.35,
+    minZ: zSpan < 0.05 ? -lateralPad : minZ - 0.45,
+    maxZ: zSpan < 0.05 ? lateralPad : maxZ + 0.45,
   };
 }
 
 function createBoxEdges(box: SceneBox, material: THREE.LineBasicMaterial): THREE.LineSegments {
   const corners = {
-    lbf: new THREE.Vector3(box.minX, box.minY, box.maxZ),
-    rbf: new THREE.Vector3(box.maxX, box.minY, box.maxZ),
-    rbb: new THREE.Vector3(box.maxX, box.minY, box.minZ),
-    lbb: new THREE.Vector3(box.minX, box.minY, box.minZ),
-    ltf: new THREE.Vector3(box.minX, box.maxY, box.maxZ),
-    rtf: new THREE.Vector3(box.maxX, box.maxY, box.maxZ),
-    rtb: new THREE.Vector3(box.maxX, box.maxY, box.minZ),
-    ltb: new THREE.Vector3(box.minX, box.maxY, box.minZ),
+    bottomFrontLeft: new THREE.Vector3(box.minX, box.minY, box.maxZ),
+    bottomFrontRight: new THREE.Vector3(box.maxX, box.minY, box.maxZ),
+    bottomBackRight: new THREE.Vector3(box.maxX, box.minY, box.minZ),
+    bottomBackLeft: new THREE.Vector3(box.minX, box.minY, box.minZ),
+    topFrontLeft: new THREE.Vector3(box.minX, box.maxY, box.maxZ),
+    topFrontRight: new THREE.Vector3(box.maxX, box.maxY, box.maxZ),
+    topBackRight: new THREE.Vector3(box.maxX, box.maxY, box.minZ),
+    topBackLeft: new THREE.Vector3(box.minX, box.maxY, box.minZ),
   };
 
   const edgePoints = [
-    corners.lbf, corners.rbf, corners.rbf, corners.rbb, corners.rbb, corners.lbb, corners.lbb, corners.lbf,
-    corners.ltf, corners.rtf, corners.rtf, corners.rtb, corners.rtb, corners.ltb, corners.ltb, corners.ltf,
-    corners.lbf, corners.ltf, corners.rbf, corners.rtf, corners.rbb, corners.rtb, corners.lbb, corners.ltb,
+    corners.bottomFrontLeft, corners.bottomFrontRight,
+    corners.bottomFrontRight, corners.bottomBackRight,
+    corners.bottomBackRight, corners.bottomBackLeft,
+    corners.bottomBackLeft, corners.bottomFrontLeft,
+    corners.topFrontLeft, corners.topFrontRight,
+    corners.topFrontRight, corners.topBackRight,
+    corners.topBackRight, corners.topBackLeft,
+    corners.topBackLeft, corners.topFrontLeft,
+    corners.bottomFrontLeft, corners.topFrontLeft,
+    corners.bottomFrontRight, corners.topFrontRight,
+    corners.bottomBackRight, corners.topBackRight,
+    corners.bottomBackLeft, corners.topBackLeft,
   ];
 
   return new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(edgePoints), material);
@@ -199,23 +172,34 @@ function createDepthPlane(box: SceneBox, y: number, material: THREE.LineBasicMat
   return new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points), material);
 }
 
+function createCrossTick(y: number, material: THREE.LineBasicMaterial): THREE.LineSegments {
+  const size = 0.26;
+  const points = [
+    new THREE.Vector3(-size, y, 0), new THREE.Vector3(size, y, 0),
+    new THREE.Vector3(0, y, -size), new THREE.Vector3(0, y, size),
+  ];
+  return new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points), material);
+}
+
 function createTextSprite(text: string, options?: { color?: string; background?: string; scale?: number }): THREE.Sprite {
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 128;
+  canvas.width = 640;
+  canvas.height = 160;
   const context = canvas.getContext('2d');
+
   if (context) {
     context.clearRect(0, 0, canvas.width, canvas.height);
-    context.font = '700 30px Inter, Arial, sans-serif';
+    context.font = '800 34px Inter, Arial, sans-serif';
     context.textBaseline = 'middle';
     context.textAlign = 'center';
+
     if (options?.background) {
       context.fillStyle = options.background;
-      const x = 28;
-      const y = 34;
-      const width = 456;
-      const height = 60;
-      const radius = 18;
+      const x = 34;
+      const y = 42;
+      const width = 572;
+      const height = 76;
+      const radius = 22;
       context.beginPath();
       context.moveTo(x + radius, y);
       context.lineTo(x + width - radius, y);
@@ -229,23 +213,27 @@ function createTextSprite(text: string, options?: { color?: string; background?:
       context.closePath();
       context.fill();
     }
-    context.shadowColor = 'rgba(111, 211, 255, 0.65)';
-    context.shadowBlur = 12;
-    context.fillStyle = options?.color ?? '#9ee8ff';
+
+    context.shadowColor = 'rgba(111, 211, 255, 0.82)';
+    context.shadowBlur = 14;
+    context.fillStyle = options?.color ?? '#b9f3ff';
     context.fillText(text, canvas.width / 2, canvas.height / 2);
   }
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+
   const material = new THREE.SpriteMaterial({
     map: texture,
     transparent: true,
     depthTest: false,
     depthWrite: false,
   });
+
   const sprite = new THREE.Sprite(material);
-  const scale = options?.scale ?? 0.58;
-  sprite.scale.set(scale * 4, scale, 1);
+  const scale = options?.scale ?? 0.38;
+  sprite.scale.set(scale * 4.0, scale, 1);
   return sprite;
 }
 
@@ -256,11 +244,12 @@ function formatDepth(value: number | null | undefined, unit: string): string {
 
 function representativeTicks(points: WbvTrajectoryRenderPoint[]): Array<{ label: string; ratio: number }> {
   if (points.length === 0) return [];
+
   const indices = Array.from(new Set([
     0,
-    Math.floor(points.length * 0.25),
-    Math.floor(points.length * 0.5),
-    Math.floor(points.length * 0.75),
+    Math.floor((points.length - 1) * 0.25),
+    Math.floor((points.length - 1) * 0.5),
+    Math.floor((points.length - 1) * 0.75),
     points.length - 1,
   ])).filter((index) => index >= 0 && index < points.length);
 
@@ -293,7 +282,7 @@ function disposeObject(object: THREE.Object3D): void {
 
 export function WellboreTrajectoryRenderer({
   renderPoints,
-  boundingBox,
+  boundingBox: _boundingBox,
   depthUnit,
   viewerState,
 }: WbvTrajectoryRendererProps) {
@@ -320,13 +309,14 @@ export function WellboreTrajectoryRenderer({
     let resizeObserver: ResizeObserver | null = null;
 
     try {
-      const extent = extentFor(scenePoints, boundingBox);
-      const normalizedPoints = normalizeScenePoints(scenePoints, extent);
-      const box = normalizedSceneBox(normalizedPoints);
-
+      const normalizedPoints = createNormalizedPoints(scenePoints);
+      const box = sceneBoxFor(normalizedPoints);
       const scene = new THREE.Scene();
+      const group = new THREE.Group();
+      scene.add(group);
+
       const camera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.1, 1000);
-      camera.position.set(5.4, 4.2, 8.4);
+      camera.position.set(4.8, 3.6, 9.5);
       camera.up.set(0, 1, 0);
       camera.lookAt(0, 0, 0);
 
@@ -340,130 +330,140 @@ export function WellboreTrajectoryRenderer({
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
       const boxMaterial = new THREE.LineBasicMaterial({
-        color: 0x5bc7ee,
+        color: 0x6fd3ff,
         transparent: true,
-        opacity: 0.58,
+        opacity: 0.9,
       });
-      scene.add(createBoxEdges(box, boxMaterial));
+      group.add(createBoxEdges(box, boxMaterial));
 
       const planeMaterial = new THREE.LineBasicMaterial({
-        color: 0x2f7898,
+        color: 0x4ca6cc,
         transparent: true,
-        opacity: 0.26,
+        opacity: 0.34,
       });
-      depthTicks.forEach((tick) => {
-        const y = box.maxY - (box.maxY - box.minY) * tick.ratio;
-        scene.add(createDepthPlane(box, y, planeMaterial));
+      const tickMaterial = new THREE.LineBasicMaterial({
+        color: 0xc6f6ff,
+        transparent: true,
+        opacity: 0.82,
       });
 
-      const tickMaterial = new THREE.LineBasicMaterial({
-        color: 0x9ee8ff,
-        transparent: true,
-        opacity: 0.55,
-      });
       depthTicks.forEach((tick) => {
         const y = box.maxY - (box.maxY - box.minY) * tick.ratio;
-        const tickGeometry = new THREE.BufferGeometry().setFromPoints([
-          new THREE.Vector3(-0.18, y, 0),
-          new THREE.Vector3(0.18, y, 0),
-        ]);
-        scene.add(new THREE.Line(tickGeometry, tickMaterial));
+        group.add(createDepthPlane(box, y, planeMaterial));
+        group.add(createCrossTick(y, tickMaterial));
 
         const label = createTextSprite(`MD ${tick.label}`, {
-          color: '#b9f3ff',
-          background: 'rgba(3, 8, 12, 0.54)',
-          scale: 0.28,
+          color: '#c6f6ff',
+          background: 'rgba(3, 8, 12, 0.64)',
+          scale: 0.24,
         });
-        label.position.set(box.minX - 0.52, y, box.maxZ + 0.08);
-        scene.add(label);
+        label.position.set(box.minX - 0.86, y, box.maxZ + 0.2);
+        group.add(label);
       });
 
-      const trajectoryCurve = new THREE.CatmullRomCurve3(normalizedPoints, false, 'catmullrom', 0.08);
+      const curve = new THREE.CatmullRomCurve3(normalizedPoints, false, 'catmullrom', 0.04);
       const tubeGeometry = new THREE.TubeGeometry(
-        trajectoryCurve,
-        Math.max(24, Math.min(240, normalizedPoints.length * 2)),
-        0.018,
-        8,
+        curve,
+        Math.max(32, Math.min(240, normalizedPoints.length * 3)),
+        0.07,
+        12,
         false,
       );
       const tubeMaterial = new THREE.MeshBasicMaterial({
         color: 0x67d599,
         transparent: true,
-        opacity: 0.9,
+        opacity: 1,
       });
-      scene.add(new THREE.Mesh(tubeGeometry, tubeMaterial));
+      group.add(new THREE.Mesh(tubeGeometry, tubeMaterial));
+
+      const glowGeometry = new THREE.TubeGeometry(
+        curve,
+        Math.max(32, Math.min(240, normalizedPoints.length * 2)),
+        0.12,
+        12,
+        false,
+      );
+      const glowMaterial = new THREE.MeshBasicMaterial({
+        color: 0x67d599,
+        transparent: true,
+        opacity: 0.18,
+      });
+      group.add(new THREE.Mesh(glowGeometry, glowMaterial));
 
       const lineGeometry = new THREE.BufferGeometry().setFromPoints(normalizedPoints);
       const lineMaterial = new THREE.LineBasicMaterial({
-        color: 0xb9f3ff,
+        color: 0xe7fbff,
         transparent: true,
-        opacity: 0.72,
+        opacity: 0.9,
       });
-      scene.add(new THREE.Line(lineGeometry, lineMaterial));
+      group.add(new THREE.Line(lineGeometry, lineMaterial));
 
-      const topMaterial = new THREE.MeshBasicMaterial({ color: 0xb9f3ff });
-      const baseMaterial = new THREE.MeshBasicMaterial({ color: 0x67d599 });
-
-      const topMarker = new THREE.Mesh(new THREE.SphereGeometry(0.045, 18, 18), topMaterial);
+      const topMarker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.13, 24, 24),
+        new THREE.MeshBasicMaterial({ color: 0xc6f6ff }),
+      );
       topMarker.position.copy(normalizedPoints[0]);
-      scene.add(topMarker);
+      group.add(topMarker);
 
-      const baseMarker = new THREE.Mesh(new THREE.SphereGeometry(0.045, 18, 18), baseMaterial);
+      const baseMarker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.13, 24, 24),
+        new THREE.MeshBasicMaterial({ color: 0x67d599 }),
+      );
       baseMarker.position.copy(normalizedPoints[normalizedPoints.length - 1]);
-      scene.add(baseMarker);
+      group.add(baseMarker);
 
       const topLabel = createTextSprite(`Top ${formatDepth(renderPoints[0]?.md ?? renderPoints[0]?.tvd, depthUnit)}`, {
-        color: '#dff8ec',
-        background: 'rgba(3, 8, 12, 0.58)',
-        scale: 0.32,
+        color: '#e7fbff',
+        background: 'rgba(3, 8, 12, 0.68)',
+        scale: 0.27,
       });
-      topLabel.position.set(0.78, normalizedPoints[0].y, 0.18);
-      scene.add(topLabel);
+      topLabel.position.set(box.maxX + 0.72, normalizedPoints[0].y, box.maxZ + 0.24);
+      group.add(topLabel);
 
       const baseLabel = createTextSprite(`Base ${formatDepth(renderPoints[renderPoints.length - 1]?.md ?? renderPoints[renderPoints.length - 1]?.tvd, depthUnit)}`, {
         color: '#dff8ec',
-        background: 'rgba(3, 8, 12, 0.58)',
-        scale: 0.32,
+        background: 'rgba(3, 8, 12, 0.68)',
+        scale: 0.27,
       });
-      baseLabel.position.set(0.88, normalizedPoints[normalizedPoints.length - 1].y, 0.18);
-      scene.add(baseLabel);
+      baseLabel.position.set(box.maxX + 0.78, normalizedPoints[normalizedPoints.length - 1].y, box.maxZ + 0.24);
+      group.add(baseLabel);
 
-      const xLabel = createTextSprite('X / East', { color: '#80dcff', scale: 0.34 });
-      xLabel.position.set(box.maxX + 0.32, box.minY, box.maxZ + 0.12);
-      scene.add(xLabel);
+      const xLabel = createTextSprite('X / EAST', { color: '#80dcff', scale: 0.27 });
+      xLabel.position.set(box.maxX + 0.52, box.minY, box.maxZ + 0.2);
+      group.add(xLabel);
 
-      const yLabel = createTextSprite('Y / North', { color: '#80dcff', scale: 0.34 });
-      yLabel.position.set(box.minX - 0.32, box.minY, box.maxZ + 0.12);
-      scene.add(yLabel);
+      const yLabel = createTextSprite('Y / NORTH', { color: '#80dcff', scale: 0.27 });
+      yLabel.position.set(box.minX - 0.52, box.minY, box.maxZ + 0.2);
+      group.add(yLabel);
 
-      const zLabel = createTextSprite('Z / TVD', { color: '#80dcff', scale: 0.36 });
-      zLabel.position.set(box.maxX + 0.28, box.maxY, box.minZ - 0.18);
-      scene.add(zLabel);
+      const zLabel = createTextSprite('Z / TVD', { color: '#80dcff', scale: 0.29 });
+      zLabel.position.set(box.maxX + 0.56, box.maxY, box.minZ - 0.2);
+      group.add(zLabel);
+
+      const renderScene = () => {
+        if (!renderer) return;
+        renderer.render(scene, camera);
+        animationFrame = window.requestAnimationFrame(renderScene);
+      };
 
       const resizeAndRender = () => {
-        if (!host || !renderer) return;
+        if (!renderer) return;
         const width = Math.max(1, host.clientWidth);
         const height = Math.max(1, host.clientHeight);
         const aspect = width / height;
-        const viewHeight = 8.9;
-        camera.left = aspect >= 1 ? -viewHeight * aspect * 0.5 : -viewHeight * 0.5;
-        camera.right = aspect >= 1 ? viewHeight * aspect * 0.5 : viewHeight * 0.5;
-        camera.top = aspect >= 1 ? viewHeight * 0.5 : viewHeight / aspect * 0.5;
-        camera.bottom = aspect >= 1 ? -viewHeight * 0.5 : -viewHeight / aspect * 0.5;
+        const viewHeight = 8.8;
+        camera.left = -viewHeight * aspect * 0.5;
+        camera.right = viewHeight * aspect * 0.5;
+        camera.top = viewHeight * 0.5;
+        camera.bottom = -viewHeight * 0.5;
         camera.updateProjectionMatrix();
         renderer.setSize(width, height, false);
-        renderer.render(scene, camera);
       };
 
-      resizeObserver = new ResizeObserver(() => {
-        if (animationFrame !== null) {
-          window.cancelAnimationFrame(animationFrame);
-        }
-        animationFrame = window.requestAnimationFrame(resizeAndRender);
-      });
+      resizeObserver = new ResizeObserver(resizeAndRender);
       resizeObserver.observe(host);
-
       resizeAndRender();
+      renderScene();
       setStatus('rendered');
 
       return () => {
@@ -480,7 +480,7 @@ export function WellboreTrajectoryRenderer({
       renderer?.dispose();
       return undefined;
     }
-  }, [boundingBox, depthTicks, depthUnit, renderPoints, scenePoints]);
+  }, [depthTicks, depthUnit, renderPoints, scenePoints]);
 
   const pointCount = renderPoints.length.toLocaleString();
 
@@ -494,7 +494,7 @@ export function WellboreTrajectoryRenderer({
     >
       <canvas ref={canvasRef} aria-hidden="true" />
       <div className="wlv-wbv-renderer-readout" aria-live="polite">
-        <strong>{status === 'rendered' ? '3D trajectory rendered' : '3D trajectory renderer'}</strong>
+        <strong>{status === 'rendered' ? '3D trajectory rendered' : `3D trajectory renderer: ${status}`}</strong>
         <span>{pointCount} backend render points · {depthUnit} · backend-owned package</span>
       </div>
     </div>
