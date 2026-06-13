@@ -243,6 +243,12 @@ function sampleRenderPoints(points: WbvRenderPoint[]): WbvRenderPoint[] {
 export function Wellbore3DPage({ activeManagedWellId, onOpenLogViewer }: Wellbore3DPageProps) {
   const [state, setState] = useState<WbvLoadState>(initialState);
   const [viewPreset, setViewPreset] = useState<WbvViewPreset>('fit');
+  const [viewCommandId, setViewCommandId] = useState(0);
+
+  const requestViewPreset = (preset: WbvViewPreset) => {
+    setViewPreset(preset);
+    setViewCommandId((current) => current + 1);
+  };
 
   const loadWbvSession = async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
@@ -343,7 +349,7 @@ export function Wellbore3DPage({ activeManagedWellId, onOpenLogViewer }: Wellbor
                 key={preset}
                 className={viewPreset === preset ? 'is-active' : ''}
                 disabled={!hasTrajectory}
-                onClick={() => setViewPreset(preset)}
+                onClick={() => requestViewPreset(preset)}
               >
                 {viewPresetLabels[preset]}
               </button>
@@ -369,6 +375,7 @@ export function Wellbore3DPage({ activeManagedWellId, onOpenLogViewer }: Wellbor
                 depthUnit={depthUnit}
                 viewerState={viewerState}
                 viewPreset={viewPreset}
+                viewCommandId={viewCommandId}
               />
             ) : null}
 

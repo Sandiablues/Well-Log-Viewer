@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 export type WbvTrajectoryRenderPoint = {
   station_index?: number;
@@ -39,6 +40,7 @@ type WbvTrajectoryRendererProps = {
   depthUnit: string;
   viewerState: string;
   viewPreset?: WbvViewPreset;
+  viewCommandId?: number;
 };
 
 type ScenePoint = {
@@ -338,18 +340,29 @@ function cameraPlanFor(preset: WbvViewPreset, box: SceneBox, aspect: number): Ca
   };
 }
 
-function applyCameraPlan(camera: THREE.OrthographicCamera, plan: CameraPlan, aspect: number): void {
-  const viewHeight = plan.viewHeight;
-  camera.position.copy(plan.position);
-  camera.up.copy(plan.up);
+function applyCameraProjection(camera: THREE.OrthographicCamera, viewHeight: number, aspect: number): void {
   camera.left = -viewHeight * aspect * 0.5;
   camera.right = viewHeight * aspect * 0.5;
   camera.top = viewHeight * 0.5;
   camera.bottom = -viewHeight * 0.5;
   camera.near = 0.1;
   camera.far = 1000;
-  camera.lookAt(plan.target);
   camera.updateProjectionMatrix();
+}
+
+function applyCameraPlan(
+  camera: THREE.OrthographicCamera,
+  controls: OrbitControls,
+  plan: CameraPlan,
+  aspect: number,
+): void {
+  camera.position.copy(plan.position);
+  camera.up.copy(plan.up);
+  camera.zoom = 1;
+  applyCameraProjection(camera, plan.viewHeight, aspect);
+  controls.target.copy(plan.target);
+  camera.lookAt(plan.target);
+  controls.update();
 }
 
 function disposeObject(object: THREE.Object3D): void {
@@ -373,10 +386,12 @@ export function WellboreTrajectoryRenderer({
   depthUnit,
   viewerState,
   viewPreset = 'reset',
+  viewCommandId = 0,
 }: WbvTrajectoryRendererProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [status, setStatus] = useState<RendererStatus>('idle');
+  const runtimeRef = useRef<{ applyPreset: (preset: WbvViewPreset) => void } | null>(null);
 
   const scenePoints = useMemo(() => scenePointsFromBackend(renderPoints), [renderPoints]);
   const depthTicks = useMemo(() => representativeTicks(renderPoints), [renderPoints]);
@@ -384,6 +399,8 @@ export function WellboreTrajectoryRenderer({
   useEffect(() => {
     const host = hostRef.current;
     const canvas = canvasRef.current;
+
+    runtimeRef.current = null;
 
     if (!host || !canvas) return undefined;
 
@@ -393,6 +410,7 @@ export function WellboreTrajectoryRenderer({
     }
 
     let renderer: THREE.WebGLRenderer | null = null;
+    let controls: OrbitControls | null = null;
     let animationFrame: number | null = null;
     let resizeObserver: ResizeObserver | null = null;
 
@@ -414,22 +432,44 @@ export function WellboreTrajectoryRenderer({
       renderer.setClearColor(0x000000, 0);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.enableRotate = true;
+      controls.enableZoom = true;
+      controls.enablePan = true;
+      controls.screenSpacePanning = true;
+      controls.rotateSpeed = 0.72;
+      controls.zoomSpeed = 0.82;
+      controls.panSpeed = 0.72;
+      controls.minZoom = 0.35;
+      controls.maxZoom = 14;
+      controls.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN,
+      };
+      controls.touches = {
+        ONE: THREE.TOUCH.ROTATE,
+        TWO: THREE.TOUCH.DOLLY_PAN,
+      };
+
       const boxMaterial = new THREE.LineBasicMaterial({
         color: 0x6fd3ff,
         transparent: true,
-        opacity: 0.28,
+        opacity: 0.24,
       });
       group.add(createBoxEdges(box, boxMaterial));
 
       const planeMaterial = new THREE.LineBasicMaterial({
         color: 0x4ca6cc,
         transparent: true,
-        opacity: 0.085,
+        opacity: 0.072,
       });
       const tickMaterial = new THREE.LineBasicMaterial({
         color: 0xc6f6ff,
         transparent: true,
-        opacity: 0.32,
+        opacity: 0.26,
       });
 
       depthTicks.forEach((tick) => {
@@ -440,7 +480,7 @@ export function WellboreTrajectoryRenderer({
         const label = createTextSprite(`MD ${tick.label}`, {
           color: '#b9f3ff',
           background: 'rgba(3, 8, 12, 0.58)',
-          scale: 0.135,
+          scale: 0.12,
         });
         label.position.set(box.minX - 0.52, y, box.maxZ + 0.09);
         group.add(label);
@@ -450,14 +490,14 @@ export function WellboreTrajectoryRenderer({
       const guideGeometry = new THREE.TubeGeometry(
         curve,
         Math.max(40, Math.min(220, normalizedPoints.length * 2)),
-        0.011,
+        0.008,
         8,
         false,
       );
       const guideMaterial = new THREE.MeshBasicMaterial({
         color: 0x67d599,
         transparent: true,
-        opacity: 0.94,
+        opacity: 0.9,
       });
       group.add(new THREE.Mesh(guideGeometry, guideMaterial));
 
@@ -465,19 +505,19 @@ export function WellboreTrajectoryRenderer({
       const lineMaterial = new THREE.LineBasicMaterial({
         color: 0xe7fbff,
         transparent: true,
-        opacity: 0.72,
+        opacity: 0.68,
       });
       group.add(new THREE.Line(lineGeometry, lineMaterial));
 
       const topMarker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.035, 16, 16),
+        new THREE.SphereGeometry(0.026, 16, 16),
         new THREE.MeshBasicMaterial({ color: 0xc6f6ff }),
       );
       topMarker.position.copy(normalizedPoints[0]);
       group.add(topMarker);
 
       const baseMarker = new THREE.Mesh(
-        new THREE.SphereGeometry(0.035, 16, 16),
+        new THREE.SphereGeometry(0.026, 16, 16),
         new THREE.MeshBasicMaterial({ color: 0x67d599 }),
       );
       baseMarker.position.copy(normalizedPoints[normalizedPoints.length - 1]);
@@ -486,68 +526,92 @@ export function WellboreTrajectoryRenderer({
       const topLabel = createTextSprite(`Top ${formatDepth(renderPoints[0]?.md ?? renderPoints[0]?.tvd, depthUnit)}`, {
         color: '#e7fbff',
         background: 'rgba(3, 8, 12, 0.62)',
-        scale: 0.145,
+        scale: 0.12,
       });
-      topLabel.position.set(box.maxX + 0.58, normalizedPoints[0].y, box.maxZ + 0.12);
+      topLabel.position.set(box.maxX + 0.5, normalizedPoints[0].y, box.maxZ + 0.1);
       group.add(topLabel);
 
       const baseLabel = createTextSprite(`Base ${formatDepth(renderPoints[renderPoints.length - 1]?.md ?? renderPoints[renderPoints.length - 1]?.tvd, depthUnit)}`, {
         color: '#dff8ec',
         background: 'rgba(3, 8, 12, 0.62)',
-        scale: 0.145,
+        scale: 0.12,
       });
-      baseLabel.position.set(box.maxX + 0.62, normalizedPoints[normalizedPoints.length - 1].y, box.maxZ + 0.12);
+      baseLabel.position.set(box.maxX + 0.52, normalizedPoints[normalizedPoints.length - 1].y, box.maxZ + 0.1);
       group.add(baseLabel);
 
-      const xLabel = createTextSprite('X / EAST', { color: '#80dcff', scale: 0.14 });
-      xLabel.position.set(box.maxX + 0.38, box.minY, box.maxZ + 0.08);
+      const xLabel = createTextSprite('X / EAST', { color: '#80dcff', scale: 0.12 });
+      xLabel.position.set(box.maxX + 0.34, box.minY, box.maxZ + 0.08);
       group.add(xLabel);
 
-      const yLabel = createTextSprite('Y / NORTH', { color: '#80dcff', scale: 0.14 });
-      yLabel.position.set(box.minX - 0.38, box.minY, box.maxZ + 0.08);
+      const yLabel = createTextSprite('Y / NORTH', { color: '#80dcff', scale: 0.12 });
+      yLabel.position.set(box.minX - 0.34, box.minY, box.maxZ + 0.08);
       group.add(yLabel);
 
-      const zLabel = createTextSprite('Z / TVD', { color: '#80dcff', scale: 0.15 });
-      zLabel.position.set(box.maxX + 0.42, box.maxY, box.minZ - 0.08);
+      const zLabel = createTextSprite('Z / TVD', { color: '#80dcff', scale: 0.13 });
+      zLabel.position.set(box.maxX + 0.38, box.maxY, box.minZ - 0.08);
       group.add(zLabel);
 
+      const resizeRenderer = () => {
+        if (!renderer) return { width: 1, height: 1, aspect: 1 };
+        const width = Math.max(1, host.clientWidth);
+        const height = Math.max(1, host.clientHeight);
+        const aspect = width / height;
+        renderer.setSize(width, height, false);
+        return { width, height, aspect };
+      };
+
+      const applyPreset = (preset: WbvViewPreset) => {
+        if (!controls) return;
+        const { aspect } = resizeRenderer();
+        const plan = cameraPlanFor(preset, box, aspect);
+        applyCameraPlan(camera, controls, plan, aspect);
+      };
+
+      const resizeAndPreserveView = () => {
+        const { aspect } = resizeRenderer();
+        const currentViewHeight = Math.abs(camera.top - camera.bottom) || cameraPlanFor(viewPreset, box, aspect).viewHeight;
+        applyCameraProjection(camera, currentViewHeight, aspect);
+      };
+
+      runtimeRef.current = { applyPreset };
+      resizeRenderer();
+      applyPreset(viewPreset);
+
       const renderScene = () => {
-        if (!renderer) return;
+        if (!renderer || !controls) return;
+        controls.update();
         renderer.render(scene, camera);
         animationFrame = window.requestAnimationFrame(renderScene);
       };
 
-      const resizeAndRender = () => {
-        if (!renderer) return;
-        const width = Math.max(1, host.clientWidth);
-        const height = Math.max(1, host.clientHeight);
-        const aspect = width / height;
-        const plan = cameraPlanFor(viewPreset, box, aspect);
-        applyCameraPlan(camera, plan, aspect);
-        renderer.setSize(width, height, false);
-      };
-
-      resizeObserver = new ResizeObserver(resizeAndRender);
+      resizeObserver = new ResizeObserver(resizeAndPreserveView);
       resizeObserver.observe(host);
-      resizeAndRender();
       renderScene();
       setStatus('rendered');
 
       return () => {
+        runtimeRef.current = null;
         if (animationFrame !== null) {
           window.cancelAnimationFrame(animationFrame);
         }
         resizeObserver?.disconnect();
+        controls?.dispose();
         disposeObject(scene);
         renderer?.dispose();
       };
     } catch (error) {
       console.error('WBV trajectory renderer failed', error);
+      runtimeRef.current = null;
       setStatus('error');
+      controls?.dispose();
       renderer?.dispose();
       return undefined;
     }
-  }, [depthTicks, depthUnit, renderPoints, scenePoints, viewPreset]);
+  }, [depthTicks, depthUnit, renderPoints, scenePoints]);
+
+  useEffect(() => {
+    runtimeRef.current?.applyPreset(viewPreset);
+  }, [viewPreset, viewCommandId]);
 
   const pointCount = renderPoints.length.toLocaleString();
 
