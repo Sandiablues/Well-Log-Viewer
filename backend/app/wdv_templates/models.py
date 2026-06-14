@@ -134,3 +134,97 @@ class WdvTemplateReferenceSummaryResponse(BaseModel):
     record_type_counts: dict[str, int]
     reference_sources: list[dict[str, Any]]
     knowledge_policy: WdvKnowledgePolicy
+
+
+class WdvLoadedCurveRecommendationInput(BaseModel):
+    product_id: str | None = None
+    curve_id: str | None = None
+    display_curve_id: str | None = None
+    canonical_curve_id: str | None = None
+    original_mnemonic: str | None = None
+    mnemonic: str | None = None
+    normalized_name: str | None = None
+    display_name: str | None = None
+    curve_family: str | None = None
+    track_family: str | None = None
+    unit: str | None = None
+    is_renderable: bool | None = True
+    support_status: str | None = None
+    source_id: str | None = None
+
+
+class WdvTemplateRecommendationRequest(BaseModel):
+    loaded_curve_items: list[WdvLoadedCurveRecommendationInput] = Field(default_factory=list)
+    workflow_context: str | None = None
+    selected_product_ids: list[str] = Field(default_factory=list)
+    include_ineligible: bool = True
+
+
+class WdvRecommendedCurveResponse(BaseModel):
+    product_id: str
+    curve_id: str
+    mnemonic: str
+    display_name: str
+    unit: str | None = None
+    curve_family: str | None = None
+    raw_curve_family: str | None = None
+    canonical_curve_id: str | None = None
+    depth_role: str | None = None
+    selection_reason: str
+
+
+class WdvTemplateRequirementCoverageResponse(BaseModel):
+    available_families: list[str] = Field(default_factory=list)
+    missing_families: list[str] = Field(default_factory=list)
+    coverage_ratio: float = 0.0
+
+
+class WdvTemplateRecommendationTrackResponse(BaseModel):
+    track_id: str
+    track_key: str
+    track_number: int
+    track_name: str
+    track_role: str | None = None
+    renderer_type: str
+    required_renderer_capability: str | None = None
+    selected_curves: list[WdvRecommendedCurveResponse] = Field(default_factory=list)
+    alternate_curves: list[WdvRecommendedCurveResponse] = Field(default_factory=list)
+    missing_curve_families: list[str] = Field(default_factory=list)
+    scale_defaults: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class WdvTemplateRecommendationItemResponse(BaseModel):
+    template_key: str
+    template_label: str
+    workflow_context: str | None = None
+    template_priority: int | None = None
+    is_eligible: bool
+    rank: int
+    score: float
+    required_coverage: WdvTemplateRequirementCoverageResponse
+    preferred_coverage: WdvTemplateRequirementCoverageResponse
+    optional_coverage: WdvTemplateRequirementCoverageResponse
+    missing_required_families: list[str] = Field(default_factory=list)
+    missing_preferred_families: list[str] = Field(default_factory=list)
+    selected_curve_count: int = 0
+    alternate_curve_count: int = 0
+    excluded_curve_count: int = 0
+    selected_curves: list[WdvRecommendedCurveResponse] = Field(default_factory=list)
+    alternate_curves: list[WdvRecommendedCurveResponse] = Field(default_factory=list)
+    excluded_curves: list[WdvRecommendedCurveResponse] = Field(default_factory=list)
+    tracks: list[WdvTemplateRecommendationTrackResponse] = Field(default_factory=list)
+    renderer_requirements: list[str] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class WdvTemplateRecommendationEnvelope(BaseModel):
+    service: str = "wdv_template_recommendation_service"
+    contract_version: str
+    source: str
+    available_curve_count: int
+    classified_curve_count: int
+    unresolved_curve_count: int
+    unresolved_curves: list[WdvRecommendedCurveResponse] = Field(default_factory=list)
+    recommendation_count: int
+    recommendations: list[WdvTemplateRecommendationItemResponse] = Field(default_factory=list)
+    knowledge_policy: dict[str, Any]
