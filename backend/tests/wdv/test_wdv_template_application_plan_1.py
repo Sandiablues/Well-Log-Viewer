@@ -115,6 +115,33 @@ def test_application_plan_blocks_missing_required_families() -> None:
     assert plan["missing_required_families"]
 
 
+def test_application_plan_accepts_frontend_loaded_items_alias_payload() -> None:
+    response = client.post(
+        "/api/wlv/wdv/templates/application-plans/build",
+        json={
+            "templateKey": "open_hole_triple_combo",
+            "workflowContext": "open_hole",
+            "loaded_items": [
+                {"item_id": "gr_1", "mnemonic": "GR", "curveFamily": "gamma_ray", "unit": "API"},
+                {"item_id": "ild_1", "mnemonic": "ILD", "curveFamily": "resistivity", "unit": "ohm.m"},
+                {"item_id": "rhob_1", "mnemonic": "RHOB", "curveFamily": "density", "unit": "g/cc"},
+                {"item_id": "nphi_1", "mnemonic": "NPHI", "curveFamily": "neutron_porosity", "unit": "v/v"},
+            ],
+        },
+    )
+    assert response.status_code == 200
+    plan = response.json()["plan"]
+
+    assert plan["template_key"] == "open_hole_triple_combo"
+    assert plan["selected_curve_count"] >= 4
+    assert plan["missing_required_families"] == []
+    assert "missing_required_families" not in plan["blocking_issues"]
+    assert any(track["selected_curves"] for track in plan["tracks"])
+
+    selected_mnemonics = {curve["mnemonic"] for curve in plan["selected_curves"]}
+    assert {"GR", "ILD", "RHOB", "NPHI"}.issubset(selected_mnemonics)
+
+
 def test_application_plan_unknown_template_returns_404() -> None:
     response = client.post(
         "/api/wlv/wdv/templates/application-plans/build",

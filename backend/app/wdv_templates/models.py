@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 CONTRACT_VERSION = "wdv_backend_template_service_v1"
@@ -137,27 +137,106 @@ class WdvTemplateReferenceSummaryResponse(BaseModel):
 
 
 class WdvLoadedCurveRecommendationInput(BaseModel):
-    product_id: str | None = None
-    curve_id: str | None = None
-    display_curve_id: str | None = None
-    canonical_curve_id: str | None = None
-    original_mnemonic: str | None = None
+    """One WDV-loaded curve item supplied to backend template services.
+
+    The backend canonical field names remain snake_case.  The validation
+    aliases accept the payload shapes already used by the WDV frontend and
+    by earlier WDV contracts.  This keeps request normalization in the
+    backend contract layer instead of asking the frontend to infer or remap
+    application-plan truth.
+    """
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    product_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("product_id", "productId", "item_id", "itemId", "id"),
+    )
+    curve_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "curve_id",
+            "curveId",
+            "display_curve_id",
+            "displayCurveId",
+            "item_id",
+            "itemId",
+            "id",
+            "product_id",
+            "productId",
+        ),
+    )
+    display_curve_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("display_curve_id", "displayCurveId", "displayCurveID"),
+    )
+    canonical_curve_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("canonical_curve_id", "canonicalCurveId", "canonicalCurveID"),
+    )
+    original_mnemonic: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("original_mnemonic", "originalMnemonic"),
+    )
     mnemonic: str | None = None
-    normalized_name: str | None = None
-    display_name: str | None = None
-    curve_family: str | None = None
-    track_family: str | None = None
+    normalized_name: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("normalized_name", "normalizedName"),
+    )
+    display_name: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("display_name", "displayName", "name"),
+    )
+    curve_family: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("curve_family", "curveFamily", "family"),
+    )
+    track_family: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("track_family", "trackFamily"),
+    )
     unit: str | None = None
-    is_renderable: bool | None = True
-    support_status: str | None = None
-    source_id: str | None = None
+    is_renderable: bool | None = Field(
+        default=True,
+        validation_alias=AliasChoices("is_renderable", "isRenderable"),
+    )
+    support_status: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("support_status", "supportStatus"),
+    )
+    source_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("source_id", "sourceId"),
+    )
 
 
 class WdvTemplateRecommendationRequest(BaseModel):
-    loaded_curve_items: list[WdvLoadedCurveRecommendationInput] = Field(default_factory=list)
-    workflow_context: str | None = None
-    selected_product_ids: list[str] = Field(default_factory=list)
-    include_ineligible: bool = True
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    loaded_curve_items: list[WdvLoadedCurveRecommendationInput] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices(
+            "loaded_curve_items",
+            "loadedCurveItems",
+            "loaded_items",
+            "loadedItems",
+            "loaded_curves",
+            "loadedCurves",
+            "curves",
+        ),
+    )
+    workflow_context: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("workflow_context", "workflowContext"),
+    )
+    selected_product_ids: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("selected_product_ids", "selectedProductIds", "selected_ids", "selectedIds"),
+    )
+    include_ineligible: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("include_ineligible", "includeIneligible"),
+    )
 
 
 class WdvRecommendedCurveResponse(BaseModel):
@@ -233,11 +312,40 @@ class WdvTemplateRecommendationEnvelope(BaseModel):
 class WdvTemplateApplicationPlanRequest(BaseModel):
     """Request a backend-owned, non-mutating template application plan."""
 
-    template_key: str
-    loaded_curve_items: list[WdvLoadedCurveRecommendationInput] = Field(default_factory=list)
-    workflow_context: str | None = None
-    selected_product_ids: list[str] = Field(default_factory=list)
-    include_ineligible_recommendations: bool = True
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    template_key: str = Field(
+        validation_alias=AliasChoices("template_key", "templateKey"),
+    )
+    loaded_curve_items: list[WdvLoadedCurveRecommendationInput] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices(
+            "loaded_curve_items",
+            "loadedCurveItems",
+            "loaded_items",
+            "loadedItems",
+            "loaded_curves",
+            "loadedCurves",
+            "curves",
+        ),
+    )
+    workflow_context: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("workflow_context", "workflowContext"),
+    )
+    selected_product_ids: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("selected_product_ids", "selectedProductIds", "selected_ids", "selectedIds"),
+    )
+    include_ineligible_recommendations: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "include_ineligible_recommendations",
+            "includeIneligibleRecommendations",
+            "include_ineligible",
+            "includeIneligible",
+        ),
+    )
 
 
 class WdvTemplateApplicationTrackPlanResponse(BaseModel):
