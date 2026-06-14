@@ -237,7 +237,7 @@ class WdvLayoutPresetService:
             track = self._recommend_track(track_spec, family_index, selected_product_ids)
             tracks.append(track)
             missing_required_families.extend(track.missing_required_families)
-            for curve in track.curves:
+            for curve in track.selected_curves:
                 selected_product_ids.add(curve.product_id)
 
         missing_required_families = list(dict.fromkeys(missing_required_families))
@@ -251,7 +251,9 @@ class WdvLayoutPresetService:
                 min(1.0, (required_family_count - missing_family_count) / required_family_count),
             )
 
-        selected_curve_count = sum(len(track.curves) for track in tracks)
+        selected_curve_count = sum(track.selected_curve_count for track in tracks)
+        alternate_curve_count = sum(track.alternate_curve_count for track in tracks)
+        track_excluded_curve_count = sum(track.excluded_curve_count for track in tracks)
         if missing_required_families:
             recommendation_status = "partial" if selected_curve_count else "not_recommended"
         else:
@@ -276,6 +278,8 @@ class WdvLayoutPresetService:
             completeness_score=round(completeness_score, 3),
             available_curve_count=len(eligible),
             selected_curve_count=selected_curve_count,
+            alternate_curve_count=alternate_curve_count,
+            track_excluded_curve_count=track_excluded_curve_count,
             excluded_other_review_count=excluded_other,
             missing_required_families=missing_required_families,
             tracks=tracks,
@@ -539,13 +543,272 @@ class WdvLayoutPresetService:
             index[family] = list(deduped.values())
         return index
 
+    def _rank_track_candidates(
+        self,
+        spec: _TrackSpec,
+        candidate_items: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+        """Rank candidate curves into display-ready selections and alternates.
+
+        This is deliberately deterministic and backend-owned. It is not a
+        frontend convenience filter. The policy is intentionally conservative:
+        it chooses a small display-ready subset while preserving valid
+        alternates for later user override through a backend-owned apply flow.
+        """
+
+        policy = self._selection_policy_for_track(spec)
+        if not candidate_items:
+            return [], [], [], policy
+
+        deduped = self._dedupe_candidate_items(candidate_items)
+        track_id = _normalize_key(spec.track_id)
+
+        if track_id == "resistivity":
+            selected, alternates = self._select_resistivity_candidates(deduped)
+        elif track_id == "density_neutron":
+            selected, alternates = self._select_one_per_family(
+                deduped,
+                family_order=("density", "neutron_porosity"),
+                max_selected=2,
+            )
+        else:
+            selected, alternates = self._select_generic_candidates(
+                spec=spec,
+                candidate_items=deduped,
+                max_selected=int(policy["max_initial_curves"]),
+            )
+
+        selected_ids = {str(item.get("product_id")) for item in selected}
+        ranked_alternates = [item for item in alternates if str(item.get("product_id")) not in selected_ids]
+        return selected, ranked_alternates, [], policy
+
+    def _selection_policy_for_track(self, spec: _TrackSpec) -> dict[str, Any]:
+        track_id = _normalize_key(spec.track_id)
+        required = [_normalize_key(v) for v in spec.required_families]
+        optional = [_normalize_key(v) for v in spec.optional_families]
+        families = list(dict.fromkeys([*required, *optional]))
+
+        max_initial = spec.max_curves
+        policy_name = "one_best_curve_per_family"
+        if track_id == "resistivity":
+            max_initial = 3 if max_initial is None else min(max_initial, 3)
+            policy_name = "resistivity_depth_of_investigation_tiers"
+        elif track_id == "density_neutron":
+            max_initial = 2 if max_initial is None else min(max_initial, 2)
+            policy_name = "density_neutron_overlay_pair"
+        elif track_id in {"sonic"}:
+            max_initial = 3 if max_initial is None else min(max_initial, 3)
+            policy_name = "sonic_primary_and_shear_subset"
+        elif max_initial is None:
+            max_initial = max(1, min(3, len(families) or 1))
+
+        return {
+            "policy_name": policy_name,
+            "max_initial_curves": int(max_initial),
+            "frontend_may_not_expand_selection": True,
+            "alternates_require_backend_apply_flow": True,
+            "ranking_inputs": [
+                "approved_kr_template_rule",
+                "managed_inventory_curve_family",
+                "classification_confidence",
+                "classification_source",
+                "mnemonic_priority",
+                "display_rule_availability",
+            ],
+        }
+
+    def _dedupe_candidate_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        by_product: dict[str, dict[str, Any]] = {}
+        for item in sorted(items, key=_candidate_sort_key):
+            product_id = str(item.get("product_id") or "")
+            if product_id:
+                by_product.setdefault(product_id, item)
+        return list(by_product.values())
+
+    def _select_resistivity_candidates(
+        self,
+        candidate_items: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        selected: list[dict[str, Any]] = []
+        alternates: list[dict[str, Any]] = []
+        used_ids: set[str] = set()
+        tier_order = ("deep", "medium", "shallow")
+
+        for tier in tier_order:
+            tier_items = [item for item in candidate_items if self._resistivity_tier(item) == tier]
+            ranked = self._rank_items_for_family(tier_items, preferred_family="resistivity", tier=tier)
+            if ranked:
+                best = ranked[0]
+                selected.append(best)
+                used_ids.add(str(best.get("product_id")))
+                alternates.extend(ranked[1:])
+
+        alternate_ids = {str(item.get("product_id")) for item in alternates}
+        remaining = [
+            item
+            for item in candidate_items
+            if str(item.get("product_id")) not in used_ids
+            and str(item.get("product_id")) not in alternate_ids
+        ]
+        alternates.extend(self._rank_items_for_family(remaining, preferred_family="resistivity"))
+        return selected, alternates
+
+    def _select_one_per_family(
+        self,
+        candidate_items: list[dict[str, Any]],
+        family_order: tuple[str, ...],
+        max_selected: int,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        selected: list[dict[str, Any]] = []
+        alternates: list[dict[str, Any]] = []
+        used_ids: set[str] = set()
+
+        for family in family_order:
+            matches = [item for item in candidate_items if family in self._item_families(item)]
+            ranked = self._rank_items_for_family(matches, preferred_family=family)
+            if ranked and len(selected) < max_selected:
+                selected.append(ranked[0])
+                used_ids.add(str(ranked[0].get("product_id")))
+                alternates.extend(ranked[1:])
+            else:
+                alternates.extend(ranked)
+
+        alternate_ids = {str(item.get("product_id")) for item in alternates}
+        remaining = [
+            item
+            for item in candidate_items
+            if str(item.get("product_id")) not in used_ids
+            and str(item.get("product_id")) not in alternate_ids
+        ]
+        alternates.extend(self._rank_items_for_family(remaining))
+        return selected, alternates
+
+    def _select_generic_candidates(
+        self,
+        spec: _TrackSpec,
+        candidate_items: list[dict[str, Any]],
+        max_selected: int,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        family_order = tuple(dict.fromkeys([*spec.required_families, *spec.optional_families]))
+        if family_order:
+            selected, alternates = self._select_one_per_family(
+                candidate_items,
+                family_order=tuple(_normalize_key(v) for v in family_order),
+                max_selected=max_selected,
+            )
+            return selected[:max_selected], [*selected[max_selected:], *alternates]
+
+        ranked = self._rank_items_for_family(candidate_items)
+        return ranked[:max_selected], ranked[max_selected:]
+
+    def _rank_items_for_family(
+        self,
+        items: list[dict[str, Any]],
+        preferred_family: str | None = None,
+        tier: str | None = None,
+    ) -> list[dict[str, Any]]:
+        ranked: list[tuple[tuple[int, int, int, str], dict[str, Any]]] = []
+        for item in items:
+            score, reasons = self._selection_score(item, preferred_family=preferred_family, tier=tier)
+            enriched = dict(item)
+            enriched["_selection_score"] = float(score)
+            enriched["_ranking_reasons"] = reasons
+            ranked.append(((-score, *_candidate_sort_key(item)), enriched))
+        ranked.sort(key=lambda value: value[0])
+        return [item for _, item in ranked]
+
+    def _selection_score(
+        self,
+        item: dict[str, Any],
+        preferred_family: str | None = None,
+        tier: str | None = None,
+    ) -> tuple[int, list[str]]:
+        mnemonic = _upper_mnemonic(item.get("curve_name") or item.get("mnemonic") or item.get("source_curve_name"))
+        family = _normalize_key(preferred_family or self._item_family(item))
+        score = _confidence_rank(item.get("classification_confidence")) + _source_rank(item.get("classification_source"))
+        reasons = [
+            f"classification_confidence={item.get('classification_confidence') or 'unknown'}",
+            f"classification_source={item.get('classification_source') or 'managed_inventory'}",
+        ]
+
+        priority = self._mnemonic_priority(mnemonic=mnemonic, family=family, tier=tier)
+        score += priority
+        reasons.append(f"mnemonic_priority={priority}")
+        if tier:
+            reasons.append(f"resistivity_tier={tier}")
+        if self._display_scale_for_item(item).scale_type:
+            score += 5
+            reasons.append("display_rule_available")
+        return score, reasons
+
+    def _mnemonic_priority(self, mnemonic: str, family: str, tier: str | None = None) -> int:
+        m = _upper_mnemonic(mnemonic)
+        fam = _normalize_key(family)
+        exact_priority = {
+            "gamma_ray": {"GR": 100, "ECGR": 85, "HGR": 80, "GR_EDTC": 70, "GR_STGC": 65},
+            "density": {"RHOZ": 100, "RHOB": 95, "RHOM": 75, "RHL": 65, "HDRB": 60, "DPHZ": 45},
+            "neutron_porosity": {"NPHI": 100, "TNPH": 90, "NPOR": 80, "DNPH": 70, "HTNP": 60, "HNPO": 55},
+            "caliper": {"CALI": 100, "HCAL": 85, "DCAL": 75},
+            "photoelectric_factor": {"PEFZ": 100, "PEFS": 85, "PEFL": 80, "HPRA": 60},
+            "sonic": {"DTCO": 100, "DTC": 95, "DTSM": 85, "DTST": 80},
+            "spontaneous_potential": {"SP": 100, "SPAR": 80},
+            "collar_locator": {"CCL": 100},
+            "cement_bond": {"CBL": 100, "CBLAMP": 85, "AMP3FT": 75},
+            "variable_density": {"VDL": 100},
+        }
+        if fam == "resistivity":
+            return self._resistivity_priority(m, tier=tier)
+        for key, values in exact_priority.items():
+            if fam == key or key in fam:
+                return values.get(m, 40)
+        return 40
+
+    def _resistivity_tier(self, item: dict[str, Any]) -> str:
+        mnemonic = _upper_mnemonic(item.get("curve_name") or item.get("mnemonic") or item.get("source_curve_name"))
+        numbers = [int(value) for value in re.findall(r"(\d+)", mnemonic)]
+        if numbers:
+            value = max(numbers)
+            if value >= 60:
+                return "deep"
+            if value >= 20:
+                return "medium"
+            return "shallow"
+        if any(token in mnemonic for token in ("RT", "RD", "DEEP")):
+            return "deep"
+        if any(token in mnemonic for token in ("RX", "MS", "MED")):
+            return "medium"
+        return "other"
+
+    def _resistivity_priority(self, mnemonic: str, tier: str | None = None) -> int:
+        m = _upper_mnemonic(mnemonic)
+        prefix_priority = 0
+        if m.startswith("AT"):
+            prefix_priority = 100
+        elif m.startswith("AO"):
+            prefix_priority = 90
+        elif m.startswith("AF"):
+            prefix_priority = 80
+        elif m.startswith("AOR"):
+            prefix_priority = 70
+        elif m.startswith("RS"):
+            prefix_priority = 60
+        else:
+            prefix_priority = 40
+
+        desired = {"deep": 90, "medium": 30, "shallow": 10}.get(tier or "", None)
+        numbers = [int(value) for value in re.findall(r"(\d+)", m)]
+        if desired is not None and numbers:
+            distance = min(abs(value - desired) for value in numbers)
+            return prefix_priority + max(0, 40 - distance)
+        return prefix_priority
+
     def _recommend_track(
         self,
         spec: _TrackSpec,
         family_index: dict[str, list[dict[str, Any]]],
         selected_product_ids: set[str],
     ) -> WdvPresetTrackRecommendation:
-        selected: list[dict[str, Any]] = []
+        candidate_items: list[dict[str, Any]] = []
         missing_required: list[str] = []
 
         for family in spec.required_families:
@@ -553,24 +816,56 @@ class WdvLayoutPresetService:
             if not matches:
                 missing_required.append(family)
                 continue
-            selected.extend(matches)
+            candidate_items.extend(matches)
 
         for family in spec.optional_families:
             matches = self._available_family(family, family_index, selected_product_ids)
             for item in matches:
-                if item.get("product_id") not in {x.get("product_id") for x in selected}:
-                    selected.append(item)
+                if item.get("product_id") not in {x.get("product_id") for x in candidate_items}:
+                    candidate_items.append(item)
 
-        if spec.max_curves is not None:
-            selected = selected[: spec.max_curves]
+        selected_items, alternate_items, excluded_items, policy = self._rank_track_candidates(
+            spec=spec,
+            candidate_items=candidate_items,
+        )
 
-        curves = [self._curve_candidate(item) for item in selected]
+        selected_curves = [
+            self._curve_candidate(
+                item,
+                role="selected",
+                rank=index + 1,
+                ranking_reasons=item.get("_ranking_reasons") or [],
+                selection_score=item.get("_selection_score"),
+            )
+            for index, item in enumerate(selected_items)
+        ]
+        alternate_curves = [
+            self._curve_candidate(
+                item,
+                role="alternate",
+                rank=index + 1,
+                ranking_reasons=item.get("_ranking_reasons") or [],
+                selection_score=item.get("_selection_score"),
+            )
+            for index, item in enumerate(alternate_items)
+        ]
+        excluded_curves = [
+            self._curve_candidate(
+                item,
+                role="excluded",
+                rank=index + 1,
+                ranking_reasons=item.get("_ranking_reasons") or [],
+                selection_score=item.get("_selection_score"),
+            )
+            for index, item in enumerate(excluded_items)
+        ]
+
         if missing_required:
-            status = "partial" if curves else "missing"
+            status = "partial" if selected_curves else "missing"
             reason = "One or more required KR template curve families are missing."
-        elif curves:
+        elif selected_curves:
             status = "recommended"
-            reason = "Matched managed inventory curves to approved KR template_rule family requirements."
+            reason = "Ranked managed inventory curves into display-ready selections and alternates."
         else:
             status = "empty"
             reason = "No eligible managed inventory curves matched this KR template track."
@@ -582,7 +877,15 @@ class WdvLayoutPresetService:
             required_families=list(spec.required_families),
             optional_families=list(spec.optional_families),
             overlay_rules=list(spec.overlay_rules),
-            curves=curves,
+            selected_curves=selected_curves,
+            alternate_curves=alternate_curves,
+            excluded_curves=excluded_curves,
+            curves=selected_curves,
+            candidate_curve_count=len(candidate_items),
+            selected_curve_count=len(selected_curves),
+            alternate_curve_count=len(alternate_curves),
+            excluded_curve_count=len(excluded_curves),
+            selection_policy=policy,
             missing_required_families=missing_required,
             missing_optional_families=[
                 family
@@ -608,7 +911,14 @@ class WdvLayoutPresetService:
             matches.append(item)
         return sorted(matches, key=_candidate_sort_key)
 
-    def _curve_candidate(self, item: dict[str, Any]) -> WdvPresetCurveCandidate:
+    def _curve_candidate(
+        self,
+        item: dict[str, Any],
+        role: str = "selected",
+        rank: int | None = None,
+        ranking_reasons: list[str] | None = None,
+        selection_score: float | None = None,
+    ) -> WdvPresetCurveCandidate:
         mnemonic = _upper_mnemonic(item.get("curve_name") or item.get("mnemonic") or item.get("source_curve_name"))
         display_scale = self._display_scale_for_item(item)
         canonical_curve_id = item.get("_canonical_curve_id")
@@ -616,6 +926,11 @@ class WdvLayoutPresetService:
         evidence = [str(reason) for reason in item.get("classification_reasons") or [] if str(reason)]
         source = str(item.get("classification_source") or "managed_inventory")
         confidence = str(item.get("classification_confidence") or "unknown")
+        verb = {
+            "selected": "Selected",
+            "alternate": "Ranked as alternate",
+            "excluded": "Excluded",
+        }.get(role, "Considered")
 
         return WdvPresetCurveCandidate(
             product_id=str(item.get("product_id")),
@@ -631,8 +946,12 @@ class WdvLayoutPresetService:
             classification_confidence=confidence,
             unit=item.get("curve_unit") or item.get("unit"),
             display_scale=display_scale,
+            selection_role=role,
+            rank=rank,
+            selection_score=selection_score,
+            ranking_reasons=ranking_reasons or [],
             reason=(
-                f"Selected {mnemonic} from Managed Well Inventory for an approved KR "
+                f"{verb} {mnemonic} from Managed Well Inventory for an approved KR "
                 f"template_rule using {source} classification ({confidence})."
             ),
             evidence=evidence,
