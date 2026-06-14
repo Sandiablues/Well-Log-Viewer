@@ -8,7 +8,7 @@ import { WellLogPropertiesPanelSlot } from './WellLogPropertiesPanelSlot';
 import { SourceIntakeWorkbench } from '../source-intake/SourceIntakeWorkbench';
 import { Wellbore3DPage } from '../wbv/Wellbore3DPage';
 import { loadBackendViewerPackageWithFallback, type BackendViewerPackageLoadResult } from './backendViewerPackageAdapter';
-import { buildWdvPackageState, emptyWdvPackageState, type WdvPackageState } from './wdvPackageState';
+import { buildWdvPackageState, emptyWdvPackageState, type WdvLoadedCurveItem, type WdvPackageState } from './wdvPackageState';
 import { useTrackBodyGeometry } from './useTrackBodyGeometry';
 import type {
   ActiveTrackType,
@@ -136,6 +136,100 @@ type ManagedInventoryStatusPayload = {
   last_checked_at?: string | null;
 };
 
+type WdvTemplateRecommendationLoadedCurvePayload = {
+  product_id?: string | null;
+  curve_id?: string | null;
+  display_curve_id?: string | null;
+  canonical_curve_id?: string | null;
+  original_mnemonic?: string | null;
+  mnemonic?: string | null;
+  normalized_name?: string | null;
+  display_name?: string | null;
+  curve_family?: string | null;
+  track_family?: string | null;
+  unit?: string | null;
+  is_renderable?: boolean | null;
+  support_status?: string | null;
+  source_id?: string | null;
+};
+
+type WdvTemplateRecommendationRequestPayload = {
+  loaded_curve_items: WdvTemplateRecommendationLoadedCurvePayload[];
+  workflow_context?: string | null;
+  selected_product_ids?: string[];
+  include_ineligible?: boolean;
+};
+
+type WdvRecommendedCurve = {
+  product_id?: string | null;
+  curve_id?: string | null;
+  mnemonic?: string | null;
+  display_name?: string | null;
+  unit?: string | null;
+  curve_family?: string | null;
+  raw_curve_family?: string | null;
+  canonical_curve_id?: string | null;
+  depth_role?: string | null;
+  selection_reason?: string | null;
+};
+
+type WdvTemplateRequirementCoverage = {
+  available_families?: string[];
+  missing_families?: string[];
+  coverage_ratio?: number;
+};
+
+type WdvTemplateRecommendationTrack = {
+  track_id?: string | null;
+  track_key?: string | null;
+  track_number?: number | null;
+  track_name?: string | null;
+  track_role?: string | null;
+  renderer_type?: string | null;
+  required_renderer_capability?: string | null;
+  selected_curves?: WdvRecommendedCurve[];
+  alternate_curves?: WdvRecommendedCurve[];
+  missing_curve_families?: string[];
+  scale_defaults?: Array<Record<string, unknown>>;
+};
+
+type WdvTemplateRecommendationItem = {
+  template_key: string;
+  template_label: string;
+  workflow_context?: string | null;
+  template_priority?: number | null;
+  is_eligible: boolean;
+  rank: number;
+  score: number;
+  required_coverage?: WdvTemplateRequirementCoverage;
+  preferred_coverage?: WdvTemplateRequirementCoverage;
+  optional_coverage?: WdvTemplateRequirementCoverage;
+  missing_required_families?: string[];
+  missing_preferred_families?: string[];
+  selected_curve_count?: number;
+  alternate_curve_count?: number;
+  excluded_curve_count?: number;
+  selected_curves?: WdvRecommendedCurve[];
+  alternate_curves?: WdvRecommendedCurve[];
+  excluded_curves?: WdvRecommendedCurve[];
+  tracks?: WdvTemplateRecommendationTrack[];
+  renderer_requirements?: string[];
+  reason_codes?: string[];
+};
+
+type WdvTemplateRecommendationEnvelope = {
+  service: string;
+  contract_version: string;
+  source: string;
+  available_curve_count: number;
+  classified_curve_count: number;
+  unresolved_curve_count: number;
+  unresolved_curves?: WdvRecommendedCurve[];
+  recommendation_count: number;
+  recommendations: WdvTemplateRecommendationItem[];
+  knowledge_policy?: Record<string, unknown>;
+};
+
 type IntervalSelectionState = {
   startDepth: number;
   currentDepth: number;
@@ -239,6 +333,66 @@ async function fetchWlvJson<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+function recommendationCurveFamily(item: WdvLoadedCurveItem): string | null {
+  if (item.trackFamily) return item.trackFamily;
+  switch (item.curveFamily) {
+    case 'gamma': return 'gamma_ray';
+    case 'borehole': return 'caliper';
+    case 'neutron': return 'neutron_porosity';
+    case 'sonic': return 'sonic_slowness';
+    default: return item.curveFamily || null;
+  }
+}
+
+function buildWdvTemplateRecommendationRequest(
+  loadedCurveItems: WdvLoadedCurveItem[],
+): WdvTemplateRecommendationRequestPayload {
+  return {
+    workflow_context: 'open_hole',
+    include_ineligible: true,
+    selected_product_ids: [],
+    loaded_curve_items: loadedCurveItems.map((item) => ({
+      product_id: item.productId,
+      curve_id: item.curveId,
+      display_curve_id: item.displayCurveId,
+      canonical_curve_id: item.canonicalCurveId ?? null,
+      original_mnemonic: item.originalMnemonic,
+      mnemonic: item.originalMnemonic,
+      normalized_name: item.displayName,
+      display_name: item.displayName,
+      curve_family: recommendationCurveFamily(item),
+      track_family: item.trackFamily ?? null,
+      unit: item.unit,
+      is_renderable: true,
+      support_status: item.supportStatus ?? null,
+      source_id: item.sourceId ?? null,
+    })),
+  };
+}
+
+async function evaluateWdvTemplateRecommendations(
+  loadedCurveItems: WdvLoadedCurveItem[],
+): Promise<WdvTemplateRecommendationEnvelope> {
+  return fetchWlvJson<WdvTemplateRecommendationEnvelope>(
+    '/api/wlv/wdv/templates/recommendations/evaluate',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildWdvTemplateRecommendationRequest(loadedCurveItems)),
+    },
+  );
+}
+
+function formatRecommendationPercent(value?: number): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
+  return `${Math.round(value * 100)}%`;
+}
+
+function compactFamilyList(values?: string[], fallback = 'None'): string {
+  if (!values || values.length === 0) return fallback;
+  return values.slice(0, 6).join(', ') + (values.length > 6 ? ` +${values.length - 6}` : '');
 }
 
 function statusLabel(status?: string | null): string {
@@ -1863,6 +2017,94 @@ function CurveInventory({
   );
 }
 
+
+function WdvTemplateRecommendationModal({
+  recommendation,
+  onClose,
+}: {
+  recommendation: WdvTemplateRecommendationItem;
+  onClose: () => void;
+}) {
+  return createPortal(
+    <div className="wlv-template-modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="wlv-template-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="WDV template recommendation"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="wlv-template-modal-header">
+          <div>
+            <span>Backend KR recommendation</span>
+            <h2>{recommendation.template_label}</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close template recommendation">×</button>
+        </header>
+
+        <div className="wlv-template-modal-summary">
+          <div><strong>Rank</strong><span>{recommendation.rank}</span></div>
+          <div><strong>Score</strong><span>{Math.round(recommendation.score)}</span></div>
+          <div><strong>Required</strong><span>{formatRecommendationPercent(recommendation.required_coverage?.coverage_ratio)}</span></div>
+          <div><strong>Curves</strong><span>{recommendation.selected_curve_count ?? 0} selected</span></div>
+        </div>
+
+        <section className="wlv-template-modal-section">
+          <h3>Coverage</h3>
+          <dl className="wlv-template-modal-dl">
+            <dt>Available families</dt>
+            <dd>{compactFamilyList(recommendation.required_coverage?.available_families, 'No matching required families')}</dd>
+            <dt>Missing required</dt>
+            <dd>{compactFamilyList(recommendation.missing_required_families, 'None')}</dd>
+            <dt>Missing preferred</dt>
+            <dd>{compactFamilyList(recommendation.missing_preferred_families, 'None')}</dd>
+          </dl>
+        </section>
+
+        <section className="wlv-template-modal-section">
+          <h3>Selected representative curves</h3>
+          {(recommendation.selected_curves ?? []).length > 0 ? (
+            <div className="wlv-template-curve-list">
+              {(recommendation.selected_curves ?? []).slice(0, 12).map((curve, index) => (
+                <div key={`${curve.product_id ?? curve.curve_id ?? curve.mnemonic ?? 'curve'}-${index}`} className="wlv-template-curve-row">
+                  <strong>{curve.mnemonic || curve.display_name || curve.curve_id || 'Curve'}</strong>
+                  <span>{curve.curve_family || curve.raw_curve_family || 'unclassified'}</span>
+                  <em>{curve.selection_reason || 'backend selected'}</em>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="wlv-template-empty-note">No representative curves selected by the backend for this template.</p>
+          )}
+        </section>
+
+        <section className="wlv-template-modal-section">
+          <h3>Track plan</h3>
+          <div className="wlv-template-track-plan">
+            {(recommendation.tracks ?? []).slice(0, 10).map((track) => (
+              <div key={track.track_key || track.track_id || track.track_name || String(track.track_number)} className="wlv-template-track-row">
+                <strong>{track.track_number ?? '—'}. {track.track_name || track.track_key || 'Track'}</strong>
+                <span>{track.renderer_type || 'renderer pending'}</span>
+                <small>
+                  {(track.selected_curves ?? []).length} selected · {compactFamilyList(track.missing_curve_families, 'no missing families')}
+                </small>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <footer className="wlv-template-modal-actions">
+          <button type="button" onClick={onClose}>Cancel</button>
+          <button type="button" disabled title="Template application is reserved for a later backend-owned apply block">
+            Apply disabled
+          </button>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 type AddTrackDraft = {
   trackType: ActiveTrackType;
   depthBasis: DepthBasis;
@@ -1912,6 +2154,12 @@ function Toolbar({
   onToggleIntervalZoom,
   onGoToDepth,
   onAddTrackCurveSelectionModeChange,
+  layoutRecommendations,
+  layoutRecommendationsLoading,
+  layoutRecommendationsError,
+  selectedLayoutRecommendationKey,
+  onLayoutRecommendationChange,
+  onRefreshLayoutRecommendations,
 }: {
   selectedTrack: WellLogTrack | null;
   pendingAddTrackCurveCount: number;
@@ -1941,6 +2189,12 @@ function Toolbar({
   onToggleIntervalZoom: () => void;
   onGoToDepth: () => void;
   onAddTrackCurveSelectionModeChange: (active: boolean) => void;
+  layoutRecommendations: WdvTemplateRecommendationItem[];
+  layoutRecommendationsLoading: boolean;
+  layoutRecommendationsError: string | null;
+  selectedLayoutRecommendationKey: string;
+  onLayoutRecommendationChange: (templateKey: string) => void;
+  onRefreshLayoutRecommendations: () => void;
 }) {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [draft, setDraft] = useState<AddTrackDraft>(defaultAddTrackDraft);
@@ -2126,6 +2380,15 @@ function Toolbar({
   }, [builderOpen, panelPosition.left, panelPosition.top]);
 
   const addTrackLabel = 'Add track';
+  const eligibleLayoutRecommendations = layoutRecommendations.filter((item) => item.is_eligible);
+  const layoutRecommendationOptions = eligibleLayoutRecommendations.length > 0 ? eligibleLayoutRecommendations : layoutRecommendations;
+  const layoutPresetPlaceholder = layoutRecommendationsLoading
+    ? 'Loading KR presets...'
+    : layoutRecommendationsError
+      ? 'Template service unavailable'
+      : layoutRecommendationOptions.length > 0
+        ? 'Layout Preset ▾'
+        : 'No KR presets available';
 
   const addTrackBuilder = builderOpen ? createPortal(
     <div
@@ -2326,12 +2589,31 @@ function Toolbar({
           >
             Reset
           </button>
-          <select aria-label="Layout preset" className="wlv-layout-preset-select" defaultValue="standard_qaqc">
-            <option value="standard_qaqc">Layout Preset ▾</option>
-            <option value="standard_qaqc_layout">Standard QAQC Layout</option>
-            <option value="corporate_triple_combo">Corporate Triple Combo</option>
-            <option value="blank_layout">Blank Layout</option>
+          <select
+            aria-label="Layout preset"
+            className="wlv-layout-preset-select"
+            value={selectedLayoutRecommendationKey}
+            disabled={layoutRecommendationsLoading || layoutRecommendationOptions.length === 0}
+            title={layoutRecommendationsError ?? 'Backend-approved KR layout presets'}
+            onChange={(event) => onLayoutRecommendationChange(event.target.value)}
+          >
+            <option value="">{layoutPresetPlaceholder}</option>
+            {layoutRecommendationOptions.map((item) => (
+              <option key={item.template_key} value={item.template_key}>
+                {item.template_label}
+              </option>
+            ))}
           </select>
+          <button
+            type="button"
+            className="wlv-layout-preset-refresh"
+            title="Refresh backend KR template recommendations"
+            aria-label="Refresh backend KR template recommendations"
+            disabled={layoutRecommendationsLoading}
+            onClick={onRefreshLayoutRecommendations}
+          >
+            ↻
+          </button>
         </div>
       </div>
 
@@ -3428,6 +3710,11 @@ export function TrackLayoutPrototype() {
   const [curveInventoryResizeState, setCurveInventoryResizeState] = useState<CurveInventoryResizeState | null>(null);
   const hasLoadedViewerWell = Boolean(managedViewerWellId);
   const [trackBackdropMode, setTrackBackdropMode] = useState<TrackBackdropMode>('light');
+  const [wdvTemplateRecommendations, setWdvTemplateRecommendations] = useState<WdvTemplateRecommendationItem[]>([]);
+  const [wdvTemplateRecommendationsLoading, setWdvTemplateRecommendationsLoading] = useState(false);
+  const [wdvTemplateRecommendationsError, setWdvTemplateRecommendationsError] = useState<string | null>(null);
+  const [selectedWdvTemplateKey, setSelectedWdvTemplateKey] = useState('');
+  const [wdvTemplateModalOpen, setWdvTemplateModalOpen] = useState(false);
 
   const activeFullDepthRange = useMemo(
     () => wdvPackageState.depthRange ?? FULL_DEPTH_RANGE,
@@ -3552,6 +3839,48 @@ export function TrackLayoutPrototype() {
 
     return [...mutableCatalog];
   }, [activeViewerCurves]);
+  const loadWdvTemplateRecommendations = () => {
+    if (!hasLoadedViewerWell || wdvPackageState.loadedCurveItems.length === 0) {
+      setWdvTemplateRecommendations([]);
+      setWdvTemplateRecommendationsError(null);
+      setSelectedWdvTemplateKey('');
+      setWdvTemplateModalOpen(false);
+      return;
+    }
+
+    setWdvTemplateRecommendationsLoading(true);
+    setWdvTemplateRecommendationsError(null);
+    void evaluateWdvTemplateRecommendations(wdvPackageState.loadedCurveItems)
+      .then((result) => {
+        const recommendations = [...(result.recommendations ?? [])].sort((a, b) => a.rank - b.rank);
+        setWdvTemplateRecommendations(recommendations);
+        setSelectedWdvTemplateKey((current) => (
+          current && recommendations.some((item) => item.template_key === current) ? current : ''
+        ));
+      })
+      .catch((error) => {
+        setWdvTemplateRecommendations([]);
+        setSelectedWdvTemplateKey('');
+        setWdvTemplateModalOpen(false);
+        setWdvTemplateRecommendationsError(error instanceof Error ? error.message : 'Template recommendation service unavailable');
+      })
+      .finally(() => setWdvTemplateRecommendationsLoading(false));
+  };
+
+  useEffect(() => {
+    loadWdvTemplateRecommendations();
+  }, [hasLoadedViewerWell, wdvPackageState.loadedCurveItems]);
+
+  const selectedWdvTemplateRecommendation = useMemo(
+    () => wdvTemplateRecommendations.find((item) => item.template_key === selectedWdvTemplateKey) ?? null,
+    [selectedWdvTemplateKey, wdvTemplateRecommendations],
+  );
+
+  const handleLayoutRecommendationChange = (templateKey: string) => {
+    setSelectedWdvTemplateKey(templateKey);
+    setWdvTemplateModalOpen(Boolean(templateKey));
+  };
+
   const curveUsageCounts = useMemo(() => wdvPackageState.curveUsageCounts, [wdvPackageState]);
 
   const selectedTrackCurveIds = useMemo(() => {
@@ -4051,7 +4380,20 @@ export function TrackLayoutPrototype() {
             setPendingAddTrackCurveIds([]);
           }
         }}
+        layoutRecommendations={wdvTemplateRecommendations}
+        layoutRecommendationsLoading={wdvTemplateRecommendationsLoading}
+        layoutRecommendationsError={wdvTemplateRecommendationsError}
+        selectedLayoutRecommendationKey={selectedWdvTemplateKey}
+        onLayoutRecommendationChange={handleLayoutRecommendationChange}
+        onRefreshLayoutRecommendations={loadWdvTemplateRecommendations}
       />
+
+      {wdvTemplateModalOpen && selectedWdvTemplateRecommendation ? (
+        <WdvTemplateRecommendationModal
+          recommendation={selectedWdvTemplateRecommendation}
+          onClose={() => setWdvTemplateModalOpen(false)}
+        />
+      ) : null}
 
       <div
         className={`wlv-prototype-workspace wlv-track-backdrop-${trackBackdropMode} ${curveInventoryResizeState ? 'curve-inventory-resize-active' : ''}`}
