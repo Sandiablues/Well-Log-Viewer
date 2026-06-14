@@ -26,6 +26,7 @@ Storage document shape::
 from __future__ import annotations
 
 import dataclasses
+from dataclasses import fields
 import json
 import os
 from datetime import datetime, timezone
@@ -40,6 +41,7 @@ from .managed_models import (
     CurveDefinitionRecord,
     DisplayRuleRecord,
     EvidenceRecord,
+    GenericManagedRecord,
     TemplateRuleRecord,
 )
 
@@ -85,9 +87,63 @@ def _convert_for_json(obj: Any) -> Any:
     return obj
 
 
+def _dataclass_field_names(cls: type[Any]) -> set[str]:
+    """Return dataclass field names for a record class."""
+    return {f.name for f in fields(cls)}
+
+
+def _filter_for_dataclass(cls: type[Any], data: dict[str, Any]) -> dict[str, Any]:
+    """Keep only keys accepted by the target dataclass."""
+    allowed = _dataclass_field_names(cls)
+    return {k: v for k, v in data.items() if k in allowed}
+
+
+def _extra_for_dataclass(cls: type[Any], data: dict[str, Any]) -> dict[str, Any]:
+    """Return stored keys not represented directly by the target dataclass."""
+    allowed = _dataclass_field_names(cls)
+    return {k: v for k, v in data.items() if k not in allowed}
+
+
+def _attach_storage_extra_fields(record: Any, extra: dict[str, Any]) -> Any:
+    """Attach lossless storage-only fields without changing dataclass contracts.
+
+    The managed KR JSON now contains approved governance/reference metadata that
+    older typed record classes do not expose directly.  We preserve that data for
+    future saves while keeping the public dataclass APIs stable.  In particular,
+    EvidenceRecord must not grow a public ``status`` attribute.
+    """
+    if extra:
+        setattr(record, "_storage_extra_fields", dict(extra))
+    return record
+
+
+def _typed_record_from_data(cls: type[Any], data: dict[str, Any]) -> Any:
+    """Instantiate a typed record and preserve unknown stored fields losslessly."""
+    record = cls(**_filter_for_dataclass(cls, data))
+    return _attach_storage_extra_fields(record, _extra_for_dataclass(cls, data))
+
+
+def _generic_record_from_data(data: dict[str, Any]) -> GenericManagedRecord:
+    """Build a lossless GenericManagedRecord from an unknown governed record."""
+    allowed = _dataclass_field_names(GenericManagedRecord) - {"extra_fields"}
+    common = {k: v for k, v in data.items() if k in allowed}
+    extra = {k: v for k, v in data.items() if k not in allowed}
+    return GenericManagedRecord(**common, extra_fields=extra)
+
+
 def serialize_record(record: Any) -> dict[str, Any]:
-    """Convert a managed record dataclass to a JSON-serialisable dict."""
+    """Convert a managed/evidence record dataclass to a JSON-serialisable dict.
+
+    Storage-only extra fields captured during deserialisation are merged back
+    so approved KR reference/evidence metadata is not lost on later saves.
+    Dataclass fields remain authoritative over any duplicated extra key.
+    """
     raw = dataclasses.asdict(record)
+    if isinstance(record, GenericManagedRecord):
+        extra = raw.pop("extra_fields", {}) or {}
+    else:
+        extra = getattr(record, "_storage_extra_fields", {}) or {}
+    raw = {**extra, **raw}
     return {k: _convert_for_json(v) for k, v in raw.items()}
 
 
@@ -114,6 +170,7 @@ def deserialize_record(data: dict[str, Any]) -> Any:
         _DATETIME_FIELDS = (
             "created_at",
             "updated_at",
+            "reviewed_at",
             "approved_at",
             "deprecated_at",
         )
@@ -127,22 +184,24 @@ def deserialize_record(data: dict[str, Any]) -> Any:
                     ) from exc
 
         if record_type == "curve_definition":
-            return CurveDefinitionRecord(**data)
+            return _typed_record_from_data(CurveDefinitionRecord, data)
         elif record_type == "alias":
-            return AliasRecord(**data)
+            return _typed_record_from_data(AliasRecord, data)
         elif record_type == "display_rule":
-            return DisplayRuleRecord(**data)
+            return _typed_record_from_data(DisplayRuleRecord, data)
         elif record_type == "classification_rule":
-            return ClassificationRuleRecord(**data)
+            return _typed_record_from_data(ClassificationRuleRecord, data)
         elif record_type == "template_rule":
-            return TemplateRuleRecord(**data)
+            return _typed_record_from_data(TemplateRuleRecord, data)
         elif record_type == "alias_enrichment":
             # KR-DATA-MODEL-1: technical-subtype enrichment records
-            return AliasEnrichmentRecord(**data)
+            return _typed_record_from_data(AliasEnrichmentRecord, data)
         else:
-            raise ManagedStorageError(
-                f"Unknown record_type {record_type!r} in storage"
-            )
+            # Forward-compatible governed KR record.  This is required for the
+            # approved WDV template/reference layer, whose record families are
+            # schema-driven and should not require a bespoke Python dataclass
+            # before the repository can load and filter them.
+            return _generic_record_from_data(data)
     except ManagedStorageError:
         raise
     except Exception as exc:
@@ -152,17 +211,24 @@ def deserialize_record(data: dict[str, Any]) -> Any:
 
 
 def deserialize_evidence(data: dict[str, Any]) -> EvidenceRecord:
-    """Reconstruct an EvidenceRecord from a stored dict."""
+    """Reconstruct an EvidenceRecord from a stored dict.
+
+    Evidence records are provenance-only.  Storage may contain approved-source
+    metadata such as status/reviewed_at/approved_at from imported references;
+    those fields are preserved as storage-only extras and are not exposed as
+    public EvidenceRecord attributes.
+    """
     try:
         data = dict(data)
-        if "created_at" in data and data["created_at"] is not None:
-            try:
-                data["created_at"] = datetime.fromisoformat(data["created_at"])
-            except (ValueError, TypeError) as exc:
-                raise ManagedStorageError(
-                    f"Invalid datetime for created_at: {data['created_at']!r}: {exc}"
-                ) from exc
-        return EvidenceRecord(**data)
+        for field_name in ("created_at", "reviewed_at", "approved_at"):
+            if field_name in data and data[field_name] is not None:
+                try:
+                    data[field_name] = datetime.fromisoformat(data[field_name])
+                except (ValueError, TypeError) as exc:
+                    raise ManagedStorageError(
+                        f"Invalid datetime for {field_name}: {data[field_name]!r}: {exc}"
+                    ) from exc
+        return _typed_record_from_data(EvidenceRecord, data)
     except ManagedStorageError:
         raise
     except Exception as exc:

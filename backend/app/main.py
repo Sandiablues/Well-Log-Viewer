@@ -17,6 +17,7 @@ from .inventory.api_inventory import router as inventory_router
 from .wbv.router import router as wbv_router
 from .ingestion.api_ingestion import router as ingestion_router
 from .source_intake.router import router as source_intake_router
+from .wdv_templates.router import router as wdv_template_router
 from .knowledge.api_knowledge import router as knowledge_router
 from .knowledge.api_managed_knowledge import router as managed_knowledge_router
 from .knowledge.api_managed_knowledge import resolve_router as resolve_knowledge_router
@@ -52,4 +53,5 @@ app.include_router(inventory_router)
 app.include_router(wbv_router)
 app.include_router(ingestion_router)
 app.include_router(source_intake_router)
+app.include_router(wdv_template_router)
 app.include_router(wlv_router)

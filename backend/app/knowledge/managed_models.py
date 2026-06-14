@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from .governance import GovernanceStatus
 
@@ -101,10 +101,13 @@ class CurveDefinitionRecord:
     updated_at: Optional[datetime] = None
     created_by: str = "system"
     reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
     approved_by: Optional[str] = None
     approved_at: Optional[datetime] = None
     deprecated_at: Optional[datetime] = None
     change_reason: Optional[str] = None
+    production_eligible: Optional[bool] = None
+    runtime_eligible: Optional[bool] = None
     evidence_refs: list[str] = field(default_factory=list)
     # KR-4: compact governance audit history.  Each entry records:
     # {action, actor, timestamp, previous_status, new_status, reason, notes}
@@ -141,9 +144,14 @@ class AliasRecord:
     evidence_refs: list[str] = field(default_factory=list)
     created_at: Optional[datetime] = field(default_factory=_utcnow)
     updated_at: Optional[datetime] = None
+    version: int = 1
     reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
     approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
     change_reason: Optional[str] = None
+    production_eligible: Optional[bool] = None
+    runtime_eligible: Optional[bool] = None
     governance_history: list[dict] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -184,8 +192,13 @@ class DisplayRuleRecord:
     evidence_refs: list[str] = field(default_factory=list)
     created_at: Optional[datetime] = field(default_factory=_utcnow)
     updated_at: Optional[datetime] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
     approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
     change_reason: Optional[str] = None
+    production_eligible: Optional[bool] = None
+    runtime_eligible: Optional[bool] = None
     governance_history: list[dict] = field(default_factory=list)
 
 
@@ -220,8 +233,13 @@ class ClassificationRuleRecord:
     evidence_refs: list[str] = field(default_factory=list)
     created_at: Optional[datetime] = field(default_factory=_utcnow)
     updated_at: Optional[datetime] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
     approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
     change_reason: Optional[str] = None
+    production_eligible: Optional[bool] = None
+    runtime_eligible: Optional[bool] = None
     governance_history: list[dict] = field(default_factory=list)
 
 
@@ -257,13 +275,94 @@ class TemplateRuleRecord:
     evidence_refs: list[str] = field(default_factory=list)
     created_at: Optional[datetime] = field(default_factory=_utcnow)
     updated_at: Optional[datetime] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
     approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    deprecated_at: Optional[datetime] = None
     change_reason: Optional[str] = None
+    production_eligible: Optional[bool] = None
+    runtime_eligible: Optional[bool] = None
     governance_history: list[dict] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
-# F. Evidence / Source Record
+# F. Generic Managed Record
+# ---------------------------------------------------------------------------
+
+@dataclass
+class GenericManagedRecord:
+    """Governed KR record for approved/candidate record types without a
+    dedicated Python dataclass.
+
+    The managed KR storage layer may contain governed knowledge families that
+    are intentionally schema-driven rather than hard-coded into Python classes,
+    such as WDV preview templates, template tracks, template-family
+    requirements, scale defaults, track object types, and reference manifests.
+    This wrapper preserves those records losslessly while still exposing the
+    common governance fields used by repository filters.  Non-common fields are
+    kept flat in storage via ``extra_fields`` serialization support.
+    """
+
+    record_id: str
+    record_type: str
+
+    status: GovernanceStatus = GovernanceStatus.SEED
+    version: int = 1
+    created_at: Optional[datetime] = field(default_factory=_utcnow)
+    updated_at: Optional[datetime] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    deprecated_at: Optional[datetime] = None
+    change_reason: Optional[str] = None
+    evidence_refs: list[str] = field(default_factory=list)
+    governance_history: list[dict] = field(default_factory=list)
+    production_eligible: Optional[bool] = None
+    runtime_eligible: Optional[bool] = None
+    preview_eligible: Optional[bool] = None
+    auto_build_eligible: Optional[bool] = None
+    rule_status: Optional[str] = None
+    extra_fields: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def data(self) -> dict[str, Any]:
+        """Return a flat dictionary view of common and schema-driven fields."""
+        out = dict(self.extra_fields)
+        for key in (
+            "record_id",
+            "record_type",
+            "status",
+            "version",
+            "created_at",
+            "updated_at",
+            "reviewed_by",
+            "reviewed_at",
+            "approved_by",
+            "approved_at",
+            "deprecated_at",
+            "change_reason",
+            "evidence_refs",
+            "governance_history",
+            "production_eligible",
+            "runtime_eligible",
+            "preview_eligible",
+            "auto_build_eligible",
+            "rule_status",
+        ):
+            out[key] = getattr(self, key)
+        return out
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return self.extra_fields[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+
+# ---------------------------------------------------------------------------
+# G. Evidence / Source Record
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -271,11 +370,12 @@ class EvidenceRecord:
     """Provenance / source record for knowledge items.
 
     Captures where a piece of knowledge came from: a document, publication,
-    observed LAS file, or vendor spec.  Evidence records are not governed
-    (no lifecycle status); they are immutable provenance anchors.
+    observed LAS file, or vendor spec. Evidence records are not governed
+    and intentionally do not expose lifecycle ``status`` fields.
 
-    Internet access is NOT required — source_url is optional and the system
-    works fully standalone.
+    Approved reference-source ingest may store extra provenance metadata in
+    JSON.  The storage layer preserves that metadata without adding it to this
+    public EvidenceRecord dataclass contract.
     """
 
     evidence_id: str
@@ -286,6 +386,7 @@ class EvidenceRecord:
     source_reference: Optional[str] = None
     source_file: Optional[str] = None
     source_url: Optional[str] = None
+    source_storage_path: Optional[str] = None
     extracted_text: Optional[str] = None
     observed_mnemonic: Optional[str] = None
     observed_unit: Optional[str] = None
@@ -293,3 +394,6 @@ class EvidenceRecord:
     confidence: float = 1.0
     created_at: Optional[datetime] = field(default_factory=_utcnow)
     notes: Optional[str] = None
+    file_sha256: Optional[str] = None
+    file_size_bytes: Optional[int] = None
+    page_count: Optional[int] = None

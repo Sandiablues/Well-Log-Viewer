@@ -59,6 +59,7 @@ from .managed_models import (
     CurveDefinitionRecord,
     DisplayRuleRecord,
     EvidenceRecord,
+    GenericManagedRecord,
     TemplateRuleRecord,
 )
 from .managed_seed import build_seed_managed_records
@@ -76,6 +77,7 @@ GovernedRecord = (
     | ClassificationRuleRecord
     | TemplateRuleRecord
     | AliasEnrichmentRecord  # KR-DATA-MODEL-1
+    | GenericManagedRecord  # WDV approved reference/template layer
 )
 
 
@@ -583,11 +585,9 @@ class ManagedKRRepository:
                     )
                     for s in GovernanceStatus
                 }
-                for rt in {
-                    "curve_definition", "alias", "display_rule",
-                    "classification_rule", "template_rule",
-                    "alias_enrichment",  # KR-DATA-MODEL-1
-                }
+                for rt in sorted(
+                    {getattr(r, "record_type", "unknown") for r in self._all_records().values()}
+                )
             },
         }
 
