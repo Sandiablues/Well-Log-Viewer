@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-CONTRACT_VERSION = "wdv_layout_presets_v2a"
+CONTRACT_VERSION = "wdv_layout_presets_v1r"
 
 
 class WdvLayoutPresetTrackDefinition(BaseModel):
@@ -73,12 +73,7 @@ class WdvDisplayScaleRecommendation(BaseModel):
 
 
 class WdvPresetCurveCandidate(BaseModel):
-    """One managed inventory curve considered for a KR-backed preset track.
-
-    ``selection_role`` separates display-ready selections from valid
-    alternates. Frontend must not promote alternates to selected curves without
-    a later backend-owned apply/session contract.
-    """
+    """One managed inventory curve selected for a KR-backed preset track."""
 
     product_id: str
     curve_name: str
@@ -95,21 +90,12 @@ class WdvPresetCurveCandidate(BaseModel):
     display_scale: WdvDisplayScaleRecommendation = Field(
         default_factory=WdvDisplayScaleRecommendation
     )
-    selection_role: str = "selected"
-    rank: Optional[int] = None
-    selection_score: Optional[float] = None
-    ranking_reasons: list[str] = Field(default_factory=list)
     reason: str
     evidence: list[str] = Field(default_factory=list)
 
 
 class WdvPresetTrackRecommendation(BaseModel):
-    """Recommended curve assignment for one logical KR template track.
-
-    ``curves`` is retained as a backwards-compatible alias for
-    ``selected_curves``. New frontend work should render selected_curves,
-    alternate_curves, and selection_policy explicitly.
-    """
+    """Recommended curve assignment for one logical KR template track."""
 
     track_id: str
     label: str
@@ -117,15 +103,7 @@ class WdvPresetTrackRecommendation(BaseModel):
     required_families: list[str] = Field(default_factory=list)
     optional_families: list[str] = Field(default_factory=list)
     overlay_rules: list[dict[str, Any]] = Field(default_factory=list)
-    selected_curves: list[WdvPresetCurveCandidate] = Field(default_factory=list)
-    alternate_curves: list[WdvPresetCurveCandidate] = Field(default_factory=list)
-    excluded_curves: list[WdvPresetCurveCandidate] = Field(default_factory=list)
     curves: list[WdvPresetCurveCandidate] = Field(default_factory=list)
-    candidate_curve_count: int = 0
-    selected_curve_count: int = 0
-    alternate_curve_count: int = 0
-    excluded_curve_count: int = 0
-    selection_policy: dict[str, Any] = Field(default_factory=dict)
     missing_required_families: list[str] = Field(default_factory=list)
     missing_optional_families: list[str] = Field(default_factory=list)
     reason: str
@@ -145,8 +123,6 @@ class WdvLayoutPresetRecommendationResponse(BaseModel):
     completeness_score: float
     available_curve_count: int
     selected_curve_count: int
-    alternate_curve_count: int = 0
-    track_excluded_curve_count: int = 0
     excluded_other_review_count: int
     missing_required_families: list[str] = Field(default_factory=list)
     tracks: list[WdvPresetTrackRecommendation] = Field(default_factory=list)

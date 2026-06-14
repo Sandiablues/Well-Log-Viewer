@@ -1,4 +1,4 @@
-"""WLV-WDV-PRESETS-2A ranked recommendation tests.
+"""WLV-WDV-LAYOUT-PRESETS-1R tests.
 
 This block verifies that WDV layout preset definitions come from approved KR
 ``template_rule`` records, not static frontend/backend preset lists. The endpoint
@@ -205,57 +205,13 @@ def test_kr_triple_combo_recommendation_excludes_other_and_does_not_apply_tracks
     assert response.knowledge_policy["does_not_apply_tracks"] is True
     assert response.excluded_other_review_count == 1
     assert response.selected_curve_count >= 4
-    assert response.alternate_curve_count == 0
     assert response.missing_required_families == []
 
     track_map = {track.track_id: track for track in response.tracks}
-    assert [curve.mnemonic for curve in track_map["gamma_ray_sp"].selected_curves] == ["GR"]
-    assert [curve.mnemonic for curve in track_map["resistivity"].selected_curves] == ["AT90"]
+    assert [curve.mnemonic for curve in track_map["gamma_ray_sp"].curves] == ["GR"]
     assert [curve.mnemonic for curve in track_map["resistivity"].curves] == ["AT90"]
-    assert track_map["resistivity"].selection_policy["policy_name"] == "resistivity_depth_of_investigation_tiers"
-    assert track_map["resistivity"].selected_curves[0].selection_role == "selected"
-    assert {curve.mnemonic for curve in track_map["density_neutron"].selected_curves} == {"RHOZ", "NPHI"}
-    assert track_map["resistivity"].selected_curves[0].display_scale.scale_type == "log"
-
-
-def test_ranked_recommendation_keeps_display_selection_small_and_preserves_alternates() -> None:
-    service = _service(
-        _well(
-            [
-                _item("ECGR", "gamma_ray", "gamma_ray"),
-                _item("GR", "gamma_ray", "gamma_ray"),
-                _item("AT10", "resistivity", "resistivity"),
-                _item("AT30", "resistivity", "resistivity"),
-                _item("AT90", "resistivity", "resistivity"),
-                _item("AF10", "resistivity", "resistivity"),
-                _item("AF30", "resistivity", "resistivity"),
-                _item("AF90", "resistivity", "resistivity"),
-                _item("RHOZ", "density", "density_neutron_porosity"),
-                _item("RHOM", "density", "density_neutron_porosity"),
-                _item("NPHI", "neutron_porosity", "density_neutron_porosity"),
-                _item("TNPH", "neutron_porosity", "density_neutron_porosity"),
-            ]
-        )
-    )
-
-    response = service.recommend_preset("managed-well:test", "basic_triple_combo_openhole")
-    track_map = {track.track_id: track for track in response.tracks}
-
-    assert [curve.mnemonic for curve in track_map["gamma_ray_sp"].selected_curves] == ["GR"]
-    assert [curve.mnemonic for curve in track_map["gamma_ray_sp"].alternate_curves] == ["ECGR"]
-
-    resistivity = track_map["resistivity"]
-    assert [curve.mnemonic for curve in resistivity.selected_curves] == ["AT90", "AT30", "AT10"]
-    assert {curve.mnemonic for curve in resistivity.alternate_curves} == {"AF90", "AF30", "AF10"}
-    assert resistivity.selected_curve_count == 3
-    assert resistivity.candidate_curve_count == 6
-    assert all(curve.selection_role == "selected" for curve in resistivity.selected_curves)
-    assert all(curve.selection_role == "alternate" for curve in resistivity.alternate_curves)
-
-    density_neutron = track_map["density_neutron"]
-    assert {curve.mnemonic for curve in density_neutron.selected_curves} == {"RHOZ", "NPHI"}
-    assert {curve.mnemonic for curve in density_neutron.alternate_curves} == {"RHOM", "TNPH"}
-    assert response.selected_curve_count < response.selected_curve_count + response.alternate_curve_count
+    assert {curve.mnemonic for curve in track_map["density_neutron"].curves} == {"RHOZ", "NPHI"}
+    assert track_map["resistivity"].curves[0].display_scale.scale_type == "log"
 
 
 def test_recommendation_reports_missing_required_families_from_kr_template() -> None:
@@ -286,7 +242,7 @@ def test_router_contract_can_be_mounted_without_frontend_changes() -> None:
     list_response = client.get("/api/wlv/wdv/layout-presets")
     assert list_response.status_code == 200
     payload = list_response.json()
-    assert payload["contract_version"] == "wdv_layout_presets_v2a"
+    assert payload["contract_version"] == "wdv_layout_presets_v1r"
     assert payload["presets"][0]["source"] == "managed_kr_template_rule"
 
     recommend_response = client.get(
