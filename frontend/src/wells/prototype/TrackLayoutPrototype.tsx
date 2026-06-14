@@ -230,6 +230,44 @@ type WdvTemplateRecommendationEnvelope = {
   knowledge_policy?: Record<string, unknown>;
 };
 
+
+type WdvTemplateApplicationPlanTrack = WdvTemplateRecommendationTrack & {
+  planned_action?: string | null;
+};
+
+type WdvTemplateApplicationPlan = {
+  application_plan_id: string;
+  plan_status: string;
+  template_key: string;
+  template_label: string;
+  workflow_context?: string | null;
+  source_recommendation_rank?: number | null;
+  source_recommendation_score?: number | null;
+  apply_eligible: boolean;
+  apply_mode?: string | null;
+  blocking_issues?: string[];
+  warnings?: string[];
+  selected_curve_count?: number;
+  alternate_curve_count?: number;
+  excluded_curve_count?: number;
+  selected_curves?: WdvRecommendedCurve[];
+  alternate_curves?: WdvRecommendedCurve[];
+  excluded_curves?: WdvRecommendedCurve[];
+  tracks?: WdvTemplateApplicationPlanTrack[];
+  renderer_requirements?: string[];
+  missing_required_families?: string[];
+  missing_preferred_families?: string[];
+  reason_codes?: string[];
+};
+
+type WdvTemplateApplicationPlanEnvelope = {
+  service: string;
+  contract_version: string;
+  mutation_performed: boolean;
+  plan: WdvTemplateApplicationPlan;
+  knowledge_policy?: Record<string, unknown>;
+};
+
 type IntervalSelectionState = {
   startDepth: number;
   currentDepth: number;
@@ -385,14 +423,54 @@ async function evaluateWdvTemplateRecommendations(
   );
 }
 
-function formatRecommendationPercent(value?: number): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
-  return `${Math.round(value * 100)}%`;
+
+async function buildWdvTemplateApplicationPlan(
+  templateKey: string,
+  loadedCurveItems: WdvLoadedCurveItem[],
+  managedWellId?: string | null,
+): Promise<WdvTemplateApplicationPlanEnvelope> {
+  const recommendationPayload = buildWdvTemplateRecommendationRequest(loadedCurveItems);
+  return fetchWlvJson<WdvTemplateApplicationPlanEnvelope>(
+    '/api/wlv/wdv/templates/application-plans/build',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        managed_well_id: managedWellId || 'wdv_current_viewer_session',
+        template_key: templateKey,
+        workflow_context: recommendationPayload.workflow_context,
+        loaded_curve_items: recommendationPayload.loaded_curve_items,
+      }),
+    },
+  );
 }
+
 
 function compactFamilyList(values?: string[], fallback = 'None'): string {
   if (!values || values.length === 0) return fallback;
   return values.slice(0, 6).join(', ') + (values.length > 6 ? ` +${values.length - 6}` : '');
+}
+
+
+function compactRendererList(values?: string[], fallback = 'None'): string {
+  if (!values || values.length === 0) return fallback;
+  return values.map((value) => value.replace(/_/g, ' ')).slice(0, 5).join(', ') + (values.length > 5 ? ` +${values.length - 5}` : '');
+}
+
+function formatPlanStatus(value?: string | null): string {
+  return (value || 'pending').replace(/_/g, ' ');
+}
+
+function scaleSummary(scaleDefaults?: Array<Record<string, unknown>>): string {
+  if (!scaleDefaults || scaleDefaults.length === 0) return 'scale defaults pending';
+  return scaleDefaults.slice(0, 3).map((scale) => {
+    const family = typeof scale.curve_family === 'string' ? scale.curve_family.replace(/_/g, ' ') : 'curve';
+    const scaleType = typeof scale.scale_type === 'string' ? scale.scale_type : 'scale';
+    const min = scale.scale_min;
+    const max = scale.scale_max;
+    const range = (typeof min === 'number' || typeof max === 'number') ? ` ${String(min ?? '—')}–${String(max ?? '—')}` : '';
+    return `${family}: ${scaleType}${range}`;
+  }).join('; ');
 }
 
 function statusLabel(status?: string | null): string {
@@ -2020,34 +2098,108 @@ function CurveInventory({
 
 function WdvTemplateRecommendationModal({
   recommendation,
+  loadedCurveItems,
+  managedWellId,
   onClose,
 }: {
   recommendation: WdvTemplateRecommendationItem;
+  loadedCurveItems: WdvLoadedCurveItem[];
+  managedWellId?: string | null;
   onClose: () => void;
 }) {
+  const [applicationPlanEnvelope, setApplicationPlanEnvelope] = useState<WdvTemplateApplicationPlanEnvelope | null>(null);
+  const [applicationPlanLoading, setApplicationPlanLoading] = useState(false);
+  const [applicationPlanError, setApplicationPlanError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setApplicationPlanLoading(true);
+    setApplicationPlanError(null);
+    setApplicationPlanEnvelope(null);
+
+    void buildWdvTemplateApplicationPlan(recommendation.template_key, loadedCurveItems, managedWellId)
+      .then((result) => {
+        if (!cancelled) {
+          setApplicationPlanEnvelope(result);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setApplicationPlanError(error instanceof Error ? error.message : 'Application plan service unavailable');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setApplicationPlanLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [recommendation.template_key, loadedCurveItems, managedWellId]);
+
+  const plan = applicationPlanEnvelope?.plan ?? null;
+  const selectedCurves = plan?.selected_curves ?? recommendation.selected_curves ?? [];
+  const alternateCurves = plan?.alternate_curves ?? recommendation.alternate_curves ?? [];
+  const tracks = plan?.tracks ?? recommendation.tracks ?? [];
+  const missingRequiredFamilies = plan?.missing_required_families ?? recommendation.missing_required_families ?? [];
+  const missingPreferredFamilies = plan?.missing_preferred_families ?? recommendation.missing_preferred_families ?? [];
+  const rendererRequirements = plan?.renderer_requirements ?? recommendation.renderer_requirements ?? [];
+  const blockingIssues = plan?.blocking_issues ?? [];
+  const planWarnings = plan?.warnings ?? [];
+  const planStatus = plan?.plan_status ?? (applicationPlanLoading ? 'building_plan' : 'recommendation_only');
+  const applyEligible = plan?.apply_eligible ?? false;
+  const mutationPerformed = applicationPlanEnvelope?.mutation_performed ?? false;
+
   return createPortal(
     <div className="wlv-template-modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
         className="wlv-template-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="WDV template recommendation"
+        aria-label="WDV template application plan"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="wlv-template-modal-header">
           <div>
-            <span>Backend KR recommendation</span>
-            <h2>{recommendation.template_label}</h2>
+            <span>Backend KR application plan</span>
+            <h2>{plan?.template_label ?? recommendation.template_label}</h2>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close template recommendation">×</button>
+          <button type="button" onClick={onClose} aria-label="Close template application plan">×</button>
         </header>
 
-        <div className="wlv-template-modal-summary">
-          <div><strong>Rank</strong><span>{recommendation.rank}</span></div>
-          <div><strong>Score</strong><span>{Math.round(recommendation.score)}</span></div>
-          <div><strong>Required</strong><span>{formatRecommendationPercent(recommendation.required_coverage?.coverage_ratio)}</span></div>
-          <div><strong>Curves</strong><span>{recommendation.selected_curve_count ?? 0} selected</span></div>
+        <div className="wlv-template-plan-banner">
+          <strong>{applicationPlanLoading ? 'Building backend-owned staged plan…' : formatPlanStatus(planStatus)}</strong>
+          <span>
+            {applicationPlanError
+              ? applicationPlanError
+              : mutationPerformed
+                ? 'Unexpected mutation reported by backend.'
+                : 'Non-mutating preview only. Tracks are not populated in this block.'}
+          </span>
         </div>
+
+        <div className="wlv-template-modal-summary">
+          <div><strong>Rank</strong><span>{plan?.source_recommendation_rank ?? recommendation.rank}</span></div>
+          <div><strong>Score</strong><span>{Math.round(plan?.source_recommendation_score ?? recommendation.score)}</span></div>
+          <div><strong>Plan</strong><span>{applyEligible ? 'Ready for review' : 'Review required'}</span></div>
+          <div><strong>Curves</strong><span>{plan?.selected_curve_count ?? recommendation.selected_curve_count ?? selectedCurves.length} selected</span></div>
+        </div>
+
+        <section className="wlv-template-modal-section">
+          <h3>Backend plan status</h3>
+          <dl className="wlv-template-modal-dl">
+            <dt>Plan status</dt>
+            <dd>{formatPlanStatus(planStatus)}</dd>
+            <dt>Apply mode</dt>
+            <dd>{formatPlanStatus(plan?.apply_mode ?? 'review_required_non_mutating_plan')}</dd>
+            <dt>Blocking issues</dt>
+            <dd>{compactFamilyList(blockingIssues, 'None')}</dd>
+            <dt>Warnings</dt>
+            <dd>{compactFamilyList(planWarnings, 'None')}</dd>
+          </dl>
+        </section>
 
         <section className="wlv-template-modal-section">
           <h3>Coverage</h3>
@@ -2055,17 +2207,19 @@ function WdvTemplateRecommendationModal({
             <dt>Available families</dt>
             <dd>{compactFamilyList(recommendation.required_coverage?.available_families, 'No matching required families')}</dd>
             <dt>Missing required</dt>
-            <dd>{compactFamilyList(recommendation.missing_required_families, 'None')}</dd>
+            <dd>{compactFamilyList(missingRequiredFamilies, 'None')}</dd>
             <dt>Missing preferred</dt>
-            <dd>{compactFamilyList(recommendation.missing_preferred_families, 'None')}</dd>
+            <dd>{compactFamilyList(missingPreferredFamilies, 'None')}</dd>
+            <dt>Renderers</dt>
+            <dd>{compactRendererList(rendererRequirements)}</dd>
           </dl>
         </section>
 
         <section className="wlv-template-modal-section">
           <h3>Selected representative curves</h3>
-          {(recommendation.selected_curves ?? []).length > 0 ? (
+          {selectedCurves.length > 0 ? (
             <div className="wlv-template-curve-list">
-              {(recommendation.selected_curves ?? []).slice(0, 12).map((curve, index) => (
+              {selectedCurves.slice(0, 12).map((curve, index) => (
                 <div key={`${curve.product_id ?? curve.curve_id ?? curve.mnemonic ?? 'curve'}-${index}`} className="wlv-template-curve-row">
                   <strong>{curve.mnemonic || curve.display_name || curve.curve_id || 'Curve'}</strong>
                   <span>{curve.curve_family || curve.raw_curve_family || 'unclassified'}</span>
@@ -2079,14 +2233,31 @@ function WdvTemplateRecommendationModal({
         </section>
 
         <section className="wlv-template-modal-section">
+          <h3>Alternates</h3>
+          {alternateCurves.length > 0 ? (
+            <div className="wlv-template-curve-list">
+              {alternateCurves.slice(0, 8).map((curve, index) => (
+                <div key={`${curve.product_id ?? curve.curve_id ?? curve.mnemonic ?? 'alternate'}-${index}`} className="wlv-template-curve-row">
+                  <strong>{curve.mnemonic || curve.display_name || curve.curve_id || 'Curve'}</strong>
+                  <span>{curve.curve_family || curve.raw_curve_family || 'unclassified'}</span>
+                  <em>{curve.selection_reason || 'alternate'}</em>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="wlv-template-empty-note">No alternate curves returned by the backend for this plan.</p>
+          )}
+        </section>
+
+        <section className="wlv-template-modal-section">
           <h3>Track plan</h3>
           <div className="wlv-template-track-plan">
-            {(recommendation.tracks ?? []).slice(0, 10).map((track) => (
+            {tracks.slice(0, 10).map((track) => (
               <div key={track.track_key || track.track_id || track.track_name || String(track.track_number)} className="wlv-template-track-row">
                 <strong>{track.track_number ?? '—'}. {track.track_name || track.track_key || 'Track'}</strong>
                 <span>{track.renderer_type || 'renderer pending'}</span>
                 <small>
-                  {(track.selected_curves ?? []).length} selected · {compactFamilyList(track.missing_curve_families, 'no missing families')}
+                  {(track.selected_curves ?? []).map((curve) => curve.mnemonic || curve.display_name || curve.curve_id).filter(Boolean).join(', ') || 'no selected curves'} · {scaleSummary(track.scale_defaults)}
                 </small>
               </div>
             ))}
@@ -4391,6 +4562,8 @@ export function TrackLayoutPrototype() {
       {wdvTemplateModalOpen && selectedWdvTemplateRecommendation ? (
         <WdvTemplateRecommendationModal
           recommendation={selectedWdvTemplateRecommendation}
+          loadedCurveItems={wdvPackageState.loadedCurveItems}
+          managedWellId={managedViewerWellId}
           onClose={() => setWdvTemplateModalOpen(false)}
         />
       ) : null}

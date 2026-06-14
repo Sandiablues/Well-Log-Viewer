@@ -7921,6 +7921,27 @@ button.wlv-view-range-readout,
   font-size: 18px;
 }
 
+
+.wlv-template-plan-banner {
+  display: grid;
+  gap: 4px;
+  padding: 10px 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(2, 6, 23, 0.42);
+}
+
+.wlv-template-plan-banner strong {
+  color: #bfdbfe;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.wlv-template-plan-banner span {
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
 .wlv-template-modal-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
