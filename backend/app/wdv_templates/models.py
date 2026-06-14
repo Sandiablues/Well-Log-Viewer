@@ -228,3 +228,61 @@ class WdvTemplateRecommendationEnvelope(BaseModel):
     recommendation_count: int
     recommendations: list[WdvTemplateRecommendationItemResponse] = Field(default_factory=list)
     knowledge_policy: dict[str, Any]
+
+
+class WdvTemplateApplicationPlanRequest(BaseModel):
+    """Request a backend-owned, non-mutating template application plan."""
+
+    template_key: str
+    loaded_curve_items: list[WdvLoadedCurveRecommendationInput] = Field(default_factory=list)
+    workflow_context: str | None = None
+    selected_product_ids: list[str] = Field(default_factory=list)
+    include_ineligible_recommendations: bool = True
+
+
+class WdvTemplateApplicationTrackPlanResponse(BaseModel):
+    track_id: str
+    track_key: str
+    track_number: int
+    track_name: str
+    track_role: str | None = None
+    renderer_type: str
+    required_renderer_capability: str | None = None
+    selected_curves: list[WdvRecommendedCurveResponse] = Field(default_factory=list)
+    alternate_curves: list[WdvRecommendedCurveResponse] = Field(default_factory=list)
+    missing_curve_families: list[str] = Field(default_factory=list)
+    scale_defaults: list[dict[str, Any]] = Field(default_factory=list)
+    planned_action: str = "stage_track_for_user_review"
+
+
+class WdvTemplateApplicationPlanResponse(BaseModel):
+    application_plan_id: str
+    plan_status: str
+    template_key: str
+    template_label: str
+    workflow_context: str | None = None
+    source_recommendation_rank: int
+    source_recommendation_score: float
+    apply_eligible: bool
+    apply_mode: str = "review_required_non_mutating_plan"
+    blocking_issues: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    selected_curve_count: int = 0
+    alternate_curve_count: int = 0
+    excluded_curve_count: int = 0
+    selected_curves: list[WdvRecommendedCurveResponse] = Field(default_factory=list)
+    alternate_curves: list[WdvRecommendedCurveResponse] = Field(default_factory=list)
+    excluded_curves: list[WdvRecommendedCurveResponse] = Field(default_factory=list)
+    tracks: list[WdvTemplateApplicationTrackPlanResponse] = Field(default_factory=list)
+    renderer_requirements: list[str] = Field(default_factory=list)
+    missing_required_families: list[str] = Field(default_factory=list)
+    missing_preferred_families: list[str] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
+
+
+class WdvTemplateApplicationPlanEnvelope(BaseModel):
+    service: str = "wdv_template_application_plan_service"
+    contract_version: str = "wdv_template_application_plan_v1"
+    mutation_performed: bool = False
+    plan: WdvTemplateApplicationPlanResponse
+    knowledge_policy: dict[str, Any]

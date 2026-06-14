@@ -9,11 +9,17 @@ from backend.app.knowledge.api_managed_knowledge import get_managed_repository
 from backend.app.knowledge.managed_repository import ManagedKRRepository
 
 from .models import (
+    WdvTemplateApplicationPlanEnvelope,
+    WdvTemplateApplicationPlanRequest,
     WdvTemplateDetailEnvelope,
     WdvTemplateListResponse,
     WdvTemplateRecommendationEnvelope,
     WdvTemplateRecommendationRequest,
     WdvTemplateReferenceSummaryResponse,
+)
+from .application_plan_service import (
+    WdvTemplateApplicationPlanNotFoundError,
+    WdvTemplateApplicationPlanService,
 )
 from .recommendation_service import WdvTemplateRecommendationService
 from .service import WdvTemplateNotFoundError, WdvTemplateService
@@ -33,6 +39,13 @@ def get_wdv_template_recommendation_service(
 ) -> WdvTemplateRecommendationService:
     """Return the backend-owned WDV template recommendation service."""
     return WdvTemplateRecommendationService(repository=repo)
+
+
+def get_wdv_template_application_plan_service(
+    repo: ManagedKRRepository = Depends(get_managed_repository),
+) -> WdvTemplateApplicationPlanService:
+    """Return the backend-owned WDV template application-plan service."""
+    return WdvTemplateApplicationPlanService(repository=repo)
 
 
 @router.get("", response_model=WdvTemplateListResponse)
@@ -87,6 +100,26 @@ def recommend_wdv_templates_for_managed_well(
         raise HTTPException(
             status_code=404,
             detail={"error": "managed_well_not_found", "managed_well_id": managed_well_id},
+        ) from exc
+
+
+@router.post("/application-plans/build", response_model=WdvTemplateApplicationPlanEnvelope)
+def build_wdv_template_application_plan(
+    request: WdvTemplateApplicationPlanRequest,
+    service: WdvTemplateApplicationPlanService = Depends(get_wdv_template_application_plan_service),
+) -> WdvTemplateApplicationPlanEnvelope:
+    """Build a non-mutating backend-owned application plan for a selected template.
+
+    This route stages the planned track layout and representative curve choices
+    for review. It does not mutate WDV state, apply a template, or populate
+    tracks.
+    """
+    try:
+        return service.build_from_request(request)
+    except WdvTemplateApplicationPlanNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "wdv_template_application_plan_not_found", "template_key": request.template_key},
         ) from exc
 
 
