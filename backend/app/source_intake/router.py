@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from .models import (
+    SourceIntakeCandidateDiagnostics,
     SourceIntakeClearRequest,
     SourceIntakeClearResponse,
     SourceIntakeHealth,
@@ -70,6 +71,19 @@ def scan_repository(repository_id: str, include_subfolders: bool | None = None) 
 @router.get("/workbench", response_model=SourceIntakeWorkbench, summary="Fetch WLV Source Intake workbench")
 def get_workbench() -> SourceIntakeWorkbench:
     return _service.get_workbench()
+
+
+@router.get(
+    "/candidates/{candidate_id}/diagnostics",
+    response_model=SourceIntakeCandidateDiagnostics,
+    summary="Fetch backend-owned diagnostics for a WLV Source Intake candidate",
+)
+def get_candidate_diagnostics(candidate_id: str) -> SourceIntakeCandidateDiagnostics:
+    # WLV-WSI-FLAGS-DETAIL-1: diagnostic flags and actions are backend-owned.
+    try:
+        return _service.get_candidate_diagnostics(candidate_id)
+    except SourceIntakeError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
 @router.post("/workbench/clear", response_model=SourceIntakeClearResponse, summary="Clear active WLV Source Intake selection")

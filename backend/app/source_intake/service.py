@@ -22,12 +22,19 @@ from .registration import register_candidate_to_inventory, registration_block_re
 
 from .models import (
     SourceFileCandidate,
+    SourceIntakeCandidateDiagnosticSummary,
+    SourceIntakeCandidateDiagnostics,
     SourceIntakeCandidateRole,
     SourceIntakeClearResponse,
+    SourceIntakeDiagnosticAction,
+    SourceIntakeDiagnosticFlag,
+    SourceIntakeDiagnosticPhase,
+    SourceIntakeDiagnosticSeverity,
     SourceIntakeFileType,
     SourceIntakeLogHeader,
     SourceIntakeParseStatus,
     SourceIntakeParsedMetadata,
+    SourceIntakeQaqcStatus,
     SourceIntakeRegisterRequest,
     SourceIntakeRegisterResponse,
     SourceIntakeRegisterResult,
@@ -191,6 +198,17 @@ class WlvSourceIntakeService:
             candidates=snapshot.candidates,
         )
 
+    def get_candidate_diagnostics(self, candidate_id: str) -> SourceIntakeCandidateDiagnostics:
+        # WLV-WSI-FLAGS-DETAIL-1:
+        # The backend owns diagnostic phase flags and action descriptors. The
+        # frontend renders this contract and does not infer parse, QAQC, or MDP
+        # readiness truth.
+        snapshot = self._load_snapshot()
+        candidate = next((item for item in snapshot.candidates if item.source_file_id == candidate_id), None)
+        if candidate is None:
+            raise SourceIntakeError(f"Source Intake candidate not found: {candidate_id}")
+        return self._candidate_diagnostics(candidate)
+
     def clear_workbench_selection(
         self,
         repository_id: str | None = None,
@@ -323,6 +341,308 @@ class WlvSourceIntakeService:
             results=results,
             workbench=self.get_workbench(),
         )
+
+    def _candidate_diagnostics(self, candidate: SourceFileCandidate) -> SourceIntakeCandidateDiagnostics:
+        flags: list[SourceIntakeDiagnosticFlag] = []
+        flags.extend(self._parse_diagnostic_flags(candidate))
+        flags.extend(self._qaqc_diagnostic_flags(candidate))
+        flags.extend(self._mdp_diagnostic_flags(candidate))
+
+        return SourceIntakeCandidateDiagnostics(
+            candidate_id=candidate.source_file_id,
+            summary=SourceIntakeCandidateDiagnosticSummary(
+                candidate_id=candidate.source_file_id,
+                file_name=candidate.file_name,
+                relative_path=candidate.relative_path,
+                original_path=candidate.original_path,
+                detected_file_type=candidate.detected_file_type,
+                candidate_role=candidate.candidate_role,
+                well_name=self._candidate_well_name(candidate),
+                curve_count=self._candidate_curve_count(candidate),
+                registration_status=candidate.registration_status,
+                managed_well_id=candidate.managed_well_id,
+                managed_well_name=candidate.managed_well_name,
+            ),
+            parse_status=candidate.parser_status,
+            qaqc_status=candidate.qaqc_status,
+            mdp_ready_status=self._mdp_ready_status(candidate),
+            flags=flags,
+            actions=self._diagnostic_actions(candidate),
+        )
+
+    def _parse_diagnostic_flags(self, candidate: SourceFileCandidate) -> list[SourceIntakeDiagnosticFlag]:
+        status = candidate.parser_status
+        if status == SourceIntakeParseStatus.PARSED:
+            return [
+                SourceIntakeDiagnosticFlag(
+                    phase=SourceIntakeDiagnosticPhase.PARSE,
+                    severity=SourceIntakeDiagnosticSeverity.SUCCESS,
+                    code="parse_complete",
+                    title="Parsed",
+                    message="Content extraction completed and produced structured metadata.",
+                )
+            ]
+
+        if status == SourceIntakeParseStatus.PARSED_WITH_WARNINGS:
+            flags = [
+                SourceIntakeDiagnosticFlag(
+                    phase=SourceIntakeDiagnosticPhase.PARSE,
+                    severity=SourceIntakeDiagnosticSeverity.WARNING,
+                    code="parse_completed_with_warnings",
+                    title="Parsed with warnings",
+                    message="Content extraction completed, but parser warnings remain.",
+                )
+            ]
+            for index, warning in enumerate(candidate.parsed_metadata.warnings if candidate.parsed_metadata else []):
+                flags.append(
+                    SourceIntakeDiagnosticFlag(
+                        phase=SourceIntakeDiagnosticPhase.PARSE,
+                        severity=SourceIntakeDiagnosticSeverity.WARNING,
+                        code=f"parse_warning_{index + 1}",
+                        title="Parser warning",
+                        message=warning,
+                    )
+                )
+            return flags
+
+        if status == SourceIntakeParseStatus.PARSE_FAILED:
+            return [
+                SourceIntakeDiagnosticFlag(
+                    phase=SourceIntakeDiagnosticPhase.PARSE,
+                    severity=SourceIntakeDiagnosticSeverity.BLOCKER,
+                    code="parse_failed",
+                    title="Parse failed",
+                    message=candidate.parse_error or "A parser attempted extraction and failed.",
+                )
+            ]
+
+        if status == SourceIntakeParseStatus.UNSUPPORTED:
+            return [
+                SourceIntakeDiagnosticFlag(
+                    phase=SourceIntakeDiagnosticPhase.PARSE,
+                    severity=SourceIntakeDiagnosticSeverity.BLOCKER,
+                    code="parse_unsupported",
+                    title="Parser unsupported",
+                    message=(
+                        f"{candidate.detected_file_type.value} files are recognized, but no Source Intake parser "
+                        "is currently implemented for this format."
+                    ),
+                )
+            ]
+
+        if status == SourceIntakeParseStatus.CONTAINER_PENDING_EXTRACTION:
+            return [
+                SourceIntakeDiagnosticFlag(
+                    phase=SourceIntakeDiagnosticPhase.PARSE,
+                    severity=SourceIntakeDiagnosticSeverity.BLOCKER,
+                    code="container_pending_extraction",
+                    title="Container pending extraction",
+                    message="Archive/container content must be extracted and classified before it can be parsed or registered.",
+                )
+            ]
+
+        return [
+            SourceIntakeDiagnosticFlag(
+                phase=SourceIntakeDiagnosticPhase.PARSE,
+                severity=SourceIntakeDiagnosticSeverity.INFO,
+                code="not_parsed",
+                title="Not parsed",
+                message="The file has been discovered, but content extraction has not completed yet.",
+            )
+        ]
+
+    def _qaqc_diagnostic_flags(self, candidate: SourceFileCandidate) -> list[SourceIntakeDiagnosticFlag]:
+        qaqc = candidate.qaqc_status
+        flags: list[SourceIntakeDiagnosticFlag] = []
+
+        if qaqc.checks:
+            for check in qaqc.checks:
+                severity = SourceIntakeDiagnosticSeverity.INFO
+                if check.status == SourceIntakeQaqcStatus.FAIL:
+                    severity = SourceIntakeDiagnosticSeverity.ERROR
+                elif check.status in {SourceIntakeQaqcStatus.WARNING, SourceIntakeQaqcStatus.REVIEW_REQUIRED}:
+                    severity = SourceIntakeDiagnosticSeverity.WARNING
+
+                flags.append(
+                    SourceIntakeDiagnosticFlag(
+                        phase=SourceIntakeDiagnosticPhase.QAQC,
+                        severity=severity,
+                        code=check.check_id,
+                        title=f"QAQC {check.status.value.replace('_', ' ')}",
+                        message=check.message,
+                        field_name=check.field_name,
+                    )
+                )
+
+        if not flags:
+            if qaqc.status == SourceIntakeQaqcStatus.PASS:
+                flags.append(
+                    SourceIntakeDiagnosticFlag(
+                        phase=SourceIntakeDiagnosticPhase.QAQC,
+                        severity=SourceIntakeDiagnosticSeverity.SUCCESS,
+                        code="qaqc_pass",
+                        title="QAQC passed",
+                        message="No blocking QAQC findings are reported for this candidate.",
+                    )
+                )
+            elif qaqc.status == SourceIntakeQaqcStatus.NOT_CHECKED:
+                flags.append(
+                    SourceIntakeDiagnosticFlag(
+                        phase=SourceIntakeDiagnosticPhase.QAQC,
+                        severity=SourceIntakeDiagnosticSeverity.INFO,
+                        code="qaqc_not_checked",
+                        title="QAQC not checked",
+                        message="QAQC has not reported checks for this candidate yet.",
+                    )
+                )
+
+        existing_messages = {flag.message for flag in flags}
+        for index, message in enumerate(qaqc.messages):
+            if message not in existing_messages:
+                flags.append(
+                    SourceIntakeDiagnosticFlag(
+                        phase=SourceIntakeDiagnosticPhase.QAQC,
+                        severity=SourceIntakeDiagnosticSeverity.WARNING,
+                        code=f"qaqc_message_{index + 1}",
+                        title="QAQC message",
+                        message=message,
+                    )
+                )
+
+        return flags
+
+    def _mdp_diagnostic_flags(self, candidate: SourceFileCandidate) -> list[SourceIntakeDiagnosticFlag]:
+        if candidate.registration_status == "registered":
+            return [
+                SourceIntakeDiagnosticFlag(
+                    phase=SourceIntakeDiagnosticPhase.MDP_READY,
+                    severity=SourceIntakeDiagnosticSeverity.SUCCESS,
+                    code="registered_to_inventory",
+                    title="Registered",
+                    message=(
+                        f"Candidate is registered to Managed Well Inventory"
+                        f"{f' as {candidate.managed_well_name}' if candidate.managed_well_name else ''}."
+                    ),
+                )
+            ]
+
+        blocked_reason = registration_block_reason(candidate)
+        if blocked_reason is not None:
+            return [
+                SourceIntakeDiagnosticFlag(
+                    phase=SourceIntakeDiagnosticPhase.MDP_READY,
+                    severity=SourceIntakeDiagnosticSeverity.BLOCKER,
+                    code="mdp_registration_blocked",
+                    title="Not ready for MDP",
+                    message=blocked_reason,
+                )
+            ]
+
+        return [
+            SourceIntakeDiagnosticFlag(
+                phase=SourceIntakeDiagnosticPhase.MDP_READY,
+                severity=SourceIntakeDiagnosticSeverity.SUCCESS,
+                code="mdp_ready",
+                title="Ready for MDP",
+                message="Candidate has the required backend-owned state for registration to Managed Well Inventory.",
+            )
+        ]
+
+    def _diagnostic_actions(self, candidate: SourceFileCandidate) -> list[SourceIntakeDiagnosticAction]:
+        actions: list[SourceIntakeDiagnosticAction] = []
+
+        if candidate.parser_status == SourceIntakeParseStatus.CONTAINER_PENDING_EXTRACTION:
+            actions.append(
+                SourceIntakeDiagnosticAction(
+                    phase=SourceIntakeDiagnosticPhase.PARSE,
+                    action_key="extract_container",
+                    label="Extract container",
+                    enabled=False,
+                    reason="Container extraction workflow is reserved for a later WSI representation/extraction block.",
+                )
+            )
+
+        if candidate.parser_status == SourceIntakeParseStatus.PARSE_FAILED:
+            actions.append(
+                SourceIntakeDiagnosticAction(
+                    phase=SourceIntakeDiagnosticPhase.PARSE,
+                    action_key="retry_parse",
+                    label="Retry parse",
+                    enabled=False,
+                    reason="Retry parse is not yet exposed as a Source Intake action.",
+                )
+            )
+
+        if candidate.parser_status == SourceIntakeParseStatus.UNSUPPORTED:
+            actions.append(
+                SourceIntakeDiagnosticAction(
+                    phase=SourceIntakeDiagnosticPhase.PARSE,
+                    action_key="review_parser_support",
+                    label="Review parser support",
+                    enabled=False,
+                    reason="Parser support must be added through the governed backend intake/parser layer.",
+                )
+            )
+
+        if candidate.review_required or candidate.qaqc_status.review_required:
+            actions.append(
+                SourceIntakeDiagnosticAction(
+                    phase=SourceIntakeDiagnosticPhase.QAQC,
+                    action_key="review_metadata",
+                    label="Review metadata",
+                    enabled=False,
+                    reason="Metadata review/approval action is planned but not enabled in this block.",
+                )
+            )
+
+        blocked_reason = registration_block_reason(candidate)
+        if blocked_reason is None and candidate.registration_status != "registered":
+            actions.append(
+                SourceIntakeDiagnosticAction(
+                    phase=SourceIntakeDiagnosticPhase.MDP_READY,
+                    action_key="register_candidate",
+                    label="Register selected",
+                    enabled=False,
+                    reason="Use the table Select + Register Selected controls for this workflow.",
+                )
+            )
+
+        if not actions:
+            actions.append(
+                SourceIntakeDiagnosticAction(
+                    phase=SourceIntakeDiagnosticPhase.EVIDENCE,
+                    action_key="no_action_required",
+                    label="No action required",
+                    enabled=False,
+                    reason="No specific action is required for the current diagnostic state.",
+                )
+            )
+
+        return actions
+
+    def _mdp_ready_status(self, candidate: SourceFileCandidate) -> str:
+        if candidate.registration_status == "registered":
+            return "registered"
+        blocked_reason = registration_block_reason(candidate)
+        if blocked_reason is None:
+            return "ready"
+        if candidate.review_required or candidate.qaqc_status.review_required:
+            return "needs_review"
+        return "blocked"
+
+    def _candidate_curve_count(self, candidate: SourceFileCandidate) -> int:
+        if candidate.parsed_metadata is None:
+            return 0
+        if candidate.parsed_metadata.log_header is not None:
+            return candidate.parsed_metadata.log_header.curve_count
+        return len(candidate.parsed_metadata.curve_headers)
+
+    def _candidate_well_name(self, candidate: SourceFileCandidate) -> str | None:
+        if candidate.resolved_metadata and candidate.resolved_metadata.well_name.value:
+            return candidate.resolved_metadata.well_name.value
+        if candidate.parsed_metadata and candidate.parsed_metadata.well_header.well_name:
+            return candidate.parsed_metadata.well_header.well_name
+        return candidate.managed_well_name
 
     def _load_snapshot(self) -> SourceIntakeSnapshot:
         if not self.storage_path.exists():

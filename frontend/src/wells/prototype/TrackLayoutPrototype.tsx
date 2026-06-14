@@ -200,6 +200,10 @@ function depthRangeLabel(range: DepthViewRange): string {
 
 
 function wlvApiBaseUrl(): string {
+  // WLV-MDP-API-PORT-8001-1:
+  // The active WLV backend runs on 8001. Keep runtime override support,
+  // use relative paths when served by the backend, and send Vite/dev
+  // frontend calls to the backend inventory/source-intake API on 8001.
   const runtimeConfig = window as unknown as { __WLV_API_BASE_URL__?: string };
   if (runtimeConfig.__WLV_API_BASE_URL__) {
     return runtimeConfig.__WLV_API_BASE_URL__.replace(/\/$/, '');
@@ -208,16 +212,17 @@ function wlvApiBaseUrl(): string {
   const protocol = window.location.protocol || 'http:';
   const hostname = window.location.hostname || '127.0.0.1';
   const port = window.location.port;
+  const backendPort = '8001';
 
-  if (port === '8000') {
+  if (port === backendPort) {
     return '';
   }
 
   if (port === '5173' || port === '5174' || port === '5175') {
-    return `${protocol}//${hostname}:8000`;
+    return `${protocol}//${hostname}:${backendPort}`;
   }
 
-  return 'http://127.0.0.1:8000';
+  return `http://127.0.0.1:${backendPort}`;
 }
 
 async function fetchWlvJson<T>(path: string, init?: RequestInit): Promise<T> {

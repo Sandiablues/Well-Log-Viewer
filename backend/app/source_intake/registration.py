@@ -12,7 +12,14 @@ import re
 from typing import Iterable
 
 from backend.app.classification.well_log_classifier import classify_well_log_curve
-from backend.app.classification.well_log_vocabulary import PRODUCT_GROUP_ORDER
+from backend.app.classification.well_log_vocabulary import OPEN_HOLE_SUBGROUP_LABELS, PRODUCT_GROUP_ORDER
+from backend.app.knowledge.managed_repository import ManagedKRRepository
+from backend.app.knowledge.runtime_classification_service import (
+    CurveClassificationInput,
+    CurveClassificationResult,
+    RuntimeCurveClassificationService,
+)
+from backend.app.knowledge.runtime_resolver import ApprovedKnowledgeRuntimeResolver
 from backend.app.inventory.models import (
     ManagedInventoryLifecycleState,
     ManagedWdvState,
@@ -197,29 +204,35 @@ def _product_groups_from_candidate(candidate: SourceFileCandidate) -> list[Manag
         log_header.service_company if log_header else None,
     ]
     provenance = _source_intake_provenance(candidate)
+    runtime_classifications = _runtime_classifications_for_curves(
+        curve_headers=curve_headers,
+        context_terms=context_terms,
+    )
 
     for index, curve in enumerate(curve_headers, start=1):
-        classification = classify_well_log_curve(
-            mnemonic=curve.mnemonic,
-            description=curve.description,
-            unit=curve.unit,
+        runtime_classification = runtime_classifications[index - 1] if index - 1 < len(runtime_classifications) else None
+        classification = _inventory_curve_classification_payload(
+            curve=curve,
+            runtime_classification=runtime_classification,
             context_terms=context_terms,
         )
-        group_key = classification.product_category if classification.product_category in items_by_group else "other_review_required"
-        review_required = bool(classification.review_required or candidate.qaqc_status.review_required)
+        group_key = classification["product_category"] if classification["product_category"] in items_by_group else "other_review_required"
+        review_required = bool(classification["review_required"] or candidate.qaqc_status.review_required)
         items_by_group[group_key].append(
             ManagedProductGroupItem(
                 product_id=f"source-intake-curve:{candidate.source_file_id}:{index}:{_slug(curve.mnemonic or 'curve')}",
                 display_name=curve.mnemonic or f"Curve {index}",
                 curve_name=curve.mnemonic or f"Curve {index}",
-                curve_type=classification.curve_description,
-                curve_description=classification.curve_description,
-                curve_unit=classification.curve_unit,
-                product_category=classification.product_category,
-                curve_family=classification.curve_family,
-                classification_confidence=classification.classification_confidence,
-                classification_source=classification.classification_source,
-                classification_reasons=classification.classification_reasons,
+                curve_type=classification["curve_description"],
+                curve_description=classification["curve_description"],
+                curve_unit=classification["curve_unit"],
+                product_category=classification["product_category"],
+                product_subgroup_key=classification["product_subgroup_key"],
+                product_subgroup_label=classification["product_subgroup_label"],
+                curve_family=classification["curve_family"],
+                classification_confidence=classification["classification_confidence"],
+                classification_source=classification["classification_source"],
+                classification_reasons=classification["classification_reasons"],
                 review_required=review_required,
                 run_date=run_date,
                 run_interval=run_interval,
@@ -246,12 +259,135 @@ def _product_groups_from_candidate(candidate: SourceFileCandidate) -> list[Manag
     ]
 
 
+def _runtime_classifications_for_curves(*, curve_headers, context_terms: Iterable[str | None]) -> list[CurveClassificationResult]:
+    # KR-MDP-CLASSIFICATION-1:
+    # Source Intake registration must consume the governed runtime KR resolver
+    # before falling back to the legacy limited classifier. The runtime resolver
+    # uses only seed + approved managed knowledge; candidate knowledge remains
+    # excluded from production classification.
+    classifier = RuntimeCurveClassificationService(
+        ApprovedKnowledgeRuntimeResolver(ManagedKRRepository())
+    )
+    inputs = [
+        CurveClassificationInput(
+            source_mnemonic=curve.mnemonic or "",
+            curve_id=curve.mnemonic or f"curve-{index}",
+            unit=curve.unit,
+            description=curve.description,
+            source_curve_index=index,
+            context={"source_intake_context_terms": [term for term in context_terms if term]},
+        )
+        for index, curve in enumerate(curve_headers, start=1)
+    ]
+    if not inputs:
+        return []
+    return list(classifier.classify_curves(inputs).classifications)
+
+
+def _inventory_curve_classification_payload(*, curve, runtime_classification: CurveClassificationResult | None, context_terms: Iterable[str | None]) -> dict[str, object]:
+    if runtime_classification is not None and runtime_classification.resolved:
+        product_category = runtime_classification.product_group or "other_review_required"
+        product_subgroup_key = runtime_classification.product_subgroup
+        product_subgroup_label = _product_subgroup_label(product_category, product_subgroup_key)
+        display_name = runtime_classification.display_name or runtime_classification.canonical_curve_id or curve.description or curve.mnemonic or "Classified curve"
+        reasons = [
+            f"Runtime KR resolved mnemonic {runtime_classification.normalized_mnemonic}.",
+            f"Resolution source: {runtime_classification.resolution_source}.",
+        ]
+        if runtime_classification.knowledge_record_id:
+            reasons.append(f"Knowledge record: {runtime_classification.knowledge_record_id}.")
+        if runtime_classification.canonical_curve_id:
+            reasons.append(f"Canonical curve: {runtime_classification.canonical_curve_id}.")
+        if runtime_classification.warnings:
+            reasons.extend(runtime_classification.warnings)
+        return {
+            "product_category": product_category,
+            "product_subgroup_key": product_subgroup_key,
+            "product_subgroup_label": product_subgroup_label,
+            "curve_family": runtime_classification.family or "Unclassified",
+            "curve_description": display_name,
+            "curve_unit": runtime_classification.default_unit or curve.unit,
+            "classification_confidence": _confidence_label(runtime_classification.confidence),
+            "classification_source": runtime_classification.resolution_source,
+            "classification_reasons": reasons,
+            "review_required": runtime_classification.requires_review,
+        }
+
+    legacy = classify_well_log_curve(
+        mnemonic=curve.mnemonic,
+        description=curve.description,
+        unit=curve.unit,
+        context_terms=context_terms,
+    )
+    reasons = list(legacy.classification_reasons)
+    if runtime_classification is not None:
+        reasons.insert(0, f"Runtime KR unresolved for mnemonic {runtime_classification.normalized_mnemonic}; used deterministic fallback classifier.")
+        reasons.extend(runtime_classification.warnings)
+    return {
+        "product_category": legacy.product_category,
+        "product_subgroup_key": legacy.product_subgroup_key,
+        "product_subgroup_label": legacy.product_subgroup_label,
+        "curve_family": legacy.curve_family,
+        "curve_description": legacy.curve_description,
+        "curve_unit": legacy.curve_unit,
+        "classification_confidence": legacy.classification_confidence,
+        "classification_source": legacy.classification_source,
+        "classification_reasons": reasons,
+        "review_required": legacy.review_required,
+    }
+
+
+def _confidence_label(confidence: float | None) -> str:
+    value = float(confidence or 0.0)
+    if value >= 0.9:
+        return "high"
+    if value >= 0.6:
+        return "medium"
+    return "low"
+
+
+def _product_subgroup_label(product_category: str | None, product_subgroup_key: str | None) -> str | None:
+    if not product_subgroup_key:
+        return None
+    if product_category == "open_hole_logs":
+        return OPEN_HOLE_SUBGROUP_LABELS.get(product_subgroup_key, product_subgroup_key.replace("_", " ").title())
+    return product_subgroup_key.replace("_", " ").title()
+
 
 def _merge_product_groups(existing: Iterable[ManagedProductGroup], incoming: Iterable[ManagedProductGroup]) -> list[ManagedProductGroup]:
+    # KR-MDP-REFRESH-MERGE-1:
+    # Re-registering a Source Intake candidate must replace that candidate's
+    # previous product-group items before adding the newly classified items.
+    # Otherwise a curve that moves from Other to a runtime-KR group remains
+    # counted in the old group and MDP displays stale classification.
+    incoming_groups = list(incoming)
+    incoming_candidate_ids = {
+        item.source_intake_candidate_id
+        for group in incoming_groups
+        for item in group.items
+        if item.source_intake_candidate_id
+    }
+    incoming_product_prefixes = tuple(
+        f"source-intake-curve:{candidate_id}:"
+        for candidate_id in sorted(incoming_candidate_ids)
+    )
+
     groups: dict[str, ManagedProductGroup] = {}
     for group in existing:
-        groups[group.group_key] = group.model_copy(deep=True) if hasattr(group, "model_copy") else group.copy(deep=True)
-    for group in incoming:
+        next_group = group.model_copy(deep=True) if hasattr(group, "model_copy") else group.copy(deep=True)
+        if incoming_candidate_ids:
+            next_group.items = [
+                item
+                for item in next_group.items
+                if not _is_replaced_source_intake_item(
+                    item,
+                    incoming_candidate_ids=incoming_candidate_ids,
+                    incoming_product_prefixes=incoming_product_prefixes,
+                )
+            ]
+        groups[next_group.group_key] = next_group
+
+    for group in incoming_groups:
         target = groups.get(group.group_key)
         if target is None:
             groups[group.group_key] = group
@@ -260,8 +396,22 @@ def _merge_product_groups(existing: Iterable[ManagedProductGroup], incoming: Ite
         for item in group.items:
             items[item.product_id] = item
         target.items = list(items.values())
+
     ordered_keys = [definition.group_key for definition in PRODUCT_GROUP_ORDER]
     return [groups[key] for key in ordered_keys if key in groups]
+
+
+def _is_replaced_source_intake_item(
+    item: ManagedProductGroupItem,
+    *,
+    incoming_candidate_ids: set[str],
+    incoming_product_prefixes: tuple[str, ...],
+) -> bool:
+    if item.source_intake_candidate_id and item.source_intake_candidate_id in incoming_candidate_ids:
+        return True
+    if incoming_product_prefixes and item.product_id.startswith(incoming_product_prefixes):
+        return True
+    return False
 
 def _registration_note(candidate: SourceFileCandidate, *, uwi: str | None, approved_by: str | None, approval_note: str | None) -> str:
     parts = [f"Registered from WLV Source Intake candidate {candidate.source_file_id}."]

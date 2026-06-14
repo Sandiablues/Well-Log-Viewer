@@ -196,6 +196,66 @@ class SourceIntakeEvidenceRecord(BaseModel):
     message: Optional[str] = None
 
 
+class SourceIntakeDiagnosticPhase(str, Enum):
+    PARSE = "parse"
+    QAQC = "qaqc"
+    MDP_READY = "mdp_ready"
+    EVIDENCE = "evidence"
+
+
+class SourceIntakeDiagnosticSeverity(str, Enum):
+    INFO = "info"
+    SUCCESS = "success"
+    WARNING = "warning"
+    ERROR = "error"
+    BLOCKER = "blocker"
+
+
+class SourceIntakeDiagnosticFlag(BaseModel):
+    phase: SourceIntakeDiagnosticPhase
+    severity: SourceIntakeDiagnosticSeverity = SourceIntakeDiagnosticSeverity.INFO
+    code: str
+    title: str
+    message: str
+    field_name: Optional[str] = None
+    evidence: list[SourceIntakeEvidenceRecord] = Field(default_factory=list)
+
+
+class SourceIntakeDiagnosticAction(BaseModel):
+    phase: SourceIntakeDiagnosticPhase
+    action_key: str
+    label: str
+    enabled: bool = False
+    reason: Optional[str] = None
+
+
+class SourceIntakeCandidateDiagnosticSummary(BaseModel):
+    candidate_id: str
+    file_name: str
+    relative_path: str
+    original_path: Optional[str] = None
+    detected_file_type: SourceIntakeFileType
+    candidate_role: SourceIntakeCandidateRole
+    well_name: Optional[str] = None
+    curve_count: int = 0
+    registration_status: str = "not_registered"
+    managed_well_id: Optional[str] = None
+    managed_well_name: Optional[str] = None
+
+
+class SourceIntakeCandidateDiagnostics(BaseModel):
+    # WLV-WSI-FLAGS-DETAIL-1: backend-owned candidate diagnostic detail contract.
+    ok: bool = True
+    service: str = "wlv-source-intake"
+    candidate_id: str
+    summary: SourceIntakeCandidateDiagnosticSummary
+    parse_status: SourceIntakeParseStatus
+    qaqc_status: SourceIntakeQaqcResult
+    mdp_ready_status: str
+    flags: list[SourceIntakeDiagnosticFlag] = Field(default_factory=list)
+    actions: list[SourceIntakeDiagnosticAction] = Field(default_factory=list)
+
+
 class SourceIntakeResolvedField(BaseModel):
     field_name: str
     value: Optional[str] = None

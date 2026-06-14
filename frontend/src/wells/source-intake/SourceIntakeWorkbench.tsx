@@ -128,6 +128,52 @@ type SourceRepositoryRemoveResponse = {
   workbench: SourceIntakeWorkbenchResponse;
 };
 
+type CandidateDiagnosticPhase = 'parse' | 'qaqc' | 'mdp_ready' | 'evidence';
+type CandidateDiagnosticSeverity = 'info' | 'success' | 'warning' | 'error' | 'blocker';
+
+type CandidateDiagnosticFlag = {
+  phase: CandidateDiagnosticPhase;
+  severity: CandidateDiagnosticSeverity;
+  code: string;
+  title: string;
+  message: string;
+  field_name?: string | null;
+};
+
+type CandidateDiagnosticAction = {
+  phase: CandidateDiagnosticPhase;
+  action_key: string;
+  label: string;
+  enabled: boolean;
+  reason?: string | null;
+};
+
+type CandidateDiagnosticSummary = {
+  candidate_id: string;
+  file_name: string;
+  relative_path: string;
+  original_path?: string | null;
+  detected_file_type: string;
+  candidate_role: string;
+  well_name?: string | null;
+  curve_count: number;
+  registration_status: string;
+  managed_well_id?: string | null;
+  managed_well_name?: string | null;
+};
+
+type CandidateDiagnosticsResponse = {
+  ok: boolean;
+  service: string;
+  candidate_id: string;
+  summary: CandidateDiagnosticSummary;
+  parse_status: string;
+  qaqc_status: QaqcStatus;
+  mdp_ready_status: string;
+  flags: CandidateDiagnosticFlag[];
+  actions: CandidateDiagnosticAction[];
+};
+
 const WORKFLOW_LABELS = [
   'Search & Discover',
   'Categorize',
@@ -239,6 +285,8 @@ function SummaryTile({ label, value }: { label: string; value: number }) {
 // WLV-WSI-COLLAPSE-DETAIL-COLUMNS-V2-ROLE-1: collapsible source panel, detail toggle rows, and final candidate columns with Role before Curves.
 // WLV-WSI-SOURCE-PANEL-TEXT-CLEANUP-1: remove redundant source-panel helper text and keep Search & Discover on one line.
 // WLV-WSI-STRUCTURAL-CANDIDATE-LAYOUT-1: single authoritative semantic candidate table column model.
+// WLV-WSI-FLAGS-DETAIL-1: backend-owned diagnostics drawer for Parse, QAQC, and MDP Ready flags.
+// WLV-WSI-FLAGS-DETAIL-HOTFIX-2: drawer fallback summary, known metadata, runtime-safe diagnostics load.
 export function SourceIntakeWorkbench() {
   const [workbench, setWorkbench] = useState<SourceIntakeWorkbenchResponse | null>(null);
   const [selectedRepositoryId, setSelectedRepositoryId] = useState<string>('');
@@ -248,7 +296,11 @@ export function SourceIntakeWorkbench() {
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set());
   const [candidateViewMode, setCandidateViewMode] = useState<string>('all');
   const [sourcePanelCollapsed, setSourcePanelCollapsed] = useState(false);
-  const [expandedCandidateIds, setExpandedCandidateIds] = useState<Set<string>>(new Set());
+  const [diagnosticCandidateId, setDiagnosticCandidateId] = useState<string>('');
+  const [diagnosticCandidate, setDiagnosticCandidate] = useState<SourceFileCandidate | null>(null);
+  const [candidateDiagnostics, setCandidateDiagnostics] = useState<CandidateDiagnosticsResponse | null>(null);
+  const [diagnosticLoading, setDiagnosticLoading] = useState(false);
+  const [diagnosticError, setDiagnosticError] = useState<string>('');
   const headerSelectRef = useRef<HTMLInputElement | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string>('');
@@ -332,6 +384,44 @@ export function SourceIntakeWorkbench() {
     [selectedRepositoryId, visibleCandidateIds],
   );
 
+  const diagnosticFallbackCandidate = useMemo(
+    () => diagnosticCandidate
+      ?? candidates.find((candidate) => candidate.source_file_id === diagnosticCandidateId)
+      ?? null,
+    [candidates, diagnosticCandidate, diagnosticCandidateId],
+  );
+
+  const diagnosticTitle = candidateDiagnostics?.summary.file_name
+    ?? diagnosticFallbackCandidate?.file_name
+    ?? 'Candidate diagnostic detail';
+
+  const diagnosticRelativePath = candidateDiagnostics?.summary.relative_path
+    ?? diagnosticFallbackCandidate?.relative_path
+    ?? '';
+
+  const diagnosticSourcePath = candidateDiagnostics?.summary.original_path
+    ?? diagnosticFallbackCandidate?.original_path
+    ?? '';
+
+  const diagnosticKnownMetadata = useMemo(() => {
+    const fallback = diagnosticFallbackCandidate;
+    if (!fallback && !candidateDiagnostics) return [];
+
+    return [
+      { label: 'Well', value: candidateDiagnostics?.summary.well_name ?? fallback?.resolved_metadata?.well_name?.value ?? '—' },
+      { label: 'UWI/API', value: fallback?.resolved_metadata?.uwi?.value ?? '—' },
+      { label: 'Operator', value: fallback?.resolved_metadata?.operator?.value ?? '—' },
+      { label: 'Field', value: fallback?.resolved_metadata?.field?.value ?? '—' },
+      { label: 'File Type', value: labelize(candidateDiagnostics?.summary.detected_file_type ?? fallback?.detected_file_type ?? 'unknown') },
+      { label: 'Role', value: labelize(candidateDiagnostics?.summary.candidate_role ?? fallback?.candidate_role ?? 'unknown') },
+      { label: 'Curves', value: String(candidateDiagnostics?.summary.curve_count ?? (fallback ? candidateCurveCount(fallback) : 0)) },
+      { label: 'Parse', value: parseStatusLabel(candidateDiagnostics?.parse_status ?? fallback?.parser_status ?? 'not_parsed') },
+      { label: 'QAQC', value: labelize(candidateDiagnostics?.qaqc_status.status ?? fallback?.qaqc_status?.status ?? 'not_checked') },
+      { label: 'MDP Ready', value: labelize(candidateDiagnostics?.mdp_ready_status ?? (fallback && candidateIsRegisterable(fallback) ? 'ready' : 'not_ready')) },
+      { label: 'Registration', value: labelize(candidateDiagnostics?.summary.registration_status ?? fallback?.registration_status ?? 'not_registered') },
+    ];
+  }, [candidateDiagnostics, diagnosticFallbackCandidate]);
+
   const loadWorkbench = useCallback(async () => {
     const data = await fetchWlvJson<SourceIntakeWorkbenchResponse>('/api/wlv/source-intake/workbench');
     setWorkbench(data);
@@ -342,10 +432,6 @@ export function SourceIntakeWorkbench() {
       return '';
     });
     setSelectedCandidateIds((current) => {
-      const validIds = new Set(data.candidates.map((candidate) => candidate.source_file_id));
-      return new Set([...current].filter((candidateId) => validIds.has(candidateId)));
-    });
-    setExpandedCandidateIds((current) => {
       const validIds = new Set(data.candidates.map((candidate) => candidate.source_file_id));
       return new Set([...current].filter((candidateId) => validIds.has(candidateId)));
     });
@@ -463,13 +549,34 @@ export function SourceIntakeWorkbench() {
     });
   };
 
-  const toggleCandidateDetail = (candidateId: string) => {
-    setExpandedCandidateIds((current) => {
-      const next = new Set(current);
-      if (next.has(candidateId)) next.delete(candidateId);
-      else next.add(candidateId);
-      return next;
-    });
+  const openCandidateDiagnostics = async (candidate: SourceFileCandidate) => {
+    const candidateId = candidate.source_file_id;
+    setDiagnosticCandidateId(candidateId);
+    setDiagnosticCandidate(candidate);
+    setCandidateDiagnostics(null);
+    setDiagnosticError('');
+    setDiagnosticLoading(true);
+    try {
+      const data = await fetchWlvJson<CandidateDiagnosticsResponse>(
+        `/api/wlv/source-intake/candidates/${encodeURIComponent(candidateId)}/diagnostics`,
+      );
+      setCandidateDiagnostics(data);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setDiagnosticError(message.includes('404')
+        ? `${message}. Restart the WLV backend if this is the first diagnostics request after applying the block.`
+        : message);
+    } finally {
+      setDiagnosticLoading(false);
+    }
+  };
+
+  const closeCandidateDiagnostics = () => {
+    setDiagnosticCandidateId('');
+    setDiagnosticCandidate(null);
+    setCandidateDiagnostics(null);
+    setDiagnosticError('');
+    setDiagnosticLoading(false);
   };
 
   const removeSelectedRepository = () => runAction('remove-source', async () => {
@@ -723,6 +830,7 @@ export function SourceIntakeWorkbench() {
                   <col className="wlv-si-col-parse" />
                   <col className="wlv-si-col-qaqc" />
                   <col className="wlv-si-col-mdp-ready" />
+                  <col className="wlv-si-col-detail" />
                 </colgroup>
                 <thead>
                   <tr>
@@ -743,12 +851,13 @@ export function SourceIntakeWorkbench() {
                     <th>Parse</th>
                     <th>QAQC</th>
                     <th>MDP Ready</th>
+                    <th>Detail</th>
                   </tr>
                 </thead>
                 <tbody>
                   {visibleCandidates.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="wlv-si-empty-row">No candidates discovered. Register and scan a source repository.</td>
+                      <td colSpan={9} className="wlv-si-empty-row">No candidates discovered. Register and scan a source repository.</td>
                     </tr>
                   ) : visibleCandidates.map((candidate) => {
                     const wellName = candidate.resolved_metadata?.well_name?.value ?? '—';
@@ -756,13 +865,13 @@ export function SourceIntakeWorkbench() {
                     const eligible = candidateIsRegisterable(candidate);
                     const registered = candidateIsRegistered(candidate);
                     const curveCount = candidateCurveCount(candidate);
-                    const detailExpanded = expandedCandidateIds.has(candidate.source_file_id);
                     return (
                       <tr
                         key={candidate.source_file_id}
                         className={[
                           candidate.review_required ? 'requires-review' : '',
                           selectedCandidateIds.has(candidate.source_file_id) ? 'is-selected' : '',
+                          diagnosticCandidateId === candidate.source_file_id ? 'is-diagnostic-active' : '',
                         ].filter(Boolean).join(' ')}
                         onClick={() => toggleCandidate(candidate.source_file_id)}
                       >
@@ -775,48 +884,8 @@ export function SourceIntakeWorkbench() {
                             aria-label={`Select ${candidate.file_name}`}
                           />
                         </td>
-                        <td
-                          className={`wlv-si-file-cell ${detailExpanded ? 'is-detail-open' : ''}`}
-                          title={candidate.file_name}
-                        >
+                        <td className="wlv-si-file-cell" title={candidate.file_name}>
                           <strong title={candidate.file_name}>{candidate.file_name}</strong>
-                          {!detailExpanded ? (
-                            <button
-                              type="button"
-                              className="wlv-si-detail-button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                toggleCandidateDetail(candidate.source_file_id);
-                              }}
-                            >
-                              Detail
-                            </button>
-                          ) : (
-                            <div className="wlv-si-file-detail-panel" onClick={(event) => event.stopPropagation()}>
-                              <dl>
-                                <div>
-                                  <dt>Relative path</dt>
-                                  <dd>{candidate.relative_path}</dd>
-                                </div>
-                                {candidate.original_path ? (
-                                  <div>
-                                    <dt>Source path</dt>
-                                    <dd>{candidate.original_path}</dd>
-                                  </div>
-                                ) : null}
-                              </dl>
-                              <button
-                                type="button"
-                                className="wlv-si-detail-button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  toggleCandidateDetail(candidate.source_file_id);
-                                }}
-                              >
-                                Detail
-                              </button>
-                            </div>
-                          )}
                         </td>
                         <td className="wlv-si-cell-well wlv-si-well-cell">{wellName}</td>
                         <td className="wlv-si-cell-role"><span className="wlv-si-pill">{labelize(candidate.candidate_role)}</span></td>
@@ -851,6 +920,19 @@ export function SourceIntakeWorkbench() {
                             </div>
                           )}
                         </td>
+                        <td className="wlv-si-cell-detail">
+                          <button
+                            type="button"
+                            className="wlv-si-detail-button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void openCandidateDiagnostics(candidate);
+                            }}
+                            aria-label={`Open diagnostics for ${candidate.file_name}`}
+                          >
+                            Detail
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -860,6 +942,163 @@ export function SourceIntakeWorkbench() {
           </section>
         </main>
       </div>
+
+      {diagnosticCandidateId ? (
+        <aside
+          className="wlv-si-diagnostic-drawer"
+          aria-label="Source Intake candidate diagnostic detail"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="wlv-si-diagnostic-drawer__header">
+            <div>
+              <span className="wlv-si-diagnostic-drawer__kicker">Diagnostic Detail</span>
+              <h2>{diagnosticTitle}</h2>
+              {/* WLV-WSI-DETAIL-PATH-LINKS-1: reveal file paths only on user request. */}
+              <div className="wlv-si-diagnostic-path-links" aria-label="Candidate file paths">
+                <details className="wlv-si-diagnostic-path-link">
+                  <summary>Source path</summary>
+                  <p>{diagnosticSourcePath || '—'}</p>
+                </details>
+                <details className="wlv-si-diagnostic-path-link">
+                  <summary>Relative path</summary>
+                  <p>{diagnosticRelativePath || '—'}</p>
+                </details>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="wlv-si-detail-button"
+              onClick={closeCandidateDiagnostics}
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="wlv-si-diagnostic-drawer__body">
+            <section className="wlv-si-diagnostic-section wlv-si-diagnostic-section--known-metadata">
+              <h3>Known Metadata</h3>
+              <dl className="wlv-si-diagnostic-summary">
+                {diagnosticKnownMetadata.map((item) => (
+                  <div key={item.label}>
+                    <dt>{item.label}</dt>
+                    <dd>{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+
+            {diagnosticLoading ? (
+              <p className="wlv-si-diagnostic-note">Loading backend-owned diagnostics…</p>
+            ) : null}
+
+            {diagnosticError ? (
+              <p className="wlv-si-diagnostic-note is-error">{diagnosticError}</p>
+            ) : null}
+
+            {candidateDiagnostics ? (
+              <>
+              <section className="wlv-si-diagnostic-section">
+                <h3>Workflow Status</h3>
+                <dl className="wlv-si-diagnostic-summary">
+                  <div>
+                    <dt>Well</dt>
+                  <dd>{candidateDiagnostics.summary.well_name ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Role</dt>
+                  <dd>{labelize(candidateDiagnostics.summary.candidate_role)}</dd>
+                </div>
+                <div>
+                  <dt>Curves</dt>
+                  <dd>{candidateDiagnostics.summary.curve_count}</dd>
+                </div>
+                <div>
+                  <dt>Parse</dt>
+                  <dd>{parseStatusLabel(candidateDiagnostics.parse_status)}</dd>
+                </div>
+                <div>
+                  <dt>QAQC</dt>
+                  <dd>{labelize(candidateDiagnostics.qaqc_status.status ?? 'not_checked')}</dd>
+                </div>
+                  <div>
+                    <dt>MDP Ready</dt>
+                    <dd>{labelize(candidateDiagnostics.mdp_ready_status)}</dd>
+                  </div>
+                </dl>
+              </section>
+
+              {(['parse', 'qaqc', 'mdp_ready'] as CandidateDiagnosticPhase[]).map((phase) => {
+                const phaseFlags = candidateDiagnostics.flags.filter((flag) => flag.phase === phase);
+                return (
+                  <section className="wlv-si-diagnostic-section" key={phase}>
+                    <h3>{phase === 'mdp_ready' ? 'MDP Ready' : phase.toUpperCase()}</h3>
+                    {phaseFlags.length === 0 ? (
+                      <p className="wlv-si-diagnostic-note">No diagnostic flags reported for this phase.</p>
+                    ) : (
+                      <ul className="wlv-si-diagnostic-flags">
+                        {phaseFlags.map((flag) => (
+                          <li key={`${flag.phase}:${flag.code}:${flag.message}`} className={`is-${flag.severity}`}>
+                            <strong>{flag.title}</strong>
+                            <p>{flag.message}</p>
+                            {flag.field_name ? <small>Field: {flag.field_name}</small> : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                );
+              })}
+
+              <section className="wlv-si-diagnostic-section">
+                <h3>Suggested Actions</h3>
+                <div className="wlv-si-diagnostic-actions">
+                  {candidateDiagnostics.actions.map((action) => (
+                    <button
+                      key={`${action.phase}:${action.action_key}`}
+                      type="button"
+                      className="wlv-si-button"
+                      disabled={!action.enabled}
+                      title={action.reason ?? undefined}
+                    >
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
+                {candidateDiagnostics.actions.some((action) => action.reason) ? (
+                  <ul className="wlv-si-diagnostic-action-reasons">
+                    {candidateDiagnostics.actions
+                      .filter((action) => action.reason)
+                      .map((action) => (
+                        <li key={`${action.action_key}:reason`}>
+                          <strong>{action.label}:</strong> {action.reason}
+                        </li>
+                      ))}
+                  </ul>
+                ) : null}
+              </section>
+
+              <section className="wlv-si-diagnostic-section">
+                <h3>Source Evidence</h3>
+                <dl className="wlv-si-diagnostic-source">
+                  <div>
+                    <dt>Detected file type</dt>
+                    <dd>{candidateDiagnostics.summary.detected_file_type}</dd>
+                  </div>
+                  <div>
+                    <dt>Original path</dt>
+                    <dd>{candidateDiagnostics.summary.original_path ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Managed well</dt>
+                    <dd>{candidateDiagnostics.summary.managed_well_name ?? candidateDiagnostics.summary.managed_well_id ?? '—'}</dd>
+                  </div>
+                </dl>
+              </section>
+              </>
+            ) : null}
+          </div>
+        </aside>
+      ) : null}
     </section>
   );
 }
