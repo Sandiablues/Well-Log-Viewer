@@ -1085,13 +1085,13 @@ function DemoRailIcon({ icon }: { icon: DemoNavIconKey }) {
   if (icon === 'wellbore-3d') {
     return (
       <svg {...commonProps} aria-hidden="true">
-        <path d="M4 18.5l5-3.2 5 2.4 6-3.7" />
-        <path d="M6 5.5h12v12H6z" opacity="0.35" />
-        <path d="M8 16c1.4-1.8 2.2-3.8 2.1-6.1" />
-        <path d="M10.1 9.9c-.1-2.1 1.1-3.8 3.2-4.6" />
-        <path d="M13.3 5.3c2.4.5 3.6 2.4 3.3 5.2" />
-        <circle cx="8" cy="16" r="1.2" />
-        <circle cx="16.5" cy="10.5" r="1.2" />
+        <path d="M12 3 20 7.5v9L12 21 4 16.5v-9L12 3z" />
+        <path d="M12 12 20 7.5" />
+        <path d="M12 12 4 7.5" />
+        <path d="M12 12v9" />
+        <path d="M8.4 16.1c1.2-1.3 1.7-2.8 1.6-4.6-.1-1.7.7-2.9 2.1-3.6 1.5-.7 2.9-.3 3.7.8" />
+        <circle cx="8.4" cy="16.1" r="0.85" />
+        <circle cx="15.8" cy="8.7" r="0.85" />
       </svg>
     );
   }
@@ -3992,22 +3992,15 @@ export function TrackLayoutPrototype() {
         </button>
       </header>
 
-      {!hasLoadedViewerWell ? (
-        <section className="wlv-empty-viewer-state" aria-label="Well Data Viewer empty state">
-          <div className="wlv-empty-viewer-card">
-            <h2>No data loaded in the Well Data Viewer</h2>
-            <p>
-              The WDV is ready. Load a managed well or selected products from the
-              WMDP using Bulk Action → Load selected to Data Viewer.
-            </p>
-            <p className="wlv-empty-viewer-note">
-              Existing WMDP inventory and Source Intake records are unchanged.
-              The viewer remains empty until WMDP explicitly loads data.
-            </p>
-          </div>
+      {!hasLoadedViewerWell && (
+        <section className="wlv-empty-viewer-top-banner" aria-label="Well Data Viewer empty state">
+          <strong>No data loaded in the Well Data Viewer</strong>
+          <span>
+            The WDV is ready. Load a managed well or selected products from the WMDP using Bulk Action → Load selected to Data Viewer.
+          </span>
         </section>
-      ) : (
-        <>
+      )}
+
       <Toolbar
         selectedTrack={selectedTrack}
         pendingAddTrackCurveCount={pendingAddTrackCurveIds.length}
@@ -4111,25 +4104,31 @@ export function TrackLayoutPrototype() {
         />
         </div>
         {tracks.length === 0 ? (
-          <section className="wlv-loaded-curves-ready-state" aria-label="Loaded curves ready">
-            <div className="wlv-loaded-curves-ready-card">
-              <h2>Loaded curves are ready</h2>
-              <p>
-                {wdvPackageState.loadedProductCount} loaded curve product{wdvPackageState.loadedProductCount === 1 ? '' : 's'}
-                {' '}are available in the left Loaded Curves panel.
-              </p>
-              <p className="wlv-empty-viewer-note">
-                Select loaded curves and use Add Track, or drag curves into a manually created curve track.
-                WMDP Load does not automatically populate well-log tracks.
-              </p>
-              {wdvPackageState.unsupportedProductCount > 0 && (
-                <p className="wlv-empty-viewer-note">
-                  {wdvPackageState.unsupportedProductCount} unsupported product{wdvPackageState.unsupportedProductCount === 1 ? '' : 's'}
-                  {' '}were excluded from renderable Loaded Curves.
+          hasLoadedViewerWell ? (
+            <section className="wlv-loaded-curves-ready-state" aria-label="Loaded curves ready">
+              <div className="wlv-loaded-curves-ready-card">
+                <h2>Loaded curves are ready</h2>
+                <p>
+                  {wdvPackageState.loadedProductCount} loaded curve product{wdvPackageState.loadedProductCount === 1 ? '' : 's'}
+                  {' '}are available in the left Loaded Curves panel.
                 </p>
-              )}
-            </div>
-          </section>
+                <p className="wlv-empty-viewer-note">
+                  Select loaded curves and use Add Track, or drag curves into a manually created curve track.
+                  WMDP Load does not automatically populate well-log tracks.
+                </p>
+                {wdvPackageState.unsupportedProductCount > 0 && (
+                  <p className="wlv-empty-viewer-note">
+                    {wdvPackageState.unsupportedProductCount} unsupported product{wdvPackageState.unsupportedProductCount === 1 ? '' : 's'}
+                    {' '}were excluded from renderable Loaded Curves.
+                  </p>
+                )}
+              </div>
+            </section>
+          ) : (
+            <section className="wlv-track-canvas wlv-track-canvas-empty-active" aria-label="Blank Well Data Viewer track canvas">
+              <div className="wlv-track-strip" aria-hidden="true" />
+            </section>
+          )
         ) : (
           <TrackCanvas
             tracks={tracks}
@@ -4191,8 +4190,6 @@ export function TrackLayoutPrototype() {
         <span>Track terminology only</span>
         <span>Mock frontend layout draft — no LAS parsing or MSI persistence</span>
       </footer>
-        </>
-      )}
         </div>
         )}
       </main>

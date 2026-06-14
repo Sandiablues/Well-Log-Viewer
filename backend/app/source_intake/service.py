@@ -39,6 +39,7 @@ from .models import (
     SourceIntakeWorkbenchSummary,
     SourceRepositoryCreateRequest,
     SourceRepositoryRecord,
+    SourceRepositoryRemoveResponse,
     SourceRepositoryScanResult,
     utc_now_iso,
 )
@@ -107,6 +108,41 @@ class WlvSourceIntakeService:
     def list_repositories(self) -> list[SourceRepositoryRecord]:
         return self._load_snapshot().repositories
 
+    def remove_repository(self, repository_id: str) -> SourceRepositoryRemoveResponse:
+        # WLV-WSI-REMOVE-SOURCE-1:
+        # "Remove Source" removes the Source Intake repository record and its
+        # current candidate rows from WSI. It must not delete files on disk,
+        # Managed Well Inventory records, MDP state, or WDV session data.
+        snapshot = self._load_snapshot()
+        repository = next((repo for repo in snapshot.repositories if repo.repository_id == repository_id), None)
+        if repository is None:
+            raise SourceIntakeError(f"Source repository not found: {repository_id}")
+
+        candidate_rows_removed = sum(
+            1 for candidate in snapshot.candidates if candidate.repository_id == repository_id
+        )
+        snapshot.repositories = [
+            repo for repo in snapshot.repositories if repo.repository_id != repository_id
+        ]
+        snapshot.candidates = [
+            candidate for candidate in snapshot.candidates if candidate.repository_id != repository_id
+        ]
+        snapshot.updated_at = utc_now_iso()
+        self._save_snapshot(snapshot)
+
+        return SourceRepositoryRemoveResponse(
+            repository_id=repository_id,
+            repository_removed=True,
+            candidate_rows_removed=candidate_rows_removed,
+            message=(
+                f"Removed source repository {repository.name} from Source Intake. "
+                f"Removed {candidate_rows_removed} associated candidate row"
+                f"{'s' if candidate_rows_removed != 1 else ''}. "
+                "Source files and managed inventory were not deleted."
+            ),
+            workbench=self.get_workbench(),
+        )
+
     def scan_repository(self, repository_id: str, include_subfolders: bool | None = None) -> SourceRepositoryScanResult:
         snapshot = self._load_snapshot()
         repository = self._get_repository(snapshot, repository_id)
@@ -155,11 +191,60 @@ class WlvSourceIntakeService:
             candidates=snapshot.candidates,
         )
 
-    def clear_workbench_selection(self, repository_id: str | None = None) -> SourceIntakeClearResponse:
-        # WLV-SOURCE-INTAKE-1 has no persisted active selection yet. This method
-        # intentionally mirrors SSI Clear semantics: it is non-destructive and
-        # does not delete repositories, candidates, source files, or managed data.
-        return SourceIntakeClearResponse(workbench=self.get_workbench())
+    def clear_workbench_selection(
+        self,
+        repository_id: str | None = None,
+        candidate_ids: list[str] | None = None,
+    ) -> SourceIntakeClearResponse:
+        # WLV-WSI-CLEAR-CANDIDATE-ROWS-1:
+        # "Clear Selection" means remove selected rows from the active Source
+        # Intake candidate register. It must not delete source files, source
+        # repositories, Managed Well Inventory records, WMDP state, or WDV state.
+        snapshot = self._load_snapshot()
+        selected_ids = {candidate_id for candidate_id in (candidate_ids or []) if candidate_id}
+
+        if not selected_ids:
+            return SourceIntakeClearResponse(workbench=self.get_workbench())
+
+        before_count = len(snapshot.candidates)
+        affected_repository_ids = {
+            candidate.repository_id
+            for candidate in snapshot.candidates
+            if candidate.source_file_id in selected_ids
+        }
+        if repository_id:
+            affected_repository_ids.add(repository_id)
+
+        snapshot.candidates = [
+            candidate
+            for candidate in snapshot.candidates
+            if candidate.source_file_id not in selected_ids
+        ]
+        rows_removed = before_count - len(snapshot.candidates)
+
+        if rows_removed > 0:
+            for repository in snapshot.repositories:
+                if repository.repository_id in affected_repository_ids:
+                    repository_candidates = [
+                        candidate
+                        for candidate in snapshot.candidates
+                        if candidate.repository_id == repository.repository_id
+                    ]
+                    self._apply_counts(repository, repository_candidates)
+                    repository.updated_at = utc_now_iso()
+            self._save_snapshot(snapshot)
+
+        return SourceIntakeClearResponse(
+            action="clear_candidate_register_rows",
+            destructive=False,
+            records_deleted=rows_removed,
+            message=(
+                f"Removed {rows_removed} selected candidate row"
+                f"{'s' if rows_removed != 1 else ''} from the Source Intake register. "
+                "Source files and managed inventory were not deleted."
+            ),
+            workbench=self.get_workbench(),
+        )
 
     def register_candidates(self, request: SourceIntakeRegisterRequest, inventory_service=None) -> SourceIntakeRegisterResponse:
         """Register approved intake candidates to Managed Well Inventory.
@@ -299,6 +384,17 @@ class WlvSourceIntakeService:
             warnings=warnings,
         )
 
+        # WLV-WSI-PARSE-STATUS-FILENAME-1:
+        # Parser status is backend-owned and separate from QAQC status.
+        # Discovery alone is not "parsed"; unsupported/container states are
+        # explicit so the UI does not show every non-LAS record as Not Parsed.
+        candidate.parser_status = self._initial_parser_status(file_path, detected_file_type)
+        if candidate.parser_status == SourceIntakeParseStatus.CONTAINER_PENDING_EXTRACTION:
+            candidate.review_required = True
+            candidate.warnings.append("Container/archive candidate pending extraction and child-file classification.")
+        elif candidate.parser_status == SourceIntakeParseStatus.UNSUPPORTED:
+            candidate.warnings.append(f"No Source Intake parser is currently implemented for {detected_file_type.value} files.")
+
         if detected_file_type == SourceIntakeFileType.LAS:
             self._attach_las_metadata(candidate, file_path)
 
@@ -306,6 +402,17 @@ class WlvSourceIntakeService:
         candidate.review_required = candidate.review_required or candidate.qaqc_status.review_required
 
         return candidate
+
+    def _initial_parser_status(self, file_path: Path, detected_file_type: SourceIntakeFileType) -> SourceIntakeParseStatus:
+        # WLV-WSI-PARSE-STATUS-FILENAME-1: deterministic initial parse classification.
+        ext = file_path.suffix.lower().lstrip(".")
+        if detected_file_type == SourceIntakeFileType.LAS:
+            return SourceIntakeParseStatus.NOT_PARSED
+        if ext in {"zip", "tar", "tgz", "gz", "gzip", "7z", "rar"}:
+            return SourceIntakeParseStatus.CONTAINER_PENDING_EXTRACTION
+        if detected_file_type != SourceIntakeFileType.UNKNOWN:
+            return SourceIntakeParseStatus.UNSUPPORTED
+        return SourceIntakeParseStatus.NOT_PARSED
 
     def _attach_las_metadata(self, candidate: SourceFileCandidate, file_path: Path) -> None:
         """Parse LAS headers into the three-level source-intake metadata model.

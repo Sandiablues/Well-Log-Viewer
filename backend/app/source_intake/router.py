@@ -13,6 +13,7 @@ from .models import (
     SourceIntakeWorkbench,
     SourceRepositoryCreateRequest,
     SourceRepositoryRecord,
+    SourceRepositoryRemoveResponse,
     SourceRepositoryScanResult,
 )
 from .service import SourceIntakeError, WlvSourceIntakeService
@@ -41,6 +42,19 @@ def list_repositories() -> list[SourceRepositoryRecord]:
     return _service.list_repositories()
 
 
+@router.delete(
+    "/repositories/{repository_id}",
+    response_model=SourceRepositoryRemoveResponse,
+    summary="Remove a WLV source repository from Source Intake",
+)
+def remove_repository(repository_id: str) -> SourceRepositoryRemoveResponse:
+    # WLV-WSI-REMOVE-SOURCE-1: repository removal is backend-owned.
+    try:
+        return _service.remove_repository(repository_id)
+    except SourceIntakeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
 @router.post(
     "/repositories/{repository_id}/scan",
     response_model=SourceRepositoryScanResult,
@@ -60,7 +74,11 @@ def get_workbench() -> SourceIntakeWorkbench:
 
 @router.post("/workbench/clear", response_model=SourceIntakeClearResponse, summary="Clear active WLV Source Intake selection")
 def clear_workbench(request: SourceIntakeClearRequest | None = None) -> SourceIntakeClearResponse:
-    return _service.clear_workbench_selection(repository_id=request.repository_id if request else None)
+    # WLV-WSI-CLEAR-CANDIDATE-ROWS-1: candidate row removal is backend-owned.
+    return _service.clear_workbench_selection(
+        repository_id=request.repository_id if request else None,
+        candidate_ids=request.candidate_ids if request else None,
+    )
 
 
 @router.post("/register", response_model=SourceIntakeRegisterResponse, summary="Register WLV Source Intake candidates to managed inventory")

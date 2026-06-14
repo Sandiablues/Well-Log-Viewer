@@ -59,10 +59,13 @@ class SourceIntakeCandidateRole(str, Enum):
 
 
 class SourceIntakeParseStatus(str, Enum):
+    # WLV-WSI-PARSE-STATUS-FILENAME-1: backend-owned parse lifecycle states.
     NOT_PARSED = "not_parsed"
     PARSED = "parsed"
     PARSED_WITH_WARNINGS = "parsed_with_warnings"
     PARSE_FAILED = "parse_failed"
+    UNSUPPORTED = "unsupported"
+    CONTAINER_PENDING_EXTRACTION = "container_pending_extraction"
 
 
 class SourceIntakeQaqcStatus(str, Enum):
@@ -277,6 +280,16 @@ class SourceIntakeWorkbench(BaseModel):
     candidates: list[SourceFileCandidate] = Field(default_factory=list)
 
 
+class SourceRepositoryRemoveResponse(BaseModel):
+    # WLV-WSI-REMOVE-SOURCE-1: repository removal is backend-owned.
+    ok: bool = True
+    action: str = "remove_source_repository"
+    destructive: bool = False
+    repository_id: str
+    repository_removed: bool = False
+    candidate_rows_removed: int = 0
+    message: str
+    workbench: SourceIntakeWorkbench
 
 
 class SourceIntakeApproval(BaseModel):
@@ -312,7 +325,9 @@ class SourceIntakeRegisterResponse(BaseModel):
 
 
 class SourceIntakeClearRequest(BaseModel):
+    # WLV-WSI-CLEAR-CANDIDATE-ROWS-1: candidate register clear is backend-owned.
     repository_id: Optional[str] = None
+    candidate_ids: list[str] = Field(default_factory=list)
 
 
 class SourceIntakeClearResponse(BaseModel):
