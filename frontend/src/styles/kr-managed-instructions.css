@@ -1,5 +1,6 @@
 .wlv-kr-workbench {
-  min-height: 100vh;
+  min-height: 100%;
+  box-sizing: border-box;
   padding: 24px;
   color: #e5e7eb;
   background: radial-gradient(circle at top left, rgba(30, 64, 175, 0.22), transparent 38%), #020617;
@@ -28,6 +29,14 @@
   margin: 0;
   color: #94a3b8;
   font-size: 14px;
+}
+
+
+.wlv-kr-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .wlv-kr-outline-button {
@@ -132,6 +141,12 @@
   overflow: hidden;
 }
 
+.wlv-kr-detail-panel,
+.wlv-kr-template-panel {
+  max-height: min(760px, calc(100vh - 180px));
+  overflow: auto;
+}
+
 .wlv-kr-section-heading,
 .wlv-kr-detail-heading {
   display: flex;
@@ -156,7 +171,8 @@
 }
 
 .wlv-kr-table-wrap {
-  max-height: 58vh;
+  max-height: min(720px, calc(100vh - 310px));
+  min-height: 260px;
   overflow: auto;
 }
 

@@ -166,6 +166,15 @@ button:disabled {
   background: #141414;
 }
 
+.wlv-kr-page-shell {
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background: #020617;
+}
+
 .wlv-prototype-root {
   height: 100%;
   display: flex;

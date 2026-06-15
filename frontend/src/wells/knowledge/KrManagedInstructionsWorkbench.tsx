@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type KrInstructionSummary = {
   instruction_id: string;
@@ -90,6 +90,8 @@ const TEMPLATE_KEYS = [
   'well_integrity_casing_inspection',
 ];
 
+const PAGE_LIMIT = 500;
+
 function wlvApiBaseUrl(): string {
   const runtimeConfig = window as RuntimeWindow;
   if (runtimeConfig.__WLV_API_BASE_URL__) {
@@ -132,27 +134,6 @@ function labelFromKey(value: string): string {
   return value
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function instructionSearchText(item: KrInstructionSummary): string {
-  return [
-    item.instruction_id,
-    item.source_record_type,
-    item.instruction_type,
-    item.status,
-    item.subject,
-    item.application_area,
-    item.template_key,
-    item.track_id,
-    item.curve_family,
-    item.canonical_curve_id,
-    item.alias,
-    item.must_do,
-    item.must_not_do,
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
 }
 
 function uniqueSorted(values: Array<string | null | undefined>): string[] {
@@ -313,14 +294,28 @@ function TemplateDecisionPanel({ templateKey }: { templateKey: string }) {
   );
 }
 
+function buildInstructionPath(search: string, instructionType: KrInstructionTypeFilter, templateFilter: string, curveFamilyFilter: string): string {
+  const params = new URLSearchParams();
+  params.set('limit', String(PAGE_LIMIT));
+  const q = search.trim();
+  if (q) params.set('q', q);
+  if (instructionType !== 'all') params.set('instruction_type', instructionType);
+  if (templateFilter !== 'all') params.set('template_key', templateFilter);
+  if (curveFamilyFilter !== 'all') params.set('curve_family', curveFamilyFilter);
+  return `/api/wlv/knowledge/instructions?${params.toString()}`;
+}
+
 export function KrManagedInstructionsWorkbench() {
   const [summary, setSummary] = useState<KrInstructionSummaryResponse | null>(null);
   const [instructions, setInstructions] = useState<KrInstructionSummary[]>([]);
+  const [listTotalCount, setListTotalCount] = useState(0);
+  const [listReturnedCount, setListReturnedCount] = useState(0);
   const [selectedInstructionId, setSelectedInstructionId] = useState<string | null>(null);
   const [detail, setDetail] = useState<KrInstructionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [listLoading, setListLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [instructionType, setInstructionType] = useState<KrInstructionTypeFilter>('all');
@@ -329,34 +324,60 @@ export function KrManagedInstructionsWorkbench() {
   const [curveFamilyFilter, setCurveFamilyFilter] = useState('all');
   const [decisionTemplateKey, setDecisionTemplateKey] = useState('open_hole_triple_combo');
 
-  const loadInstructions = () => {
-    setLoading(true);
+  const loadSummary = useCallback(() => {
+    setSummaryLoading(true);
     setError(null);
-    void Promise.all([
-      fetchKrJson<KrInstructionSummaryResponse>('/api/wlv/knowledge/instructions/summary'),
-      fetchKrJson<KrInstructionListResponse>('/api/wlv/knowledge/instructions?limit=500'),
-    ])
-      .then(([nextSummary, list]) => {
-        setSummary(nextSummary);
-        setInstructions(list.instructions ?? []);
+    void fetchKrJson<KrInstructionSummaryResponse>('/api/wlv/knowledge/instructions/summary')
+      .then((nextSummary) => setSummary(nextSummary))
+      .catch((caught) => {
+        setSummary(null);
+        setError(caught instanceof Error ? caught.message : 'KR instruction summary unavailable');
+      })
+      .finally(() => setSummaryLoading(false));
+  }, []);
+
+  const loadInstructions = useCallback(() => {
+    setListLoading(true);
+    setError(null);
+    const path = buildInstructionPath(search, instructionType, templateFilter, curveFamilyFilter);
+    void fetchKrJson<KrInstructionListResponse>(path)
+      .then((list) => {
+        const rows = (list.instructions ?? []).filter((item) => {
+          if (truthFilter === 'runtime' && !item.runtime_eligible) return false;
+          if (truthFilter === 'production' && !item.production_eligible) return false;
+          return true;
+        });
+        setInstructions(rows);
+        setListTotalCount(list.total_count ?? rows.length);
+        setListReturnedCount(rows.length);
         setSelectedInstructionId((current) => (
-          current && list.instructions.some((item) => item.instruction_id === current)
+          current && rows.some((item) => item.instruction_id === current)
             ? current
-            : list.instructions[0]?.instruction_id ?? null
+            : rows[0]?.instruction_id ?? null
         ));
       })
       .catch((caught) => {
-        setSummary(null);
         setInstructions([]);
+        setListTotalCount(0);
+        setListReturnedCount(0);
         setSelectedInstructionId(null);
         setError(caught instanceof Error ? caught.message : 'KR instruction service unavailable');
       })
-      .finally(() => setLoading(false));
-  };
+      .finally(() => setListLoading(false));
+  }, [curveFamilyFilter, instructionType, search, templateFilter, truthFilter]);
+
+  const refreshAll = useCallback(() => {
+    loadSummary();
+    loadInstructions();
+  }, [loadInstructions, loadSummary]);
+
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
 
   useEffect(() => {
     loadInstructions();
-  }, []);
+  }, [loadInstructions]);
 
   useEffect(() => {
     if (!selectedInstructionId) {
@@ -389,19 +410,15 @@ export function KrManagedInstructionsWorkbench() {
 
   const templateOptions = useMemo(() => uniqueSorted([...TEMPLATE_KEYS, ...instructions.map((item) => item.template_key)]), [instructions]);
   const curveFamilyOptions = useMemo(() => uniqueSorted(instructions.map((item) => item.curve_family)), [instructions]);
+  const hasActiveFilters = search.trim() || instructionType !== 'all' || truthFilter !== 'all' || templateFilter !== 'all' || curveFamilyFilter !== 'all';
 
-  const filteredInstructions = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return instructions.filter((item) => {
-      if (instructionType !== 'all' && item.instruction_type !== instructionType) return false;
-      if (truthFilter === 'runtime' && !item.runtime_eligible) return false;
-      if (truthFilter === 'production' && !item.production_eligible) return false;
-      if (templateFilter !== 'all' && item.template_key !== templateFilter) return false;
-      if (curveFamilyFilter !== 'all' && item.curve_family !== curveFamilyFilter) return false;
-      if (q && !instructionSearchText(item).includes(q)) return false;
-      return true;
-    });
-  }, [curveFamilyFilter, instructions, instructionType, search, templateFilter, truthFilter]);
+  const clearFilters = () => {
+    setSearch('');
+    setInstructionType('all');
+    setTruthFilter('all');
+    setTemplateFilter('all');
+    setCurveFamilyFilter('all');
+  };
 
   return (
     <section className="wlv-kr-workbench" aria-label="Knowledge Repository managed instructions">
@@ -411,18 +428,23 @@ export function KrManagedInstructionsWorkbench() {
           <h1>Managed Instructions</h1>
           <p>Approved KR instructions are the application truth the WLV backend must follow.</p>
         </div>
-        <button type="button" className="wlv-kr-outline-button" onClick={loadInstructions} disabled={loading}>
-          Refresh
-        </button>
+        <div className="wlv-kr-header-actions">
+          <button type="button" className="wlv-kr-outline-button" onClick={clearFilters} disabled={!hasActiveFilters || listLoading}>
+            Clear filters
+          </button>
+          <button type="button" className="wlv-kr-outline-button" onClick={refreshAll} disabled={summaryLoading || listLoading}>
+            Refresh
+          </button>
+        </div>
       </header>
 
       {error ? <p className="wlv-kr-error">{error}</p> : null}
 
       <section className="wlv-kr-summary-grid" aria-label="KR instruction summary">
-        <KrCountCard label="Approved live instructions" value={instructions.length} />
-        <KrCountCard label="Runtime eligible" value={summary?.runtime_eligible_count ?? '—'} />
-        <KrCountCard label="Production eligible" value={summary?.production_eligible_count ?? '—'} />
-        <KrCountCard label="Evidence records" value={summary?.evidence_record_count ?? '—'} />
+        <KrCountCard label="Approved live instructions" value={summaryLoading ? '…' : summary?.runtime_eligible_count ?? '—'} />
+        <KrCountCard label="Visible result set" value={listLoading ? '…' : `${listReturnedCount} / ${listTotalCount}`} />
+        <KrCountCard label="Production eligible" value={summaryLoading ? '…' : summary?.production_eligible_count ?? '—'} />
+        <KrCountCard label="Evidence records" value={summaryLoading ? '…' : summary?.evidence_record_count ?? '—'} />
       </section>
 
       <section className="wlv-kr-controls" aria-label="KR instruction filters">
@@ -469,7 +491,7 @@ export function KrManagedInstructionsWorkbench() {
         <section className="wlv-kr-instruction-list" aria-label="Approved KR instructions">
           <div className="wlv-kr-section-heading">
             <h2>Approved application instructions</h2>
-            <span>{loading ? 'Loading…' : `${filteredInstructions.length} shown`}</span>
+            <span>{listLoading ? 'Loading…' : `${listReturnedCount} shown of ${listTotalCount}`}</span>
           </div>
           <div className="wlv-kr-table-wrap">
             <table className="wlv-kr-table">
@@ -485,7 +507,7 @@ export function KrManagedInstructionsWorkbench() {
                 </tr>
               </thead>
               <tbody>
-                {filteredInstructions.map((item) => (
+                {instructions.map((item) => (
                   <tr
                     key={item.instruction_id}
                     className={selectedInstructionId === item.instruction_id ? 'selected' : ''}
@@ -500,7 +522,7 @@ export function KrManagedInstructionsWorkbench() {
                     <td>{item.evidence_ref_count}</td>
                   </tr>
                 ))}
-                {!loading && filteredInstructions.length === 0 ? (
+                {!listLoading && instructions.length === 0 ? (
                   <tr><td colSpan={7}>No approved KR instructions match the current filters.</td></tr>
                 ) : null}
               </tbody>

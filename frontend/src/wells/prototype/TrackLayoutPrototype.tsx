@@ -4518,7 +4518,9 @@ export function TrackLayoutPrototype() {
         {activeView === 'data' ? (
           <ManagedWellInventoryPage onOpenLogViewer={openManagedWellLogViewer} onClearLogViewer={clearManagedWellLogViewer} activeManagedWellId={managedViewerWellId} />
         ) : activeView === 'knowledge' ? (
-          <KrManagedInstructionsWorkbench />
+          <div className="wlv-kr-page-shell">
+            <KrManagedInstructionsWorkbench />
+          </div>
         ) : activeView === 'sources' ? (
           <SourceIntakeWorkbench />
         ) : activeView === 'wellbore-3d' ? (
