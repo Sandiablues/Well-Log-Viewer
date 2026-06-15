@@ -3205,6 +3205,7 @@ function CurveHeaderStack({
             role="button"
             tabIndex={0}
             className={`wlv-curve-header ${selectedAssignmentId === assignment.assignmentId ? 'selected' : ''}`}
+            data-curve-assignment-id={assignment.assignmentId}
             draggable
             onClick={(event) => {
               event.stopPropagation();
@@ -3249,70 +3250,16 @@ function CurveHeaderStack({
             <span>{assignment.scaleMin}—{assignment.scaleMax}</span>
             <em>{curve.unit}</em>
             {openMenuAssignmentId === assignment.assignmentId && (
-              <div
-                className="curve-header-action-menu"
-                role="menu"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    onReorderCurve(track.trackId, assignment.assignmentId, 0);
-                    onCloseCurveMenu();
-                  }}
-                >
-                  Move to Front
-                </button>
-                <button
-                  type="button"
-                  disabled={index <= 0}
-                  onClick={() => {
-                    onReorderCurve(track.trackId, assignment.assignmentId, Math.max(0, index - 1));
-                    onCloseCurveMenu();
-                  }}
-                >
-                  Move Up
-                </button>
-                <button
-                  type="button"
-                  disabled={index >= ordered.length - 1}
-                  onClick={() => {
-                    onReorderCurve(track.trackId, assignment.assignmentId, Math.min(ordered.length - 1, index + 1));
-                    onCloseCurveMenu();
-                  }}
-                >
-                  Move Down
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onReorderCurve(track.trackId, assignment.assignmentId, ordered.length - 1);
-                    onCloseCurveMenu();
-                  }}
-                >
-                  Send to Back
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSelectCurve(track.trackId, assignment.assignmentId);
-                    onCloseCurveMenu();
-                  }}
-                >
-                  Edit Style / Range / Fill
-                </button>
-                <div className="curve-menu-divider" />
-                <button
-                  type="button"
-                  className="danger"
-                  onClick={() => {
-                    onRemoveCurveFromTrack(track.trackId, assignment.assignmentId);
-                    onCloseCurveMenu();
-                  }}
-                >
-                  Remove from Track
-                </button>
-              </div>
+              <CurveHeaderActionMenuPortal
+                trackId={track.trackId}
+                assignmentId={assignment.assignmentId}
+                assignmentIndex={index}
+                assignmentCount={ordered.length}
+                onSelectCurve={onSelectCurve}
+                onReorderCurve={onReorderCurve}
+                onCloseCurveMenu={onCloseCurveMenu}
+                onRemoveCurveFromTrack={onRemoveCurveFromTrack}
+              />
             )}
           </div>
         );
@@ -3520,6 +3467,128 @@ function CurveTrackView({
         );
       })}
     </svg>
+  );
+}
+
+function CurveHeaderActionMenuPortal({
+  trackId,
+  assignmentId,
+  assignmentIndex,
+  assignmentCount,
+  onSelectCurve,
+  onReorderCurve,
+  onCloseCurveMenu,
+  onRemoveCurveFromTrack,
+}: {
+  trackId: string;
+  assignmentId: string;
+  assignmentIndex: number;
+  assignmentCount: number;
+  onSelectCurve: (trackId: string, assignmentId: string) => void;
+  onReorderCurve: (trackId: string, assignmentId: string, toIndex: number) => void;
+  onCloseCurveMenu: () => void;
+  onRemoveCurveFromTrack: (trackId: string, assignmentId: string) => void;
+}) {
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  useEffect(() => {
+    const updatePosition = () => {
+      const anchor = document.querySelector<HTMLElement>(`[data-curve-assignment-id="${assignmentId}"]`);
+      if (!anchor) {
+        setMenuPosition(null);
+        return;
+      }
+
+      const rect = anchor.getBoundingClientRect();
+      const width = 220;
+      const gutter = 8;
+      const top = Math.max(gutter, rect.bottom + 6);
+      const left = Math.min(
+        Math.max(gutter, rect.right - width),
+        Math.max(gutter, window.innerWidth - width - gutter),
+      );
+      setMenuPosition({ top, left, width });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [assignmentId]);
+
+  if (!menuPosition) return null;
+
+  return createPortal(
+    <div
+      className="curve-header-action-menu curve-header-action-menu-portal"
+      role="menu"
+      style={{ top: menuPosition.top, left: menuPosition.left, width: menuPosition.width }}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        onClick={() => {
+          onReorderCurve(trackId, assignmentId, 0);
+          onCloseCurveMenu();
+        }}
+      >
+        Move to Front
+      </button>
+      <button
+        type="button"
+        disabled={assignmentIndex <= 0}
+        onClick={() => {
+          onReorderCurve(trackId, assignmentId, Math.max(0, assignmentIndex - 1));
+          onCloseCurveMenu();
+        }}
+      >
+        Move Up
+      </button>
+      <button
+        type="button"
+        disabled={assignmentIndex >= assignmentCount - 1}
+        onClick={() => {
+          onReorderCurve(trackId, assignmentId, Math.min(assignmentCount - 1, assignmentIndex + 1));
+          onCloseCurveMenu();
+        }}
+      >
+        Move Down
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          onReorderCurve(trackId, assignmentId, assignmentCount - 1);
+          onCloseCurveMenu();
+        }}
+      >
+        Send to Back
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          onSelectCurve(trackId, assignmentId);
+          onCloseCurveMenu();
+        }}
+      >
+        Edit Style / Range / Fill
+      </button>
+      <div className="curve-menu-divider" />
+      <button
+        type="button"
+        className="danger"
+        onClick={() => {
+          onRemoveCurveFromTrack(trackId, assignmentId);
+          onCloseCurveMenu();
+        }}
+      >
+        Remove from Track
+      </button>
+    </div>,
+    document.body,
   );
 }
 

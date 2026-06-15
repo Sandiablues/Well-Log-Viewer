@@ -8144,3 +8144,15 @@ button.wlv-view-range-readout,
 .wlv-prototype-workspace.curve-inventory-collapsed .wlv-curve-inventory-resize-handle {
   display: none;
 }
+
+
+/* WDV-DROPDOWN-LAYER-1 — portal-backed curve header action menu.
+   The menu is mounted under document.body so track canvases, grids, and
+   header/body stacking contexts cannot cover or clip it. */
+.curve-header-action-menu-portal {
+  position: fixed !important;
+  z-index: 2147483000 !important;
+  max-height: min(360px, calc(100vh - 16px));
+  overflow-y: auto;
+  pointer-events: auto;
+}
