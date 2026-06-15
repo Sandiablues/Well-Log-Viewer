@@ -14,6 +14,7 @@ from typing import Any
 from backend.app.knowledge.managed_repository import ManagedKRRepository
 
 from .models import (
+    WdvRecommendedCurveResponse,
     WdvTemplateApplicationPlanEnvelope,
     WdvTemplateApplicationPlanRequest,
     WdvTemplateApplicationPlanResponse,
@@ -91,6 +92,10 @@ class WdvTemplateApplicationPlanService:
             for track in selected.tracks
         ]
 
+        selected_curves = self._dedupe_curve_responses(selected.selected_curves)
+        alternate_curves = self._dedupe_curve_responses(selected.alternate_curves)
+        excluded_curves = self._dedupe_curve_responses(selected.excluded_curves)
+
         plan = WdvTemplateApplicationPlanResponse(
             application_plan_id=self._plan_id(request, selected.template_key),
             plan_status="ready_for_review" if not blocking_issues else "blocked_pending_review",
@@ -102,12 +107,12 @@ class WdvTemplateApplicationPlanService:
             apply_eligible=not blocking_issues,
             blocking_issues=sorted(set(blocking_issues)),
             warnings=sorted(set(warnings)),
-            selected_curve_count=selected.selected_curve_count,
-            alternate_curve_count=selected.alternate_curve_count,
-            excluded_curve_count=selected.excluded_curve_count,
-            selected_curves=selected.selected_curves,
-            alternate_curves=selected.alternate_curves,
-            excluded_curves=selected.excluded_curves,
+            selected_curve_count=len(selected_curves),
+            alternate_curve_count=len(alternate_curves),
+            excluded_curve_count=len(excluded_curves),
+            selected_curves=selected_curves,
+            alternate_curves=alternate_curves,
+            excluded_curves=excluded_curves,
             tracks=plan_tracks,
             renderer_requirements=selected.renderer_requirements,
             missing_required_families=selected.missing_required_families,
@@ -119,6 +124,43 @@ class WdvTemplateApplicationPlanService:
             plan=plan,
             knowledge_policy=recommendation_envelope.knowledge_policy,
         )
+
+
+    def _dedupe_curve_responses(
+        self,
+        curves: list[WdvRecommendedCurveResponse],
+    ) -> list[WdvRecommendedCurveResponse]:
+        """Dedupe preview-selected curves by visible display identity.
+
+        The application-plan preview is a user-facing review contract, not a
+        raw loaded-curve inventory.  Loaded Curves may legitimately contain
+        duplicate product IDs or duplicate mnemonics, but the preview list must
+        not show repeated identical visible rows such as AF10/resistivity twice.
+        Technical identity is preserved in the underlying loaded-curve records;
+        the preview representative list is intentionally display-deduped.
+        """
+
+        unique: list[WdvRecommendedCurveResponse] = []
+        seen: set[tuple[str, str]] = set()
+        for curve in curves:
+            identity = self._visible_curve_identity(curve)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            unique.append(curve)
+        return unique
+
+    def _visible_curve_identity(self, curve: WdvRecommendedCurveResponse) -> tuple[str, str]:
+        visible_name = curve.mnemonic or curve.display_name or curve.curve_id or curve.product_id
+        visible_family = curve.curve_family or curve.raw_curve_family
+        return (
+            self._identity_text(visible_name),
+            self._identity_text(visible_family),
+        )
+
+    @staticmethod
+    def _identity_text(value: Any) -> str:
+        return str(value or "").strip().lower().replace("-", "_").replace("/", "_").replace(" ", "_")
 
     def _plan_id(
         self,

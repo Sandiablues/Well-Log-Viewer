@@ -461,6 +461,32 @@ function formatPlanStatus(value?: string | null): string {
   return (value || 'pending').replace(/_/g, ' ');
 }
 
+function formatTemplateMatch(value?: number | null): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 'Pending';
+  if (value >= 85) return 'Strong';
+  if (value >= 70) return 'Good';
+  if (value >= 50) return 'Partial';
+  return 'Weak';
+}
+
+function curveVisibleIdentity(curve: WdvRecommendedCurve): string {
+  const visibleName = curve.mnemonic || curve.display_name || curve.curve_id || curve.product_id || '';
+  const visibleFamily = curve.curve_family || curve.raw_curve_family || '';
+  return `${visibleName}`.trim().toLowerCase().replace(/[\s\-/]+/g, '_') + '::' + `${visibleFamily}`.trim().toLowerCase().replace(/[\s\-/]+/g, '_');
+}
+
+function uniqueVisibleRecommendedCurves(curves: WdvRecommendedCurve[]): WdvRecommendedCurve[] {
+  const seen = new Set<string>();
+  const unique: WdvRecommendedCurve[] = [];
+  for (const curve of curves) {
+    const identity = curveVisibleIdentity(curve);
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    unique.push(curve);
+  }
+  return unique;
+}
+
 function scaleSummary(scaleDefaults?: Array<Record<string, unknown>>): string {
   if (!scaleDefaults || scaleDefaults.length === 0) return 'scale defaults pending';
   return scaleDefaults.slice(0, 3).map((scale) => {
@@ -2140,8 +2166,8 @@ function WdvTemplateRecommendationModal({
   }, [recommendation.template_key, loadedCurveItems, managedWellId]);
 
   const plan = applicationPlanEnvelope?.plan ?? null;
-  const selectedCurves = plan?.selected_curves ?? recommendation.selected_curves ?? [];
-  const alternateCurves = plan?.alternate_curves ?? recommendation.alternate_curves ?? [];
+  const selectedCurves = uniqueVisibleRecommendedCurves(plan?.selected_curves ?? recommendation.selected_curves ?? []);
+  const alternateCurves = uniqueVisibleRecommendedCurves(plan?.alternate_curves ?? recommendation.alternate_curves ?? []);
   const tracks = plan?.tracks ?? recommendation.tracks ?? [];
   const missingRequiredFamilies = plan?.missing_required_families ?? recommendation.missing_required_families ?? [];
   const missingPreferredFamilies = plan?.missing_preferred_families ?? recommendation.missing_preferred_families ?? [];
@@ -2181,10 +2207,10 @@ function WdvTemplateRecommendationModal({
         </div>
 
         <div className="wlv-template-modal-summary">
-          <div><strong>Rank</strong><span>{plan?.source_recommendation_rank ?? recommendation.rank}</span></div>
-          <div><strong>Score</strong><span>{Math.round(plan?.source_recommendation_score ?? recommendation.score)}</span></div>
+          <div><strong>Template match</strong><span>{formatTemplateMatch(plan?.source_recommendation_score ?? recommendation.score)}</span></div>
           <div><strong>Plan</strong><span>{applyEligible ? 'Ready for review' : 'Review required'}</span></div>
-          <div><strong>Curves</strong><span>{plan?.selected_curve_count ?? recommendation.selected_curve_count ?? selectedCurves.length} selected</span></div>
+          <div><strong>Curves</strong><span>{selectedCurves.length} selected</span></div>
+          <div><strong>Missing required</strong><span>{missingRequiredFamilies.length ? missingRequiredFamilies.length : 'None'}</span></div>
         </div>
 
         <section className="wlv-template-modal-section">

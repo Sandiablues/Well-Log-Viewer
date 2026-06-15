@@ -365,17 +365,19 @@ class WdvTemplateRecommendationService:
             missing_by_track.update(track_reco.missing_curve_families)
             track_recommendations.append(track_reco)
 
-        selected_curves = [self._curve_response(c, "selected") for c in curves if c.curve_id in selected_curve_ids]
-        alternate_curves = [
+        selected_curves = self._dedupe_curve_responses_by_visible_identity([
+            self._curve_response(c, "selected") for c in curves if c.curve_id in selected_curve_ids
+        ])
+        alternate_curves = self._dedupe_curve_responses_by_visible_identity([
             self._curve_response(c, "alternate")
             for c in curves
             if c.curve_id in alternate_curve_ids and c.curve_id not in selected_curve_ids
-        ]
-        excluded_curves = [
+        ])
+        excluded_curves = self._dedupe_curve_responses_by_visible_identity([
             self._curve_response(c, "loaded_not_selected")
             for c in curves
             if c.curve_id not in selected_curve_ids and c.curve_id not in alternate_curve_ids
-        ]
+        ])
 
         required_total = len(required_coverage.available_families) + len(required_coverage.missing_families)
         preferred_total = len(preferred_coverage.available_families) + len(preferred_coverage.missing_families)
@@ -494,7 +496,14 @@ class WdvTemplateRecommendationService:
         *,
         max_count: int,
     ) -> list[LoadedCurveCandidate]:
-        ordered = sorted(matches, key=lambda c: (c.rank_hint, c.mnemonic, c.product_id))
+        # Representative auto-selection must not select the same visible curve
+        # more than once for a template/track.  Loaded Curves can still contain
+        # duplicate mnemonics, but the backend template preview should choose one
+        # representative candidate per stable display identity.
+        ordered = sorted(
+            self._dedupe_representative_candidates(matches),
+            key=lambda c: (c.rank_hint, c.mnemonic, c.product_id),
+        )
         if max_count <= 1 or _normalize_family(family) != "resistivity":
             return ordered[:max_count]
         chosen: list[LoadedCurveCandidate] = []
@@ -508,6 +517,49 @@ class WdvTemplateRecommendationService:
             if curve not in chosen:
                 chosen.append(curve)
         return chosen[:max_count]
+
+    def _dedupe_representative_candidates(
+        self,
+        curves: list[LoadedCurveCandidate],
+    ) -> list[LoadedCurveCandidate]:
+        unique: list[LoadedCurveCandidate] = []
+        seen: set[tuple[str, str]] = set()
+        for curve in curves:
+            identity = self._representative_identity(curve)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            unique.append(curve)
+        return unique
+
+    def _dedupe_curve_responses_by_visible_identity(
+        self,
+        curves: list[WdvRecommendedCurveResponse],
+    ) -> list[WdvRecommendedCurveResponse]:
+        unique: list[WdvRecommendedCurveResponse] = []
+        seen: set[tuple[str, str]] = set()
+        for curve in curves:
+            visible_name = curve.mnemonic or curve.display_name or curve.curve_id or curve.product_id
+            visible_family = curve.curve_family or curve.raw_curve_family
+            identity = (_key(visible_name), _key(visible_family))
+            if identity in seen:
+                continue
+            seen.add(identity)
+            unique.append(curve)
+        return unique
+
+    def _representative_identity(self, curve: LoadedCurveCandidate) -> tuple[str, str]:
+        """Return the user-visible representative identity for preview dedupe.
+
+        This intentionally avoids product ID, canonical ID, depth role, and unit
+        because those can differ across duplicate loaded records while rendering
+        as the same visible modal row.  Distinct resistivity mnemonics such as
+        AF10, AF30, and AORT remain separate because mnemonic is part of the key.
+        """
+
+        visible_name = curve.mnemonic or curve.display_name or curve.curve_id or curve.product_id
+        visible_family = curve.curve_family or curve.raw_curve_family
+        return (_key(visible_name), _key(visible_family))
 
     def _coverage(self, families: list[str], family_set: set[str]) -> WdvTemplateRequirementCoverageResponse:
         normalized = []
