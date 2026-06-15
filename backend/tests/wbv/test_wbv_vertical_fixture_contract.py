@@ -1,17 +1,17 @@
 import json
 from pathlib import Path
 
-from backend.app.inventory.models import (
+from app.inventory.models import (
     ManagedProductGroup,
     ManagedProductGroupItem,
     ManagedSourceKind,
     ManagedSourceReference,
     ManagedWellRecord,
 )
-from backend.app.inventory.repository import ManagedWellInventoryRepository
-from backend.app.inventory.service import ManagedWellInventoryService
-from backend.app.wbv.models import WbvCoordinateMode, WbvViewerState
-from backend.app.wbv.service import WbvService
+from app.inventory.repository import ManagedWellInventoryRepository
+from app.inventory.service import ManagedWellInventoryService
+from app.wbv.models import WbvCoordinateMode, WbvViewerState
+from app.wbv.service import WbvService
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "forge_21_31_downlog_vertical_wbv_trajectory_package.json"

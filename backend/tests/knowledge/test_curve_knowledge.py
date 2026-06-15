@@ -1,4 +1,4 @@
-from backend.app.knowledge.curve_knowledge import normalize_viewer_curve, normalize_viewer_package_for_wdv
+from app.knowledge.curve_knowledge import normalize_viewer_curve, normalize_viewer_package_for_wdv
 
 
 def test_curve_knowledge_normalizes_aliases_to_backend_render_contract() -> None:

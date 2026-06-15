@@ -40,10 +40,10 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
-from backend.app.knowledge.api_managed_knowledge import get_managed_repository
-from backend.app.knowledge.governance import GovernanceStatus
-from backend.app.knowledge.import_models import (
+from app.main import app
+from app.knowledge.api_managed_knowledge import get_managed_repository
+from app.knowledge.governance import GovernanceStatus
+from app.knowledge.import_models import (
     ImportCurveDefinition,
     ImportClassificationRule,
     ImportDisplayRule,
@@ -51,11 +51,11 @@ from backend.app.knowledge.import_models import (
     ImportSource,
     ImportTemplateRule,
 )
-from backend.app.knowledge.import_staging_service import stage_import_payload
-from backend.app.knowledge.import_validation_service import validate_import_payload
-from backend.app.knowledge.managed_models import AliasRecord, CurveDefinitionRecord
-from backend.app.knowledge.managed_repository import ManagedKRRepository
-from backend.app.knowledge.models import KR_VERSION
+from app.knowledge.import_staging_service import stage_import_payload
+from app.knowledge.import_validation_service import validate_import_payload
+from app.knowledge.managed_models import AliasRecord, CurveDefinitionRecord
+from app.knowledge.managed_repository import ManagedKRRepository
+from app.knowledge.models import KR_VERSION
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -1213,7 +1213,7 @@ class TestCandidatesDoNotAffectKR1:
     def test_staging_does_not_add_to_kr1_curve_definitions(
         self, repo: ManagedKRRepository, valid_payload: ImportPayload
     ) -> None:
-        from backend.app.knowledge.repository import KnowledgeRepository
+        from app.knowledge.repository import KnowledgeRepository
         kr1_repo = KnowledgeRepository()
         curve_defs_before = len(kr1_repo.get_curve_definitions().curve_definitions)
         stage_import_payload(valid_payload, repo)

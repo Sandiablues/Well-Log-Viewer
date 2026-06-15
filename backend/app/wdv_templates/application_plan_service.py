@@ -11,7 +11,7 @@ import hashlib
 import json
 from typing import Any
 
-from backend.app.knowledge.managed_repository import ManagedKRRepository
+from app.knowledge.managed_repository import ManagedKRRepository
 
 from .models import (
     WdvRecommendedCurveResponse,

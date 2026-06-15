@@ -12,7 +12,7 @@ These tests validate:
 
 import pytest
 
-from backend.app.wells.models import (
+from app.wells.models import (
     MsiDatasetRef,
     MsiRepresentationRef,
     MsiSourceRef,
@@ -22,7 +22,7 @@ from backend.app.wells.models import (
     DepthUnit,
     DisplayDomain,
 )
-from backend.app.wells.msi_well_adapter import (
+from app.wells.msi_well_adapter import (
     MsiLifecycleState,
     MsiWellAdapter,
     MsiWellRegistrationResult,
@@ -53,7 +53,7 @@ def _minimal_package() -> WellMultitrackV1:
 class TestMsiWellAdapterScaffold:
 
     def test_module_importable(self):
-        from backend.app.wells import msi_well_adapter  # noqa: F401
+        from app.wells import msi_well_adapter  # noqa: F401
 
     def test_adapter_class_exists(self):
         adapter = MsiWellAdapter()

@@ -61,27 +61,27 @@ from typing import Generator
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
-from backend.app.knowledge.api_managed_knowledge import (
+from app.main import app
+from app.knowledge.api_managed_knowledge import (
     get_managed_repository,
 )
-from backend.app.knowledge.governance import GovernanceStatus
-from backend.app.knowledge.governance_service import GovernanceService
-from backend.app.knowledge.import_models import (
+from app.knowledge.governance import GovernanceStatus
+from app.knowledge.governance_service import GovernanceService
+from app.knowledge.import_models import (
     ImportCurveDefinition,
     ImportPayload,
     ImportSource,
 )
-from backend.app.knowledge.import_staging_service import stage_import_payload
-from backend.app.knowledge.managed_models import KR4_VERSION
-from backend.app.knowledge.managed_repository import ManagedKRRepository
-from backend.app.knowledge.managed_storage import (
+from app.knowledge.import_staging_service import stage_import_payload
+from app.knowledge.managed_models import KR4_VERSION
+from app.knowledge.managed_repository import ManagedKRRepository
+from app.knowledge.managed_storage import (
     ManagedStorage,
     ManagedStorageError,
     STORAGE_SCHEMA_VERSION,
     KR5_VERSION,
 )
-from backend.app.knowledge.models import KR_VERSION
+from app.knowledge.models import KR_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +255,7 @@ class TestStagePersistence:
 
     def test_preview_does_not_write_to_storage(self, storage_path: Path) -> None:
         """5. Preview does not write candidate records to storage."""
-        from backend.app.knowledge.import_validation_service import validate_import_payload
+        from app.knowledge.import_validation_service import validate_import_payload
         repo = _fresh_repo(storage_path)
         payload = _minimal_payload("kr5_preview_no_write_curve")
         validate_import_payload(payload, repo)  # preview only

@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from backend.app.inventory.repository import ManagedWellInventoryRepository
-from backend.app.inventory.service import ManagedWellInventoryService
-from backend.app.source_intake.models import SourceIntakeRegisterRequest, SourceRepositoryCreateRequest
-from backend.app.source_intake.service import WlvSourceIntakeService
+from app.inventory.repository import ManagedWellInventoryRepository
+from app.inventory.service import ManagedWellInventoryService
+from app.source_intake.models import SourceIntakeRegisterRequest, SourceRepositoryCreateRequest
+from app.source_intake.service import WlvSourceIntakeService
 
 LAS_STRONG_FORGE = """~Version
 VERS. 2.0 : CWLS LOG ASCII STANDARD

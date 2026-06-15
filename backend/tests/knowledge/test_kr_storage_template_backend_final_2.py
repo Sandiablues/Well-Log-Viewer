@@ -10,10 +10,10 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from backend.app.knowledge.governance import GovernanceStatus
-from backend.app.knowledge.managed_models import GenericManagedRecord
-from backend.app.knowledge.managed_repository import ManagedKRRepository
-from backend.app.knowledge.managed_storage import ManagedStorage, serialize_record
+from app.knowledge.governance import GovernanceStatus
+from app.knowledge.managed_models import GenericManagedRecord
+from app.knowledge.managed_repository import ManagedKRRepository
+from app.knowledge.managed_storage import ManagedStorage, serialize_record
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]

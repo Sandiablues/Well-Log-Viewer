@@ -1,9 +1,9 @@
 
 from pathlib import Path
 
-from backend.app.inventory.curve_sample_service import _read_las_curve_samples
-from backend.app.inventory.models import ManagedProductGroupItem
-from backend.app.inventory.service import ManagedWellInventoryService
+from app.inventory.curve_sample_service import _read_las_curve_samples
+from app.inventory.models import ManagedProductGroupItem
+from app.inventory.service import ManagedWellInventoryService
 
 
 def _las_text(curve_lines: str, rows: list[str], null_value: str = "-999.25") -> str:

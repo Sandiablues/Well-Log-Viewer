@@ -4,8 +4,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from backend.app.inventory import api_inventory
-from backend.app.inventory.models import (
+from app.inventory import api_inventory
+from app.inventory.models import (
     ManagedInventoryLifecycleState,
     ManagedInventorySnapshot,
     ManagedSourceKind,
@@ -13,9 +13,9 @@ from backend.app.inventory.models import (
     ManagedWellRecord,
     ViewerPackageReference,
 )
-from backend.app.inventory.repository import ManagedWellInventoryRepository
-from backend.app.inventory.service import ManagedWellInventoryService
-from backend.app.main import app
+from app.inventory.repository import ManagedWellInventoryRepository
+from app.inventory.service import ManagedWellInventoryService
+from app.main import app
 
 
 def _install_temp_inventory(tmp_path: Path) -> ManagedWellInventoryRepository:

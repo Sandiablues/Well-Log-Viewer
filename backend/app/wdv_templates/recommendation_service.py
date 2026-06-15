@@ -11,9 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-from backend.app.knowledge.governance import GovernanceStatus
-from backend.app.knowledge.managed_repository import ManagedKRRepository
-from backend.app.knowledge.managed_storage import serialize_record
+from app.knowledge.governance import GovernanceStatus
+from app.knowledge.managed_repository import ManagedKRRepository
+from app.knowledge.managed_storage import serialize_record
 
 from .models import (
     CONTRACT_VERSION,
@@ -231,7 +231,7 @@ class WdvTemplateRecommendationService:
         workflow_context: str | None = None,
         include_ineligible: bool = True,
     ) -> WdvTemplateRecommendationEnvelope:
-        from backend.app.inventory.service import ManagedWellInventoryService
+        from app.inventory.service import ManagedWellInventoryService
 
         package = ManagedWellInventoryService().get_viewer_package_contract(managed_well_id)
         curves = self._curves_from_viewer_package(package)

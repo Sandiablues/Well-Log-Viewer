@@ -1,5 +1,5 @@
-from backend.app.inventory.models import ManagedProductGroup, ManagedProductGroupItem
-from backend.app.source_intake.registration import _merge_product_groups
+from app.inventory.models import ManagedProductGroup, ManagedProductGroupItem
+from app.source_intake.registration import _merge_product_groups
 
 
 def _item(

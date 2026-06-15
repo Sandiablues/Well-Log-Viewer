@@ -11,16 +11,16 @@ import hashlib
 import re
 from typing import Iterable
 
-from backend.app.classification.well_log_classifier import classify_well_log_curve
-from backend.app.classification.well_log_vocabulary import OPEN_HOLE_SUBGROUP_LABELS, PRODUCT_GROUP_ORDER
-from backend.app.knowledge.managed_repository import ManagedKRRepository
-from backend.app.knowledge.runtime_classification_service import (
+from app.classification.well_log_classifier import classify_well_log_curve
+from app.classification.well_log_vocabulary import OPEN_HOLE_SUBGROUP_LABELS, PRODUCT_GROUP_ORDER
+from app.knowledge.managed_repository import ManagedKRRepository
+from app.knowledge.runtime_classification_service import (
     CurveClassificationInput,
     CurveClassificationResult,
     RuntimeCurveClassificationService,
 )
-from backend.app.knowledge.runtime_resolver import ApprovedKnowledgeRuntimeResolver
-from backend.app.inventory.models import (
+from app.knowledge.runtime_resolver import ApprovedKnowledgeRuntimeResolver
+from app.inventory.models import (
     ManagedInventoryLifecycleState,
     ManagedWdvState,
     ManagedWmdpState,
@@ -31,8 +31,8 @@ from backend.app.inventory.models import (
     ManagedWellRecord,
     utc_now_iso,
 )
-from backend.app.inventory.repository import ManagedWellNotFoundError
-from backend.app.inventory.service import ManagedWellInventoryService
+from app.inventory.repository import ManagedWellNotFoundError
+from app.inventory.service import ManagedWellInventoryService
 
 from .identity_gate import clean_identity_value
 from .models import (

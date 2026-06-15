@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from backend.app.knowledge.alias_enrichment_models import AliasEnrichmentRecord
-from backend.app.knowledge.governance import GovernanceStatus
-from backend.app.knowledge.managed_models import AliasRecord, CurveDefinitionRecord
-from backend.app.knowledge.managed_repository import ManagedKRRepository
-from backend.app.knowledge.runtime_classification_service import (
+from app.knowledge.alias_enrichment_models import AliasEnrichmentRecord
+from app.knowledge.governance import GovernanceStatus
+from app.knowledge.managed_models import AliasRecord, CurveDefinitionRecord
+from app.knowledge.managed_repository import ManagedKRRepository
+from app.knowledge.runtime_classification_service import (
     KR_CLASSIFY_1_VERSION,
     CurveClassificationInput,
     RuntimeCurveClassificationService,
 )
-from backend.app.knowledge.runtime_resolver import ApprovedKnowledgeRuntimeResolver
+from app.knowledge.runtime_resolver import ApprovedKnowledgeRuntimeResolver
 
 
 def _repo(tmp_path: Path) -> ManagedKRRepository:

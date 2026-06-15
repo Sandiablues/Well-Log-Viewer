@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from backend.app.inventory.curve_sample_service import CurveSampleService
-from backend.app.inventory.models import ManagedProductGroup, ManagedProductGroupItem, ManagedWellRecord
-from backend.app.inventory.repository import ManagedWellInventoryRepository
+from app.inventory.curve_sample_service import CurveSampleService
+from app.inventory.models import ManagedProductGroup, ManagedProductGroupItem, ManagedWellRecord
+from app.inventory.repository import ManagedWellInventoryRepository
 
 
 def _las_file(path: Path) -> Path:

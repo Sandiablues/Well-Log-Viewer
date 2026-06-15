@@ -5,13 +5,13 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from backend.app.inventory.models import (
+from app.inventory.models import (
     ManagedInventoryLifecycleState,
     ManagedSourceKind,
     ManagedSourceReference,
     ManagedWellRecord,
 )
-from backend.app.inventory.service import ManagedWellInventoryService
+from app.inventory.service import ManagedWellInventoryService
 
 from .adapters import IngestionAdapterRegistry
 from .las_adapter import LasAdapterError, LasSourceAdapter

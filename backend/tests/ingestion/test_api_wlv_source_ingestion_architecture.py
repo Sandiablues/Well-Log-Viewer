@@ -1,8 +1,8 @@
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
-from backend.app.ingestion.models import WellLogSourceFormat
-from backend.app.ingestion.service import WellLogSourceIngestionService
+from app.main import app
+from app.ingestion.models import WellLogSourceFormat
+from app.ingestion.service import WellLogSourceIngestionService
 
 client = TestClient(app)
 

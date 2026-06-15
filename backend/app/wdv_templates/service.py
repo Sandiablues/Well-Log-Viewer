@@ -10,10 +10,10 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from typing import Any, Iterable
 
-from backend.app.knowledge.managed_storage import serialize_record
+from app.knowledge.managed_storage import serialize_record
 
-from backend.app.knowledge.governance import GovernanceStatus
-from backend.app.knowledge.managed_repository import ManagedKRRepository
+from app.knowledge.governance import GovernanceStatus
+from app.knowledge.managed_repository import ManagedKRRepository
 
 from .models import (
     WdvCurveFamilyRequirementResponse,

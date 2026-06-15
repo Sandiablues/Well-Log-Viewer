@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
-from backend.app.wdv_templates.application_plan_service import WdvTemplateApplicationPlanService
-from backend.app.wdv_templates.models import (
+from app.main import app
+from app.wdv_templates.application_plan_service import WdvTemplateApplicationPlanService
+from app.wdv_templates.models import (
     WdvTemplateApplicationPlanEnvelope,
     WdvTemplateApplicationPlanRequest,
     WdvTemplateApplicationPlanResponse,

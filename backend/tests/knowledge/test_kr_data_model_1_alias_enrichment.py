@@ -35,16 +35,16 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.knowledge.alias_enrichment_models import (
+from app.knowledge.alias_enrichment_models import (
     AliasEnrichmentRecord,
     KR_DATA_MODEL_1_VERSION,
 )
-from backend.app.knowledge.classification_service import (
+from app.knowledge.classification_service import (
     CurveClassificationService,
     CurveClassificationRequest,
     CurveClassifyInput,
 )
-from backend.app.knowledge.curated_reconciliation_service import (
+from app.knowledge.curated_reconciliation_service import (
     CLS_SAFE_ALIAS_ENRICHMENT,
     CLS_TRUE_ALIAS_CONFLICT,
     CLS_NEW_CURVE_DEFINITION,
@@ -52,27 +52,27 @@ from backend.app.knowledge.curated_reconciliation_service import (
     CLS_SEED_CONFIRMATION,
     CuratedKRReconciliationService,
 )
-from backend.app.knowledge.display_recommendation_service import (
+from app.knowledge.display_recommendation_service import (
     DisplayRecommendationService,
     DisplayRecommendationRequest,
     CurveRecommendInput,
 )
-from backend.app.knowledge.governance import GovernanceStatus
-from backend.app.knowledge.governance_service import GovernanceService
-from backend.app.knowledge.import_models import (
+from app.knowledge.governance import GovernanceStatus
+from app.knowledge.governance_service import GovernanceService
+from app.knowledge.import_models import (
     ImportCurveDefinition,
     ImportPayload,
     ImportSource,
 )
-from backend.app.knowledge.managed_models import (
+from app.knowledge.managed_models import (
     AliasRecord,
     CurveDefinitionRecord,
     GOVERNED_RECORD_TYPES,
     ALL_RECORD_TYPES,
 )
-from backend.app.knowledge.managed_repository import ManagedKRRepository
-from backend.app.knowledge.managed_storage import ManagedStorage, deserialize_record, serialize_record
-from backend.app.knowledge.resolution_service import (
+from app.knowledge.managed_repository import ManagedKRRepository
+from app.knowledge.managed_storage import ManagedStorage, deserialize_record, serialize_record
+from app.knowledge.resolution_service import (
     KnowledgeResolutionService,
     CurveResolveInput,
 )
@@ -838,19 +838,19 @@ class TestKRSuiteCompatibility:
     """
 
     def test_all_kr_modules_importable(self) -> None:
-        from backend.app.knowledge import alias_enrichment_models  # noqa: F401
-        from backend.app.knowledge import curated_reconciliation_service  # noqa: F401
-        from backend.app.knowledge import managed_models  # noqa: F401
-        from backend.app.knowledge import managed_storage  # noqa: F401
-        from backend.app.knowledge import managed_repository  # noqa: F401
-        from backend.app.knowledge import resolution_service  # noqa: F401
-        from backend.app.knowledge import classification_service  # noqa: F401
-        from backend.app.knowledge import display_recommendation_service  # noqa: F401
-        from backend.app.knowledge import governance  # noqa: F401
-        from backend.app.knowledge import governance_service  # noqa: F401
-        from backend.app.knowledge import import_models  # noqa: F401
-        from backend.app.knowledge import import_validation_service  # noqa: F401
-        from backend.app.knowledge import import_staging_service  # noqa: F401
+        from app.knowledge import alias_enrichment_models  # noqa: F401
+        from app.knowledge import curated_reconciliation_service  # noqa: F401
+        from app.knowledge import managed_models  # noqa: F401
+        from app.knowledge import managed_storage  # noqa: F401
+        from app.knowledge import managed_repository  # noqa: F401
+        from app.knowledge import resolution_service  # noqa: F401
+        from app.knowledge import classification_service  # noqa: F401
+        from app.knowledge import display_recommendation_service  # noqa: F401
+        from app.knowledge import governance  # noqa: F401
+        from app.knowledge import governance_service  # noqa: F401
+        from app.knowledge import import_models  # noqa: F401
+        from app.knowledge import import_validation_service  # noqa: F401
+        from app.knowledge import import_staging_service  # noqa: F401
 
     def test_alias_enrichment_record_type_in_governed_types(self) -> None:
         assert "alias_enrichment" in GOVERNED_RECORD_TYPES

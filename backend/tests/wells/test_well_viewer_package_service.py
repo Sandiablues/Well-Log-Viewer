@@ -12,20 +12,20 @@ These tests validate:
 
 import pytest
 
-from backend.app.wells.models import (
+from app.wells.models import (
     DepthRange,
     DepthUnit,
     DisplayDomain,
     MsiRepresentationRef,
     WellMultitrackV1,
 )
-from backend.app.wells.well_viewer_package_service import WellViewerPackageService
+from app.wells.well_viewer_package_service import WellViewerPackageService
 
 
 class TestWellViewerPackageServiceScaffold:
 
     def test_module_importable(self):
-        from backend.app.wells import well_viewer_package_service  # noqa: F401
+        from app.wells import well_viewer_package_service  # noqa: F401
 
     def test_service_class_exists(self):
         svc = WellViewerPackageService()

@@ -2,11 +2,11 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from backend.app.ingestion.las_adapter import LasSourceAdapter
-from backend.app.ingestion.service import WellLogSourceIngestionService
-from backend.app.inventory.repository import ManagedWellInventoryRepository
-from backend.app.inventory.service import ManagedWellInventoryService
-from backend.app.main import app
+from app.ingestion.las_adapter import LasSourceAdapter
+from app.ingestion.service import WellLogSourceIngestionService
+from app.inventory.repository import ManagedWellInventoryRepository
+from app.inventory.service import ManagedWellInventoryService
+from app.main import app
 
 client = TestClient(app)
 
@@ -65,7 +65,7 @@ def test_las_registration_is_idempotent_and_registers_available_inventory_record
     inventory_service = ManagedWellInventoryService(repository=repository)
     service = WellLogSourceIngestionService(inventory_service=inventory_service)
 
-    from backend.app.ingestion.models import SourceRegistrationRequest
+    from app.ingestion.models import SourceRegistrationRequest
 
     first = service.register_source(SourceRegistrationRequest(original_path=str(path), register_to_inventory=True))
     second = service.register_source(SourceRegistrationRequest(original_path=str(path), register_to_inventory=True))
@@ -86,7 +86,7 @@ def test_register_source_endpoint_accepts_las_path(tmp_path: Path, monkeypatch) 
     path = _sample_las_file(tmp_path)
     inventory_path = tmp_path / "api_managed_wells.json"
 
-    from backend.app.ingestion import api_ingestion
+    from app.ingestion import api_ingestion
 
     api_ingestion._service = WellLogSourceIngestionService(
         inventory_service=ManagedWellInventoryService(

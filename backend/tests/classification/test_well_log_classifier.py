@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.classification.well_log_classifier import classify_well_log_curve
+from app.classification.well_log_classifier import classify_well_log_curve
 
 
 def test_open_hole_common_curves_classify_to_open_hole() -> None:

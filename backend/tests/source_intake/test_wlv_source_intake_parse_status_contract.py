@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from backend.app.source_intake.models import SourceIntakeParseStatus, SourceRepositoryCreateRequest
-from backend.app.source_intake.service import WlvSourceIntakeService
+from app.source_intake.models import SourceIntakeParseStatus, SourceRepositoryCreateRequest
+from app.source_intake.service import WlvSourceIntakeService
 
 
 def _write(path: Path, text: str = "data") -> None:

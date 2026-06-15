@@ -4,10 +4,10 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from backend.app.inventory.repository import ManagedWellInventoryRepository
-from backend.app.inventory.service import ManagedWellInventoryService
-from backend.app.inventory import api_inventory
-from backend.app.main import app
+from app.inventory.repository import ManagedWellInventoryRepository
+from app.inventory.service import ManagedWellInventoryService
+from app.inventory import api_inventory
+from app.main import app
 
 
 def _install_temp_inventory(tmp_path: Path) -> None:

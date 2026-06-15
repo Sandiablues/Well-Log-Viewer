@@ -12,7 +12,7 @@ These tests validate:
 
 import pytest
 
-from backend.app.wells.models import (
+from app.wells.models import (
     DepthRange,
     DepthUnit,
     DisplayDomain,
@@ -20,7 +20,7 @@ from backend.app.wells.models import (
     QaqcSeverity,
     WellMultitrackV1,
 )
-from backend.app.wells.well_qaqc_service import QaqcCode, WellQaqcService
+from app.wells.well_qaqc_service import QaqcCode, WellQaqcService
 
 
 def _minimal_package() -> WellMultitrackV1:
@@ -38,7 +38,7 @@ def _minimal_package() -> WellMultitrackV1:
 class TestWellQaqcServiceScaffold:
 
     def test_module_importable(self):
-        from backend.app.wells import well_qaqc_service  # noqa: F401
+        from app.wells import well_qaqc_service  # noqa: F401
 
     def test_service_class_exists(self):
         svc = WellQaqcService()

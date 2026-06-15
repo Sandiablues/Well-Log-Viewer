@@ -9,11 +9,11 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.app.wells.models import Curve, WellMultitrackV1
-from backend.app.wells.seed_repository import SeedWellRepository
-from backend.app.classification.well_log_classifier import classify_well_log_curve
-from backend.app.classification.well_log_vocabulary import PRODUCT_GROUP_ORDER
-from backend.app.knowledge.curve_knowledge import normalize_viewer_package_for_wdv
+from app.wells.models import Curve, WellMultitrackV1
+from app.wells.seed_repository import SeedWellRepository
+from app.classification.well_log_classifier import classify_well_log_curve
+from app.classification.well_log_vocabulary import PRODUCT_GROUP_ORDER
+from app.knowledge.curve_knowledge import normalize_viewer_package_for_wdv
 
 from .models import (
     InventoryValidationSeverity,

@@ -6,10 +6,10 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from backend.app.knowledge.governance import GovernanceStatus
-from backend.app.knowledge.managed_repository import ManagedKRRepository
-from backend.app.main import app
-from backend.app.wdv_templates.service import WdvTemplateService
+from app.knowledge.governance import GovernanceStatus
+from app.knowledge.managed_repository import ManagedKRRepository
+from app.main import app
+from app.wdv_templates.service import WdvTemplateService
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]

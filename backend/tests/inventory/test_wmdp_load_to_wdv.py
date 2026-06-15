@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from backend.app.inventory.models import (
+from app.inventory.models import (
     ManagedProductGroup,
     ManagedProductGroupItem,
     ManagedSourceKind,
@@ -8,8 +8,8 @@ from backend.app.inventory.models import (
     ManagedWdvState,
     ManagedWellRecord,
 )
-from backend.app.inventory.repository import ManagedWellInventoryRepository
-from backend.app.inventory.service import ManagedWellInventoryService
+from app.inventory.repository import ManagedWellInventoryRepository
+from app.inventory.service import ManagedWellInventoryService
 
 
 def _record(managed_well_id: str, product_ids: list[str]) -> ManagedWellRecord:

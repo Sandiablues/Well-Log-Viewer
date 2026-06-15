@@ -272,7 +272,7 @@ class WlvSourceIntakeService:
         representation/conversion.
         """
         if inventory_service is None:
-            from backend.app.inventory.service import ManagedWellInventoryService
+            from app.inventory.service import ManagedWellInventoryService
             inventory_service = ManagedWellInventoryService()
 
         snapshot = self._load_snapshot()

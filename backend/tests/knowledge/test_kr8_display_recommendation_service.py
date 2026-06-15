@@ -44,26 +44,26 @@ from typing import Generator
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
-from backend.app.knowledge.api_managed_knowledge import get_managed_repository
-from backend.app.knowledge.classification_service import CurveClassificationService
-from backend.app.knowledge.display_recommendation_service import (
+from app.main import app
+from app.knowledge.api_managed_knowledge import get_managed_repository
+from app.knowledge.classification_service import CurveClassificationService
+from app.knowledge.display_recommendation_service import (
     CurveRecommendInput,
     DisplayRecommendationRequest,
     DisplayRecommendationService,
     KR8_VERSION,
 )
-from backend.app.knowledge.governance_service import GovernanceService
-from backend.app.knowledge.import_models import (
+from app.knowledge.governance_service import GovernanceService
+from app.knowledge.import_models import (
     ImportCurveDefinition,
     ImportDisplayRule,
     ImportPayload,
     ImportSource,
 )
-from backend.app.knowledge.import_staging_service import stage_import_payload
-from backend.app.knowledge.managed_repository import ManagedKRRepository
-from backend.app.knowledge.resolution_service import KnowledgeResolutionService
-from backend.app.knowledge.models import KR_VERSION
+from app.knowledge.import_staging_service import stage_import_payload
+from app.knowledge.managed_repository import ManagedKRRepository
+from app.knowledge.resolution_service import KnowledgeResolutionService
+from app.knowledge.models import KR_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +297,7 @@ class TestGrRangeAndUnit:
 
     def test_gr_range_and_unit(self, service: DisplayRecommendationService) -> None:
         """3. GR range and unit match the seed display rule values."""
-        from backend.app.knowledge.curve_knowledge import CURVE_DEFINITIONS
+        from app.knowledge.curve_knowledge import CURVE_DEFINITIONS
 
         gr_def = next(d for d in CURVE_DEFINITIONS if d.canonical_curve_id == "gamma_ray")
 
@@ -361,7 +361,7 @@ class TestDeepResistivityRangeAndUnit:
         self, service: DisplayRecommendationService
     ) -> None:
         """5. RT range and unit match the seed display rule values."""
-        from backend.app.knowledge.curve_knowledge import CURVE_DEFINITIONS
+        from app.knowledge.curve_knowledge import CURVE_DEFINITIONS
 
         dr_def = next(d for d in CURVE_DEFINITIONS if d.canonical_curve_id == "deep_resistivity")
 
@@ -985,13 +985,13 @@ class TestFullKnowledgeSuiteStructural:
 
     def test_all_kr_modules_importable(self) -> None:
         """27a. All KR service modules import without error."""
-        from backend.app.knowledge import resolution_service  # noqa: F401
-        from backend.app.knowledge import classification_service  # noqa: F401
-        from backend.app.knowledge import display_recommendation_service  # noqa: F401
-        from backend.app.knowledge import governance_service  # noqa: F401
-        from backend.app.knowledge import managed_repository  # noqa: F401
-        from backend.app.knowledge import managed_storage  # noqa: F401
-        from backend.app.knowledge import import_staging_service  # noqa: F401
+        from app.knowledge import resolution_service  # noqa: F401
+        from app.knowledge import classification_service  # noqa: F401
+        from app.knowledge import display_recommendation_service  # noqa: F401
+        from app.knowledge import governance_service  # noqa: F401
+        from app.knowledge import managed_repository  # noqa: F401
+        from app.knowledge import managed_storage  # noqa: F401
+        from app.knowledge import import_staging_service  # noqa: F401
 
     def test_kr8_version_constant(self) -> None:
         """27b. KR8_VERSION constant is correctly set."""

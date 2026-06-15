@@ -1,7 +1,7 @@
 import math
 
-from backend.app.wbv.trajectory_models import DeviationSurveyStation, TrajectoryCoordinateMode
-from backend.app.wbv.trajectory_service import calculate_minimum_curvature_trajectory
+from app.wbv.trajectory_models import DeviationSurveyStation, TrajectoryCoordinateMode
+from app.wbv.trajectory_service import calculate_minimum_curvature_trajectory
 
 
 def _codes(result) -> set[str]:

@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 
-import backend.app.knowledge.managed_storage as _storage_module
+import app.knowledge.managed_storage as _storage_module
 
 
 @pytest.fixture(autouse=True)

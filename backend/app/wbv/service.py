@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from backend.app.inventory.models import ManagedProductGroupItem, ManagedWdvState, ManagedWmdpState, ManagedWellRecord
-from backend.app.inventory.repository import ManagedWellInventoryRepository
+from app.inventory.models import ManagedProductGroupItem, ManagedWdvState, ManagedWmdpState, ManagedWellRecord
+from app.inventory.repository import ManagedWellInventoryRepository
 
 from .trajectory_seed_registry import resolve_seed_trajectory_package
 

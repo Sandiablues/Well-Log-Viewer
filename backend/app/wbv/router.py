@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
 
-from backend.app.inventory.repository import ManagedInventoryStoreError, ManagedWellNotFoundError
+from app.inventory.repository import ManagedInventoryStoreError, ManagedWellNotFoundError
 
 from .models import WbvSessionContract, WbvViewerPackageContract
 from .service import WbvService

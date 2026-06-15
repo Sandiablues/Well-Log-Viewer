@@ -25,8 +25,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
-from backend.app.knowledge.governance import (
+from app.main import app
+from app.knowledge.governance import (
     GovernanceStatus,
     PRODUCTION_STATUSES,
     TERMINAL_STATUSES,
@@ -34,7 +34,7 @@ from backend.app.knowledge.governance import (
     is_valid_transition,
     validate_status,
 )
-from backend.app.knowledge.managed_models import (
+from app.knowledge.managed_models import (
     AliasRecord,
     CurveDefinitionRecord,
     DisplayRuleRecord,
@@ -42,14 +42,14 @@ from backend.app.knowledge.managed_models import (
     TemplateRuleRecord,
     EvidenceRecord,
 )
-from backend.app.knowledge.managed_seed import (
+from app.knowledge.managed_seed import (
     build_seed_curve_definition_records,
     build_seed_alias_records,
     build_seed_display_rule_records,
     build_seed_managed_records,
 )
-from backend.app.knowledge.managed_repository import ManagedKRRepository
-from backend.app.knowledge.models import KR_VERSION
+from app.knowledge.managed_repository import ManagedKRRepository
+from app.knowledge.models import KR_VERSION
 
 client = TestClient(app)
 
@@ -163,7 +163,7 @@ class TestSeedCurveDefinitions:
         assert gr.source_type == "seed"
 
     def test_seed_resistivity_is_log_display_family(self) -> None:
-        from backend.app.knowledge.managed_seed import build_seed_display_rule_records
+        from app.knowledge.managed_seed import build_seed_display_rule_records
         rules = build_seed_display_rule_records()
         dr = next((r for r in rules if r.canonical_curve_id == "deep_resistivity"), None)
         assert dr is not None
@@ -616,8 +616,8 @@ class TestTemplatesEmpty:
         assert resp.json()["templates"] == []
 
     def test_no_template_rule_seeds_exist(self) -> None:
-        from backend.app.knowledge.managed_seed import build_seed_managed_records
-        from backend.app.knowledge.managed_models import TemplateRuleRecord
+        from app.knowledge.managed_seed import build_seed_managed_records
+        from app.knowledge.managed_models import TemplateRuleRecord
         all_records = build_seed_managed_records()
         template_records = [r for r in all_records if isinstance(r, TemplateRuleRecord)]
         assert template_records == [], (

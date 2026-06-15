@@ -2,12 +2,12 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from backend.app.ingestion.las_adapter import LasSourceAdapter
-from backend.app.ingestion.models import SourceRegistrationRequest
-from backend.app.ingestion.service import WellLogSourceIngestionService
-from backend.app.inventory.repository import ManagedWellInventoryRepository
-from backend.app.inventory.service import ManagedWellInventoryService
-from backend.app.main import app
+from app.ingestion.las_adapter import LasSourceAdapter
+from app.ingestion.models import SourceRegistrationRequest
+from app.ingestion.service import WellLogSourceIngestionService
+from app.inventory.repository import ManagedWellInventoryRepository
+from app.inventory.service import ManagedWellInventoryService
+from app.main import app
 
 client = TestClient(app)
 
@@ -115,7 +115,7 @@ def test_register_source_endpoint_returns_evidence_and_qaqc_summary(tmp_path: Pa
     path = _write_las(tmp_path, SAMPLE_LAS)
     inventory_path = tmp_path / "api_managed_wells.json"
 
-    from backend.app.ingestion import api_ingestion
+    from app.ingestion import api_ingestion
 
     api_ingestion._service = WellLogSourceIngestionService(
         inventory_service=ManagedWellInventoryService(

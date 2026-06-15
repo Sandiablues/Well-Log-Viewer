@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from backend.app.source_intake.models import SourceRepositoryCreateRequest
-from backend.app.source_intake.service import WlvSourceIntakeService
+from app.source_intake.models import SourceRepositoryCreateRequest
+from app.source_intake.service import WlvSourceIntakeService
 
 
 LAS_WITH_UWI = """~Version

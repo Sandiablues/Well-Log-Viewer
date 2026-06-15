@@ -10,9 +10,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
-from backend.app.knowledge.repository import KnowledgeRepository
-from backend.app.knowledge.models import KR_VERSION
+from app.main import app
+from app.knowledge.repository import KnowledgeRepository
+from app.knowledge.models import KR_VERSION
 
 client = TestClient(app)
 

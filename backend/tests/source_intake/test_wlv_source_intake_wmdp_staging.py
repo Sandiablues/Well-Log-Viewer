@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from backend.app.inventory.models import ManagedWdvState, ManagedWmdpState
-from backend.app.inventory.repository import ManagedWellInventoryRepository
-from backend.app.inventory.service import ManagedWellInventoryService
-from backend.app.source_intake.models import SourceIntakeRegisterRequest, SourceRepositoryCreateRequest
-from backend.app.source_intake.service import WlvSourceIntakeService
+from app.inventory.models import ManagedWdvState, ManagedWmdpState
+from app.inventory.repository import ManagedWellInventoryRepository
+from app.inventory.service import ManagedWellInventoryService
+from app.source_intake.models import SourceIntakeRegisterRequest, SourceRepositoryCreateRequest
+from app.source_intake.service import WlvSourceIntakeService
 
 LAS_WITHOUT_UWI = """~Version
 VERS. 2.0 : CWLS LOG ASCII STANDARD

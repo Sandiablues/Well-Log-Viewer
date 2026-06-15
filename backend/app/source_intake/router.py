@@ -18,7 +18,7 @@ from .models import (
     SourceRepositoryScanResult,
 )
 from .service import SourceIntakeError, WlvSourceIntakeService
-from backend.app.inventory.service import ManagedWellInventoryService
+from app.inventory.service import ManagedWellInventoryService
 
 router = APIRouter(prefix="/api/wlv/source-intake", tags=["wlv-source-intake"])
 _service = WlvSourceIntakeService()

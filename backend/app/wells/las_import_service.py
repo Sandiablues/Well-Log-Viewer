@@ -13,13 +13,13 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
-from backend.app.knowledge.managed_repository import ManagedKRRepository
-from backend.app.knowledge.runtime_classification_service import (
+from app.knowledge.managed_repository import ManagedKRRepository
+from app.knowledge.runtime_classification_service import (
     CurveClassificationBatchResult,
     CurveClassificationInput,
     RuntimeCurveClassificationService,
 )
-from backend.app.knowledge.runtime_resolver import ApprovedKnowledgeRuntimeResolver
+from app.knowledge.runtime_resolver import ApprovedKnowledgeRuntimeResolver
 
 from .models import CurveMetadata, MsiSourceRef, Well
 

@@ -14,7 +14,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from backend.app.inventory.models import ManagedWellRecord
+from app.inventory.models import ManagedWellRecord
 
 _REGISTRY_PATH = Path(__file__).with_name("trajectory_seed_registry.json")
 _FIXTURE_DIR = Path(__file__).with_name("fixtures")

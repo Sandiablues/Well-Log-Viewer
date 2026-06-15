@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.knowledge.alias_enrichment_models import AliasEnrichmentRecord
-from backend.app.knowledge.governance import GovernanceStatus
-from backend.app.knowledge.managed_models import AliasRecord, CurveDefinitionRecord, EvidenceRecord
-from backend.app.knowledge.managed_repository import ManagedKRRepository
-from backend.app.knowledge.runtime_resolver import (
+from app.knowledge.alias_enrichment_models import AliasEnrichmentRecord
+from app.knowledge.governance import GovernanceStatus
+from app.knowledge.managed_models import AliasRecord, CurveDefinitionRecord, EvidenceRecord
+from app.knowledge.managed_repository import ManagedKRRepository
+from app.knowledge.runtime_resolver import (
     ApprovedKnowledgeRuntimeResolver,
     KR_RUNTIME_1_VERSION,
     RUNTIME_SCOPE_SEED_PLUS_APPROVED,

@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.source_intake.models import SourceRepositoryCreateRequest
-from backend.app.source_intake.service import SourceIntakeError, WlvSourceIntakeService
+from app.source_intake.models import SourceRepositoryCreateRequest
+from app.source_intake.service import SourceIntakeError, WlvSourceIntakeService
 
 
 def _write(path: Path, text: str = "data") -> None:

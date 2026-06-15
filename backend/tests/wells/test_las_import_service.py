@@ -11,8 +11,8 @@ These tests validate:
 
 import pytest
 
-from backend.app.wells.las_import_service import LasImportError, LasImportService
-from backend.app.wells.models import MsiSourceRef
+from app.wells.las_import_service import LasImportError, LasImportService
+from app.wells.models import MsiSourceRef
 
 
 class TestLasImportServiceScaffold:
@@ -20,7 +20,7 @@ class TestLasImportServiceScaffold:
 
     def test_module_importable(self):
         """The las_import_service module must be importable."""
-        from backend.app.wells import las_import_service  # noqa: F401
+        from app.wells import las_import_service  # noqa: F401
 
     def test_service_class_exists(self):
         svc = LasImportService()

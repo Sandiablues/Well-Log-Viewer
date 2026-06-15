@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.app.inventory.repository import ManagedWellNotFoundError
-from backend.app.knowledge.api_managed_knowledge import get_managed_repository
-from backend.app.knowledge.managed_repository import ManagedKRRepository
+from app.inventory.repository import ManagedWellNotFoundError
+from app.knowledge.api_managed_knowledge import get_managed_repository
+from app.knowledge.managed_repository import ManagedKRRepository
 
 from .models import (
     WdvTemplateApplicationPlanEnvelope,
