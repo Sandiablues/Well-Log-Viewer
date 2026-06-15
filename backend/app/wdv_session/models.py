@@ -1,0 +1,93 @@
+"""Backend-owned WDV layout/session state models.
+
+These models define the canonical WDV layout/session contract.  The
+frontend may render this contract and request explicit user actions, but it
+must not own template-application truth or durable layout state.
+"""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+
+
+WDV_SESSION_LAYOUT_CONTRACT_VERSION = "wdv_session_layout_state_v1"
+
+
+class WdvSessionCurveAssignmentState(BaseModel):
+    """One curve assignment inside a backend-owned WDV track."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    assignment_id: str = Field(validation_alias=AliasChoices("assignment_id", "assignmentId"))
+    curve_id: str = Field(validation_alias=AliasChoices("curve_id", "curveId"))
+    product_id: str | None = Field(default=None, validation_alias=AliasChoices("product_id", "productId"))
+    display_curve_id: str | None = Field(default=None, validation_alias=AliasChoices("display_curve_id", "displayCurveId"))
+    mnemonic: str | None = None
+    display_name: str | None = Field(default=None, validation_alias=AliasChoices("display_name", "displayName"))
+    curve_family: str | None = Field(default=None, validation_alias=AliasChoices("curve_family", "curveFamily"))
+    unit: str | None = None
+    stack_index: int = Field(default=0, validation_alias=AliasChoices("stack_index", "stackIndex"))
+    visible: bool = True
+    scale_min: float | int | None = Field(default=None, validation_alias=AliasChoices("scale_min", "scaleMin"))
+    scale_max: float | int | None = Field(default=None, validation_alias=AliasChoices("scale_max", "scaleMax"))
+    scale_type: str | None = Field(default=None, validation_alias=AliasChoices("scale_type", "scaleType"))
+    scale_direction: str | None = Field(default=None, validation_alias=AliasChoices("scale_direction", "scaleDirection"))
+    color: str | None = None
+    source: str = "manual_or_backend_owned"
+
+
+class WdvSessionTrackLayoutState(BaseModel):
+    """One backend-owned WDV display track."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    track_id: str = Field(validation_alias=AliasChoices("track_id", "trackId"))
+    track_key: str | None = Field(default=None, validation_alias=AliasChoices("track_key", "trackKey"))
+    track_number: int | None = Field(default=None, validation_alias=AliasChoices("track_number", "trackNumber"))
+    track_name: str = Field(validation_alias=AliasChoices("track_name", "trackName", "name"))
+    track_type: str = Field(default="curve", validation_alias=AliasChoices("track_type", "trackType"))
+    renderer_type: str | None = Field(default=None, validation_alias=AliasChoices("renderer_type", "rendererType"))
+    track_role: str | None = Field(default=None, validation_alias=AliasChoices("track_role", "trackRole"))
+    width_px: int | None = Field(default=None, validation_alias=AliasChoices("width_px", "widthPx"))
+    lattice: str | None = None
+    lattice_source: str | None = Field(default=None, validation_alias=AliasChoices("lattice_source", "latticeSource"))
+    curves: list[WdvSessionCurveAssignmentState] = Field(default_factory=list)
+    source_template_key: str | None = Field(default=None, validation_alias=AliasChoices("source_template_key", "sourceTemplateKey"))
+    source_application_plan_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("source_application_plan_id", "sourceApplicationPlanId"),
+    )
+
+
+class WdvSessionLayoutStateResponse(BaseModel):
+    """Canonical backend-owned WDV layout/session state."""
+
+    service: str = "wdv_session_layout_state_service"
+    contract_version: str = WDV_SESSION_LAYOUT_CONTRACT_VERSION
+    managed_well_id: str
+    layout_session_id: str
+    revision: int = 0
+    state_status: Literal["empty", "active", "cleared"] = "empty"
+    source: str = "backend_owned_session_state"
+    updated_at: str
+    selected_track_id: str | None = Field(default=None, validation_alias=AliasChoices("selected_track_id", "selectedTrackId"))
+    tracks: list[WdvSessionTrackLayoutState] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class WdvSessionLayoutPutRequest(BaseModel):
+    """Replace the active backend-owned WDV layout for one managed well."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    selected_track_id: str | None = Field(default=None, validation_alias=AliasChoices("selected_track_id", "selectedTrackId"))
+    tracks: list[WdvSessionTrackLayoutState] = Field(default_factory=list)
+    source: str = "explicit_user_layout_update"
+
+
+class WdvSessionLayoutClearRequest(BaseModel):
+    """Clear the active backend-owned WDV layout for one managed well."""
+
+    reason: str = "user_requested_clear"
