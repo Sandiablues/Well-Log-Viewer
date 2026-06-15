@@ -1442,10 +1442,10 @@ function DemoShellRail({
     { label: 'Info', icon: 'info', view: 'info' },
     { label: 'Data', icon: 'data', view: 'data' },
     { label: 'Sources', icon: 'sources', view: 'sources' },
-    { label: 'Knowledge', icon: 'knowledge', view: 'knowledge' },
   ];
 
   const bottomItems: DemoNavItem[] = [
+    { label: 'Knowledge', icon: 'knowledge', view: 'knowledge' },
     { label: 'Toolbox', icon: 'toolbox' },
     { label: 'Settings', icon: 'settings' },
   ];
