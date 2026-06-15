@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 PROJECT="${WLV_PROJECT:-$HOME/Applications/MultiViewer/Well-Log-Viewer}"
-RUNTIME_DIR="$PROJECT/.wlv_runtime"
-BACKEND_URL="http://127.0.0.1:8001"
-FRONTEND_URL="http://127.0.0.1:5173"
-PROFILE_DIR="$RUNTIME_DIR/chrome-profile"
+source "$PROJECT/scripts/wlv_runtime_lib.sh"
 
-cd "$PROJECT"
+wlv_mkdirs
+cd "$WLV_PROJECT"
+
 echo "WLV app runtime status"
-echo "Project: $PROJECT"
-echo "Backend:  $BACKEND_URL"
-echo "Frontend: $FRONTEND_URL"
+echo "Project: $WLV_PROJECT"
+echo "Backend:  $WLV_BACKEND_URL"
+echo "Frontend: $WLV_FRONTEND_URL"
 
 echo
 echo "---- git ----"
@@ -21,11 +19,11 @@ git log --oneline --decorate -5 || true
 
 echo
 echo "---- PID files ----"
-for f in "$RUNTIME_DIR/backend.pid" "$RUNTIME_DIR/frontend.pid" "$RUNTIME_DIR/launcher.pid" "$PROJECT/.wlv_backend.pid" "$PROJECT/.wlv_frontend.pid"; do
+for f in "$WLV_BACKEND_PID_FILE" "$WLV_FRONTEND_PID_FILE" "$WLV_LAUNCHER_PID_FILE" "$WLV_LEGACY_BACKEND_PID_FILE" "$WLV_LEGACY_FRONTEND_PID_FILE"; do
   if [ -f "$f" ]; then
-    pid="$(cat "$f" 2>/dev/null || true)"
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-      echo "$f -> $pid RUNNING"
+    pid="$(wlv_read_pid_file "$f" 2>/dev/null || true)"
+    if [ -n "$pid" ] && wlv_pid_running "$pid"; then
+      echo "$f -> $pid RUNNING :: $(wlv_process_command "$pid")"
     else
       echo "$f -> ${pid:-empty} NOT RUNNING"
     fi
@@ -36,28 +34,36 @@ done
 
 echo
 echo "---- WLV ports and possible conflicts ----"
-for port in 8001 5173 8000 5174 5175; do
+for port in "$WLV_BACKEND_PORT" "$WLV_FRONTEND_PORT" 8000 5174 5175; do
   echo "### port $port"
   lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || echo "no listener"
 done
 
 echo
 echo "---- WLV Chrome profile processes ----"
-ps aux | grep -F "$PROFILE_DIR" | grep -v grep || echo "no WLV Chrome profile process"
+chrome_pids="$(wlv_chrome_profile_pids || true)"
+if [ -n "$chrome_pids" ]; then
+  while IFS= read -r pid; do
+    [ -z "$pid" ] && continue
+    echo "$pid :: $(wlv_process_command "$pid")"
+  done <<< "$chrome_pids"
+else
+  echo "no WLV Chrome profile process"
+fi
 
 echo
 echo "---- health ----"
-if curl -fsS "$BACKEND_URL/api/wlv/source-intake/health" >/dev/null 2>&1; then
+if curl -fsS "$WLV_BACKEND_URL/api/wlv/source-intake/health" >/dev/null 2>&1; then
   echo "Backend source-intake: OK"
 else
   echo "Backend source-intake: FAIL"
 fi
-if curl -fsS "$BACKEND_URL/api/wlv/wdv/templates" >/dev/null 2>&1; then
+if curl -fsS "$WLV_BACKEND_URL/api/wlv/wdv/templates" >/dev/null 2>&1; then
   echo "Backend WDV templates: OK"
 else
   echo "Backend WDV templates: FAIL"
 fi
-if curl -fsS "$FRONTEND_URL" >/dev/null 2>&1; then
+if curl -fsS "$WLV_FRONTEND_URL" >/dev/null 2>&1; then
   echo "Frontend: OK"
 else
   echo "Frontend: FAIL"

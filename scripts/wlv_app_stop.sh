@@ -1,100 +1,77 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 PROJECT="${WLV_PROJECT:-$HOME/Applications/MultiViewer/Well-Log-Viewer}"
-RUNTIME_DIR="$PROJECT/.wlv_runtime"
-PROFILE_DIR="$RUNTIME_DIR/chrome-profile"
+source "$PROJECT/scripts/wlv_runtime_lib.sh"
+
 QUIET=0
+INCLUDE_LAUNCHER=1
 for arg in "$@"; do
   case "$arg" in
     --quiet) QUIET=1 ;;
+    --no-launcher) INCLUDE_LAUNCHER=0 ;;
     *) echo "Unknown argument: $arg"; exit 2 ;;
   esac
 done
 
-log() {
+emit() {
   if [ "$QUIET" -ne 1 ]; then
-    echo "$@"
+    printf '%s\n' "$*"
   fi
 }
 
-process_command() {
-  local pid="$1"
-  ps -p "$pid" -o command= 2>/dev/null || true
-}
+wlv_mkdirs
+cd "$WLV_PROJECT"
+emit "WLV app runtime stop"
+emit "Project: $WLV_PROJECT"
 
-is_wlv_owned_pid() {
-  local pid="$1"
-  local cmd
-  cmd="$(process_command "$pid")"
-  case "$cmd" in
-    *"$PROJECT"*|*"$PROFILE_DIR"*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
-stop_pid_if_wlv_owned() {
-  local pid="$1"
+stop_from_pid_file() {
+  local pid_file="$1"
   local label="$2"
-  if [ -z "${pid:-}" ] || ! kill -0 "$pid" 2>/dev/null; then
-    return 0
-  fi
-  if is_wlv_owned_pid "$pid"; then
-    log "Stopping WLV-owned $label PID $pid"
-    kill "$pid" 2>/dev/null || true
-  else
-    log "Leaving non-WLV $label PID $pid: $(process_command "$pid")"
-  fi
+  local pid=""
+  pid="$(wlv_read_pid_file "$pid_file" 2>/dev/null || true)"
+  [ -z "$pid" ] && return 0
+  wlv_stop_pid_if_owned "$pid" "$label" "$QUIET"
 }
 
-cd "$PROJECT"
-log "WLV app runtime stop"
-log "Project: $PROJECT"
+stop_from_pid_file "$WLV_BACKEND_PID_FILE" "backend.pid"
+stop_from_pid_file "$WLV_FRONTEND_PID_FILE" "frontend.pid"
+stop_from_pid_file "$WLV_LEGACY_BACKEND_PID_FILE" ".wlv_backend.pid"
+stop_from_pid_file "$WLV_LEGACY_FRONTEND_PID_FILE" ".wlv_frontend.pid"
 
-for pid_file in \
-  "$RUNTIME_DIR/backend.pid" \
-  "$RUNTIME_DIR/frontend.pid" \
-  "$RUNTIME_DIR/launcher.pid" \
-  "$PROJECT/.wlv_backend.pid" \
-  "$PROJECT/.wlv_frontend.pid"
-do
-  if [ -f "$pid_file" ]; then
-    pid="$(cat "$pid_file" 2>/dev/null || true)"
-    stop_pid_if_wlv_owned "$pid" "$(basename "$pid_file")"
+if [ "$INCLUDE_LAUNCHER" -eq 1 ]; then
+  launcher_pid="$(wlv_read_pid_file "$WLV_LAUNCHER_PID_FILE" 2>/dev/null || true)"
+  if [ -n "$launcher_pid" ] && [ "$launcher_pid" != "$$" ]; then
+    wlv_stop_pid_if_owned "$launcher_pid" "launcher.pid" "$QUIET"
   fi
-done
+fi
 
-# Stop dedicated WLV Chrome profile processes only. This does not touch normal
-# Chrome, SDV, or SBLT browser sessions.
-ps aux | grep -F "$PROFILE_DIR" | grep -v grep | awk '{print $2}' | while IFS= read -r pid; do
-  stop_pid_if_wlv_owned "$pid" "Chrome profile"
-done
+wlv_stop_chrome_profile "$QUIET"
 
 sleep 1
 
-# Clear only WLV-owned listeners. Non-WLV listeners are reported and left alone.
-for port in 8001 5173 8000 5174 5175; do
-  lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | while IFS= read -r pid; do
+for port in "$WLV_BACKEND_PORT" "$WLV_FRONTEND_PORT" 8000 5174 5175; do
+  while IFS= read -r pid; do
     [ -z "$pid" ] && continue
-    stop_pid_if_wlv_owned "$pid" "listener on port $port"
-  done
+    wlv_stop_pid_if_owned "$pid" "listener on port $port" "$QUIET"
+  done < <(wlv_listener_pids_on_port "$port")
 done
 
 sleep 2
 
-for port in 8001 5173 8000 5174 5175; do
-  lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | while IFS= read -r pid; do
+for port in "$WLV_BACKEND_PORT" "$WLV_FRONTEND_PORT" 8000 5174 5175; do
+  while IFS= read -r pid; do
     [ -z "$pid" ] && continue
-    if is_wlv_owned_pid "$pid"; then
-      log "Force-stopping WLV-owned listener on port $port PID $pid"
-      kill -9 "$pid" 2>/dev/null || true
-    fi
-  done
+    wlv_force_stop_pid_if_owned "$pid" "listener on port $port" "$QUIET"
+  done < <(wlv_listener_pids_on_port "$port")
 done
+wlv_force_stop_chrome_profile "$QUIET"
 
-rm -f "$RUNTIME_DIR/backend.pid" "$RUNTIME_DIR/frontend.pid" "$RUNTIME_DIR/launcher.pid"
-rm -f "$PROJECT/.wlv_backend.pid" "$PROJECT/.wlv_frontend.pid"
-rm -rf "$RUNTIME_DIR/launcher.lock" 2>/dev/null || true
+rm -f "$WLV_BACKEND_PID_FILE" "$WLV_FRONTEND_PID_FILE"
+rm -f "$WLV_LEGACY_BACKEND_PID_FILE" "$WLV_LEGACY_FRONTEND_PID_FILE"
+if [ "$INCLUDE_LAUNCHER" -eq 1 ]; then
+  rm -f "$WLV_LAUNCHER_PID_FILE"
+fi
+rm -rf "$WLV_LOCK_DIR" 2>/dev/null || true
 
-log "WLV app runtime stopped."
+emit "WLV app runtime stopped."
