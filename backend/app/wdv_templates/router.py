@@ -9,6 +9,8 @@ from app.knowledge.api_managed_knowledge import get_managed_repository
 from app.knowledge.managed_repository import ManagedKRRepository
 
 from .models import (
+    WdvTemplateApplicationApplyEnvelope,
+    WdvTemplateApplicationApplyRequest,
     WdvTemplateApplicationPlanEnvelope,
     WdvTemplateApplicationPlanRequest,
     WdvTemplateDetailEnvelope,
@@ -16,6 +18,10 @@ from .models import (
     WdvTemplateRecommendationEnvelope,
     WdvTemplateRecommendationRequest,
     WdvTemplateReferenceSummaryResponse,
+)
+from .application_apply_service import (
+    WdvTemplateApplicationApplyBlockedError,
+    WdvTemplateApplicationApplyService,
 )
 from .application_plan_service import (
     WdvTemplateApplicationPlanNotFoundError,
@@ -46,6 +52,13 @@ def get_wdv_template_application_plan_service(
 ) -> WdvTemplateApplicationPlanService:
     """Return the backend-owned WDV template application-plan service."""
     return WdvTemplateApplicationPlanService(repository=repo)
+
+
+def get_wdv_template_application_apply_service(
+    repo: ManagedKRRepository = Depends(get_managed_repository),
+) -> WdvTemplateApplicationApplyService:
+    """Return the backend-owned WDV template application service."""
+    return WdvTemplateApplicationApplyService(repository=repo)
 
 
 @router.get("", response_model=WdvTemplateListResponse)
@@ -120,6 +133,35 @@ def build_wdv_template_application_plan(
         raise HTTPException(
             status_code=404,
             detail={"error": "wdv_template_application_plan_not_found", "template_key": request.template_key},
+        ) from exc
+
+
+@router.post("/application-plans/apply", response_model=WdvTemplateApplicationApplyEnvelope)
+def apply_wdv_template_application_plan(
+    request: WdvTemplateApplicationApplyRequest,
+    service: WdvTemplateApplicationApplyService = Depends(get_wdv_template_application_apply_service),
+) -> WdvTemplateApplicationApplyEnvelope:
+    """Apply a backend-owned template application plan to active WDV session layout."""
+    try:
+        return service.apply_from_request(request)
+    except WdvTemplateApplicationApplyBlockedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "wdv_template_application_blocked",
+                "template_key": exc.template_key,
+                "blocking_issues": exc.blocking_issues,
+            },
+        ) from exc
+    except WdvTemplateApplicationPlanNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "wdv_template_application_plan_not_found", "template_key": request.template_key},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "invalid_wdv_template_application", "message": str(exc)},
         ) from exc
 
 

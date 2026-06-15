@@ -394,3 +394,33 @@ class WdvTemplateApplicationPlanEnvelope(BaseModel):
     mutation_performed: bool = False
     plan: WdvTemplateApplicationPlanResponse
     knowledge_policy: dict[str, Any]
+
+
+class WdvTemplateApplicationApplyRequest(WdvTemplateApplicationPlanRequest):
+    """Apply a backend-owned WDV template plan to active session layout state."""
+
+    managed_well_id: str = Field(
+        validation_alias=AliasChoices("managed_well_id", "managedWellId"),
+    )
+    source_application_plan_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("source_application_plan_id", "sourceApplicationPlanId", "application_plan_id", "applicationPlanId"),
+    )
+
+
+class WdvTemplateApplicationApplySummary(BaseModel):
+    track_count: int = 0
+    curve_assignment_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
+class WdvTemplateApplicationApplyEnvelope(BaseModel):
+    service: str = "wdv_template_application_apply_service"
+    contract_version: str = "wdv_template_application_apply_v1"
+    mutation_performed: bool = True
+    managed_well_id: str
+    template_key: str
+    application_plan_id: str
+    layout: dict[str, Any]
+    apply_summary: WdvTemplateApplicationApplySummary
+    knowledge_policy: dict[str, Any]

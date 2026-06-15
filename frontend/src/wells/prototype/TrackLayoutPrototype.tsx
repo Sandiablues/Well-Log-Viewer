@@ -131,6 +131,8 @@ type WdvSessionLayoutCurveState = {
   product_id?: string | null;
   productId?: string | null;
   mnemonic?: string | null;
+  display_curve_id?: string | null;
+  displayCurveId?: string | null;
   display_name?: string | null;
   displayName?: string | null;
   curve_family?: string | null;
@@ -169,6 +171,16 @@ type WdvSessionLayoutTrackState = {
 
 type WdvSessionLayoutResponse = {
   state_status?: 'empty' | 'active' | 'cleared';
+  active_curve_ids?: string[];
+  activeCurveIds?: string[];
+  active_product_ids?: string[];
+  activeProductIds?: string[];
+  active_display_curve_ids?: string[];
+  activeDisplayCurveIds?: string[];
+  active_curve_mnemonics?: string[];
+  activeCurveMnemonics?: string[];
+  curve_assignments?: Array<Record<string, unknown>>;
+  curveAssignments?: Array<Record<string, unknown>>;
   selected_track_id?: string | null;
   selectedTrackId?: string | null;
   tracks?: WdvSessionLayoutTrackState[];
@@ -320,6 +332,22 @@ type WdvTemplateApplicationPlanEnvelope = {
   contract_version: string;
   mutation_performed: boolean;
   plan: WdvTemplateApplicationPlan;
+  knowledge_policy?: Record<string, unknown>;
+};
+
+type WdvTemplateApplicationApplyEnvelope = {
+  service: string;
+  contract_version: string;
+  mutation_performed: boolean;
+  managed_well_id: string;
+  template_key: string;
+  application_plan_id: string;
+  layout: WdvSessionLayoutResponse;
+  apply_summary?: {
+    track_count?: number;
+    curve_assignment_count?: number;
+    warnings?: string[];
+  };
   knowledge_policy?: Record<string, unknown>;
 };
 
@@ -506,6 +534,63 @@ function sessionTracksFromFrontend(tracks: WellLogTrack[], catalog: CurveCatalog
   });
 }
 
+function sessionAssignmentIdentityCandidates(rawAssignment: WdvSessionLayoutCurveState): string[] {
+  return [
+    rawAssignment.curve_id,
+    rawAssignment.curveId,
+    rawAssignment.product_id,
+    rawAssignment.productId,
+    rawAssignment.display_curve_id,
+    rawAssignment.displayCurveId,
+  ]
+    .map((value) => String(value || '').trim())
+    .filter((value, index, values) => Boolean(value) && values.indexOf(value) === index);
+}
+
+function curveFromSessionAssignment(
+  rawAssignment: WdvSessionLayoutCurveState,
+  catalog: CurveCatalogItem[],
+): CurveCatalogItem | null {
+  const identityCandidates = sessionAssignmentIdentityCandidates(rawAssignment);
+  const directMatch = catalog.find((item) => identityCandidates.includes(item.curveId));
+  if (directMatch) return directMatch;
+
+  const mnemonic = String(rawAssignment.mnemonic || '').trim().toLowerCase();
+  const unit = String(rawAssignment.unit || '').trim().toLowerCase();
+  if (!mnemonic) return null;
+  return catalog.find((item) => (
+    item.mnemonic.trim().toLowerCase() === mnemonic
+    && (!unit || item.unit.trim().toLowerCase() === unit)
+  )) ?? null;
+}
+
+function activeCurveIdsFromSession(
+  session: WdvSessionLayoutResponse,
+  catalog: CurveCatalogItem[],
+): string[] {
+  const backendIdentities = [
+    ...(session.active_curve_ids ?? session.activeCurveIds ?? []),
+    ...(session.active_product_ids ?? session.activeProductIds ?? []),
+    ...(session.active_display_curve_ids ?? session.activeDisplayCurveIds ?? []),
+  ].map((value) => String(value || '').trim()).filter(Boolean);
+
+  const activeIds = new Set<string>();
+  catalog.forEach((curve) => {
+    if (backendIdentities.includes(curve.curveId)) {
+      activeIds.add(curve.curveId);
+    }
+  });
+
+  (session.tracks ?? []).forEach((track) => {
+    (track.curves ?? []).forEach((assignment) => {
+      const curve = curveFromSessionAssignment(assignment, catalog);
+      if (curve) activeIds.add(curve.curveId);
+    });
+  });
+
+  return Array.from(activeIds);
+}
+
 function frontendTracksFromSession(session: WdvSessionLayoutResponse, catalog: CurveCatalogItem[]): WellLogTrack[] {
   const restoredTracks: WellLogTrack[] = [];
 
@@ -534,8 +619,7 @@ function frontendTracksFromSession(session: WdvSessionLayoutResponse, catalog: C
 
     const assignments = (rawTrack.curves ?? [])
       .map((rawAssignment, assignmentIndex) => {
-        const curveId = rawAssignment.curve_id ?? rawAssignment.curveId;
-        const curve = curveId ? catalog.find((item) => item.curveId === curveId) : null;
+        const curve = curveFromSessionAssignment(rawAssignment, catalog);
         if (!curve) return null;
         const fallback = makeCurveAssignment(curve, assignmentIndex);
         const scaleDirection = rawAssignment.scale_direction ?? rawAssignment.scaleDirection;
@@ -646,6 +730,29 @@ async function buildWdvTemplateApplicationPlan(
         template_key: templateKey,
         workflow_context: recommendationPayload.workflow_context,
         loaded_curve_items: recommendationPayload.loaded_curve_items,
+      }),
+    },
+  );
+}
+
+async function applyWdvTemplateApplicationPlan(
+  templateKey: string,
+  loadedCurveItems: WdvLoadedCurveItem[],
+  managedWellId: string,
+  sourceApplicationPlanId?: string | null,
+): Promise<WdvTemplateApplicationApplyEnvelope> {
+  const recommendationPayload = buildWdvTemplateRecommendationRequest(loadedCurveItems);
+  return fetchWlvJson<WdvTemplateApplicationApplyEnvelope>(
+    '/api/wlv/wdv/templates/application-plans/apply',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        managed_well_id: managedWellId,
+        template_key: templateKey,
+        workflow_context: recommendationPayload.workflow_context,
+        loaded_curve_items: recommendationPayload.loaded_curve_items,
+        source_application_plan_id: sourceApplicationPlanId ?? null,
       }),
     },
   );
@@ -2243,7 +2350,7 @@ function CurveInventory({
     const usageCount = curveUsageCounts.get(curve.curveId) ?? 0;
     const usedAnywhere = visibleTrackCurveIds.has(curve.curveId);
     const checkedInSelectedTrack = selectedTrackCurveIds.has(curve.curveId);
-    const highlightAsSelected = activeInventoryTab === 'selected' || (activeInventoryTab !== 'all' && selectedCurveIds.has(curve.curveId));
+    const highlightAsSelected = activeInventoryTab === 'selected' || selectedCurveIds.has(curve.curveId) || usedAnywhere;
 
     return (
       <div
@@ -2373,15 +2480,19 @@ function WdvTemplateRecommendationModal({
   loadedCurveItems,
   managedWellId,
   onClose,
+  onApplied,
 }: {
   recommendation: WdvTemplateRecommendationItem;
   loadedCurveItems: WdvLoadedCurveItem[];
   managedWellId?: string | null;
   onClose: () => void;
+  onApplied: (session: WdvSessionLayoutResponse) => void;
 }) {
   const [applicationPlanEnvelope, setApplicationPlanEnvelope] = useState<WdvTemplateApplicationPlanEnvelope | null>(null);
   const [applicationPlanLoading, setApplicationPlanLoading] = useState(false);
   const [applicationPlanError, setApplicationPlanError] = useState<string | null>(null);
+  const [applicationApplying, setApplicationApplying] = useState(false);
+  const [applicationApplyError, setApplicationApplyError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -2423,6 +2534,29 @@ function WdvTemplateRecommendationModal({
   const planStatus = plan?.plan_status ?? (applicationPlanLoading ? 'building_plan' : 'recommendation_only');
   const applyEligible = plan?.apply_eligible ?? false;
   const mutationPerformed = applicationPlanEnvelope?.mutation_performed ?? false;
+  const canApply = Boolean(managedWellId && plan && applyEligible && !applicationPlanLoading && !applicationApplying);
+
+  const handleApply = () => {
+    if (!managedWellId || !plan || !applyEligible) return;
+    setApplicationApplying(true);
+    setApplicationApplyError(null);
+    void applyWdvTemplateApplicationPlan(
+      recommendation.template_key,
+      loadedCurveItems,
+      managedWellId,
+      plan.application_plan_id,
+    )
+      .then((result) => {
+        if (!result.mutation_performed || !result.layout) {
+          throw new Error('Backend did not return an applied WDV layout.');
+        }
+        onApplied(result.layout);
+      })
+      .catch((error) => {
+        setApplicationApplyError(error instanceof Error ? error.message : 'Template apply service unavailable');
+      })
+      .finally(() => setApplicationApplying(false));
+  };
 
   return createPortal(
     <div className="wlv-template-modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -2446,9 +2580,13 @@ function WdvTemplateRecommendationModal({
           <span>
             {applicationPlanError
               ? applicationPlanError
-              : mutationPerformed
-                ? 'Unexpected mutation reported by backend.'
-                : 'Non-mutating preview only. Tracks are not populated in this block.'}
+              : applicationApplyError
+                ? applicationApplyError
+                : mutationPerformed
+                  ? 'Unexpected mutation reported by backend during preview.'
+                  : applyEligible
+                    ? 'Backend plan is applyable. Apply writes active WDV layout state.'
+                    : 'Backend plan is blocked pending review; tracks are not populated.'}
           </span>
         </div>
 
@@ -2465,7 +2603,7 @@ function WdvTemplateRecommendationModal({
             <dt>Plan status</dt>
             <dd>{formatPlanStatus(planStatus)}</dd>
             <dt>Apply mode</dt>
-            <dd>{formatPlanStatus(plan?.apply_mode ?? 'review_required_non_mutating_plan')}</dd>
+            <dd>{formatPlanStatus(plan?.apply_mode ?? 'backend_apply_available_after_review')}</dd>
             <dt>Blocking issues</dt>
             <dd>{compactFamilyList(blockingIssues, 'None')}</dd>
             <dt>Warnings</dt>
@@ -2538,8 +2676,13 @@ function WdvTemplateRecommendationModal({
 
         <footer className="wlv-template-modal-actions">
           <button type="button" onClick={onClose}>Cancel</button>
-          <button type="button" disabled title="Template application is reserved for a later backend-owned apply block">
-            Apply disabled
+          <button
+            type="button"
+            disabled={!canApply}
+            onClick={handleApply}
+            title={canApply ? 'Apply backend-owned template plan to WDV layout' : compactFamilyList(blockingIssues, 'Backend plan is not applyable yet')}
+          >
+            {applicationApplying ? 'Applying…' : 'Apply'}
           </button>
         </footer>
       </section>
@@ -4479,6 +4622,20 @@ export function TrackLayoutPrototype() {
     setWdvTemplateModalOpen(Boolean(templateKey));
   };
 
+  const handleWdvTemplateApplied = (session: WdvSessionLayoutResponse) => {
+    const restoredTracks = frontendTracksFromSession(session, activeCurveCatalog);
+    const activeCurveIds = activeCurveIdsFromSession(session, activeCurveCatalog);
+    setTracks(restoredTracks);
+    setSelectedInventoryCurveIds(activeCurveIds);
+    const selectedTrackId = selectedTrackIdFromSession(session);
+    const selectedTrackExists = selectedTrackId && restoredTracks.some((track) => track.trackId === selectedTrackId);
+    if (restoredTracks.length > 0) {
+      setSelection({ kind: 'track', trackId: selectedTrackExists ? selectedTrackId : restoredTracks[0].trackId });
+    }
+    wdvSessionHydratedKeyRef.current = wdvSessionKey;
+    setWdvTemplateModalOpen(false);
+  };
+
   const curveUsageCounts = useMemo(() => wdvPackageState.curveUsageCounts, [wdvPackageState]);
 
   const selectedTrackCurveIds = useMemo(() => {
@@ -5007,6 +5164,7 @@ export function TrackLayoutPrototype() {
           loadedCurveItems={wdvPackageState.loadedCurveItems}
           managedWellId={managedViewerWellId}
           onClose={() => setWdvTemplateModalOpen(false)}
+          onApplied={handleWdvTemplateApplied}
         />
       ) : null}
 
@@ -5033,7 +5191,7 @@ export function TrackLayoutPrototype() {
           curveUsageCounts={curveUsageCounts}
           visibleTrackCurveIds={visibleTrackCurveIds}
           selectedTrackCurveIds={addTrackCurveSelectionMode ? new Set(pendingAddTrackCurveIds) : selectedTrackCurveIds}
-          selectedCurveIds={new Set(selectedInventoryCurveIds)}
+          selectedCurveIds={new Set([...selectedInventoryCurveIds, ...Array.from(visibleTrackCurveIds)])}
           assignmentEnabled={addTrackCurveSelectionMode || selectedTrack?.trackType === 'curve'}
           preferredInventoryTab={tracks.length > 0 ? 'selected' : 'all'}
           onToggleCurveInSelectedTrack={(curveId, checked) => {
