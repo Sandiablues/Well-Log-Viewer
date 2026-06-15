@@ -215,33 +215,47 @@
   display: block;
 }
 
-.wlv-kr-table td span {
-  margin-top: 3px;
-  color: #94a3b8;
-}
-
 .wlv-kr-truth-badge {
   display: inline-flex;
   align-items: center;
-  white-space: nowrap;
-  padding: 4px 7px;
-  border: 1px solid rgba(148, 163, 184, 0.34);
+  justify-content: center;
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0;
   border-radius: 999px;
-  color: #cbd5e1;
-  font-size: 10px;
+  vertical-align: middle;
+}
+
+.wlv-kr-truth-badge-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  font-size: 11px;
   font-weight: 900;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  line-height: 1;
 }
 
-.wlv-kr-truth-badge.approved {
-  border-color: rgba(34, 197, 94, 0.8);
+.wlv-kr-truth-badge.approved .wlv-kr-truth-badge-mark {
+  border: 1px solid rgba(34, 197, 94, 0.9);
   color: #86efac;
+  background: rgba(34, 197, 94, 0.12);
 }
 
-.wlv-kr-truth-badge.review {
-  border-color: rgba(251, 191, 36, 0.8);
+.wlv-kr-truth-badge.review .wlv-kr-truth-badge-mark {
+  border: 1px solid rgba(251, 191, 36, 0.85);
   color: #fde68a;
+  background: rgba(251, 191, 36, 0.12);
+}
+
+
+
+.wlv-kr-table td span {
+  margin-top: 3px;
+  color: #94a3b8;
 }
 
 .wlv-kr-detail-panel {

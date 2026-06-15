@@ -352,11 +352,16 @@ function KrCountCard({ label, value }: { label: string; value: number | string }
 function KrTruthBadge({ item }: { item: KrInstructionSummary }) {
   const ok = item.status === 'approved' && item.runtime_eligible && item.production_eligible;
   return (
-    <span className={`wlv-kr-truth-badge ${ok ? 'approved' : 'review'}`}>
-      {ok ? 'Live truth' : 'Review'}
+    <span
+      className={`wlv-kr-truth-badge ${ok ? 'approved' : 'review'}`}
+      title={ok ? 'Approved application truth' : 'Review required'}
+      aria-label={ok ? 'Approved application truth' : 'Review required'}
+    >
+      <span className="wlv-kr-truth-badge-mark" aria-hidden="true">{ok ? '✓' : '!'}</span>
     </span>
   );
 }
+
 
 function KrInstructionDetailPanel({ detail, loading, error }: { detail: KrInstructionDetail | null; loading: boolean; error: string | null }) {
   if (loading) {
