@@ -1558,31 +1558,46 @@ function sharedTrackHeaderHeightPx(tracks: WellLogTrack[]): number {
   return Math.max(TRACK_HEADER_HEIGHT_PX, requiredCurveHeaderHeight);
 }
 
+function displayTitleForTrack(track: WellLogTrack, catalog: CurveCatalogItem[]): string {
+  if (track.trackType !== 'curve') return track.title;
+  const mnemonics = orderedCurves(track)
+    .map((assignment) => catalog.find((curve) => curve.curveId === assignment.curveId)?.mnemonic ?? assignment.curveId)
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+
+  if (mnemonics.length === 0) return track.title || 'Curve Track';
+  return mnemonics.join(' / ');
+}
+
 function valueToX(value: number, assignment: CurveAssignment, lattice: CurveTrack['lattice'], trackWidth: number): number {
   const safeTrackWidth = Math.max(CURVE_TRACK_MIN_WIDTH, trackWidth);
   const drawableWidth = safeTrackWidth - CURVE_VIEW_PADDING_X * 2;
-  const min = assignment.scaleMin;
-  const max = assignment.scaleMax;
+  const rawLeft = assignment.scaleMin;
+  const rawRight = assignment.scaleMax;
   const scaleType = assignment.scaleType ?? (lattice === 'logarithmic' ? 'log' : 'linear');
   const clipToTrack = assignment.clipToTrack ?? true;
 
+  const leftEndpoint = assignment.scaleDirection === 'reverse' && rawLeft < rawRight ? rawRight : rawLeft;
+  const rightEndpoint = assignment.scaleDirection === 'reverse' && rawLeft < rawRight ? rawLeft : rawRight;
+
   let t = 0.5;
 
-  if (scaleType === 'log' && min > 0 && max > 0 && max !== min) {
-    const logMin = Math.log10(min);
-    const logMax = Math.log10(max);
+  if (scaleType === 'log' && leftEndpoint > 0 && rightEndpoint > 0 && rightEndpoint !== leftEndpoint) {
+    const low = Math.min(leftEndpoint, rightEndpoint);
+    const high = Math.max(leftEndpoint, rightEndpoint);
+    const logLeft = Math.log10(leftEndpoint);
+    const logRight = Math.log10(rightEndpoint);
     const boundedValue = clipToTrack
-      ? clampValue(value, Math.min(min, max), Math.max(min, max))
+      ? clampValue(value, low, high)
       : Math.max(value, Number.MIN_VALUE);
-    t = (Math.log10(boundedValue) - logMin) / (logMax - logMin);
+    t = (Math.log10(boundedValue) - logLeft) / (logRight - logLeft);
   } else {
-    const denominator = max - min;
+    const denominator = rightEndpoint - leftEndpoint;
     if (denominator === 0) return safeTrackWidth / 2;
-    t = (value - min) / denominator;
-  }
-
-  if (assignment.scaleDirection === 'reverse') {
-    t = 1 - t;
+    const boundedValue = clipToTrack
+      ? clampValue(value, Math.min(leftEndpoint, rightEndpoint), Math.max(leftEndpoint, rightEndpoint))
+      : value;
+    t = (boundedValue - leftEndpoint) / denominator;
   }
 
   const anchorBias = assignment.positionAnchor === 'left'
@@ -3378,7 +3393,7 @@ function TrackView({
         style={{ height: `${sharedHeaderHeightPx}px`, minHeight: `${sharedHeaderHeightPx}px`, flexBasis: `${sharedHeaderHeightPx}px` }}
       >
         <div className="wlv-track-title-row">
-          <strong>{track.title}</strong>
+          <strong>{displayTitleForTrack(track, curveCatalog)}</strong>
           <span>T{track.trackIndex + 1}</span>
         </div>
         {track.trackType === 'depth' && (

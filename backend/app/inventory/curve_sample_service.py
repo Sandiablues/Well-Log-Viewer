@@ -60,8 +60,21 @@ class CurveSampleService:
             "depth_max": parsed["depth_max"],
             "value_min": parsed["value_min"],
             "value_max": parsed["value_max"],
+            "robust_value_min": parsed.get("robust_value_min"),
+            "robust_value_max": parsed.get("robust_value_max"),
+            "value_p01": parsed.get("value_p01"),
+            "value_p05": parsed.get("value_p05"),
+            "value_p50": parsed.get("value_p50"),
+            "value_p95": parsed.get("value_p95"),
+            "value_p99": parsed.get("value_p99"),
             "sample_count": parsed["sample_count"],
-            "returned_sample_count": len(parsed["samples"]),
+            "raw_numeric_sample_count": parsed.get("raw_numeric_sample_count"),
+            "rejected_sample_count": parsed.get("rejected_sample_count", 0),
+            "rejected_null_count": parsed.get("rejected_null_count", 0),
+            "rejected_sentinel_count": parsed.get("rejected_sentinel_count", 0),
+            "rejected_nonfinite_count": parsed.get("rejected_nonfinite_count", 0),
+            "rejected_plausibility_count": parsed.get("rejected_plausibility_count", 0),
+            "rejected_row_count": parsed.get("rejected_row_count", 0),
             "decimation_stride": parsed["decimation_stride"],
             "samples": parsed["samples"],
         }
@@ -103,29 +116,55 @@ def _read_las_curve_samples(source_path: Path, curve_mnemonic: str, max_samples:
 
     depth_index = _depth_column_index(curve_lines)
     curve_index = _curve_column_index(curve_lines, curve_mnemonic)
+    curve_line = curve_lines[curve_index]
     depth_unit = _normalize_depth_unit(curve_lines[depth_index].get("unit") or well_lines.get("STRT", {}).get("unit") or "ft")
-    value_unit = curve_lines[curve_index].get("unit")
+    value_unit = curve_line.get("unit")
     null_header = well_lines.get("NULL", {})
-    # LAS NULL is commonly written as `NULL. -999.25 : ...`. The existing
-    # header parser treats the value after the dot as the unit token when no
-    # separate value token exists, so check both fields. Returning LAS nulls as
-    # real samples would render false spikes in the WDV.
+    # LAS NULL is commonly written as `NULL. -999.25 : ...`. The header parser
+    # may treat the value after the dot as the unit token when no separate value
+    # token exists, so check both fields.
     null_value = _float_or_none(null_header.get("value") or null_header.get("unit"))
 
+    family_hint = _infer_curve_family(
+        mnemonic=str(curve_line.get("mnemonic") or curve_mnemonic),
+        unit=value_unit or "",
+        description=str(curve_line.get("value") or ""),
+    )
+
     samples: list[list[float]] = []
+    raw_numeric_count = 0
+    rejected_null_count = 0
+    rejected_sentinel_count = 0
+    rejected_nonfinite_count = 0
+    rejected_plausibility_count = 0
+    rejected_row_count = 0
+
     for row in rows:
         if len(row) <= max(depth_index, curve_index):
+            rejected_row_count += 1
             continue
         depth = row[depth_index]
         value = row[curve_index]
         if not math.isfinite(depth) or not math.isfinite(value):
+            rejected_nonfinite_count += 1
             continue
-        if null_value is not None and abs(value - null_value) <= 1e-9:
+
+        raw_numeric_count += 1
+
+        if null_value is not None and _same_numeric_value(value, null_value):
+            rejected_null_count += 1
             continue
+        if _looks_like_common_null_sentinel(value):
+            rejected_sentinel_count += 1
+            continue
+        if not _value_is_plausible_for_curve(value, family_hint, value_unit or "", str(curve_line.get("mnemonic") or curve_mnemonic)):
+            rejected_plausibility_count += 1
+            continue
+
         samples.append([depth, value])
 
     if not samples:
-        raise CurveSampleServiceError(f"No numeric samples found for curve {curve_mnemonic}: {source_path}")
+        raise CurveSampleServiceError(f"No valid numeric samples found for curve {curve_mnemonic}: {source_path}")
 
     stride = max(1, math.ceil(len(samples) / max_samples)) if max_samples > 0 else 1
     returned = samples[::stride]
@@ -134,19 +173,45 @@ def _read_las_curve_samples(source_path: Path, curve_mnemonic: str, max_samples:
 
     depths = [sample[0] for sample in samples]
     values = [sample[1] for sample in samples]
+    robust_min, robust_max = _robust_value_domain(values)
+    value_p01 = _value_percentile(values, 0.01)
+    value_p05 = _value_percentile(values, 0.05)
+    value_p50 = _value_percentile(values, 0.50)
+    value_p95 = _value_percentile(values, 0.95)
+    value_p99 = _value_percentile(values, 0.99)
+
     return {
         "depth_unit": depth_unit,
         "value_unit": value_unit,
+        "curve_family_hint": family_hint,
         "depth_min": min(depths),
         "depth_max": max(depths),
         "value_min": min(values),
         "value_max": max(values),
+        "robust_value_min": robust_min,
+        "robust_value_max": robust_max,
+        "value_p01": value_p01,
+        "value_p05": value_p05,
+        "value_p50": value_p50,
+        "value_p95": value_p95,
+        "value_p99": value_p99,
         "sample_count": len(samples),
+        "raw_numeric_sample_count": raw_numeric_count,
+        "rejected_sample_count": (
+            rejected_null_count
+            + rejected_sentinel_count
+            + rejected_nonfinite_count
+            + rejected_plausibility_count
+            + rejected_row_count
+        ),
+        "rejected_null_count": rejected_null_count,
+        "rejected_sentinel_count": rejected_sentinel_count,
+        "rejected_nonfinite_count": rejected_nonfinite_count,
+        "rejected_plausibility_count": rejected_plausibility_count,
+        "rejected_row_count": rejected_row_count,
         "decimation_stride": stride,
         "samples": returned,
     }
-
-
 def _split_las_sections(text: str) -> dict[str, list[str]]:
     sections: dict[str, list[str]] = {}
     current: str | None = None
@@ -239,6 +304,93 @@ def _float_or_none(value: str | None) -> float | None:
         return None
 
 
+
+def _same_numeric_value(left: float, right: float, tolerance: float = 1e-9) -> bool:
+    return abs(float(left) - float(right)) <= tolerance
+
+
+def _looks_like_common_null_sentinel(value: float) -> bool:
+    sentinels = (-999.25, -999.0, -9999.0, -99999.0, -999999.0, -1.0e30)
+    return any(abs(value - sentinel) <= 1e-6 for sentinel in sentinels)
+
+
+def _infer_curve_family(mnemonic: str, unit: str, description: str = "") -> str:
+    key = f"{mnemonic} {unit} {description}".lower()
+    if any(token in key for token in ("ohmm", "ohm.m", "ohm-m", "resist")):
+        return "resistivity"
+    if any(token in key for token in ("gapi", "api", "gamma")):
+        return "gamma_ray"
+    if any(token in key for token in ("g/cm", "g/cc", "g/c3", "density", "rho")):
+        return "density"
+    if any(token in key for token in ("v/v", "v/v_decimal", "porosity", "neutron", "nphi", "npor", "tnph", "hnpo", "htnp", "dnph")):
+        return "neutron_porosity"
+    if any(token in key for token in ("us/f", "us/ft", "sonic", "dtco", "dtsm")):
+        return "sonic"
+    if " in" in f" {key}" or "caliper" in key or "borehole" in key:
+        return "caliper"
+    return "unknown"
+
+
+def _value_is_plausible_for_curve(value: float, family: str, unit: str, mnemonic: str) -> bool:
+    # These are deliberately broad engineering sanity ranges. They are not
+    # display defaults; they only prevent LAS null/fill/extreme corrupt values
+    # from contaminating statistics or rendering samples.
+    family_key = family.lower()
+    unit_key = unit.lower()
+    mnemonic_key = mnemonic.lower()
+
+    if family_key == "density" or "g/c" in unit_key:
+        return -20.0 <= value <= 20.0
+    if family_key == "neutron_porosity":
+        return -1.5 <= value <= 1.5
+    if family_key == "gamma_ray":
+        return -50.0 <= value <= 1000.0
+    if family_key == "sonic":
+        return 0.0 < value <= 1000.0
+    if family_key == "caliper":
+        return 0.0 <= value <= 200.0
+    if family_key == "resistivity" or "ohm" in unit_key:
+        return 0.0 < value <= 1.0e8
+
+    # Unknown curves should not be over-filtered, but absurd LAS artifacts
+    # should not become display-scale truth.
+    return -1.0e6 < value < 1.0e6
+
+
+
+def _value_percentile(values: list[float], fraction: float) -> float:
+    if not values:
+        raise CurveSampleServiceError("Cannot compute percentile from empty value list.")
+    ordered = sorted(float(v) for v in values if math.isfinite(v))
+    if not ordered:
+        raise CurveSampleServiceError("Cannot compute percentile from non-finite value list.")
+    if len(ordered) == 1:
+        return ordered[0]
+    bounded = min(1.0, max(0.0, fraction))
+    position = (len(ordered) - 1) * bounded
+    lower_index = int(math.floor(position))
+    upper_index = int(math.ceil(position))
+    if lower_index == upper_index:
+        return ordered[lower_index]
+    lower = ordered[lower_index]
+    upper = ordered[upper_index]
+    return lower + (upper - lower) * (position - lower_index)
+
+def _robust_value_domain(values: list[float]) -> tuple[float, float]:
+    if not values:
+        raise CurveSampleServiceError("Cannot compute robust domain from empty value list.")
+    ordered = sorted(float(v) for v in values if math.isfinite(v))
+    if not ordered:
+        raise CurveSampleServiceError("Cannot compute robust domain from non-finite value list.")
+    if len(ordered) < 20:
+        return ordered[0], ordered[-1]
+    low_index = max(0, int(math.floor((len(ordered) - 1) * 0.01)))
+    high_index = min(len(ordered) - 1, int(math.ceil((len(ordered) - 1) * 0.99)))
+    low = ordered[low_index]
+    high = ordered[high_index]
+    if high <= low:
+        return ordered[0], ordered[-1]
+    return low, high
 def _normalize_depth_unit(unit: str) -> str:
     lowered = unit.lower().strip()
     if lowered in {"m", "meter", "metre", "meters", "metres"}:

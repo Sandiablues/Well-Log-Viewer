@@ -26,6 +26,31 @@ type BackendViewerCurveLike = {
     min?: number | null;
     max?: number | null;
   } | null;
+  scale_type?: string | null;
+  scale_direction?: string | null;
+  display_min?: number | null;
+  display_max?: number | null;
+  display_left_value?: number | null;
+  display_right_value?: number | null;
+  numeric_min?: number | null;
+  numeric_max?: number | null;
+  scale_source?: string | null;
+  display_scale_mode?: string | null;
+  recommended_display_scale_mode?: string | null;
+  standard_display_min?: number | null;
+  standard_display_max?: number | null;
+  standard_display_left_value?: number | null;
+  standard_display_right_value?: number | null;
+  standard_numeric_min?: number | null;
+  standard_numeric_max?: number | null;
+  robust_observed_display_min?: number | null;
+  robust_observed_display_max?: number | null;
+  robust_observed_display_left_value?: number | null;
+  robust_observed_display_right_value?: number | null;
+  robust_observed_numeric_min?: number | null;
+  robust_observed_numeric_max?: number | null;
+  scale_warnings?: string[] | null;
+  visual_span_ratio?: number | null;
 };
 
 type BackendViewerTrackLike = {
@@ -119,7 +144,17 @@ function fallbackColor(index: number): string {
 }
 
 function scaleMode(curve: BackendViewerCurveLike): CurveLattice {
-  return curve.scale?.type === 'log' ? 'logarithmic' : 'linear';
+  return (curve.scale_type ?? curve.scale?.type) === 'log' ? 'logarithmic' : 'linear';
+}
+
+function scaleDirection(curve: BackendViewerCurveLike): 'normal' | 'reverse' {
+  const value = String(curve.scale_direction || '').toLowerCase();
+  if (value === 'reverse' || value === 'reversed') return 'reverse';
+  return 'normal';
+}
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 function isRenderable(curve: BackendViewerCurveLike): boolean {
@@ -153,8 +188,18 @@ function loadedCurveFromBackend(curve: BackendViewerCurveLike, index: number): W
     unit: String(curve.unit || ''),
     curveClass: curveFamily,
     defaultLattice: lattice,
-    defaultMin: typeof curve.scale?.min === 'number' ? curve.scale.min : 0,
-    defaultMax: typeof curve.scale?.max === 'number' ? curve.scale.max : 150,
+    defaultMin: finiteNumber(curve.display_left_value) ?? finiteNumber(curve.display_min) ?? finiteNumber(curve.scale?.min) ?? 0,
+    defaultMax: finiteNumber(curve.display_right_value) ?? finiteNumber(curve.display_max) ?? finiteNumber(curve.scale?.max) ?? 150,
+    defaultScaleDirection: scaleDirection(curve),
+    scaleSource: typeof curve.scale_source === 'string' ? curve.scale_source : undefined,
+    displayScaleMode: typeof curve.display_scale_mode === 'string' ? curve.display_scale_mode : undefined,
+    recommendedDisplayScaleMode: typeof curve.recommended_display_scale_mode === 'string' ? curve.recommended_display_scale_mode : undefined,
+    standardDisplayMin: finiteNumber(curve.standard_display_min),
+    standardDisplayMax: finiteNumber(curve.standard_display_max),
+    robustObservedDisplayMin: finiteNumber(curve.robust_observed_display_left_value) ?? finiteNumber(curve.robust_observed_display_min),
+    robustObservedDisplayMax: finiteNumber(curve.robust_observed_display_right_value) ?? finiteNumber(curve.robust_observed_display_max),
+    scaleWarnings: Array.isArray(curve.scale_warnings) ? curve.scale_warnings.filter((warning): warning is string => typeof warning === 'string') : undefined,
+    visualSpanRatio: finiteNumber(curve.visual_span_ratio),
     defaultColor: fallbackColor(index),
     recognised: true,
   };

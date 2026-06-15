@@ -33,6 +33,16 @@ export interface CurveCatalogItem {
   defaultLattice: CurveLattice;
   defaultMin: number;
   defaultMax: number;
+  defaultScaleDirection?: 'normal' | 'reverse';
+  scaleSource?: string;
+  displayScaleMode?: string;
+  recommendedDisplayScaleMode?: string;
+  standardDisplayMin?: number | null;
+  standardDisplayMax?: number | null;
+  robustObservedDisplayMin?: number | null;
+  robustObservedDisplayMax?: number | null;
+  scaleWarnings?: string[];
+  visualSpanRatio?: number | null;
   defaultColor: string;
   recognised: boolean;
 }
@@ -199,7 +209,7 @@ export function makeCurveAssignment(curve: CurveCatalogItem, stackIndex: number)
     visible: true,
     scaleMin: curve.defaultMin,
     scaleMax: curve.defaultMax,
-    scaleDirection: curve.mnemonic === 'NPHI' || curve.mnemonic === 'TNPH' ? 'reverse' : 'normal',
+    scaleDirection: curve.defaultScaleDirection ?? 'normal',
     scaleType: curve.defaultLattice === 'logarithmic' ? 'log' : 'linear',
     rangeMode: 'fixed',
     color: curve.defaultColor,
