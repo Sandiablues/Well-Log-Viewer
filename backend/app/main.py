@@ -22,6 +22,7 @@ from .wdv_session.router import router as wdv_session_router
 from .knowledge.api_knowledge import router as knowledge_router
 from .knowledge.api_managed_knowledge import router as managed_knowledge_router
 from .knowledge.api_managed_knowledge import resolve_router as resolve_knowledge_router
+from .knowledge.api_managed_instructions import router as managed_instruction_router
 
 app = FastAPI(
     title="MultiViewer Well Log Viewer Backend",
@@ -50,6 +51,7 @@ app.include_router(system_router)
 app.include_router(knowledge_router)
 app.include_router(managed_knowledge_router)
 app.include_router(resolve_knowledge_router)
+app.include_router(managed_instruction_router)
 app.include_router(inventory_router)
 app.include_router(wbv_router)
 app.include_router(ingestion_router)
