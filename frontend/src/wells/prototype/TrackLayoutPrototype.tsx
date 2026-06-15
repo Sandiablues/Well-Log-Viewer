@@ -42,7 +42,7 @@ type DepthViewRange = {
 };
 
 
-type DemoNavView = 'log-viewer' | 'data' | 'sources' | 'knowledge' | 'wellbore-3d';
+type DemoNavView = 'log-viewer' | 'data' | 'sources' | 'knowledge' | 'wellbore-3d' | 'info';
 
 type ManagedInventorySourceReference = {
   source_id: string;
@@ -1296,7 +1296,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
   );
 }
 
-type DemoNavIconKey = 'log-viewer' | 'data' | 'sources' | 'knowledge' | 'wellbore-3d' | 'toolbox' | 'settings';
+type DemoNavIconKey = 'log-viewer' | 'data' | 'sources' | 'knowledge' | 'wellbore-3d' | 'info' | 'toolbox' | 'settings';
 
 type DemoNavItem = {
   label: string;
@@ -1373,6 +1373,17 @@ function DemoRailIcon({ icon }: { icon: DemoNavIconKey }) {
     );
   }
 
+  if (icon === 'info') {
+    return (
+      <svg {...commonProps} aria-hidden="true">
+        <rect x="4" y="4" width="6" height="6" rx="1.2" />
+        <rect x="14" y="4" width="6" height="6" rx="1.2" />
+        <rect x="4" y="14" width="6" height="6" rx="1.2" />
+        <rect x="14" y="14" width="6" height="6" rx="1.2" />
+      </svg>
+    );
+  }
+
   if (icon === 'toolbox') {
     return (
       <svg {...commonProps} aria-hidden="true">
@@ -1410,7 +1421,7 @@ function DemoShellNavItem({
         if (item.view) onNavigate(item.view);
       }}
       disabled={!navigable}
-      title={item.view === 'data' ? 'Open Managed Well Inventory' : item.view === 'sources' ? 'Open Source Intake' : item.view === 'knowledge' ? 'Open Knowledge Repository' : item.label}
+      title={item.view === 'data' ? 'Open Managed Well Inventory' : item.view === 'sources' ? 'Open Source Intake' : item.view === 'knowledge' ? 'Open Knowledge Repository' : item.view === 'info' ? 'Open Info' : item.label}
     >
       <span className="wlv-demo-nav-icon" aria-hidden="true"><DemoRailIcon icon={item.icon} /></span>
       <span className="wlv-demo-nav-label">{item.label}</span>
@@ -1428,12 +1439,13 @@ function DemoShellRail({
   const topItems: DemoNavItem[] = [
     { label: 'Log Viewer', icon: 'log-viewer', view: 'log-viewer' },
     { label: '3D Wellbore', icon: 'wellbore-3d', view: 'wellbore-3d' },
+    { label: 'Info', icon: 'info', view: 'info' },
     { label: 'Data', icon: 'data', view: 'data' },
+    { label: 'Sources', icon: 'sources', view: 'sources' },
+    { label: 'Knowledge', icon: 'knowledge', view: 'knowledge' },
   ];
 
   const bottomItems: DemoNavItem[] = [
-    { label: 'Sources', icon: 'sources', view: 'sources' },
-    { label: 'Knowledge', icon: 'knowledge', view: 'knowledge' },
     { label: 'Toolbox', icon: 'toolbox' },
     { label: 'Settings', icon: 'settings' },
   ];
@@ -4517,6 +4529,15 @@ export function TrackLayoutPrototype() {
       <main className="wlv-demo-main" aria-label="Well Log Viewer workspace">
         {activeView === 'data' ? (
           <ManagedWellInventoryPage onOpenLogViewer={openManagedWellLogViewer} onClearLogViewer={clearManagedWellLogViewer} activeManagedWellId={managedViewerWellId} />
+        ) : activeView === 'info' ? (
+          <section className="wlv-prototype-root">
+            <header className="wlv-app-header">
+              <div className="wlv-app-title">
+                <strong>Info</strong>
+                <span>Well Log Viewer application information</span>
+              </div>
+            </header>
+          </section>
         ) : activeView === 'knowledge' ? (
           <div className="wlv-kr-page-shell">
             <KrManagedInstructionsWorkbench />
