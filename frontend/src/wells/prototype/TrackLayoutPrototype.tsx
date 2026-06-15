@@ -123,6 +123,59 @@ type ManagedInventoryWellRecord = {
   updated_at?: string | null;
 };
 
+type WdvSessionLayoutCurveState = {
+  assignment_id?: string;
+  assignmentId?: string;
+  curve_id?: string;
+  curveId?: string;
+  product_id?: string | null;
+  productId?: string | null;
+  mnemonic?: string | null;
+  display_name?: string | null;
+  displayName?: string | null;
+  curve_family?: string | null;
+  curveFamily?: string | null;
+  unit?: string | null;
+  stack_index?: number;
+  stackIndex?: number;
+  visible?: boolean;
+  scale_min?: number | null;
+  scaleMin?: number | null;
+  scale_max?: number | null;
+  scaleMax?: number | null;
+  scale_type?: string | null;
+  scaleType?: string | null;
+  scale_direction?: string | null;
+  scaleDirection?: string | null;
+  color?: string | null;
+};
+
+type WdvSessionLayoutTrackState = {
+  track_id?: string;
+  trackId?: string;
+  track_number?: number | null;
+  trackNumber?: number | null;
+  track_name?: string;
+  trackName?: string;
+  track_type?: string;
+  trackType?: string;
+  width_px?: number | null;
+  widthPx?: number | null;
+  lattice?: string | null;
+  lattice_source?: string | null;
+  latticeSource?: string | null;
+  curves?: WdvSessionLayoutCurveState[];
+};
+
+type WdvSessionLayoutResponse = {
+  state_status?: 'empty' | 'active' | 'cleared';
+  selected_track_id?: string | null;
+  selectedTrackId?: string | null;
+  tracks?: WdvSessionLayoutTrackState[];
+  revision?: number;
+};
+
+
 type ManagedInventoryStatusPayload = {
   ok: boolean;
   service: string;
@@ -373,6 +426,157 @@ async function fetchWlvJson<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+
+function firstBackendLoadedWell(records: ManagedInventoryWellRecord[]): string | null {
+  const record = records.find((well) => well.wdv_state === 'loaded_to_wdv');
+  if (record?.managed_well_id) return record.managed_well_id;
+
+  for (const well of records) {
+    for (const group of well.product_groups ?? []) {
+      if ((group.items ?? []).some((item) => item.wdv_state === 'loaded_to_wdv')) {
+        return well.managed_well_id;
+      }
+    }
+  }
+
+  return null;
+}
+
+function finiteNumberOr(value: unknown, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function sessionCurveAssignmentFromFrontend(assignment: CurveAssignment, catalog: CurveCatalogItem[]): WdvSessionLayoutCurveState {
+  const curve = catalog.find((item) => item.curveId === assignment.curveId);
+  return {
+    assignment_id: assignment.assignmentId,
+    curve_id: assignment.curveId,
+    product_id: curve?.curveId ?? assignment.curveId,
+    mnemonic: curve?.mnemonic ?? assignment.curveId,
+    display_name: curve?.description ?? curve?.mnemonic ?? assignment.curveId,
+    curve_family: curve?.curveClass ?? null,
+    unit: curve?.unit ?? null,
+    stack_index: assignment.stackIndex,
+    visible: assignment.visible,
+    scale_min: assignment.scaleMin,
+    scale_max: assignment.scaleMax,
+    scale_type: assignment.scaleType ?? (curve?.defaultLattice === 'logarithmic' ? 'log' : 'linear'),
+    scale_direction: assignment.scaleDirection,
+    color: assignment.color,
+  };
+}
+
+function sessionTracksFromFrontend(tracks: WellLogTrack[], catalog: CurveCatalogItem[]): WdvSessionLayoutTrackState[] {
+  return sortTracks(tracks).map((track) => {
+    if (track.trackType === 'depth') {
+      return {
+        track_id: track.trackId,
+        track_number: track.trackIndex,
+        track_name: track.title,
+        track_type: 'depth',
+        width_px: track.widthPx,
+        curves: [],
+      };
+    }
+
+    if (track.trackType === 'curve') {
+      return {
+        track_id: track.trackId,
+        track_number: track.trackIndex,
+        track_name: displayTitleForTrack(track, catalog),
+        track_type: 'curve',
+        width_px: track.widthPx,
+        lattice: track.lattice,
+        lattice_source: track.latticeSource,
+        curves: orderedCurves(track).map((assignment) => sessionCurveAssignmentFromFrontend(assignment, catalog)),
+      };
+    }
+
+    return {
+      track_id: track.trackId,
+      track_number: track.trackIndex,
+      track_name: track.title,
+      track_type: track.trackType,
+      width_px: track.widthPx,
+      curves: [],
+    };
+  });
+}
+
+function frontendTracksFromSession(session: WdvSessionLayoutResponse, catalog: CurveCatalogItem[]): WellLogTrack[] {
+  const restoredTracks: WellLogTrack[] = [];
+
+  (session.tracks ?? []).forEach((rawTrack, index) => {
+    const trackType = rawTrack.track_type ?? rawTrack.trackType ?? 'curve';
+    const trackId = rawTrack.track_id ?? rawTrack.trackId ?? `wdv-session-track-${index + 1}`;
+    const trackIndex = finiteNumberOr(rawTrack.track_number ?? rawTrack.trackNumber, index);
+    const title = rawTrack.track_name ?? rawTrack.trackName ?? `Track ${index + 1}`;
+    const widthPx = finiteNumberOr(rawTrack.width_px ?? rawTrack.widthPx, trackType === 'depth' ? 86 : CURVE_TRACK_RESET_WIDTH);
+
+    if (trackType === 'depth') {
+      restoredTracks.push({
+        trackId,
+        trackIndex,
+        trackType: 'depth',
+        title,
+        depthBasis: title === 'TVD' || title === 'TVDSS' ? title : 'MD',
+        unit: 'm',
+        widthPx,
+        visible: true,
+      });
+      return;
+    }
+
+    if (trackType !== 'curve') return;
+
+    const assignments = (rawTrack.curves ?? [])
+      .map((rawAssignment, assignmentIndex) => {
+        const curveId = rawAssignment.curve_id ?? rawAssignment.curveId;
+        const curve = curveId ? catalog.find((item) => item.curveId === curveId) : null;
+        if (!curve) return null;
+        const fallback = makeCurveAssignment(curve, assignmentIndex);
+        const scaleDirection = rawAssignment.scale_direction ?? rawAssignment.scaleDirection;
+        const scaleType = rawAssignment.scale_type ?? rawAssignment.scaleType;
+        const restoredAssignment: CurveAssignment = {
+          ...fallback,
+          assignmentId: rawAssignment.assignment_id ?? rawAssignment.assignmentId ?? fallback.assignmentId,
+          stackIndex: finiteNumberOr(rawAssignment.stack_index ?? rawAssignment.stackIndex, assignmentIndex),
+          visible: rawAssignment.visible ?? fallback.visible,
+          scaleMin: finiteNumberOr(rawAssignment.scale_min ?? rawAssignment.scaleMin, fallback.scaleMin),
+          scaleMax: finiteNumberOr(rawAssignment.scale_max ?? rawAssignment.scaleMax, fallback.scaleMax),
+          scaleType: scaleType === 'log' || scaleType === 'linear' ? scaleType : fallback.scaleType,
+          scaleDirection: scaleDirection === 'reverse' || scaleDirection === 'reversed' ? 'reverse' : 'normal',
+          color: rawAssignment.color ?? fallback.color,
+        };
+        return restoredAssignment;
+      })
+      .filter((assignment): assignment is CurveAssignment => Boolean(assignment));
+
+    restoredTracks.push({
+      trackId,
+      trackIndex,
+      trackType: 'curve',
+      title: assignments.length
+        ? assignments.map((assignment) => curveById(catalog, assignment.curveId).mnemonic).join(' / ')
+        : title,
+      widthPx: clampCurveTrackWidth(widthPx),
+      visible: true,
+      lattice: rawTrack.lattice === 'logarithmic' ? 'logarithmic' : 'linear',
+      latticeSource: rawTrack.lattice_source === 'user_override' || rawTrack.latticeSource === 'user_override' ? 'user_override' : 'front_curve_default',
+      latticeOverride: rawTrack.lattice_source === 'user_override' || rawTrack.latticeSource === 'user_override',
+      scaleMode: 'per_curve',
+      curves: renumberCurveStack(assignments),
+    });
+  });
+
+  return reindexTracks(restoredTracks);
+}
+
+function selectedTrackIdFromSession(session: WdvSessionLayoutResponse): string | null {
+  return session.selected_track_id ?? session.selectedTrackId ?? null;
 }
 
 function recommendationCurveFamily(item: WdvLoadedCurveItem): string | null {
@@ -3946,7 +4150,10 @@ export function TrackLayoutPrototype() {
   const [dragPanState, setDragPanState] = useState<DragPanState | null>(null);
   const [trackResizeState, setTrackResizeState] = useState<TrackResizeState | null>(null);
   const [curveInventoryWidthPx, setCurveInventoryWidthPx] = useState(CURVE_INVENTORY_DEFAULT_WIDTH_PX);
+  const [curveInventoryCollapsed, setCurveInventoryCollapsed] = useState(false);
   const [curveInventoryResizeState, setCurveInventoryResizeState] = useState<CurveInventoryResizeState | null>(null);
+  const wdvSessionHydratedKeyRef = useRef<string | null>(null);
+  const wdvSessionSaveTimerRef = useRef<number | null>(null);
   const hasLoadedViewerWell = Boolean(managedViewerWellId);
   const [trackBackdropMode, setTrackBackdropMode] = useState<TrackBackdropMode>('light');
   const [wdvTemplateRecommendations, setWdvTemplateRecommendations] = useState<WdvTemplateRecommendationItem[]>([]);
@@ -3965,6 +4172,7 @@ export function TrackLayoutPrototype() {
     () => (wdvPackageState.depthRange ? activeFullDepthRange : clampDepthRange(DEFAULT_DEPTH_RANGE, activeFullDepthRange)),
     [activeFullDepthRange, wdvPackageState.depthRange],
   );
+
 
   const visibleDepthTicks = useMemo(() => makeDepthTicks(viewDepthRange), [viewDepthRange]);
 
@@ -4078,6 +4286,88 @@ export function TrackLayoutPrototype() {
 
     return [...mutableCatalog];
   }, [activeViewerCurves]);
+  const wdvSessionKey = useMemo(() => {
+    if (!managedViewerWellId) return null;
+    const productKey = wdvPackageState.loadedCurveItems.map((item) => item.productId || item.curveId).join('|');
+    return `${managedViewerWellId}:${productKey}`;
+  }, [managedViewerWellId, wdvPackageState.loadedCurveItems]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchWlvJson<ManagedInventoryWellRecord[]>('/api/wlv/inventory/wells')
+      .then((records) => {
+        if (cancelled || managedViewerWellId) return;
+        const activeManagedWellId = firstBackendLoadedWell(records);
+        if (activeManagedWellId) setManagedViewerWellId(activeManagedWellId);
+      })
+      .catch(() => {
+        // Restore is best-effort; explicit WMDP Load remains the authoritative entry point.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [managedViewerWellId]);
+
+  useEffect(() => {
+    if (!managedViewerWellId || !wdvSessionKey || wdvPackageState.loadedCurveItems.length === 0) {
+      wdvSessionHydratedKeyRef.current = null;
+      return undefined;
+    }
+
+    let cancelled = false;
+    void fetchWlvJson<WdvSessionLayoutResponse>(`/api/wlv/wdv/sessions/${managedViewerWellId}/layout`)
+      .then((session) => {
+        if (cancelled) return;
+        const restoredTracks = session.state_status === 'active'
+          ? frontendTracksFromSession(session, activeCurveCatalog)
+          : [];
+
+        if (restoredTracks.length > 0) {
+          setTracks(restoredTracks);
+          const selectedTrackId = selectedTrackIdFromSession(session);
+          const selectedTrackExists = selectedTrackId && restoredTracks.some((track) => track.trackId === selectedTrackId);
+          setSelection({ kind: 'track', trackId: selectedTrackExists ? selectedTrackId : restoredTracks[0].trackId });
+        }
+
+        wdvSessionHydratedKeyRef.current = wdvSessionKey;
+      })
+      .catch(() => {
+        if (!cancelled) wdvSessionHydratedKeyRef.current = wdvSessionKey;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCurveCatalog, managedViewerWellId, wdvPackageState.loadedCurveItems.length, wdvSessionKey]);
+
+  useEffect(() => {
+    if (!managedViewerWellId || !wdvSessionKey || wdvSessionHydratedKeyRef.current !== wdvSessionKey) return undefined;
+    if (wdvSessionSaveTimerRef.current !== null) {
+      window.clearTimeout(wdvSessionSaveTimerRef.current);
+    }
+
+    wdvSessionSaveTimerRef.current = window.setTimeout(() => {
+      void fetchWlvJson<WdvSessionLayoutResponse>(`/api/wlv/wdv/sessions/${managedViewerWellId}/layout`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          selected_track_id: selection.kind === 'track' || selection.kind === 'curve' ? selection.trackId : null,
+          tracks: sessionTracksFromFrontend(tracks, activeCurveCatalog),
+          source: 'frontend_user_layout_update',
+        }),
+      }).catch(() => {
+        // Keep rendering responsive; backend-owned restore will use the last successful session save.
+      });
+    }, 400);
+
+    return () => {
+      if (wdvSessionSaveTimerRef.current !== null) {
+        window.clearTimeout(wdvSessionSaveTimerRef.current);
+        wdvSessionSaveTimerRef.current = null;
+      }
+    };
+  }, [activeCurveCatalog, managedViewerWellId, selection, tracks, wdvSessionKey]);
+
   const loadWdvTemplateRecommendations = () => {
     if (!hasLoadedViewerWell || wdvPackageState.loadedCurveItems.length === 0) {
       setWdvTemplateRecommendations([]);
@@ -4366,6 +4656,7 @@ export function TrackLayoutPrototype() {
   const openManagedWellLogViewer = (managedWellId?: string | null) => {
     if (managedWellId) {
       setManagedViewerWellId(managedWellId);
+      wdvSessionHydratedKeyRef.current = null;
       setTracks([]);
       setSelectedInventoryCurveIds([]);
       setPendingAddTrackCurveIds([]);
@@ -4376,6 +4667,7 @@ export function TrackLayoutPrototype() {
 
   const clearManagedWellLogViewer = () => {
     setManagedViewerWellId(null);
+    wdvSessionHydratedKeyRef.current = null;
     setTracks([]);
     setSelectedInventoryCurveIds([]);
     setPendingAddTrackCurveIds([]);
@@ -4650,10 +4942,23 @@ export function TrackLayoutPrototype() {
       ) : null}
 
       <div
-        className={`wlv-prototype-workspace wlv-track-backdrop-${trackBackdropMode} ${curveInventoryResizeState ? 'curve-inventory-resize-active' : ''}`}
-        style={{ gridTemplateColumns: `${curveInventoryWidthPx}px minmax(0, 1fr) 330px` }}
+        className={`wlv-prototype-workspace wlv-track-backdrop-${trackBackdropMode} ${curveInventoryResizeState ? 'curve-inventory-resize-active' : ''} ${curveInventoryCollapsed ? 'curve-inventory-collapsed' : ''}`}
+        style={{ gridTemplateColumns: `${curveInventoryCollapsed ? 38 : curveInventoryWidthPx}px minmax(0, 1fr) 330px` }}
       >
-        <div className="wlv-curve-inventory-shell" style={{ width: curveInventoryWidthPx }}>
+        <div className={`wlv-curve-inventory-shell ${curveInventoryCollapsed ? 'collapsed' : ''}`} style={{ width: curveInventoryCollapsed ? 38 : curveInventoryWidthPx }}>
+        <button
+          type="button"
+          className="wlv-curve-inventory-collapse-toggle"
+          onClick={() => setCurveInventoryCollapsed((collapsed) => !collapsed)}
+          aria-expanded={!curveInventoryCollapsed}
+          aria-label={curveInventoryCollapsed ? 'Expand Curve Inventory' : 'Collapse Curve Inventory'}
+          title={curveInventoryCollapsed ? 'Expand Curve Inventory' : 'Collapse Curve Inventory'}
+        >
+          {curveInventoryCollapsed ? '›' : '‹'}
+        </button>
+        {curveInventoryCollapsed ? (
+          <div className="wlv-curve-inventory-collapsed-label" aria-hidden="true">Curves</div>
+        ) : (
         <CurveInventory
           availableCurves={activeViewerCurves}
           curveUsageCounts={curveUsageCounts}
@@ -4692,6 +4997,8 @@ export function TrackLayoutPrototype() {
             }
           }}
         />
+        )}
+        {!curveInventoryCollapsed && (
         <button
           type="button"
           className="wlv-curve-inventory-resize-handle"
@@ -4703,6 +5010,7 @@ export function TrackLayoutPrototype() {
           }}
           onDoubleClick={() => setCurveInventoryWidthPx(CURVE_INVENTORY_DEFAULT_WIDTH_PX)}
         />
+        )}
         </div>
         {tracks.length === 0 ? (
           hasLoadedViewerWell ? (

@@ -8080,3 +8080,67 @@ button.wlv-view-range-readout,
     grid-template-columns: 1fr;
   }
 }
+
+
+/* WDV-UX-SESSION-1 — curve header menus must not be clipped by track headers or bodies. */
+.wlv-track-header,
+.wlv-curve-header-stack,
+.wlv-curve-header {
+  overflow: visible !important;
+}
+
+.wlv-track:focus-within,
+.wlv-track.selected {
+  z-index: 120;
+}
+
+.curve-header-action-menu {
+  z-index: 10000;
+}
+
+/* WDV-UX-SESSION-1 — compact Curve Inventory collapse control. */
+.wlv-curve-inventory-shell.collapsed {
+  min-width: 38px;
+  max-width: 38px;
+  overflow: visible;
+}
+
+.wlv-curve-inventory-collapse-toggle {
+  position: absolute;
+  top: 8px;
+  right: 6px;
+  z-index: 60;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  background: #111111;
+  color: #d4d4d8;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wlv-curve-inventory-collapse-toggle:hover {
+  border-color: #60a5fa;
+  color: #60a5fa;
+}
+
+.wlv-curve-inventory-collapsed-label {
+  position: absolute;
+  top: 48px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-90deg);
+  transform-origin: center;
+  color: #a1a1aa;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.wlv-prototype-workspace.curve-inventory-collapsed .wlv-curve-inventory-resize-handle {
+  display: none;
+}
