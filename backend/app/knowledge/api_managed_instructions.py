@@ -8,6 +8,9 @@ services must use before treating KR knowledge as runtime truth.
 from __future__ import annotations
 
 import json
+import os
+from datetime import datetime, timezone
+from uuid import uuid4
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -17,6 +20,7 @@ from pydantic import BaseModel, Field
 
 CONTRACT_VERSION = "kr_managed_instructions_v1"
 TRUTH_RECORD_TYPES = {
+    "managed_instruction",
     "curve_definition",
     "alias",
     "classification_rule",
@@ -96,6 +100,57 @@ class InstructionSummaryResponse(BaseModel):
     evidence_record_count: int
 
 
+class CandidateInstructionCreateRequest(BaseModel):
+    instruction_type: str = "application_instruction"
+    subject: str
+    application_area: str | None = None
+    template_key: str | None = None
+    track_id: str | None = None
+    curve_family: str | None = None
+    canonical_curve_id: str | None = None
+    alias: str | None = None
+    must_do: str
+    must_not_do: str | None = None
+    allowed_use: str | None = None
+    priority: int | None = None
+    evidence_note: str | None = None
+    change_reason: str | None = None
+    supersedes_record_id: str | None = None
+    reviewer: str | None = "user"
+
+
+class CandidateInstructionUpdateRequest(BaseModel):
+    instruction_type: str | None = None
+    subject: str | None = None
+    application_area: str | None = None
+    template_key: str | None = None
+    track_id: str | None = None
+    curve_family: str | None = None
+    canonical_curve_id: str | None = None
+    alias: str | None = None
+    must_do: str | None = None
+    must_not_do: str | None = None
+    allowed_use: str | None = None
+    priority: int | None = None
+    evidence_note: str | None = None
+    change_reason: str | None = None
+    supersedes_record_id: str | None = None
+    reviewer: str | None = "user"
+
+
+class GovernanceActionRequest(BaseModel):
+    reviewer: str | None = "user"
+    reason: str | None = None
+
+
+class GovernanceActionResponse(BaseModel):
+    service: str = "kr_managed_instruction_service"
+    contract_version: str = CONTRACT_VERSION
+    action: str
+    instruction: InstructionDetail
+    superseded_instruction_id: str | None = None
+
+
 class TemplateDecisionResponse(BaseModel):
     service: str = "kr_managed_instruction_service"
     contract_version: str = CONTRACT_VERSION
@@ -108,9 +163,34 @@ class TemplateDecisionResponse(BaseModel):
     evidence: list[EvidenceRef] = Field(default_factory=list)
 
 
+def _knowledge_path() -> Path:
+    return Path(os.environ.get("WLV_KR_MANAGED_KNOWLEDGE_PATH", "backend/data/knowledge/managed_knowledge.json"))
+
+
+def _load_document() -> dict[str, Any]:
+    path = _knowledge_path()
+    return json.loads(path.read_text())
+
+
+def _save_document(data: dict[str, Any]) -> None:
+    path = _knowledge_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    tmp.replace(path)
+
+
 def _load() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    data = json.loads(Path("backend/data/knowledge/managed_knowledge.json").read_text())
+    data = _load_document()
     return data.get("records", []), data.get("evidence_records", [])
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _is_instruction_record(record: dict[str, Any]) -> bool:
+    return record.get("record_type") in TRUTH_RECORD_TYPES
 
 
 def _truth(record: dict[str, Any]) -> bool:
@@ -122,7 +202,11 @@ def _truth(record: dict[str, Any]) -> bool:
     )
 
 
-def _instruction_type(record_type: str) -> str:
+def _instruction_type(record_type: str, record: dict[str, Any] | None = None) -> str:
+    if record and record.get("instruction_type"):
+        return str(record.get("instruction_type"))
+    if record_type == "managed_instruction":
+        return "application_instruction"
     if record_type in {"curve_definition", "alias", "classification_rule", "display_rule"}:
         return "curve_instruction"
     if record_type in {"preview_template", "template_selection_rule"}:
@@ -135,6 +219,8 @@ def _instruction_type(record_type: str) -> str:
 
 
 def _subject(record: dict[str, Any]) -> str:
+    if record.get("instruction_subject"):
+        return str(record.get("instruction_subject"))
     for key in ("template_label", "track_name", "display_name", "alias", "curve_family", "family", "canonical_curve_id", "rule_id", "record_id"):
         value = record.get(key)
         if value:
@@ -143,6 +229,8 @@ def _subject(record: dict[str, Any]) -> str:
 
 
 def _area(record: dict[str, Any]) -> str | None:
+    if record.get("instruction_application_area"):
+        return str(record.get("instruction_application_area"))
     parts: list[str] = []
     for key in ("product_group", "product_subgroup", "workflow_context", "template_key", "preferred_track_family"):
         value = record.get(key)
@@ -152,6 +240,8 @@ def _area(record: dict[str, Any]) -> str | None:
 
 
 def _must_do(record: dict[str, Any]) -> str:
+    if record.get("instruction_must_do"):
+        return str(record.get("instruction_must_do"))
     rt = record.get("record_type")
     if rt == "curve_definition":
         return f"Treat {record.get('display_name') or record.get('canonical_curve_id')} as curve family {record.get('family') or 'unknown'}."
@@ -175,6 +265,8 @@ def _must_do(record: dict[str, Any]) -> str:
 
 
 def _must_not(record: dict[str, Any]) -> str | None:
+    if record.get("instruction_must_not_do"):
+        return str(record.get("instruction_must_not_do"))
     rt = record.get("record_type")
     if rt in {"preview_template", "template_selection_rule", "template_curve_family_requirement"}:
         return "Do not use candidate, deprecated, or frontend-inferred rules for this decision."
@@ -187,7 +279,7 @@ def _summary(record: dict[str, Any]) -> InstructionSummary:
     return InstructionSummary(
         instruction_id=str(record.get("record_id")),
         source_record_type=str(record.get("record_type")),
-        instruction_type=_instruction_type(str(record.get("record_type"))),
+        instruction_type=_instruction_type(str(record.get("record_type")), record),
         status=str(record.get("status")),
         runtime_eligible=record.get("runtime_eligible") is not False,
         production_eligible=record.get("production_eligible") is not False,
@@ -227,7 +319,7 @@ def get_summary() -> InstructionSummaryResponse:
     truth = [r for r in records if _truth(r)]
     return InstructionSummaryResponse(
         record_type_counts=dict(Counter(str(r.get("record_type")) for r in records)),
-        instruction_type_counts=dict(Counter(_instruction_type(str(r.get("record_type"))) for r in truth)),
+        instruction_type_counts=dict(Counter(_instruction_type(str(r.get("record_type")), r) for r in truth)),
         status_counts=dict(Counter(str(r.get("status")) for r in records)),
         runtime_eligible_count=sum(1 for r in truth if r.get("runtime_eligible") is not False),
         production_eligible_count=sum(1 for r in truth if r.get("production_eligible") is not False),
@@ -236,13 +328,35 @@ def get_summary() -> InstructionSummaryResponse:
 
 
 @router.get("", response_model=InstructionListResponse)
-def list_instructions(q: str | None = None, instruction_type: str | None = None, record_type: str | None = None, template_key: str | None = None, curve_family: str | None = None, limit: int = Query(default=100, ge=1, le=500)) -> InstructionListResponse:
+def list_instructions(
+    q: str | None = None,
+    instruction_type: str | None = None,
+    record_type: str | None = None,
+    template_key: str | None = None,
+    curve_family: str | None = None,
+    status: str | None = None,
+    approved_only: bool = True,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> InstructionListResponse:
     records, _ = _load()
     query = (q or "").strip().lower()
     out: list[InstructionSummary] = []
+    candidate_used = False
+    deprecated_used = False
     for record in records:
-        if not _truth(record):
-            continue
+        if approved_only:
+            if not _truth(record):
+                continue
+        else:
+            if not _is_instruction_record(record):
+                continue
+            rec_status = str(record.get("status"))
+            if status and rec_status != status:
+                continue
+            if rec_status != "approved":
+                candidate_used = True
+            if rec_status in {"deprecated", "superseded"}:
+                deprecated_used = True
         item = _summary(record)
         if instruction_type and item.instruction_type != instruction_type:
             continue
@@ -255,9 +369,195 @@ def list_instructions(q: str | None = None, instruction_type: str | None = None,
         if query and query not in json.dumps(record, sort_keys=True).lower():
             continue
         out.append(item)
-    out.sort(key=lambda x: (x.instruction_type, x.template_key or "", x.subject, x.instruction_id))
+    out.sort(key=lambda x: (x.status, x.instruction_type, x.template_key or "", x.subject, x.instruction_id))
     returned = out[:limit]
-    return InstructionListResponse(total_count=len(out), returned_count=len(returned), instructions=returned)
+    return InstructionListResponse(
+        approved_only=approved_only,
+        candidate_records_used=candidate_used,
+        deprecated_records_used=deprecated_used,
+        total_count=len(out),
+        returned_count=len(returned),
+        instructions=returned,
+    )
+
+
+
+
+def _manual_instruction_record(payload: CandidateInstructionCreateRequest, record_id: str | None = None, status: str = "candidate") -> dict[str, Any]:
+    now = _now()
+    rid = record_id or f"manual_kr_instruction_{uuid4().hex}"
+    return {
+        "record_id": rid,
+        "record_type": "managed_instruction",
+        "status": status,
+        "version": 1,
+        "instruction_type": payload.instruction_type,
+        "instruction_subject": payload.subject,
+        "instruction_application_area": payload.application_area,
+        "template_key": payload.template_key,
+        "track_id": payload.track_id,
+        "curve_family": payload.curve_family,
+        "canonical_curve_id": payload.canonical_curve_id,
+        "alias": payload.alias,
+        "instruction_must_do": payload.must_do,
+        "instruction_must_not_do": payload.must_not_do,
+        "instruction_allowed_use": payload.allowed_use,
+        "instruction_priority": payload.priority,
+        "supersedes_record_id": payload.supersedes_record_id,
+        "runtime_eligible": False,
+        "production_eligible": False,
+        "created_at": now,
+        "updated_at": now,
+        "created_by": payload.reviewer or "user",
+        "reviewed_by": None,
+        "approved_by": None,
+        "change_reason": payload.change_reason or "User-created candidate KR instruction.",
+        "evidence_refs": [],
+        "governance_history": [
+            {"at": now, "by": payload.reviewer or "user", "action": "created_candidate", "reason": payload.change_reason or "User-created candidate KR instruction."}
+        ],
+    }
+
+
+def _append_evidence(data: dict[str, Any], record: dict[str, Any], note: str | None, reviewer: str | None) -> None:
+    if not note:
+        return
+    evidence_id = f"manual_evidence_{uuid4().hex}"
+    evidence = {
+        "evidence_id": evidence_id,
+        "source_type": "manual_user_note",
+        "source_label": "User-entered KR evidence",
+        "source_reference": None,
+        "confidence": 1.0,
+        "notes": note,
+        "created_at": _now(),
+        "created_by": reviewer or "user",
+    }
+    data.setdefault("evidence_records", []).append(evidence)
+    record.setdefault("evidence_refs", []).append(evidence_id)
+
+
+def _detail_for_record(record: dict[str, Any], evidence_records: list[dict[str, Any]]) -> InstructionDetail:
+    evidence_by_id = _evidence_index(evidence_records)
+    evidence = [_evidence_ref(evidence_by_id[eid]) for eid in record.get("evidence_refs") or [] if eid in evidence_by_id]
+    return InstructionDetail(**_summary(record).model_dump(), evidence=evidence, raw_record=record)
+
+
+def _find_record(records: list[dict[str, Any]], record_id: str) -> dict[str, Any] | None:
+    return next((r for r in records if r.get("record_id") == record_id), None)
+
+
+@router.post("/candidates", response_model=GovernanceActionResponse)
+def create_candidate_instruction(payload: CandidateInstructionCreateRequest) -> GovernanceActionResponse:
+    data = _load_document()
+    record = _manual_instruction_record(payload)
+    _append_evidence(data, record, payload.evidence_note, payload.reviewer)
+    data.setdefault("records", []).append(record)
+    _save_document(data)
+    return GovernanceActionResponse(action="created_candidate", instruction=_detail_for_record(record, data.get("evidence_records", [])))
+
+
+@router.put("/candidates/{instruction_id}", response_model=GovernanceActionResponse)
+def update_candidate_instruction(instruction_id: str, payload: CandidateInstructionUpdateRequest) -> GovernanceActionResponse:
+    data = _load_document()
+    records = data.setdefault("records", [])
+    record = _find_record(records, instruction_id)
+    if record is None or record.get("status") != "candidate" or record.get("record_type") != "managed_instruction":
+        raise HTTPException(status_code=404, detail="Editable candidate instruction not found")
+    field_map = {
+        "instruction_type": "instruction_type",
+        "subject": "instruction_subject",
+        "application_area": "instruction_application_area",
+        "template_key": "template_key",
+        "track_id": "track_id",
+        "curve_family": "curve_family",
+        "canonical_curve_id": "canonical_curve_id",
+        "alias": "alias",
+        "must_do": "instruction_must_do",
+        "must_not_do": "instruction_must_not_do",
+        "allowed_use": "instruction_allowed_use",
+        "priority": "instruction_priority",
+        "supersedes_record_id": "supersedes_record_id",
+    }
+    for source, target in field_map.items():
+        value = getattr(payload, source)
+        if value is not None:
+            record[target] = value
+    _append_evidence(data, record, payload.evidence_note, payload.reviewer)
+    now = _now()
+    record["updated_at"] = now
+    record["change_reason"] = payload.change_reason or record.get("change_reason") or "User-updated candidate KR instruction."
+    record.setdefault("governance_history", []).append({"at": now, "by": payload.reviewer or "user", "action": "updated_candidate", "reason": payload.change_reason or "User-updated candidate KR instruction."})
+    _save_document(data)
+    return GovernanceActionResponse(action="updated_candidate", instruction=_detail_for_record(record, data.get("evidence_records", [])))
+
+
+@router.post("/candidates/{instruction_id}/approve", response_model=GovernanceActionResponse)
+def approve_candidate_instruction(instruction_id: str, payload: GovernanceActionRequest) -> GovernanceActionResponse:
+    data = _load_document()
+    records = data.setdefault("records", [])
+    record = _find_record(records, instruction_id)
+    if record is None or record.get("status") != "candidate" or record.get("record_type") != "managed_instruction":
+        raise HTTPException(status_code=404, detail="Candidate instruction not found")
+    now = _now()
+    superseded_id = record.get("supersedes_record_id")
+    if superseded_id:
+        superseded = _find_record(records, str(superseded_id))
+        if superseded is not None and superseded.get("status") == "approved":
+            superseded["status"] = "superseded"
+            superseded["runtime_eligible"] = False
+            superseded["production_eligible"] = False
+            superseded["updated_at"] = now
+            superseded.setdefault("governance_history", []).append({"at": now, "by": payload.reviewer or "user", "action": "superseded", "reason": payload.reason or f"Superseded by {instruction_id}"})
+    record["status"] = "approved"
+    record["runtime_eligible"] = True
+    record["production_eligible"] = True
+    record["reviewed_by"] = payload.reviewer or "user"
+    record["approved_by"] = payload.reviewer or "user"
+    record["reviewed_at"] = now
+    record["approved_at"] = now
+    record["updated_at"] = now
+    record["change_reason"] = payload.reason or "User approved candidate KR instruction."
+    record.setdefault("governance_history", []).append({"at": now, "by": payload.reviewer or "user", "action": "approved_candidate", "reason": payload.reason or "User approved candidate KR instruction."})
+    _save_document(data)
+    return GovernanceActionResponse(action="approved_candidate", instruction=_detail_for_record(record, data.get("evidence_records", [])), superseded_instruction_id=superseded_id)
+
+
+@router.post("/candidates/{instruction_id}/reject", response_model=GovernanceActionResponse)
+def reject_candidate_instruction(instruction_id: str, payload: GovernanceActionRequest) -> GovernanceActionResponse:
+    data = _load_document()
+    record = _find_record(data.setdefault("records", []), instruction_id)
+    if record is None or record.get("status") != "candidate":
+        raise HTTPException(status_code=404, detail="Candidate instruction not found")
+    now = _now()
+    record["status"] = "rejected"
+    record["runtime_eligible"] = False
+    record["production_eligible"] = False
+    record["reviewed_by"] = payload.reviewer or "user"
+    record["reviewed_at"] = now
+    record["updated_at"] = now
+    record["change_reason"] = payload.reason or "User rejected candidate KR instruction."
+    record.setdefault("governance_history", []).append({"at": now, "by": payload.reviewer or "user", "action": "rejected_candidate", "reason": payload.reason or "User rejected candidate KR instruction."})
+    _save_document(data)
+    return GovernanceActionResponse(action="rejected_candidate", instruction=_detail_for_record(record, data.get("evidence_records", [])))
+
+
+@router.post("/{instruction_id}/deprecate", response_model=GovernanceActionResponse)
+def deprecate_instruction(instruction_id: str, payload: GovernanceActionRequest) -> GovernanceActionResponse:
+    data = _load_document()
+    record = _find_record(data.setdefault("records", []), instruction_id)
+    if record is None or record.get("status") != "approved" or not _is_instruction_record(record):
+        raise HTTPException(status_code=404, detail="Approved instruction not found")
+    now = _now()
+    record["status"] = "deprecated"
+    record["runtime_eligible"] = False
+    record["production_eligible"] = False
+    record["deprecated_at"] = now
+    record["updated_at"] = now
+    record["change_reason"] = payload.reason or "User deprecated approved KR instruction."
+    record.setdefault("governance_history", []).append({"at": now, "by": payload.reviewer or "user", "action": "deprecated", "reason": payload.reason or "User deprecated approved KR instruction."})
+    _save_document(data)
+    return GovernanceActionResponse(action="deprecated", instruction=_detail_for_record(record, data.get("evidence_records", [])))
 
 
 @router.get("/templates/{template_key}/decision", response_model=TemplateDecisionResponse)
@@ -265,13 +565,13 @@ def template_decision(template_key: str) -> TemplateDecisionResponse:
     records, evidence_records = _load()
     truth = [r for r in records if _truth(r)]
     template_records = [r for r in truth if r.get("template_key") == template_key]
-    template_items = [_summary(r) for r in template_records if _instruction_type(str(r.get("record_type"))) == "template_instruction"]
-    track_items = [_summary(r) for r in template_records if _instruction_type(str(r.get("record_type"))) == "track_instruction"]
-    selection_items = [_summary(r) for r in template_records if _instruction_type(str(r.get("record_type"))) == "selection_instruction"]
+    template_items = [_summary(r) for r in template_records if _instruction_type(str(r.get("record_type")), r) == "template_instruction"]
+    track_items = [_summary(r) for r in template_records if _instruction_type(str(r.get("record_type")), r) == "track_instruction"]
+    selection_items = [_summary(r) for r in template_records if _instruction_type(str(r.get("record_type")), r) == "selection_instruction"]
     families = {item.curve_family for item in selection_items if item.curve_family}
     curve_items = [
         _summary(r) for r in truth
-        if _instruction_type(str(r.get("record_type"))) == "curve_instruction"
+        if _instruction_type(str(r.get("record_type")), r) == "curve_instruction"
         and ((r.get("curve_family") or r.get("family")) in families or r.get("canonical_curve_id") in families)
     ][:100]
     evidence_by_id = _evidence_index(evidence_records)
@@ -295,9 +595,9 @@ def template_decision(template_key: str) -> TemplateDecisionResponse:
 @router.get("/{instruction_id}", response_model=InstructionDetailResponse)
 def instruction_detail(instruction_id: str) -> InstructionDetailResponse:
     records, evidence_records = _load()
-    record = next((r for r in records if r.get("record_id") == instruction_id and _truth(r)), None)
+    record = next((r for r in records if r.get("record_id") == instruction_id and _is_instruction_record(r)), None)
     if record is None:
-        raise HTTPException(status_code=404, detail="KR instruction not found or not approved/runtime eligible")
+        raise HTTPException(status_code=404, detail="KR instruction not found")
     evidence_by_id = _evidence_index(evidence_records)
     evidence = [_evidence_ref(evidence_by_id[eid]) for eid in record.get("evidence_refs") or [] if eid in evidence_by_id]
     detail = InstructionDetail(**_summary(record).model_dump(), evidence=evidence, raw_record=record)

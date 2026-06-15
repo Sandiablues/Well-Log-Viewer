@@ -75,7 +75,54 @@ type KrTemplateDecisionResponse = {
   evidence: KrEvidenceRef[];
 };
 
-type KrStatusFilter = 'all' | 'runtime' | 'production';
+type KrCandidatePayload = {
+  instruction_type: string;
+  subject: string;
+  application_area?: string | null;
+  template_key?: string | null;
+  track_id?: string | null;
+  curve_family?: string | null;
+  canonical_curve_id?: string | null;
+  alias?: string | null;
+  must_do: string;
+  must_not_do?: string | null;
+  allowed_use?: string | null;
+  evidence_note?: string | null;
+  change_reason?: string | null;
+  supersedes_record_id?: string | null;
+  reviewer?: string | null;
+};
+
+type KrGovernanceActionResponse = {
+  service: string;
+  contract_version: string;
+  action: string;
+  instruction: KrInstructionDetail;
+  superseded_instruction_id?: string | null;
+};
+
+type KrCurationMode = 'create' | 'edit_candidate' | 'edit_as_candidate';
+
+type KrCurationFormState = {
+  mode: KrCurationMode;
+  instructionId?: string | null;
+  instruction_type: string;
+  subject: string;
+  application_area: string;
+  template_key: string;
+  track_id: string;
+  curve_family: string;
+  canonical_curve_id: string;
+  alias: string;
+  must_do: string;
+  must_not_do: string;
+  allowed_use: string;
+  evidence_note: string;
+  change_reason: string;
+  supersedes_record_id: string;
+};
+
+type KrStatusFilter = 'all' | 'approved' | 'candidate' | 'rejected' | 'deprecated' | 'superseded' | 'runtime' | 'production';
 type KrInstructionTypeFilter = 'all' | 'curve_instruction' | 'template_instruction' | 'track_instruction' | 'selection_instruction' | 'application_instruction';
 
 type RuntimeWindow = Window & { __WLV_API_BASE_URL__?: string };
@@ -124,6 +171,14 @@ async function fetchKrJson<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function sendKrJson<T>(path: string, method: string, body: unknown): Promise<T> {
+  return fetchKrJson<T>(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 function safeText(value: unknown, fallback = '—'): string {
   if (value === null || value === undefined) return fallback;
   const text = String(value).trim();
@@ -138,6 +193,151 @@ function labelFromKey(value: string): string {
 
 function uniqueSorted(values: Array<string | null | undefined>): string[] {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b));
+}
+
+
+function blankCurationForm(): KrCurationFormState {
+  return {
+    mode: 'create',
+    instruction_type: 'application_instruction',
+    subject: '',
+    application_area: '',
+    template_key: '',
+    track_id: '',
+    curve_family: '',
+    canonical_curve_id: '',
+    alias: '',
+    must_do: '',
+    must_not_do: '',
+    allowed_use: '',
+    evidence_note: '',
+    change_reason: '',
+    supersedes_record_id: '',
+  };
+}
+
+function curationFormFromInstruction(detail: KrInstructionDetail, mode: KrCurationMode): KrCurationFormState {
+  return {
+    mode,
+    instructionId: mode === 'edit_candidate' ? detail.instruction_id : null,
+    instruction_type: detail.instruction_type || 'application_instruction',
+    subject: detail.subject || '',
+    application_area: detail.application_area || '',
+    template_key: detail.template_key || '',
+    track_id: detail.track_id || '',
+    curve_family: detail.curve_family || '',
+    canonical_curve_id: detail.canonical_curve_id || '',
+    alias: detail.alias || '',
+    must_do: detail.must_do || '',
+    must_not_do: detail.must_not_do || '',
+    allowed_use: String(detail.raw_record?.instruction_allowed_use ?? ''),
+    evidence_note: '',
+    change_reason: mode === 'edit_as_candidate' ? `Candidate revision of ${detail.instruction_id}` : '',
+    supersedes_record_id: mode === 'edit_as_candidate' ? detail.instruction_id : String(detail.raw_record?.supersedes_record_id ?? ''),
+  };
+}
+
+function curationPayload(form: KrCurationFormState): KrCandidatePayload {
+  const clean = (value: string) => value.trim() || null;
+  return {
+    instruction_type: form.instruction_type,
+    subject: form.subject.trim(),
+    application_area: clean(form.application_area),
+    template_key: clean(form.template_key),
+    track_id: clean(form.track_id),
+    curve_family: clean(form.curve_family),
+    canonical_curve_id: clean(form.canonical_curve_id),
+    alias: clean(form.alias),
+    must_do: form.must_do.trim(),
+    must_not_do: clean(form.must_not_do),
+    allowed_use: clean(form.allowed_use),
+    evidence_note: clean(form.evidence_note),
+    change_reason: clean(form.change_reason),
+    supersedes_record_id: clean(form.supersedes_record_id),
+    reviewer: 'Bwana',
+  };
+}
+
+function KrCurationModal({ form, saving, error, onChange, onCancel, onSave }: {
+  form: KrCurationFormState;
+  saving: boolean;
+  error: string | null;
+  onChange: (next: KrCurationFormState) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  const update = (key: keyof KrCurationFormState, value: string) => onChange({ ...form, [key]: value });
+  const title = form.mode === 'edit_candidate' ? 'Edit candidate instruction' : form.mode === 'edit_as_candidate' ? 'Edit as candidate revision' : 'Add candidate instruction';
+  return (
+    <div className="wlv-kr-modal-backdrop" role="dialog" aria-modal="true" aria-label={title}>
+      <section className="wlv-kr-modal-card">
+        <header className="wlv-kr-modal-header">
+          <div>
+            <span className="wlv-page-kicker">Knowledge curation</span>
+            <h2>{title}</h2>
+          </div>
+          <button type="button" className="wlv-kr-outline-button" onClick={onCancel} disabled={saving}>Close</button>
+        </header>
+        {error ? <p className="wlv-kr-error">{error}</p> : null}
+        <div className="wlv-kr-form-grid">
+          <label>Instruction type
+            <select value={form.instruction_type} onChange={(event) => update('instruction_type', event.target.value)}>
+              <option value="application_instruction">Application</option>
+              <option value="curve_instruction">Curve</option>
+              <option value="template_instruction">Template</option>
+              <option value="track_instruction">Track</option>
+              <option value="selection_instruction">Selection</option>
+            </select>
+          </label>
+          <label>Subject
+            <input value={form.subject} onChange={(event) => update('subject', event.target.value)} placeholder="CALI, BS, Open-Hole Triple Combo…" />
+          </label>
+          <label>Application area
+            <input value={form.application_area} onChange={(event) => update('application_area', event.target.value)} placeholder="WDV curve classification / template selection" />
+          </label>
+          <label>Template key
+            <input value={form.template_key} onChange={(event) => update('template_key', event.target.value)} placeholder="open_hole_triple_combo" />
+          </label>
+          <label>Track ID
+            <input value={form.track_id} onChange={(event) => update('track_id', event.target.value)} placeholder="optional" />
+          </label>
+          <label>Curve family
+            <input value={form.curve_family} onChange={(event) => update('curve_family', event.target.value)} placeholder="caliper / bit_size / neutron_porosity" />
+          </label>
+          <label>Canonical curve
+            <input value={form.canonical_curve_id} onChange={(event) => update('canonical_curve_id', event.target.value)} placeholder="optional" />
+          </label>
+          <label>Alias / mnemonic
+            <input value={form.alias} onChange={(event) => update('alias', event.target.value)} placeholder="CALI / BS / NPHI" />
+          </label>
+          <label className="wide">Application must
+            <textarea value={form.must_do} onChange={(event) => update('must_do', event.target.value)} rows={3} placeholder="Explicit instruction the application must follow" />
+          </label>
+          <label className="wide">Application must not
+            <textarea value={form.must_not_do} onChange={(event) => update('must_not_do', event.target.value)} rows={3} placeholder="Explicit prohibition or non-equivalence" />
+          </label>
+          <label className="wide">Allowed use / notes
+            <textarea value={form.allowed_use} onChange={(event) => update('allowed_use', event.target.value)} rows={2} placeholder="Optional: reference overlay, fallback only, etc." />
+          </label>
+          <label className="wide">Evidence note
+            <textarea value={form.evidence_note} onChange={(event) => update('evidence_note', event.target.value)} rows={2} placeholder="Why this is true / source note" />
+          </label>
+          <label>Supersedes record ID
+            <input value={form.supersedes_record_id} onChange={(event) => update('supersedes_record_id', event.target.value)} placeholder="optional" />
+          </label>
+          <label>Change reason
+            <input value={form.change_reason} onChange={(event) => update('change_reason', event.target.value)} placeholder="optional" />
+          </label>
+        </div>
+        <footer className="wlv-kr-modal-actions">
+          <button type="button" className="wlv-kr-outline-button" onClick={onCancel} disabled={saving}>Cancel</button>
+          <button type="button" className="wlv-kr-primary-button" onClick={onSave} disabled={saving || !form.subject.trim() || !form.must_do.trim()}>
+            {saving ? 'Saving…' : 'Save candidate'}
+          </button>
+        </footer>
+      </section>
+    </div>
+  );
 }
 
 function KrCountCard({ label, value }: { label: string; value: number | string }) {
@@ -294,12 +494,14 @@ function TemplateDecisionPanel({ templateKey }: { templateKey: string }) {
   );
 }
 
-function buildInstructionPath(search: string, instructionType: KrInstructionTypeFilter, templateFilter: string, curveFamilyFilter: string): string {
+function buildInstructionPath(search: string, instructionType: KrInstructionTypeFilter, truthFilter: KrStatusFilter, templateFilter: string, curveFamilyFilter: string): string {
   const params = new URLSearchParams();
   params.set('limit', String(PAGE_LIMIT));
+  params.set('approved_only', truthFilter === 'all' || truthFilter === 'approved' || truthFilter === 'runtime' || truthFilter === 'production' ? 'true' : 'false');
   const q = search.trim();
   if (q) params.set('q', q);
   if (instructionType !== 'all') params.set('instruction_type', instructionType);
+  if (truthFilter === 'candidate' || truthFilter === 'rejected' || truthFilter === 'deprecated' || truthFilter === 'superseded') params.set('status', truthFilter);
   if (templateFilter !== 'all') params.set('template_key', templateFilter);
   if (curveFamilyFilter !== 'all') params.set('curve_family', curveFamilyFilter);
   return `/api/wlv/knowledge/instructions?${params.toString()}`;
@@ -323,6 +525,9 @@ export function KrManagedInstructionsWorkbench() {
   const [templateFilter, setTemplateFilter] = useState('all');
   const [curveFamilyFilter, setCurveFamilyFilter] = useState('all');
   const [decisionTemplateKey, setDecisionTemplateKey] = useState('open_hole_triple_combo');
+  const [curationForm, setCurationForm] = useState<KrCurationFormState | null>(null);
+  const [curationSaving, setCurationSaving] = useState(false);
+  const [curationError, setCurationError] = useState<string | null>(null);
 
   const loadSummary = useCallback(() => {
     setSummaryLoading(true);
@@ -339,7 +544,7 @@ export function KrManagedInstructionsWorkbench() {
   const loadInstructions = useCallback(() => {
     setListLoading(true);
     setError(null);
-    const path = buildInstructionPath(search, instructionType, templateFilter, curveFamilyFilter);
+    const path = buildInstructionPath(search, instructionType, truthFilter, templateFilter, curveFamilyFilter);
     void fetchKrJson<KrInstructionListResponse>(path)
       .then((list) => {
         const rows = (list.instructions ?? []).filter((item) => {
@@ -420,15 +625,74 @@ export function KrManagedInstructionsWorkbench() {
     setCurveFamilyFilter('all');
   };
 
+
+  const openCreateCandidate = () => {
+    setCurationError(null);
+    setCurationForm(blankCurationForm());
+  };
+
+  const openEditAsCandidate = () => {
+    if (!detail) return;
+    setCurationError(null);
+    setCurationForm(curationFormFromInstruction(detail, detail.status === 'candidate' ? 'edit_candidate' : 'edit_as_candidate'));
+  };
+
+  const saveCandidate = () => {
+    if (!curationForm) return;
+    setCurationSaving(true);
+    setCurationError(null);
+    const payload = curationPayload(curationForm);
+    const request = curationForm.mode === 'edit_candidate' && curationForm.instructionId
+      ? sendKrJson<KrGovernanceActionResponse>(`/api/wlv/knowledge/instructions/candidates/${encodeURIComponent(curationForm.instructionId)}`, 'PUT', payload)
+      : sendKrJson<KrGovernanceActionResponse>('/api/wlv/knowledge/instructions/candidates', 'POST', payload);
+    void request
+      .then((result) => {
+        setCurationForm(null);
+        setTruthFilter(result.instruction.status === 'candidate' ? 'candidate' : 'all');
+        setSelectedInstructionId(result.instruction.instruction_id);
+        refreshAll();
+      })
+      .catch((caught) => setCurationError(caught instanceof Error ? caught.message : 'Unable to save candidate instruction'))
+      .finally(() => setCurationSaving(false));
+  };
+
+  const runGovernanceAction = (action: 'approve' | 'reject' | 'deprecate') => {
+    if (!detail) return;
+    const reason = window.prompt(`Reason to ${action} this instruction?`, action === 'approve' ? 'Approved by user.' : action === 'reject' ? 'Rejected by user.' : 'Deprecated by user.');
+    if (reason === null) return;
+    const path = action === 'approve'
+      ? `/api/wlv/knowledge/instructions/candidates/${encodeURIComponent(detail.instruction_id)}/approve`
+      : action === 'reject'
+        ? `/api/wlv/knowledge/instructions/candidates/${encodeURIComponent(detail.instruction_id)}/reject`
+        : `/api/wlv/knowledge/instructions/${encodeURIComponent(detail.instruction_id)}/deprecate`;
+    setCurationSaving(true);
+    setCurationError(null);
+    void sendKrJson<KrGovernanceActionResponse>(path, 'POST', { reviewer: 'Bwana', reason })
+      .then((result) => {
+        if (action === 'approve') setTruthFilter('all');
+        if (action === 'reject') setTruthFilter('rejected');
+        if (action === 'deprecate') setTruthFilter('deprecated');
+        setSelectedInstructionId(result.instruction.instruction_id);
+        refreshAll();
+      })
+      .catch((caught) => setCurationError(caught instanceof Error ? caught.message : `Unable to ${action} instruction`))
+      .finally(() => setCurationSaving(false));
+  };
+
   return (
-    <section className="wlv-kr-workbench" aria-label="Knowledge Repository managed instructions">
+    <section className="wlv-kr-workbench" aria-label="Knowledge Repository manager">
       <header className="wlv-kr-header">
         <div>
           <span className="wlv-page-kicker">Knowledge Repository</span>
-          <h1>Managed Instructions</h1>
+          <h1>KR Manager</h1>
           <p>Approved KR instructions are the application truth the WLV backend must follow.</p>
         </div>
         <div className="wlv-kr-header-actions">
+          <button type="button" className="wlv-kr-primary-button" onClick={openCreateCandidate} disabled={curationSaving}>Add Instruction</button>
+          <button type="button" className="wlv-kr-outline-button" onClick={openEditAsCandidate} disabled={!detail || curationSaving}>{detail?.status === 'candidate' ? 'Edit Candidate' : 'Edit as Candidate'}</button>
+          <button type="button" className="wlv-kr-outline-button" onClick={() => runGovernanceAction('approve')} disabled={!detail || detail.status !== 'candidate' || curationSaving}>Approve</button>
+          <button type="button" className="wlv-kr-outline-button" onClick={() => runGovernanceAction('reject')} disabled={!detail || detail.status !== 'candidate' || curationSaving}>Reject</button>
+          <button type="button" className="wlv-kr-outline-button danger" onClick={() => runGovernanceAction('deprecate')} disabled={!detail || detail.status !== 'approved' || curationSaving}>Deprecate</button>
           <button type="button" className="wlv-kr-outline-button" onClick={clearFilters} disabled={!hasActiveFilters || listLoading}>
             Clear filters
           </button>
@@ -467,6 +731,11 @@ export function KrManagedInstructionsWorkbench() {
           Truth status
           <select value={truthFilter} onChange={(event) => setTruthFilter(event.target.value as KrStatusFilter)}>
             <option value="all">Approved live truth</option>
+            <option value="approved">Approved</option>
+            <option value="candidate">Candidate</option>
+            <option value="rejected">Rejected</option>
+            <option value="deprecated">Deprecated</option>
+            <option value="superseded">Superseded</option>
             <option value="runtime">Runtime eligible</option>
             <option value="production">Production eligible</option>
           </select>
@@ -490,7 +759,7 @@ export function KrManagedInstructionsWorkbench() {
       <div className="wlv-kr-main-grid">
         <section className="wlv-kr-instruction-list" aria-label="Approved KR instructions">
           <div className="wlv-kr-section-heading">
-            <h2>Approved application instructions</h2>
+            <h2>Managed application instructions</h2>
             <span>{listLoading ? 'Loading…' : `${listReturnedCount} shown of ${listTotalCount}`}</span>
           </div>
           <div className="wlv-kr-table-wrap">
@@ -523,7 +792,7 @@ export function KrManagedInstructionsWorkbench() {
                   </tr>
                 ))}
                 {!listLoading && instructions.length === 0 ? (
-                  <tr><td colSpan={7}>No approved KR instructions match the current filters.</td></tr>
+                  <tr><td colSpan={7}>No KR instructions match the current filters.</td></tr>
                 ) : null}
               </tbody>
             </table>
@@ -532,6 +801,8 @@ export function KrManagedInstructionsWorkbench() {
 
         <KrInstructionDetailPanel detail={detail} loading={detailLoading} error={detailError} />
       </div>
+
+      {curationError && !curationForm ? <p className="wlv-kr-error">{curationError}</p> : null}
 
       <section className="wlv-kr-decision-workbench" aria-label="Template decision inspection">
         <div className="wlv-kr-controls compact">
@@ -544,6 +815,17 @@ export function KrManagedInstructionsWorkbench() {
         </div>
         <TemplateDecisionPanel templateKey={decisionTemplateKey} />
       </section>
+
+      {curationForm ? (
+        <KrCurationModal
+          form={curationForm}
+          saving={curationSaving}
+          error={curationError}
+          onChange={setCurationForm}
+          onCancel={() => { setCurationForm(null); setCurationError(null); }}
+          onSave={saveCandidate}
+        />
+      ) : null}
     </section>
   );
 }
