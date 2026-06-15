@@ -1429,11 +1429,11 @@ function DemoShellRail({
     { label: 'Log Viewer', icon: 'log-viewer', view: 'log-viewer' },
     { label: '3D Wellbore', icon: 'wellbore-3d', view: 'wellbore-3d' },
     { label: 'Data', icon: 'data', view: 'data' },
-    { label: 'Knowledge', icon: 'knowledge', view: 'knowledge' },
   ];
 
   const bottomItems: DemoNavItem[] = [
     { label: 'Sources', icon: 'sources', view: 'sources' },
+    { label: 'Knowledge', icon: 'knowledge', view: 'knowledge' },
     { label: 'Toolbox', icon: 'toolbox' },
     { label: 'Settings', icon: 'settings' },
   ];
