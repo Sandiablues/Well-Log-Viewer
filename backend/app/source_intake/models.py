@@ -55,6 +55,7 @@ class SourceIntakeCandidateRole(str, Enum):
     RASTER_IMAGE_CANDIDATE = "raster_image_candidate"
     SUPPORTING_DOCUMENT_CANDIDATE = "supporting_document_candidate"
     TABULAR_CANDIDATE = "tabular_candidate"
+    WELLBORE_GEOMETRY_CANDIDATE = "wellbore_geometry_candidate"
     OTHER_REVIEW_REQUIRED = "other_review_required"
 
 
@@ -182,6 +183,7 @@ class SourceRepositoryRecord(BaseModel):
     raster_candidate_count: int = 0
     document_candidate_count: int = 0
     tabular_candidate_count: int = 0
+    wellbore_geometry_candidate_count: int = 0
     unknown_file_count: int = 0
     review_required_count: int = 0
     warnings: list[str] = Field(default_factory=list)
@@ -325,6 +327,7 @@ class SourceIntakeWorkbenchSummary(BaseModel):
     raster_candidate_count: int
     document_candidate_count: int
     tabular_candidate_count: int
+    wellbore_geometry_candidate_count: int = 0
     unknown_file_count: int
     review_required_count: int
 

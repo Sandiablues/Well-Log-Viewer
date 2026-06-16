@@ -68,8 +68,20 @@ def _check_candidate_role(candidate: SourceFileCandidate, checks: list[SourceInt
                 severity=SourceIntakeQaqcSeverity.MEDIUM,
             )
         )
-    else:
-        checks.append(_pass("candidate.role.recognized", "Candidate role is recognized."))
+        return
+
+    if candidate.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
+        checks.append(
+            _review(
+                "candidate.role.wellbore_geometry",
+                "Wellbore Geometry candidate detected. Deviation-survey parsing and trajectory registration are not enabled in this block.",
+                field_name="candidate_role",
+                severity=SourceIntakeQaqcSeverity.MEDIUM,
+            )
+        )
+        return
+
+    checks.append(_pass("candidate.role.recognized", "Candidate role is recognized."))
 
 
 def _check_las_parse(candidate: SourceFileCandidate, checks: list[SourceIntakeQaqcCheck]) -> None:

@@ -13,6 +13,7 @@ type SourceRepositoryRecord = {
   raster_candidate_count: number;
   document_candidate_count: number;
   tabular_candidate_count: number;
+  wellbore_geometry_candidate_count: number;
   unknown_file_count: number;
   review_required_count: number;
 };
@@ -73,6 +74,7 @@ type WorkbenchSummary = {
   raster_candidate_count: number;
   document_candidate_count: number;
   tabular_candidate_count: number;
+  wellbore_geometry_candidate_count: number;
   unknown_file_count: number;
   review_required_count: number;
 };
@@ -331,6 +333,8 @@ export function SourceIntakeWorkbench() {
         return byFileName(rows.filter((candidate) => candidate.review_required || candidate.qaqc_status?.review_required));
       case 'well_logs':
         return byFileName(rows.filter((candidate) => candidate.candidate_role === 'well_log_candidate'));
+      case 'wellbore_geometry':
+        return byFileName(rows.filter((candidate) => candidate.candidate_role === 'wellbore_geometry_candidate'));
       case 'supporting_documents':
         return byFileName(rows.filter((candidate) => candidate.candidate_role === 'supporting_document_candidate'));
       case 'containers':
@@ -758,6 +762,7 @@ export function SourceIntakeWorkbench() {
             <SummaryTile label="Repositories" value={summary?.repository_count ?? 0} />
             <SummaryTile label="Files" value={summary?.file_count ?? 0} />
             <SummaryTile label="Well-log files" value={summary?.well_log_candidate_count ?? 0} />
+            <SummaryTile label="Geometry" value={summary?.wellbore_geometry_candidate_count ?? 0} />
             <SummaryTile label="Curves" value={visibleCurveCount} />
             <SummaryTile label="Rasters" value={summary?.raster_candidate_count ?? 0} />
             <SummaryTile label="Documents" value={summary?.document_candidate_count ?? 0} />
@@ -787,6 +792,7 @@ export function SourceIntakeWorkbench() {
                     <option value="eligible">Sift: ready to register</option>
                     <option value="review_required">Sift: review required</option>
                     <option value="well_logs">Sift: well-log candidates</option>
+                    <option value="wellbore_geometry">Sift: wellbore geometry</option>
                     <option value="supporting_documents">Sift: supporting documents</option>
                     <option value="containers">Sift: containers / pending extraction</option>
                     <option value="unsupported">Sift: unsupported parser</option>

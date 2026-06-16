@@ -676,8 +676,15 @@ class WlvSourceIntakeService:
     def _candidate_for_file(self, repository_id: str, scan_id: str, root: Path, file_path: Path) -> SourceFileCandidate:
         checksum = self._sha256(file_path)
         detected_file_type, candidate_role = self._classify_file(file_path)
-        review_required = candidate_role == SourceIntakeCandidateRole.OTHER_REVIEW_REQUIRED
-        warnings = ["File type requires review before WMDP staging."] if review_required else []
+        review_required = candidate_role in {
+            SourceIntakeCandidateRole.OTHER_REVIEW_REQUIRED,
+            SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE,
+        }
+        warnings = ["File type requires review before WMDP staging."] if candidate_role == SourceIntakeCandidateRole.OTHER_REVIEW_REQUIRED else []
+        if candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
+            warnings.append(
+                "Wellbore geometry candidate detected; deviation-survey parsing and trajectory registration are reserved for a later Source Intake block."
+            )
         relative_path = str(file_path.relative_to(root))
         stat = file_path.stat()
         modified_at = utc_now_iso()
@@ -830,6 +837,11 @@ class WlvSourceIntakeService:
             return SourceIntakeFileType.DLIS, SourceIntakeCandidateRole.WELL_LOG_CANDIDATE
         if ext == "lis":
             return SourceIntakeFileType.LIS, SourceIntakeCandidateRole.WELL_LOG_CANDIDATE
+
+        if self._looks_like_wellbore_geometry_candidate(path):
+            file_type = self._file_type_for_geometry_extension(ext)
+            return file_type, SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE
+
         if ext == "cgm":
             return SourceIntakeFileType.CGM, SourceIntakeCandidateRole.RASTER_IMAGE_CANDIDATE
         if ext in {"tif", "tiff"}:
@@ -844,9 +856,64 @@ class WlvSourceIntakeService:
             return SourceIntakeFileType.EXCEL, SourceIntakeCandidateRole.TABULAR_CANDIDATE
         if ext == "csv":
             return SourceIntakeFileType.CSV, SourceIntakeCandidateRole.TABULAR_CANDIDATE
-        if ext == "txt":
+        if ext in {"txt", "asc"}:
             return SourceIntakeFileType.TEXT, SourceIntakeCandidateRole.SUPPORTING_DOCUMENT_CANDIDATE
         return SourceIntakeFileType.UNKNOWN, SourceIntakeCandidateRole.OTHER_REVIEW_REQUIRED
+
+    def _looks_like_wellbore_geometry_candidate(self, path: Path) -> bool:
+        # WLV-GEOM-2: deterministic Source Intake classification only.
+        # This detects likely deviation/directional-survey source files for the
+        # Wellbore Geometry bucket. It does not parse stations or register a
+        # trajectory into MSI/MDP.
+        ext = path.suffix.lower().lstrip(".")
+        if ext not in {"csv", "xls", "xlsx", "txt", "asc", "pdf", "doc", "docx"}:
+            return False
+
+        normalized = " ".join(path.with_suffix("").parts).lower()
+        separators = "_-./\\()[]{}"
+        for separator in separators:
+            normalized = normalized.replace(separator, " ")
+        normalized = " ".join(normalized.split())
+
+        strong_phrases = {
+            "deviation survey",
+            "deviation",
+            "directional survey",
+            "dir survey",
+            "trajectory",
+            "well path",
+            "borehole survey",
+            "survey station",
+            "survey stations",
+            "mwd survey",
+            "gyro survey",
+        }
+        if any(phrase in normalized for phrase in strong_phrases):
+            return True
+
+        md_terms = {"md", "measured depth"}
+        inclination_terms = {"inc", "incl", "inclination"}
+        azimuth_terms = {"azi", "azim", "azimuth"}
+        if any(term in normalized for term in md_terms) and any(term in normalized for term in inclination_terms) and any(term in normalized for term in azimuth_terms):
+            return True
+
+        if "tvd" in normalized and any(term in normalized for term in {"northing", "easting", "x y z", "xyz"}):
+            return True
+
+        return False
+
+    def _file_type_for_geometry_extension(self, ext: str) -> SourceIntakeFileType:
+        if ext == "csv":
+            return SourceIntakeFileType.CSV
+        if ext in {"xls", "xlsx"}:
+            return SourceIntakeFileType.EXCEL
+        if ext in {"txt", "asc"}:
+            return SourceIntakeFileType.TEXT
+        if ext == "pdf":
+            return SourceIntakeFileType.PDF
+        if ext in {"doc", "docx"}:
+            return SourceIntakeFileType.WORD
+        return SourceIntakeFileType.UNKNOWN
 
     def _apply_counts(self, repository: SourceRepositoryRecord, candidates: list[SourceFileCandidate]) -> None:
         repository.file_count = len(candidates)
@@ -854,6 +921,7 @@ class WlvSourceIntakeService:
         repository.raster_candidate_count = sum(1 for item in candidates if item.candidate_role == SourceIntakeCandidateRole.RASTER_IMAGE_CANDIDATE)
         repository.document_candidate_count = sum(1 for item in candidates if item.candidate_role == SourceIntakeCandidateRole.SUPPORTING_DOCUMENT_CANDIDATE)
         repository.tabular_candidate_count = sum(1 for item in candidates if item.candidate_role == SourceIntakeCandidateRole.TABULAR_CANDIDATE)
+        repository.wellbore_geometry_candidate_count = sum(1 for item in candidates if item.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE)
         repository.unknown_file_count = sum(1 for item in candidates if item.candidate_role == SourceIntakeCandidateRole.OTHER_REVIEW_REQUIRED)
         repository.review_required_count = sum(1 for item in candidates if item.review_required)
         repository.warnings = []
@@ -868,6 +936,7 @@ class WlvSourceIntakeService:
             raster_candidate_count=sum(1 for item in candidates if item.candidate_role == SourceIntakeCandidateRole.RASTER_IMAGE_CANDIDATE),
             document_candidate_count=sum(1 for item in candidates if item.candidate_role == SourceIntakeCandidateRole.SUPPORTING_DOCUMENT_CANDIDATE),
             tabular_candidate_count=sum(1 for item in candidates if item.candidate_role == SourceIntakeCandidateRole.TABULAR_CANDIDATE),
+            wellbore_geometry_candidate_count=sum(1 for item in candidates if item.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE),
             unknown_file_count=sum(1 for item in candidates if item.candidate_role == SourceIntakeCandidateRole.OTHER_REVIEW_REQUIRED),
             review_required_count=sum(1 for item in candidates if item.review_required),
         )
