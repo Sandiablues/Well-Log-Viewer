@@ -126,6 +126,18 @@ type ManagedInventoryWellRecord = {
 type WdvSessionLayoutCurveState = {
   assignment_id?: string;
   assignmentId?: string;
+  curve_uid?: string | null;
+  curveUid?: string | null;
+  well_uid?: string | null;
+  wellUid?: string | null;
+  source_uid?: string | null;
+  sourceUid?: string | null;
+  kr_curve_type_id?: string | null;
+  krCurveTypeId?: string | null;
+  observed_mnemonic?: string | null;
+  observedMnemonic?: string | null;
+  normalized_mnemonic?: string | null;
+  normalizedMnemonic?: string | null;
   curve_id?: string;
   curveId?: string;
   product_id?: string | null;
@@ -205,6 +217,12 @@ type ManagedInventoryStatusPayload = {
 
 type WdvTemplateRecommendationLoadedCurvePayload = {
   product_id?: string | null;
+  curve_uid?: string | null;
+  well_uid?: string | null;
+  source_uid?: string | null;
+  kr_curve_type_id?: string | null;
+  observed_mnemonic?: string | null;
+  normalized_mnemonic?: string | null;
   curve_id?: string | null;
   display_curve_id?: string | null;
   canonical_curve_id?: string | null;
@@ -472,6 +490,15 @@ function firstBackendLoadedWell(records: ManagedInventoryWellRecord[]): string |
   return null;
 }
 
+
+function curveInventoryIdentityKey(curve: CurveCatalogItem): string {
+  return String(curve.curveUid || curve.curveId);
+}
+
+function curveAssignmentIdentityKey(assignment: CurveAssignment): string {
+  return String(assignment.curveUid || assignment.curveId);
+}
+
 function finiteNumberOr(value: unknown, fallback: number): number {
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -481,6 +508,12 @@ function sessionCurveAssignmentFromFrontend(assignment: CurveAssignment, catalog
   const curve = catalog.find((item) => item.curveId === assignment.curveId);
   return {
     assignment_id: assignment.assignmentId,
+    curve_uid: assignment.curveUid ?? curve?.curveUid ?? null,
+    well_uid: assignment.wellUid ?? curve?.wellUid ?? null,
+    source_uid: assignment.sourceUid ?? curve?.sourceUid ?? null,
+    kr_curve_type_id: assignment.krCurveTypeId ?? curve?.krCurveTypeId ?? null,
+    observed_mnemonic: assignment.observedMnemonic ?? curve?.observedMnemonic ?? curve?.mnemonic ?? assignment.curveId,
+    normalized_mnemonic: assignment.normalizedMnemonic ?? curve?.normalizedMnemonic ?? curve?.mnemonic ?? assignment.curveId,
     curve_id: assignment.curveId,
     product_id: curve?.curveId ?? assignment.curveId,
     mnemonic: curve?.mnemonic ?? assignment.curveId,
@@ -536,6 +569,8 @@ function sessionTracksFromFrontend(tracks: WellLogTrack[], catalog: CurveCatalog
 
 function sessionAssignmentIdentityCandidates(rawAssignment: WdvSessionLayoutCurveState): string[] {
   return [
+    rawAssignment.curve_uid,
+    rawAssignment.curveUid,
     rawAssignment.curve_id,
     rawAssignment.curveId,
     rawAssignment.product_id,
@@ -552,6 +587,9 @@ function curveFromSessionAssignment(
   catalog: CurveCatalogItem[],
 ): CurveCatalogItem | null {
   const identityCandidates = sessionAssignmentIdentityCandidates(rawAssignment);
+  const uidMatch = catalog.find((item) => item.curveUid && identityCandidates.includes(item.curveUid));
+  if (uidMatch) return uidMatch;
+
   const directMatch = catalog.find((item) => identityCandidates.includes(item.curveId));
   if (directMatch) return directMatch;
 
@@ -627,6 +665,12 @@ function frontendTracksFromSession(session: WdvSessionLayoutResponse, catalog: C
         const restoredAssignment: CurveAssignment = {
           ...fallback,
           assignmentId: rawAssignment.assignment_id ?? rawAssignment.assignmentId ?? fallback.assignmentId,
+          curveUid: rawAssignment.curve_uid ?? rawAssignment.curveUid ?? fallback.curveUid ?? curve.curveUid ?? null,
+          krCurveTypeId: rawAssignment.kr_curve_type_id ?? rawAssignment.krCurveTypeId ?? fallback.krCurveTypeId ?? curve.krCurveTypeId ?? null,
+          wellUid: rawAssignment.well_uid ?? rawAssignment.wellUid ?? fallback.wellUid ?? curve.wellUid ?? null,
+          sourceUid: rawAssignment.source_uid ?? rawAssignment.sourceUid ?? fallback.sourceUid ?? curve.sourceUid ?? null,
+          observedMnemonic: rawAssignment.observed_mnemonic ?? rawAssignment.observedMnemonic ?? fallback.observedMnemonic ?? curve.observedMnemonic ?? curve.mnemonic,
+          normalizedMnemonic: rawAssignment.normalized_mnemonic ?? rawAssignment.normalizedMnemonic ?? fallback.normalizedMnemonic ?? curve.normalizedMnemonic ?? curve.mnemonic,
           stackIndex: finiteNumberOr(rawAssignment.stack_index ?? rawAssignment.stackIndex, assignmentIndex),
           visible: rawAssignment.visible ?? fallback.visible,
           scaleMin: finiteNumberOr(rawAssignment.scale_min ?? rawAssignment.scaleMin, fallback.scaleMin),
@@ -2296,7 +2340,7 @@ function CurveInventory({
   const displayedCurves = useMemo(() => {
     if (activeInventoryTab === 'aliases') return [];
     if (activeInventoryTab === 'selected') {
-      return availableCurves.filter((curve) => visibleTrackCurveIds.has(curve.curveId));
+      return availableCurves.filter((curve) => visibleTrackCurveIds.has(curveInventoryIdentityKey(curve)) || visibleTrackCurveIds.has(curve.curveId));
     }
     return availableCurves.filter((curve) => (curveUsageCounts.get(curve.curveId) ?? 0) > 0);
   }, [activeInventoryTab, availableCurves, curveUsageCounts, visibleTrackCurveIds]);
@@ -2326,7 +2370,7 @@ function CurveInventory({
   }, [displayedCurves]);
 
   const selectedCurveCount = useMemo(
-    () => availableCurves.filter((curve) => visibleTrackCurveIds.has(curve.curveId)).length,
+    () => availableCurves.filter((curve) => visibleTrackCurveIds.has(curveInventoryIdentityKey(curve)) || visibleTrackCurveIds.has(curve.curveId)).length,
     [availableCurves, visibleTrackCurveIds],
   );
 
@@ -2347,10 +2391,11 @@ function CurveInventory({
   };
 
   const renderCurveRow = (curve: CurveCatalogItem, options?: { duplicateInstance?: boolean }) => {
+    const curveIdentityKey = curveInventoryIdentityKey(curve);
     const usageCount = curveUsageCounts.get(curve.curveId) ?? 0;
-    const usedAnywhere = visibleTrackCurveIds.has(curve.curveId);
-    const checkedInSelectedTrack = selectedTrackCurveIds.has(curve.curveId);
-    const highlightAsSelected = activeInventoryTab === 'selected' || selectedCurveIds.has(curve.curveId) || usedAnywhere;
+    const usedAnywhere = visibleTrackCurveIds.has(curveIdentityKey) || visibleTrackCurveIds.has(curve.curveId);
+    const checkedInSelectedTrack = selectedTrackCurveIds.has(curveIdentityKey) || selectedTrackCurveIds.has(curve.curveId);
+    const highlightAsSelected = activeInventoryTab === 'selected' || selectedCurveIds.has(curveIdentityKey) || selectedCurveIds.has(curve.curveId) || usedAnywhere;
 
     return (
       <div
@@ -2399,9 +2444,14 @@ function CurveInventory({
     }
 
     const groupKey = `${group}:${mnemonic}`;
-    const expanded = expandedDuplicateGroups.has(groupKey);
-    const assignedCount = curves.filter((curve) => visibleTrackCurveIds.has(curve.curveId)).length;
-    const checkedCount = curves.filter((curve) => selectedTrackCurveIds.has(curve.curveId)).length;
+    const assignedCount = curves.filter((curve) => visibleTrackCurveIds.has(curveInventoryIdentityKey(curve)) || visibleTrackCurveIds.has(curve.curveId)).length;
+    const checkedCount = curves.filter((curve) => selectedTrackCurveIds.has(curveInventoryIdentityKey(curve)) || selectedTrackCurveIds.has(curve.curveId)).length;
+    // WLV-UID-BLOCK5-GROUP-RENDER-REFINE:
+    // Duplicate mnemonic groups are containers only. When any exact child
+    // curve UID is assigned, expand the group and let the child row carry
+    // the same checkbox/highlight behavior as single curve rows.
+    const autoExpandedByAssignment = assignedCount > 0 || checkedCount > 0;
+    const expanded = expandedDuplicateGroups.has(groupKey) || autoExpandedByAssignment;
     const units = Array.from(new Set(curves.map((curve) => curve.unit).filter(Boolean)));
     const intervals = Array.from(new Set(curves.map((curve) => curve.description).filter(Boolean)));
     const summaryText = `${curves.length} instances${intervals.length ? ` · ${intervals.length} intervals/runs` : ''}`;
@@ -2410,7 +2460,7 @@ function CurveInventory({
       <div key={groupKey} className="wlv-duplicate-curve-block">
         <button
           type="button"
-          className={`wlv-curve-row wlv-curve-duplicate-summary ${expanded ? 'expanded' : ''} ${checkedCount > 0 ? 'checked-in-track' : ''}`}
+          className={`wlv-curve-row wlv-curve-duplicate-summary ${expanded ? 'expanded' : ''}`}
           onClick={() => toggleDuplicateGroup(groupKey)}
           aria-expanded={expanded}
           title="Expand duplicate mnemonic instances"
@@ -2421,7 +2471,6 @@ function CurveInventory({
           <em>{units.length ? units.join(' / ') : ''}</em>
           <span className="wlv-curve-count" title="Loaded curve product instances">{curves.length}</span>
         </button>
-        {assignedCount > 0 && <div className="wlv-duplicate-group-note">{assignedCount} assigned to visible tracks</div>}
         {expanded && (
           <div className="wlv-duplicate-instance-list">
             {curves.map((curve) => renderCurveRow(curve, { duplicateInstance: true }))}
@@ -4640,7 +4689,7 @@ export function TrackLayoutPrototype() {
 
   const selectedTrackCurveIds = useMemo(() => {
     if (!selectedTrack || selectedTrack.trackType !== 'curve') return new Set<string>();
-    return new Set(selectedTrack.curves.map((assignment) => assignment.curveId));
+    return new Set(selectedTrack.curves.map((assignment) => curveAssignmentIdentityKey(assignment)));
   }, [selectedTrack]);
 
   // WLV-WDV-REBUILD-1B-EMPTY-STATE-CLEANUP:
@@ -4650,7 +4699,7 @@ export function TrackLayoutPrototype() {
     const ids = new Set<string>();
     tracks.forEach((track) => {
       if (track.trackType !== 'curve') return;
-      track.curves.forEach((assignment) => ids.add(assignment.curveId));
+      track.curves.forEach((assignment) => ids.add(curveAssignmentIdentityKey(assignment)));
     });
     return ids;
   }, [tracks]);

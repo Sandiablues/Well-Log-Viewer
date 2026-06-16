@@ -84,6 +84,12 @@ class LoadedCurveCandidate:
     unit: str | None
     raw_curve_family: str | None
     curve_family: str | None
+    curve_uid: str | None = None
+    well_uid: str | None = None
+    source_uid: str | None = None
+    kr_curve_type_id: str | None = None
+    observed_mnemonic: str | None = None
+    normalized_mnemonic: str | None = None
     depth_role: str | None = None
     canonical_curve_id: str | None = None
     track_family: str | None = None
@@ -590,6 +596,12 @@ class WdvTemplateRecommendationService:
             if item.get("support_status") == "unsupported_curve":
                 continue
             product_id = _text(item.get("product_id") or item.get("productId") or f"loaded_curve_{index}")
+            curve_uid = _text(item.get("curve_uid") or item.get("curveUid") or item.get("managed_curve_uid") or item.get("managedCurveUid")) or None
+            well_uid = _text(item.get("well_uid") or item.get("wellUid") or item.get("managed_well_id") or item.get("managedWellId")) or None
+            source_uid = _text(item.get("source_uid") or item.get("sourceUid") or item.get("source_id") or item.get("sourceId")) or None
+            kr_curve_type_id = _text(item.get("kr_curve_type_id") or item.get("krCurveTypeId") or item.get("canonical_curve_type_id") or item.get("canonicalCurveTypeId")) or None
+            observed_mnemonic = _text(item.get("observed_mnemonic") or item.get("observedMnemonic")) or None
+            normalized_mnemonic = _text(item.get("normalized_mnemonic") or item.get("normalizedMnemonic")) or None
             curve_id = _text(
                 item.get("display_curve_id")
                 or item.get("displayCurveId")
@@ -612,6 +624,12 @@ class WdvTemplateRecommendationService:
             out.append(
                 LoadedCurveCandidate(
                     product_id=product_id,
+                    curve_uid=curve_uid,
+                    well_uid=well_uid,
+                    source_uid=source_uid,
+                    kr_curve_type_id=kr_curve_type_id,
+                    observed_mnemonic=observed_mnemonic,
+                    normalized_mnemonic=normalized_mnemonic,
                     curve_id=curve_id,
                     mnemonic=mnemonic,
                     display_name=display_name,
@@ -788,6 +806,12 @@ class WdvTemplateRecommendationService:
     def _curve_response(self, curve: LoadedCurveCandidate, reason: str) -> WdvRecommendedCurveResponse:
         return WdvRecommendedCurveResponse(
             product_id=curve.product_id,
+            curve_uid=curve.curve_uid,
+            well_uid=curve.well_uid,
+            source_uid=curve.source_uid,
+            kr_curve_type_id=curve.kr_curve_type_id,
+            observed_mnemonic=curve.observed_mnemonic,
+            normalized_mnemonic=curve.normalized_mnemonic,
             curve_id=curve.curve_id,
             mnemonic=curve.mnemonic,
             display_name=curve.display_name,

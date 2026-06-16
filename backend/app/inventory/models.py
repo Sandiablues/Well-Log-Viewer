@@ -89,6 +89,12 @@ class ViewerPackageReference(BaseModel):
 
 class ManagedProductGroupItem(BaseModel):
     product_id: str
+    curve_uid: Optional[str] = None
+    well_uid: Optional[str] = None
+    source_uid: Optional[str] = None
+    kr_curve_type_id: Optional[str] = None
+    observed_mnemonic: Optional[str] = None
+    normalized_mnemonic: Optional[str] = None
     display_name: str
     curve_name: str
     curve_type: str

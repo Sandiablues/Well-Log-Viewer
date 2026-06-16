@@ -21,6 +21,12 @@ class WdvSessionCurveAssignmentState(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
     assignment_id: str = Field(validation_alias=AliasChoices("assignment_id", "assignmentId"))
+    curve_uid: str | None = Field(default=None, validation_alias=AliasChoices("curve_uid", "curveUid", "managed_curve_uid", "managedCurveUid"))
+    well_uid: str | None = Field(default=None, validation_alias=AliasChoices("well_uid", "wellUid", "managed_well_id", "managedWellId"))
+    source_uid: str | None = Field(default=None, validation_alias=AliasChoices("source_uid", "sourceUid", "source_id", "sourceId"))
+    kr_curve_type_id: str | None = Field(default=None, validation_alias=AliasChoices("kr_curve_type_id", "krCurveTypeId", "canonical_curve_type_id", "canonicalCurveTypeId"))
+    observed_mnemonic: str | None = Field(default=None, validation_alias=AliasChoices("observed_mnemonic", "observedMnemonic"))
+    normalized_mnemonic: str | None = Field(default=None, validation_alias=AliasChoices("normalized_mnemonic", "normalizedMnemonic"))
     curve_id: str = Field(validation_alias=AliasChoices("curve_id", "curveId"))
     product_id: str | None = Field(default=None, validation_alias=AliasChoices("product_id", "productId"))
     display_curve_id: str | None = Field(default=None, validation_alias=AliasChoices("display_curve_id", "displayCurveId"))

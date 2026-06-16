@@ -2,6 +2,14 @@ import type { CurveCatalogItem, CurveLattice } from './trackLayoutModel';
 
 type BackendViewerCurveLike = {
   product_id?: string | null;
+  curve_uid?: string | null;
+  managed_curve_uid?: string | null;
+  well_uid?: string | null;
+  source_uid?: string | null;
+  kr_curve_type_id?: string | null;
+  canonical_curve_type_id?: string | null;
+  observed_mnemonic?: string | null;
+  normalized_mnemonic?: string | null;
   curve_id?: string | null;
   display_curve_id?: string | null;
   canonical_curve_id?: string | null;
@@ -78,6 +86,12 @@ type BackendViewerPackageLike = {
 export type WdvLoadedCurveItem = {
   productId: string;
   curveId: string;
+  curveUid: string;
+  krCurveTypeId?: string | null;
+  wellUid?: string | null;
+  sourceUid?: string | null;
+  observedMnemonic?: string | null;
+  normalizedMnemonic?: string | null;
   displayCurveId: string;
   canonicalCurveId?: string | null;
   originalMnemonic: string;
@@ -170,8 +184,14 @@ function loadedCurveFromBackend(curve: BackendViewerCurveLike, index: number): W
 
   const productId = String(curve.product_id || `${backendCurveId}:${index}`).trim();
   const uniqueCurveId = productId || `${backendCurveId}:${index}`;
+  const curveUid = String(curve.curve_uid || curve.managed_curve_uid || productId || uniqueCurveId).trim();
+  const krCurveTypeId = curve.kr_curve_type_id ?? curve.canonical_curve_type_id ?? null;
+  const wellUid = curve.well_uid ?? null;
+  const sourceUid = curve.source_uid ?? curve.source_id ?? null;
   const originalMnemonic = String(curve.original_mnemonic || curve.mnemonic || backendCurveId).trim() || backendCurveId;
   const normalizedName = String(curve.normalized_name || curve.display_name || originalMnemonic).trim() || originalMnemonic;
+  const observedMnemonic = curve.observed_mnemonic ?? originalMnemonic;
+  const normalizedMnemonic = curve.normalized_mnemonic ?? originalMnemonic;
   const runInterval = curve.run_interval ?? null;
   const runNumber = curve.run_number ?? null;
   const sourceDisplayName = curve.source_display_name ?? curve.source_id ?? null;
@@ -183,6 +203,12 @@ function loadedCurveFromBackend(curve: BackendViewerCurveLike, index: number): W
   const lattice = scaleMode(curve);
   const catalogItem: CurveCatalogItem = {
     curveId: uniqueCurveId,
+    curveUid,
+    krCurveTypeId,
+    wellUid,
+    sourceUid,
+    observedMnemonic,
+    normalizedMnemonic,
     mnemonic: originalMnemonic,
     description: displayDescription,
     unit: String(curve.unit || ''),
@@ -207,6 +233,12 @@ function loadedCurveFromBackend(curve: BackendViewerCurveLike, index: number): W
   return {
     productId,
     curveId: uniqueCurveId,
+    curveUid,
+    krCurveTypeId,
+    wellUid,
+    sourceUid,
+    observedMnemonic,
+    normalizedMnemonic,
     displayCurveId: backendCurveId,
     canonicalCurveId: curve.canonical_curve_id ?? null,
     originalMnemonic,

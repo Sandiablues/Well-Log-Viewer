@@ -152,6 +152,30 @@ class WdvLoadedCurveRecommendationInput(BaseModel):
         default=None,
         validation_alias=AliasChoices("product_id", "productId", "item_id", "itemId", "id"),
     )
+    curve_uid: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("curve_uid", "curveUid", "managed_curve_uid", "managedCurveUid"),
+    )
+    well_uid: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("well_uid", "wellUid", "managed_well_id", "managedWellId"),
+    )
+    source_uid: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("source_uid", "sourceUid", "source_id", "sourceId"),
+    )
+    kr_curve_type_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("kr_curve_type_id", "krCurveTypeId", "canonical_curve_type_id", "canonicalCurveTypeId"),
+    )
+    observed_mnemonic: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("observed_mnemonic", "observedMnemonic"),
+    )
+    normalized_mnemonic: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("normalized_mnemonic", "normalizedMnemonic"),
+    )
     curve_id: str | None = Field(
         default=None,
         validation_alias=AliasChoices(
@@ -241,6 +265,12 @@ class WdvTemplateRecommendationRequest(BaseModel):
 
 class WdvRecommendedCurveResponse(BaseModel):
     product_id: str
+    curve_uid: str | None = None
+    well_uid: str | None = None
+    source_uid: str | None = None
+    kr_curve_type_id: str | None = None
+    observed_mnemonic: str | None = None
+    normalized_mnemonic: str | None = None
     curve_id: str
     mnemonic: str
     display_name: str

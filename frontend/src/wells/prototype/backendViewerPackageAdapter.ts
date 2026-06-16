@@ -2,6 +2,15 @@ import { fetchWlvJson } from '../../api/wlvBackendClient';
 import type { CurveCatalogItem, CurveLattice, WellLogTrack } from './trackLayoutModel';
 
 type BackendViewerCurve = {
+  curve_uid?: string | null;
+  managed_curve_uid?: string | null;
+  well_uid?: string | null;
+  source_uid?: string | null;
+  kr_curve_type_id?: string | null;
+  canonical_curve_type_id?: string | null;
+  observed_mnemonic?: string | null;
+  normalized_mnemonic?: string | null;
+  product_id?: string | null;
   curve_id?: string;
   display_curve_id?: string;
   original_mnemonic?: string;
@@ -79,10 +88,24 @@ function curveCatalogItemFromBackendCurve(curve: BackendViewerCurve, index: numb
   const curveId = String(curve.display_curve_id || curve.curve_id || '').trim();
   if (!curveId) return null;
 
+  const productId = String(curve.product_id || curveId).trim() || curveId;
+  const curveUid = String(curve.curve_uid || curve.managed_curve_uid || productId).trim() || productId;
+  const krCurveTypeId = curve.kr_curve_type_id ?? curve.canonical_curve_type_id ?? null;
+  const wellUid = curve.well_uid ?? null;
+  const sourceUid = curve.source_uid ?? null;
+  const observedMnemonic = curve.observed_mnemonic ?? curve.original_mnemonic ?? curve.mnemonic ?? curveId;
+  const normalizedMnemonic = curve.normalized_mnemonic ?? observedMnemonic;
+
   const mnemonic = String(curve.original_mnemonic || curve.mnemonic || curveId);
   const scaleType = curve.scale?.type === 'log' ? 'logarithmic' : 'linear';
   return {
     curveId,
+    curveUid,
+    krCurveTypeId,
+    wellUid,
+    sourceUid,
+    observedMnemonic,
+    normalizedMnemonic,
     mnemonic,
     description: String(curve.display_name || curve.normalized_name || mnemonic),
     unit: String(curve.unit || ''),
@@ -124,8 +147,14 @@ export function adaptBackendViewerPackageToTracks(viewerPackage: BackendViewerPa
         const catalogCurve = curveCatalogItemFromBackendCurve(curve, curveIndex++);
         if (!catalogCurve) return null;
         return {
-          assignmentId: `assign-${String(track.track_id || trackIndex)}-${catalogCurve.curveId}-${stackIndex}`,
+          assignmentId: `assign-${String(track.track_id || trackIndex)}-${catalogCurve.curveUid ?? catalogCurve.curveId}-${stackIndex}`,
           curveId: catalogCurve.curveId,
+          curveUid: catalogCurve.curveUid ?? catalogCurve.curveId,
+          krCurveTypeId: catalogCurve.krCurveTypeId ?? null,
+          wellUid: catalogCurve.wellUid ?? null,
+          sourceUid: catalogCurve.sourceUid ?? null,
+          observedMnemonic: catalogCurve.observedMnemonic ?? catalogCurve.mnemonic,
+          normalizedMnemonic: catalogCurve.normalizedMnemonic ?? catalogCurve.mnemonic,
           stackIndex,
           visible: true,
           scaleMin: catalogCurve.defaultMin,

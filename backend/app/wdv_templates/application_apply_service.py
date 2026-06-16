@@ -130,9 +130,16 @@ class WdvTemplateApplicationApplyService:
             scale = self._scale_for_curve(track.scale_defaults or [], curve)
             curve_id = curve.curve_id or curve.product_id
             product_id = curve.product_id or curve_id
+            curve_uid = curve.curve_uid or product_id
             assignments.append(
                 WdvSessionCurveAssignmentState(
                     assignment_id=self._stable_assignment_id(track, curve, stack_index),
+                    curve_uid=curve_uid,
+                    well_uid=curve.well_uid,
+                    source_uid=curve.source_uid,
+                    kr_curve_type_id=curve.kr_curve_type_id,
+                    observed_mnemonic=curve.observed_mnemonic or curve.mnemonic,
+                    normalized_mnemonic=curve.normalized_mnemonic or curve.mnemonic,
                     curve_id=curve_id,
                     product_id=product_id,
                     display_curve_id=curve_id,
@@ -187,7 +194,7 @@ class WdvTemplateApplicationApplyService:
         stack_index: int,
     ) -> str:
         track_key = self._key(track.track_id or track.track_key or track.track_name) or "track"
-        curve_key = self._key(curve.curve_id or curve.product_id or curve.mnemonic) or f"curve_{stack_index}"
+        curve_key = self._key(curve.curve_uid or curve.product_id or curve.curve_id or curve.mnemonic) or f"curve_{stack_index}"
         return f"wdv_template_assignment:{track_key}:{curve_key}:{stack_index}"
 
     @staticmethod

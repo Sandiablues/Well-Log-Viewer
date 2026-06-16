@@ -26,6 +26,12 @@ export type CurveDisplayPriority = 'back' | 'normal' | 'front';
 
 export interface CurveCatalogItem {
   curveId: string;
+  curveUid?: string | null;
+  krCurveTypeId?: string | null;
+  wellUid?: string | null;
+  sourceUid?: string | null;
+  observedMnemonic?: string | null;
+  normalizedMnemonic?: string | null;
   mnemonic: string;
   description: string;
   unit: string;
@@ -50,6 +56,12 @@ export interface CurveCatalogItem {
 export interface CurveAssignment {
   assignmentId: string;
   curveId: string;
+  curveUid?: string | null;
+  krCurveTypeId?: string | null;
+  wellUid?: string | null;
+  sourceUid?: string | null;
+  observedMnemonic?: string | null;
+  normalizedMnemonic?: string | null;
   stackIndex: number;
   visible: boolean;
   scaleMin: number;
@@ -203,8 +215,14 @@ export interface DragCurvePayload {
 
 export function makeCurveAssignment(curve: CurveCatalogItem, stackIndex: number): CurveAssignment {
   return {
-    assignmentId: `assign-${curve.curveId}-${Date.now()}-${Math.round(Math.random() * 100000)}`,
+    assignmentId: `assign-${curve.curveUid ?? curve.curveId}-${Date.now()}-${Math.round(Math.random() * 100000)}`,
     curveId: curve.curveId,
+    curveUid: curve.curveUid ?? curve.curveId,
+    krCurveTypeId: curve.krCurveTypeId ?? null,
+    wellUid: curve.wellUid ?? null,
+    sourceUid: curve.sourceUid ?? null,
+    observedMnemonic: curve.observedMnemonic ?? curve.mnemonic,
+    normalizedMnemonic: curve.normalizedMnemonic ?? curve.mnemonic,
     stackIndex,
     visible: true,
     scaleMin: curve.defaultMin,

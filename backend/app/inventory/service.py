@@ -21,6 +21,7 @@ from .models import (
     ManagedInventoryLifecycleState,
     ManagedInventoryMaintenanceStatus,
     ManagedInventoryStatus,
+    ManagedInventorySnapshot,
     ManagedInventoryValidationIssue,
     ManagedInventoryValidationResult,
     LoadManagedWellToWdvResponse,
@@ -86,15 +87,68 @@ class ManagedWellInventoryService:
             ],
         )
 
+    def backfill_inventory_identity_contract(self, *, dry_run: bool = False) -> dict[str, Any]:
+        """Backfill stable curve identities on managed inventory records.
+
+        This is a backend-owned inventory maintenance operation. It does not
+        change WDV track assignments, preset behavior, or frontend state. It
+        only ensures existing managed curve rows carry the identity fields
+        introduced by the UID contract.
+        """
+        snapshot = self.repository.snapshot()
+        normalized_records: list[ManagedWellRecord] = []
+        changed_product_ids: list[str] = []
+
+        for record in snapshot.records:
+            prepared = self._with_product_groups(record)
+            normalized = self._with_inventory_identity_contract(prepared)
+            normalized_records.append(normalized)
+
+            before_items = {
+                item.product_id: item
+                for group in prepared.product_groups
+                for item in group.items
+            }
+            for group in normalized.product_groups:
+                for item in group.items:
+                    before = before_items.get(item.product_id)
+                    if before is None:
+                        changed_product_ids.append(item.product_id)
+                        continue
+                    if (
+                        before.curve_uid != item.curve_uid
+                        or before.well_uid != item.well_uid
+                        or before.source_uid != item.source_uid
+                        or before.observed_mnemonic != item.observed_mnemonic
+                        or before.normalized_mnemonic != item.normalized_mnemonic
+                    ):
+                        changed_product_ids.append(item.product_id)
+
+        unique_changed_product_ids = self._unique_non_empty(changed_product_ids)
+        changed = bool(unique_changed_product_ids)
+        if changed and not dry_run:
+            self.repository.write_snapshot(
+                ManagedInventorySnapshot(records=normalized_records, updated_at=utc_now_iso())
+            )
+
+        return {
+            "ok": True,
+            "dry_run": dry_run,
+            "records_checked": len(snapshot.records),
+            "records_written": 0 if dry_run or not changed else len(normalized_records),
+            "product_identity_updates": len(unique_changed_product_ids),
+            "updated_product_ids": unique_changed_product_ids,
+        }
+
     def list_wells(self) -> list[ManagedWellRecord]:
         return [
-            self._with_product_groups(record)
+            self._with_inventory_identity_contract(self._with_product_groups(record))
             for record in self.repository.list_records()
             if record.wmdp_available and record.wmdp_state != ManagedWmdpState.REMOVED_FROM_WMDP
         ]
 
     def get_well(self, managed_well_id: str) -> ManagedWellRecord:
-        return self._with_product_groups(self.repository.get_record(managed_well_id))
+        return self._with_inventory_identity_contract(self._with_product_groups(self.repository.get_record(managed_well_id)))
 
     def list_viewer_packages(self) -> list[ViewerPackageReference]:
         packages: list[ViewerPackageReference] = []
@@ -111,7 +165,7 @@ class ManagedWellInventoryService:
         that invalid lifecycle state by creating the package from backend-owned
         product state and persisting it before returning the contract.
         """
-        record = self.repository.get_record(managed_well_id)
+        record = self._with_inventory_identity_contract(self.repository.get_record(managed_well_id))
         loaded_items = self._loaded_wdv_product_items(record)
         if loaded_items:
             existing_session = record.metadata.get("wdv_load_session_contract")
@@ -180,8 +234,9 @@ class ManagedWellInventoryService:
         This preserves the inventory service as the write boundary while keeping
         ingestion/import logic outside the API route layer.
         """
-        record.updated_at = utc_now_iso()
-        return self.repository.upsert_record(record)
+        normalized_record = self._with_inventory_identity_contract(record)
+        normalized_record.updated_at = utc_now_iso()
+        return self.repository.upsert_record(normalized_record)
 
     def register_seed_well(self, well_id: str = SeedWellRepository.WELL_ID) -> RegisterSeedWellResponse:
         well = self.seed_repository.get_well(well_id)
@@ -679,6 +734,12 @@ class ManagedWellInventoryService:
             warnings.append(str(sample_stats.get("statistics_status") or "statistics_unavailable"))
         return {
             "product_id": item.product_id,
+            "curve_uid": item.curve_uid or self._curve_uid_from_product_item(record, item),
+            "well_uid": item.well_uid or record.managed_well_id,
+            "source_uid": item.source_uid or item.source_id,
+            "kr_curve_type_id": item.kr_curve_type_id,
+            "observed_mnemonic": item.observed_mnemonic or item.curve_name,
+            "normalized_mnemonic": item.normalized_mnemonic or self._normalized_mnemonic(item.curve_name),
             "curve_id": curve_id,
             "display_curve_id": curve_id,
             "canonical_curve_id": self._canonical_curve_id_for_product_item(item),
@@ -1148,6 +1209,75 @@ class ManagedWellInventoryService:
             issues=issues,
         )
 
+
+    def _with_inventory_identity_contract(self, record: ManagedWellRecord) -> ManagedWellRecord:
+        """Return record with stable backend curve identity fields populated.
+
+        The UID belongs to managed inventory, not to the WDV display layer. This
+        helper intentionally does not create WDV assignments and does not choose
+        preset candidates. It only fills missing identity fields for managed
+        curve/product rows using deterministic registration context.
+        """
+        if not record.product_groups:
+            return record
+
+        default_source_uid = None
+        if record.source_references:
+            default_source_uid = record.source_references[0].source_id
+
+        changed = False
+        normalized_groups: list[ManagedProductGroup] = []
+
+        for group in record.product_groups:
+            normalized_items: list[ManagedProductGroupItem] = []
+            for item in group.items:
+                if not self._is_wdv_loadable_product(item):
+                    normalized_items.append(item)
+                    continue
+
+                observed_mnemonic = item.observed_mnemonic or item.curve_name or item.display_name
+                normalized_mnemonic = item.normalized_mnemonic or self._normalized_mnemonic(observed_mnemonic)
+                source_uid = item.source_uid or item.source_id or default_source_uid
+                well_uid = item.well_uid or record.well_id or record.managed_well_id
+                curve_uid = item.curve_uid or self._curve_uid_for_registered_curve(
+                    well_id=well_uid,
+                    source_id=source_uid,
+                    representation_id=item.viewer_package_id,
+                    product_id=item.product_id,
+                    curve_id=item.curve_name,
+                    observed_mnemonic=observed_mnemonic,
+                    run_interval=item.run_interval,
+                    run_number=item.run_number,
+                )
+
+                updates: dict[str, Any] = {}
+                if item.curve_uid != curve_uid:
+                    updates["curve_uid"] = curve_uid
+                if item.well_uid != well_uid:
+                    updates["well_uid"] = well_uid
+                if item.source_uid != source_uid:
+                    updates["source_uid"] = source_uid
+                if item.observed_mnemonic != observed_mnemonic:
+                    updates["observed_mnemonic"] = observed_mnemonic
+                if item.normalized_mnemonic != normalized_mnemonic:
+                    updates["normalized_mnemonic"] = normalized_mnemonic
+
+                if updates:
+                    changed = True
+                    normalized_items.append(item.model_copy(update=updates))
+                else:
+                    normalized_items.append(item)
+
+            if normalized_items != group.items:
+                changed = True
+                normalized_groups.append(group.model_copy(update={"items": normalized_items}))
+            else:
+                normalized_groups.append(group)
+
+        if not changed:
+            return record
+        return record.model_copy(update={"product_groups": normalized_groups, "updated_at": utc_now_iso()})
+
     def _with_product_groups(self, record: ManagedWellRecord) -> ManagedWellRecord:
         """Return a record with backend-owned product_groups populated."""
         if record.product_groups:
@@ -1264,8 +1394,24 @@ class ManagedWellInventoryService:
             unit=curve_unit,
             context_terms=context_terms or [],
         )
+        product_id = f"curve:{viewer_package_reference.well_id}:{curve.curve_id}"
         return ManagedProductGroupItem(
-            product_id=f"curve:{viewer_package_reference.well_id}:{curve.curve_id}",
+            product_id=product_id,
+            curve_uid=ManagedWellInventoryService._curve_uid_for_registered_curve(
+                well_id=viewer_package_reference.well_id,
+                source_id=source_id,
+                representation_id=viewer_package_reference.representation_id,
+                product_id=product_id,
+                curve_id=curve.curve_id,
+                observed_mnemonic=curve_name,
+                run_interval=run_interval,
+                run_number=run_number,
+            ),
+            well_uid=viewer_package_reference.well_id,
+            source_uid=source_id,
+            kr_curve_type_id=ManagedWellInventoryService._kr_curve_type_id_from_classification(classification),
+            observed_mnemonic=curve_name,
+            normalized_mnemonic=ManagedWellInventoryService._normalized_mnemonic(curve_name),
             display_name=curve_name,
             curve_name=curve_name,
             curve_type=classification.curve_description,
@@ -1288,6 +1434,66 @@ class ManagedWellInventoryService:
             source_id=source_id,
             viewer_package_id=viewer_package_reference.viewer_package_id,
         )
+
+    @staticmethod
+    def _curve_uid_for_registered_curve(
+        *,
+        well_id: str | None,
+        source_id: str | None,
+        representation_id: str | None,
+        product_id: str | None,
+        curve_id: str | None,
+        observed_mnemonic: str | None,
+        run_interval: str | None,
+        run_number: str | None,
+    ) -> str:
+        """Return a deterministic managed-curve identity.
+
+        This is a backend identity contract field.  It is intentionally derived
+        from stable registration context, not from WDV display state.  The UID
+        is hidden from ordinary users but carried through contracts so duplicate
+        mnemonics can be distinguished without mnemonic fallback.
+        """
+
+        parts = [
+            well_id,
+            source_id,
+            representation_id,
+            product_id,
+            curve_id,
+            observed_mnemonic,
+            run_interval,
+            run_number,
+        ]
+        normalized = [str(part or "").strip() for part in parts]
+        digest = hashlib.sha1("|".join(normalized).encode("utf-8")).hexdigest()[:20]
+        return f"wlv_curve:{digest}"
+
+    @staticmethod
+    def _curve_uid_from_product_item(record: ManagedWellRecord, item: ManagedProductGroupItem) -> str:
+        return ManagedWellInventoryService._curve_uid_for_registered_curve(
+            well_id=item.well_uid or record.well_id or record.managed_well_id,
+            source_id=item.source_uid or item.source_id,
+            representation_id=item.viewer_package_id,
+            product_id=item.product_id,
+            curve_id=item.curve_name,
+            observed_mnemonic=item.observed_mnemonic or item.curve_name,
+            run_interval=item.run_interval,
+            run_number=item.run_number,
+        )
+
+    @staticmethod
+    def _normalized_mnemonic(value: str | None) -> str | None:
+        text = str(value or "").strip().upper()
+        return text or None
+
+    @staticmethod
+    def _kr_curve_type_id_from_classification(classification: Any) -> str | None:
+        for attr in ("canonical_curve_id", "curve_family", "product_subgroup_key", "product_category"):
+            value = getattr(classification, attr, None)
+            if isinstance(value, str) and value.strip():
+                return value.strip().lower().replace("-", "_").replace("/", "_").replace(" ", "_")
+        return None
 
     @staticmethod
     def _curve_description(curve: Curve) -> str | None:
