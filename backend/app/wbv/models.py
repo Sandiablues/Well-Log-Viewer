@@ -101,3 +101,77 @@ class WbvViewerPackageContract(BaseModel):
     intervals: list[dict[str, Any]] = Field(default_factory=list)
     available_attribute_tracks: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[WbvWarning] = Field(default_factory=list)
+
+class WbvManagedTrajectoryStatus(str, Enum):
+    CANDIDATE = "candidate"
+    PARSED = "parsed"
+    REVIEW_REQUIRED = "review_required"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    SUPERSEDED = "superseded"
+    SYNTHETIC_DEMO = "synthetic_demo"
+
+
+class WbvManagedTrajectoryRecord(BaseModel):
+    """Backend-owned managed wellbore geometry record surfaced to MDP/WBV.
+
+    A well may have many records, but only one approved/eligible trajectory is
+    active at a time for WBV rendering and WDV correlation.
+    """
+
+    trajectory_id: str
+    trajectory_name: str
+    trajectory_type: str = "deviation_survey"
+    status: WbvManagedTrajectoryStatus = WbvManagedTrajectoryStatus.CANDIDATE
+    wbv_eligible: bool = False
+    is_active: bool = False
+    is_canonical: bool = False
+    is_synthetic: bool = False
+    source_file_id: str | None = None
+    source_label: str | None = None
+    station_count: int | None = None
+    md_min: float | None = None
+    md_max: float | None = None
+    tvd_min: float | None = None
+    tvd_max: float | None = None
+    geometry_class: str | None = None
+    coordinate_mode: WbvCoordinateMode = WbvCoordinateMode.UNAVAILABLE
+    trajectory_package: dict[str, Any] = Field(default_factory=dict)
+    qa_flags: list[str] = Field(default_factory=list)
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
+    supersedes_trajectory_id: str | None = None
+    created_at: str | None = None
+    approved_at: str | None = None
+
+
+class WbvTrajectoryListContract(BaseModel):
+    contract_kind: str = "wbv_trajectory_list"
+    contract_version: str = "wbv_trajectory_list_v1"
+    viewer: Literal["WBV"] = "WBV"
+    managed_well_id: str
+    well_id: str
+    well_name: str
+    active_trajectory_id: str | None = None
+    geometry_status: str = "missing"
+    wbv_ready: bool = False
+    trajectories: list[WbvManagedTrajectoryRecord] = Field(default_factory=list)
+    warnings: list[WbvWarning] = Field(default_factory=list)
+
+
+class WbvSetActiveTrajectoryRequest(BaseModel):
+    trajectory_id: str
+    requested_by: str | None = None
+    note: str | None = None
+
+
+class WbvSetActiveTrajectoryResponse(BaseModel):
+    contract_kind: str = "wbv_set_active_trajectory"
+    contract_version: str = "wbv_set_active_trajectory_v1"
+    viewer: Literal["WBV"] = "WBV"
+    managed_well_id: str
+    active_trajectory_id: str
+    active_trajectory_name: str
+    geometry_status: str
+    wbv_ready: bool
+    trajectories: list[WbvManagedTrajectoryRecord] = Field(default_factory=list)
+

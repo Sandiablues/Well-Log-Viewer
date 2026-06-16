@@ -68,6 +68,24 @@ type ManagedInventoryViewerPackageReference = {
   status?: string | null;
 };
 
+type WmdpTrajectoryRecord = {
+  trajectory_id: string;
+  trajectory_name?: string | null;
+  trajectory_type?: string | null;
+  status?: string | null;
+  wbv_eligible?: boolean | null;
+  is_active?: boolean | null;
+  is_canonical?: boolean | null;
+  is_synthetic?: boolean | null;
+  source_label?: string | null;
+  station_count?: number | null;
+  md_min?: number | null;
+  md_max?: number | null;
+  tvd_min?: number | null;
+  tvd_max?: number | null;
+  geometry_class?: string | null;
+};
+
 type ManagedProductGroupItem = {
   product_id: string;
   display_name?: string | null;
@@ -87,6 +105,19 @@ type ManagedProductGroupItem = {
   viewer_package_id?: string | null;
   wmdp_state?: string | null;
   wdv_state?: string | null;
+  product_category?: string | null;
+  trajectory_id?: string | null;
+  trajectory_status?: string | null;
+  trajectory_role?: string | null;
+  wbv_eligible?: boolean | null;
+  source_label?: string | null;
+  station_count?: number | null;
+  md_min?: number | null;
+  md_max?: number | null;
+  tvd_min?: number | null;
+  tvd_max?: number | null;
+  is_active_trajectory?: boolean | null;
+  is_synthetic_trajectory?: boolean | null;
 };
 
 type ManagedProductGroup = {
@@ -116,6 +147,11 @@ type ManagedInventoryWellRecord = {
   source_references?: ManagedInventorySourceReference[];
   viewer_packages?: ManagedInventoryViewerPackageReference[];
   product_groups?: ManagedProductGroup[];
+  metadata?: {
+    wbv_trajectory_records?: WmdpTrajectoryRecord[];
+    active_trajectory_id?: string | null;
+    wellbore_geometry_status?: string | null;
+  } | null;
   wmdp_state?: string | null;
   wdv_state?: string | null;
   tags?: string[];
@@ -897,8 +933,81 @@ function wellTypeLabel(well: ManagedInventoryWellRecord): string {
   return statusLabel(record.well_type || record.type || record.well_category || '—');
 }
 
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function optionalDepthRangeLabel(min?: number | null, max?: number | null, unit = 'ft'): string {
+  if (!isFiniteNumber(min) && !isFiniteNumber(max)) return '—';
+  const left = isFiniteNumber(min) ? min.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—';
+  const right = isFiniteNumber(max) ? max.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—';
+  return `${left}–${right} ${unit}`;
+}
+
+function wmdpWellboreGeometryGroup(well: ManagedInventoryWellRecord): ManagedProductGroup | null {
+  const records = well.metadata?.wbv_trajectory_records ?? [];
+  if (!Array.isArray(records) || records.length === 0) return null;
+  const activeTrajectoryId = well.metadata?.active_trajectory_id ?? records.find((record) => record.is_active)?.trajectory_id ?? null;
+  const items: ManagedProductGroupItem[] = records.map((record) => {
+    const isActive = Boolean(record.is_active || (activeTrajectoryId && record.trajectory_id === activeTrajectoryId));
+    const role = isActive ? 'Active trajectory' : record.is_canonical ? 'Canonical / available' : record.is_synthetic ? 'Demo / synthetic' : 'Available';
+    return {
+      product_id: record.trajectory_id,
+      display_name: record.trajectory_name || record.trajectory_id,
+      curve_name: record.trajectory_name || record.trajectory_id,
+      curve_type: record.trajectory_type || 'Wellbore trajectory',
+      curve_family: 'Wellbore Geometry',
+      product_category: 'wellbore_geometry',
+      product_subgroup_key: record.trajectory_type || 'trajectory',
+      product_subgroup_label: statusLabel(record.trajectory_type || 'Trajectory'),
+      classification_confidence: record.wbv_eligible ? 'high' : 'review',
+      run_date: '—',
+      run_interval: optionalDepthRangeLabel(record.md_min, record.md_max, well.depth_unit || 'ft'),
+      run_number: role,
+      qa_flag: record.status ? statusLabel(record.status) : 'unknown',
+      selectable: Boolean(record.wbv_eligible),
+      source_kind: 'wellbore_geometry',
+      source_id: record.source_label || record.trajectory_id,
+      wmdp_state: well.wmdp_state ?? null,
+      wdv_state: well.wdv_state ?? null,
+      trajectory_id: record.trajectory_id,
+      trajectory_status: record.status ?? null,
+      trajectory_role: role,
+      wbv_eligible: Boolean(record.wbv_eligible),
+      source_label: record.source_label ?? null,
+      station_count: record.station_count ?? null,
+      md_min: record.md_min ?? null,
+      md_max: record.md_max ?? null,
+      tvd_min: record.tvd_min ?? null,
+      tvd_max: record.tvd_max ?? null,
+      is_active_trajectory: isActive,
+      is_synthetic_trajectory: Boolean(record.is_synthetic),
+    };
+  });
+  return {
+    group_key: 'wellbore_geometry',
+    group_label: 'Wellbore Geometry',
+    collapsed_by_default: false,
+    items,
+  };
+}
+
+function wmdpProductGroupsForWell(well: ManagedInventoryWellRecord): ManagedProductGroup[] {
+  const groups = [...(well.product_groups ?? [])];
+  const geometryGroup = wmdpWellboreGeometryGroup(well);
+  if (!geometryGroup) return groups;
+  const existingIndex = groups.findIndex((group) => group.group_key === 'wellbore_geometry');
+  if (existingIndex >= 0) {
+    groups[existingIndex] = geometryGroup;
+  } else {
+    groups.push(geometryGroup);
+  }
+  return groups;
+}
+
 function wellProductCount(well: ManagedInventoryWellRecord): number {
-  const productGroups = well.product_groups ?? [];
+  const productGroups = wmdpProductGroupsForWell(well);
   if (productGroups.length > 0) {
     return productGroups.reduce((total, group) => total + (group.items ?? []).length, 0);
   }
@@ -1041,9 +1150,26 @@ function expandableProductName(value: string) {
 }
 
 
-function WmdpProductItemRow({ item, selected, onToggle }: { item: ManagedProductGroupItem; selected: boolean; onToggle: () => void }) {
+function WmdpProductItemRow({
+  item,
+  selected,
+  onToggle,
+  managedWellId,
+  onSetActiveTrajectory,
+  trajectoryApplyingId,
+}: {
+  item: ManagedProductGroupItem;
+  selected: boolean;
+  onToggle: () => void;
+  managedWellId?: string;
+  onSetActiveTrajectory?: (managedWellId: string, trajectoryId: string) => void;
+  trajectoryApplyingId?: string | null;
+}) {
+  const isGeometry = item.product_category === 'wellbore_geometry' || item.source_kind === 'wellbore_geometry';
+  const canSetActive = Boolean(isGeometry && managedWellId && item.trajectory_id && item.wbv_eligible && !item.is_active_trajectory);
+  const applying = Boolean(item.trajectory_id && trajectoryApplyingId === item.trajectory_id);
   return (
-    <label className="wlv-wmdp-product-item" key={item.product_id}>
+    <label className={isGeometry ? 'wlv-wmdp-product-item wlv-wmdp-product-item-geometry' : 'wlv-wmdp-product-item'} key={item.product_id}>
       <input
         type="checkbox"
         checked={selected}
@@ -1055,24 +1181,65 @@ function WmdpProductItemRow({ item, selected, onToggle }: { item: ManagedProduct
         <span className="wlv-wmdp-product-item-code-wrap" title={productItemClassificationTitle(item)}>
           <strong className="wlv-wmdp-product-item-code">{productItemDisplayName(item)}</strong>
         </span>
-        <span className="wlv-wmdp-product-item-description" title={safeText(item.curve_type)}>
-          <strong>Description:</strong> {safeText(item.curve_type)}
-        </span>
-        <span className="wlv-wmdp-product-item-name" title={safeText(item.display_name || productItemDisplayName(item))}>
-          <strong>File Name:</strong> {expandableProductName(item.display_name || productItemDisplayName(item))}
-        </span>
-        <span className="wlv-wmdp-product-item-run-date" title={productItemRunDateDisplay(item.run_date)}>
-          <strong>Run Date:</strong> {productItemRunDateDisplay(item.run_date)}
-        </span>
-        <span className="wlv-wmdp-product-item-run-interval" title={safeText(item.run_interval)}>
-          <strong>Run Interval:</strong> {safeText(item.run_interval)}
-        </span>
-        <span className="wlv-wmdp-product-item-run-number" title={safeText(item.run_number)}>
-          <strong>Run Number:</strong> {safeText(item.run_number)}
-        </span>
-        <span className="wlv-wmdp-product-item-qa-flag" title={safeText(item.qa_flag)}>
-          <strong>QA Flag:</strong> {safeText(item.qa_flag)}
-        </span>
+        {isGeometry ? (
+          <>
+            <span className="wlv-wmdp-product-item-description" title={safeText(item.curve_type)}>
+              <strong>Type:</strong> {statusLabel(item.curve_type)}
+            </span>
+            <span className="wlv-wmdp-product-item-name" title={safeText(item.source_label || item.source_id)}>
+              <strong>Source:</strong> {expandableProductName(item.source_label || item.source_id || '—')}
+            </span>
+            <span className="wlv-wmdp-product-item-run-date" title={safeText(item.trajectory_role)}>
+              <strong>Role:</strong> {safeText(item.trajectory_role)}
+            </span>
+            <span className="wlv-wmdp-product-item-run-interval" title={safeText(item.run_interval)}>
+              <strong>MD Range:</strong> {safeText(item.run_interval)}
+            </span>
+            <span className="wlv-wmdp-product-item-run-number" title={safeText(item.station_count)}>
+              <strong>Stations:</strong> {safeText(item.station_count)}
+            </span>
+            <span className="wlv-wmdp-product-item-qa-flag" title={safeText(item.qa_flag)}>
+              <strong>Status:</strong> {safeText(item.qa_flag)}
+            </span>
+            {canSetActive ? (
+              <button
+                type="button"
+                className="wlv-wmdp-product-item-action"
+                disabled={applying}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (managedWellId && item.trajectory_id && onSetActiveTrajectory) {
+                    onSetActiveTrajectory(managedWellId, item.trajectory_id);
+                  }
+                }}
+              >
+                {applying ? 'Setting active…' : 'Set Active Trajectory'}
+              </button>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <span className="wlv-wmdp-product-item-description" title={safeText(item.curve_type)}>
+              <strong>Description:</strong> {safeText(item.curve_type)}
+            </span>
+            <span className="wlv-wmdp-product-item-name" title={safeText(item.display_name || productItemDisplayName(item))}>
+              <strong>File Name:</strong> {expandableProductName(item.display_name || productItemDisplayName(item))}
+            </span>
+            <span className="wlv-wmdp-product-item-run-date" title={productItemRunDateDisplay(item.run_date)}>
+              <strong>Run Date:</strong> {productItemRunDateDisplay(item.run_date)}
+            </span>
+            <span className="wlv-wmdp-product-item-run-interval" title={safeText(item.run_interval)}>
+              <strong>Run Interval:</strong> {safeText(item.run_interval)}
+            </span>
+            <span className="wlv-wmdp-product-item-run-number" title={safeText(item.run_number)}>
+              <strong>Run Number:</strong> {safeText(item.run_number)}
+            </span>
+            <span className="wlv-wmdp-product-item-qa-flag" title={safeText(item.qa_flag)}>
+              <strong>QA Flag:</strong> {safeText(item.qa_flag)}
+            </span>
+          </>
+        )}
       </span>
     </label>
   );
@@ -1092,6 +1259,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
   const [currentPage, setCurrentPage] = useState(1);
   const [bulkAction, setBulkAction] = useState<WmdpBulkAction>('load');
   const [bulkApplying, setBulkApplying] = useState(false);
+  const [trajectoryApplyingId, setTrajectoryApplyingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1400,6 +1568,24 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
     }
   };
 
+
+  const setActiveTrajectory = async (managedWellId: string, trajectoryId: string) => {
+    setTrajectoryApplyingId(trajectoryId);
+    setError(null);
+    try {
+      await fetchWlvJson(`/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/trajectories/active`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trajectory_id: trajectoryId, requested_by: 'mdp' }),
+      });
+      await loadInventory();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to set active trajectory');
+    } finally {
+      setTrajectoryApplyingId(null);
+    }
+  };
+
   return (
     <section className="wlv-managed-inventory-page wlv-wmdp-page" aria-label="Managed Well Data">
       <header className="wlv-managed-inventory-header wlv-wmdp-page-header">
@@ -1519,7 +1705,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
               ) : pagedWells.map((well) => {
                 const expanded = expandedWellIds.has(well.managed_well_id);
                 const rowSelected = selectedWellIds.has(well.managed_well_id);
-                const productCategories = well.product_groups ?? [];
+                const productCategories = wmdpProductGroupsForWell(well);
                 return (
                   <>
                     <tr className={rowSelected || selectedWellId === well.managed_well_id ? 'is-selected' : ''} key={well.managed_well_id}>
@@ -1620,6 +1806,9 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                                                   key={item.product_id}
                                                   selected={selectedProductItemIds.has(item.product_id)}
                                                   onToggle={() => toggleProductItemSelected(item.product_id)}
+                                                  managedWellId={well.managed_well_id}
+                                                  onSetActiveTrajectory={setActiveTrajectory}
+                                                  trajectoryApplyingId={trajectoryApplyingId}
                                                 />
                                               ))}
                                             </div>
@@ -1636,6 +1825,9 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                                             key={item.product_id}
                                             selected={selectedProductItemIds.has(item.product_id)}
                                             onToggle={() => toggleProductItemSelected(item.product_id)}
+                                            managedWellId={well.managed_well_id}
+                                            onSetActiveTrajectory={setActiveTrajectory}
+                                            trajectoryApplyingId={trajectoryApplyingId}
                                           />
                                         ))}
                                       </div>

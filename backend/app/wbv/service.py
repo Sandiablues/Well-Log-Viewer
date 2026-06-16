@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.inventory.models import ManagedProductGroupItem, ManagedWdvState, ManagedWmdpState, ManagedWellRecord
+from app.inventory.models import ManagedProductGroupItem, ManagedWdvState, ManagedWmdpState, ManagedWellRecord, utc_now_iso
 from app.inventory.repository import ManagedWellInventoryRepository
 
 from .trajectory_seed_registry import resolve_seed_trajectory_package
@@ -17,8 +17,12 @@ from .trajectory_seed_registry import resolve_seed_trajectory_package
 from .models import (
     WbvAvailableLayers,
     WbvCoordinateMode,
+    WbvManagedTrajectoryRecord,
+    WbvManagedTrajectoryStatus,
     WbvSessionContract,
     WbvSourceSession,
+    WbvSetActiveTrajectoryResponse,
+    WbvTrajectoryListContract,
     WbvTrajectoryPackage,
     WbvViewerPackageContract,
     WbvViewerState,
@@ -27,6 +31,8 @@ from .models import (
 
 
 _VERTICAL_TRAJECTORY_CLASS = "vertical_trajectory_candidate"
+_TRAJECTORY_RECORDS_KEY = "wbv_trajectory_records"
+_ACTIVE_TRAJECTORY_ID_KEY = "active_trajectory_id"
 
 
 class WbvService:
@@ -94,6 +100,90 @@ class WbvService:
             intervals=self._list_metadata(record, "wbv_intervals"),
             available_attribute_tracks=self._available_attribute_tracks(record),
             warnings=warnings,
+        )
+
+    def list_trajectories(self, managed_well_id: str) -> WbvTrajectoryListContract:
+        record = self.repository.get_record(managed_well_id)
+        trajectories = self._trajectory_records(record)
+        active = self._active_trajectory_record(record, trajectories)
+        geometry_status = self._geometry_status(trajectories, active)
+        warnings = self._trajectory_list_warnings(trajectories, active)
+        return WbvTrajectoryListContract(
+            managed_well_id=record.managed_well_id,
+            well_id=record.well_id,
+            well_name=record.well_name,
+            active_trajectory_id=active.trajectory_id if active else None,
+            geometry_status=geometry_status,
+            wbv_ready=bool(active and active.wbv_eligible),
+            trajectories=trajectories,
+            warnings=warnings,
+        )
+
+    def set_active_trajectory(
+        self,
+        managed_well_id: str,
+        trajectory_id: str,
+        *,
+        requested_by: str | None = None,
+        note: str | None = None,
+    ) -> WbvSetActiveTrajectoryResponse:
+        record = self.repository.get_record(managed_well_id)
+        trajectories = self._trajectory_records(record)
+        selected = next((trajectory for trajectory in trajectories if trajectory.trajectory_id == trajectory_id), None)
+        if selected is None:
+            raise ValueError(f"Trajectory not found for managed well {managed_well_id}: {trajectory_id}")
+        if not self._trajectory_selectable(selected):
+            raise ValueError(
+                "Only approved/synthetic-demo, WBV-eligible trajectories can be set active. "
+                f"Trajectory {trajectory_id} has status={selected.status.value!r}, wbv_eligible={selected.wbv_eligible!r}."
+            )
+
+        persisted = self._metadata_trajectory_records(record)
+        if not persisted:
+            persisted = trajectories
+        updated: list[WbvManagedTrajectoryRecord] = []
+        for trajectory in persisted:
+            next_trajectory = trajectory.model_copy(deep=True)
+            next_trajectory.is_active = next_trajectory.trajectory_id == trajectory_id
+            updated.append(next_trajectory)
+
+        metadata = dict(record.metadata) if isinstance(record.metadata, dict) else {}
+        metadata[_TRAJECTORY_RECORDS_KEY] = [trajectory.model_dump(mode="json") for trajectory in updated]
+        metadata[_ACTIVE_TRAJECTORY_ID_KEY] = trajectory_id
+        if selected.trajectory_package:
+            metadata["wbv_trajectory_package"] = selected.trajectory_package
+            metadata["wbv_coordinate_mode"] = selected.coordinate_mode.value
+        metadata["wellbore_geometry_status"] = "active_trajectory_selected"
+        metadata["wellbore_geometry_active_trajectory"] = {
+            "trajectory_id": selected.trajectory_id,
+            "trajectory_name": selected.trajectory_name,
+            "trajectory_type": selected.trajectory_type,
+            "status": selected.status.value,
+            "is_synthetic": selected.is_synthetic,
+            "selected_at": utc_now_iso(),
+            "selected_by": requested_by,
+            "note": note,
+        }
+
+        record.metadata = metadata
+        record.updated_at = utc_now_iso()
+        record.lifecycle_notes = list(record.lifecycle_notes or [])
+        record.lifecycle_notes.append(
+            f"Set active WBV trajectory to {selected.trajectory_id} ({selected.trajectory_name})."
+        )
+        self.repository.upsert_record(record)
+
+        refreshed = self.repository.get_record(managed_well_id)
+        next_trajectories = self._trajectory_records(refreshed)
+        next_active = self._active_trajectory_record(refreshed, next_trajectories)
+        geometry_status = self._geometry_status(next_trajectories, next_active)
+        return WbvSetActiveTrajectoryResponse(
+            managed_well_id=refreshed.managed_well_id,
+            active_trajectory_id=selected.trajectory_id,
+            active_trajectory_name=selected.trajectory_name,
+            geometry_status=geometry_status,
+            wbv_ready=bool(next_active and next_active.wbv_eligible),
+            trajectories=next_trajectories,
         )
 
     def _active_loaded_records(self) -> list[ManagedWellRecord]:
@@ -229,14 +319,205 @@ class WbvService:
         )
 
     def _raw_trajectory_metadata(self, record: ManagedWellRecord) -> dict[str, Any]:
-        raw = record.metadata.get("wbv_trajectory_package") if isinstance(record.metadata, dict) else None
-        if not isinstance(raw, dict):
-            raw = record.metadata.get("trajectory_package") if isinstance(record.metadata, dict) else None
-        if isinstance(raw, dict):
-            return dict(raw)
+        trajectories = self._metadata_trajectory_records(record)
+        active = self._active_trajectory_record(record, trajectories)
+        if active is not None and active.trajectory_package:
+            return dict(active.trajectory_package)
+
+        legacy = self._legacy_trajectory_metadata(record)
+        if legacy:
+            return legacy
 
         seed = resolve_seed_trajectory_package(record)
         return dict(seed) if isinstance(seed, dict) else {}
+
+    def _legacy_trajectory_metadata(self, record: ManagedWellRecord) -> dict[str, Any]:
+        if not isinstance(record.metadata, dict):
+            return {}
+        raw = record.metadata.get("wbv_trajectory_package")
+        if not isinstance(raw, dict):
+            raw = record.metadata.get("trajectory_package")
+        return dict(raw) if isinstance(raw, dict) else {}
+
+    def _metadata_trajectory_records(self, record: ManagedWellRecord) -> list[WbvManagedTrajectoryRecord]:
+        if not isinstance(record.metadata, dict):
+            return []
+        raw_records = record.metadata.get(_TRAJECTORY_RECORDS_KEY)
+        if not isinstance(raw_records, list):
+            return []
+        records: list[WbvManagedTrajectoryRecord] = []
+        for index, raw in enumerate(raw_records):
+            if not isinstance(raw, dict):
+                continue
+            try:
+                records.append(WbvManagedTrajectoryRecord(**raw))
+            except Exception as exc:
+                records.append(
+                    WbvManagedTrajectoryRecord(
+                        trajectory_id=f"invalid-trajectory-record:{index}",
+                        trajectory_name=f"Invalid trajectory record {index + 1}",
+                        status=WbvManagedTrajectoryStatus.REVIEW_REQUIRED,
+                        wbv_eligible=False,
+                        qa_flags=["invalid_trajectory_record_contract"],
+                        warnings=[{"code": "invalid_trajectory_record_contract", "severity": "error", "message": str(exc)}],
+                    )
+                )
+        active_id = str(record.metadata.get(_ACTIVE_TRAJECTORY_ID_KEY) or "")
+        if active_id:
+            records = [record.model_copy(update={"is_active": record.is_active or record.trajectory_id == active_id}) for record in records]
+        return records
+
+    def _trajectory_records(self, record: ManagedWellRecord) -> list[WbvManagedTrajectoryRecord]:
+        records = self._metadata_trajectory_records(record)
+        if records:
+            return records
+
+        legacy = self._legacy_trajectory_metadata(record)
+        if legacy:
+            return [self._trajectory_record_from_package("legacy-active-trajectory", "Legacy active trajectory", legacy, active=True)]
+
+        seed = resolve_seed_trajectory_package(record)
+        if isinstance(seed, dict) and seed:
+            return [self._trajectory_record_from_package("runtime-seed-trajectory", "Runtime seed trajectory", seed, active=True)]
+        return []
+
+    def _trajectory_record_from_package(
+        self,
+        trajectory_id: str,
+        trajectory_name: str,
+        package: dict[str, Any],
+        *,
+        active: bool,
+    ) -> WbvManagedTrajectoryRecord:
+        render_points = package.get("render_points") if isinstance(package.get("render_points"), list) else []
+        stations = package.get("stations") if isinstance(package.get("stations"), list) else []
+        bounding_box = package.get("bounding_box") if isinstance(package.get("bounding_box"), dict) else {}
+        coordinate_mode = str(package.get("coordinate_mode") or ("relative" if render_points else "unavailable"))
+        if coordinate_mode not in {mode.value for mode in WbvCoordinateMode}:
+            coordinate_mode = WbvCoordinateMode.RELATIVE.value if render_points else WbvCoordinateMode.UNAVAILABLE.value
+        md_min, md_max = self._md_range_from_package(package, render_points, bounding_box)
+        tvd_min, tvd_max = self._tvd_range_from_package(package, render_points, bounding_box)
+        return WbvManagedTrajectoryRecord(
+            trajectory_id=trajectory_id,
+            trajectory_name=trajectory_name,
+            trajectory_type=str(package.get("source") or package.get("source_type") or "deviation_survey"),
+            status=WbvManagedTrajectoryStatus.APPROVED if render_points else WbvManagedTrajectoryStatus.REVIEW_REQUIRED,
+            wbv_eligible=bool(render_points),
+            is_active=active,
+            is_canonical=True,
+            is_synthetic=False,
+            source_label=str(package.get("source") or package.get("source_type") or "trajectory package"),
+            station_count=len(render_points) or len(stations) or self._optional_int(package.get("station_count")),
+            md_min=md_min,
+            md_max=md_max,
+            tvd_min=tvd_min,
+            tvd_max=tvd_max,
+            geometry_class=str(package.get("trajectory_class") or "") or None,
+            coordinate_mode=WbvCoordinateMode(coordinate_mode),
+            trajectory_package=package,
+            warnings=[item for item in package.get("warnings", []) if isinstance(item, dict)] if isinstance(package.get("warnings"), list) else [],
+        )
+
+    def _active_trajectory_record(
+        self,
+        record: ManagedWellRecord,
+        trajectories: list[WbvManagedTrajectoryRecord],
+    ) -> WbvManagedTrajectoryRecord | None:
+        if not trajectories:
+            return None
+        active_id = str(record.metadata.get(_ACTIVE_TRAJECTORY_ID_KEY) or "") if isinstance(record.metadata, dict) else ""
+        if active_id:
+            explicit = next((trajectory for trajectory in trajectories if trajectory.trajectory_id == active_id), None)
+            if explicit is not None:
+                return explicit
+        explicit_active = next((trajectory for trajectory in trajectories if trajectory.is_active), None)
+        if explicit_active is not None:
+            return explicit_active
+        selectable = [trajectory for trajectory in trajectories if self._trajectory_selectable(trajectory)]
+        if len(selectable) == 1:
+            return selectable[0]
+        canonical = [trajectory for trajectory in selectable if trajectory.is_canonical]
+        if len(canonical) == 1:
+            return canonical[0]
+        return None
+
+    @staticmethod
+    def _trajectory_selectable(trajectory: WbvManagedTrajectoryRecord) -> bool:
+        return bool(trajectory.wbv_eligible) and trajectory.status in {
+            WbvManagedTrajectoryStatus.APPROVED,
+            WbvManagedTrajectoryStatus.SYNTHETIC_DEMO,
+        }
+
+    def _geometry_status(
+        self,
+        trajectories: list[WbvManagedTrajectoryRecord],
+        active: WbvManagedTrajectoryRecord | None,
+    ) -> str:
+        if active is not None and active.wbv_eligible:
+            return "active_trajectory_selected"
+        if not trajectories:
+            return "missing"
+        if any(trajectory.status == WbvManagedTrajectoryStatus.REVIEW_REQUIRED for trajectory in trajectories):
+            return "review_required"
+        selectable = [trajectory for trajectory in trajectories if self._trajectory_selectable(trajectory)]
+        if len(selectable) > 1:
+            return "multiple_approved_select_active"
+        if selectable:
+            return "approved_available"
+        return "not_wbv_eligible"
+
+    def _trajectory_list_warnings(
+        self,
+        trajectories: list[WbvManagedTrajectoryRecord],
+        active: WbvManagedTrajectoryRecord | None,
+    ) -> list[WbvWarning]:
+        if not trajectories:
+            return [
+                WbvWarning(
+                    code="no_managed_wellbore_geometry",
+                    severity="info",
+                    message="No managed wellbore geometry records are registered for this well.",
+                    target="metadata.wbv_trajectory_records",
+                )
+            ]
+        selectable = [trajectory for trajectory in trajectories if self._trajectory_selectable(trajectory)]
+        if active is None and len(selectable) > 1:
+            return [
+                WbvWarning(
+                    code="multiple_approved_trajectories_require_selection",
+                    severity="warning",
+                    message="Multiple approved WBV-eligible trajectories exist; select one active trajectory in MDP.",
+                    target="metadata.active_trajectory_id",
+                )
+            ]
+        return []
+
+    @staticmethod
+    def _md_range_from_package(
+        package: dict[str, Any],
+        render_points: list[Any],
+        bounding_box: dict[str, Any],
+    ) -> tuple[float | None, float | None]:
+        md_box = bounding_box.get("md") if isinstance(bounding_box.get("md"), dict) else None
+        if md_box:
+            return WbvService._optional_float(md_box.get("min")), WbvService._optional_float(md_box.get("max"))
+        values = [WbvService._optional_float(point.get("md")) for point in render_points if isinstance(point, dict)]
+        values = [value for value in values if value is not None]
+        return (min(values), max(values)) if values else (None, None)
+
+    @staticmethod
+    def _tvd_range_from_package(
+        package: dict[str, Any],
+        render_points: list[Any],
+        bounding_box: dict[str, Any],
+    ) -> tuple[float | None, float | None]:
+        tvd_box = bounding_box.get("tvd") if isinstance(bounding_box.get("tvd"), dict) else None
+        if tvd_box:
+            return WbvService._optional_float(tvd_box.get("min")), WbvService._optional_float(tvd_box.get("max"))
+        values = [WbvService._optional_float(point.get("tvd")) for point in render_points if isinstance(point, dict)]
+        values = [value for value in values if value is not None]
+        return (min(values), max(values)) if values else (None, None)
+
     def _trajectory_warnings(self, record: ManagedWellRecord) -> list[WbvWarning]:
         raw = self._raw_trajectory_metadata(record)
         source_warnings = raw.get("warnings", [])
@@ -349,5 +630,14 @@ class WbvService:
             if value is None:
                 return None
             return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _optional_float(value: Any) -> float | None:
+        try:
+            if value is None:
+                return None
+            return float(value)
         except (TypeError, ValueError):
             return None
