@@ -14,6 +14,16 @@ from pathlib import Path
 from typing import Iterable, Any
 
 from ..ingestion.las_adapter import LasAdapterError, LasSourceAdapter
+from app.inventory.models import (
+    ManagedInventoryLifecycleState,
+    ManagedSourceKind,
+    ManagedSourceReference,
+    ManagedWdvState,
+    ManagedWellRecord,
+    ManagedWmdpState,
+)
+from app.wbv.models import WbvCoordinateMode, WbvManagedTrajectoryRecord, WbvManagedTrajectoryStatus
+
 
 from .metadata_resolver import resolve_candidate_metadata
 from .identity_gate import apply_identity_gate
@@ -294,7 +304,48 @@ class WlvSourceIntakeService:
                 ))
                 continue
 
-            blocked_reason = registration_block_reason(candidate)
+            if candidate.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
+                blocked_reason = self._registration_block_reason(candidate)
+                if blocked_reason is not None:
+                    skipped_count += 1
+                    results.append(SourceIntakeRegisterResult(
+                        candidate_id=candidate.source_file_id,
+                        status="blocked",
+                        reason=blocked_reason,
+                    ))
+                    continue
+
+                action, record, trajectory_count = self._register_geometry_candidate_to_inventory(
+                    candidate=candidate,
+                    inventory_service=inventory_service,
+                    approved_by=request.approval.approved_by,
+                    approval_note=request.approval.approval_note,
+                )
+                candidate.registration_status = "registered"
+                candidate.managed_well_id = record.managed_well_id
+                candidate.managed_well_name = record.well_name
+                candidate.wmdp_state = record.wmdp_state.value if hasattr(record.wmdp_state, "value") else str(record.wmdp_state)
+                candidate.wdv_state = record.wdv_state.value if hasattr(record.wdv_state, "value") else str(record.wdv_state)
+                candidate.registered_product_count = 0
+                candidate.registered_curve_count = 0
+                candidate.registered_trajectory_count = trajectory_count
+                snapshot_changed = True
+                registered_count += 1
+                results.append(SourceIntakeRegisterResult(
+                    candidate_id=candidate.source_file_id,
+                    status="registered",
+                    reason=None,
+                    managed_well_id=record.managed_well_id,
+                    well_id=record.well_id,
+                    well_name=record.well_name,
+                    registered_product_count=0,
+                    registered_curve_count=0,
+                    registered_trajectory_count=trajectory_count,
+                    action=action,
+                ))
+                continue
+
+            blocked_reason = self._registration_block_reason(candidate)
             if blocked_reason is not None:
                 skipped_count += 1
                 results.append(SourceIntakeRegisterResult(
@@ -342,6 +393,311 @@ class WlvSourceIntakeService:
             results=results,
             workbench=self.get_workbench(),
         )
+
+    def _registration_block_reason(self, candidate: SourceFileCandidate) -> str | None:
+        if candidate.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
+            return self._geometry_registration_block_reason(candidate)
+        return registration_block_reason(candidate)
+
+    def _geometry_registration_block_reason(self, candidate: SourceFileCandidate) -> str | None:
+        if candidate.candidate_role != SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
+            return f"Only wellbore_geometry_candidate records can use geometry registration; got {candidate.candidate_role.value}."
+        if candidate.registration_status == "registered":
+            return "Candidate is already registered to Managed Well Inventory."
+        if candidate.parser_status not in {SourceIntakeParseStatus.PARSED, SourceIntakeParseStatus.PARSED_WITH_WARNINGS}:
+            return f"Geometry candidate parser_status is not registration-ready: {candidate.parser_status.value}."
+        if candidate.geometry_preview is None:
+            return "Geometry candidate has no parsed deviation-survey preview."
+        if not candidate.geometry_preview.stations_preview:
+            return "Geometry candidate preview has no station payload to register."
+        if candidate.qaqc_status.status not in {
+            SourceIntakeQaqcStatus.PASS,
+            SourceIntakeQaqcStatus.WARNING,
+            SourceIntakeQaqcStatus.REVIEW_REQUIRED,
+        }:
+            return f"Geometry candidate QAQC status is not registration-ready: {candidate.qaqc_status.status.value}."
+        if candidate.qaqc_status.failure_count > 0:
+            return "Geometry candidate QAQC has failures and cannot be registered."
+        return None
+
+    def _register_geometry_candidate_to_inventory(
+        self,
+        *,
+        candidate: SourceFileCandidate,
+        inventory_service,
+        approved_by: str | None = None,
+        approval_note: str | None = None,
+    ) -> tuple[str, ManagedWellRecord, int]:
+        """Promote a parsed Source Intake geometry candidate into managed WBV trajectory metadata.
+
+        GEOM-4 registers approved parsed deviation-survey previews as managed
+        wellbore geometry records. It does not set the active trajectory and it
+        does not load WBV/WDV.
+        """
+        blocked = self._geometry_registration_block_reason(candidate)
+        if blocked is not None:
+            raise ValueError(blocked)
+        preview = candidate.geometry_preview
+        assert preview is not None
+
+        existing = self._match_existing_managed_well(candidate, inventory_service)
+        well_name = existing.well_name if existing is not None else self._geometry_well_name(candidate)
+        well_id = existing.well_id if existing is not None else self._managed_geometry_well_id(well_name)
+        managed_well_id = existing.managed_well_id if existing is not None else f"managed-well:{well_id}"
+
+        now = utc_now_iso()
+        trajectory = self._managed_trajectory_from_geometry_candidate(candidate, well_name=well_name, approved_at=now)
+        source_reference = self._geometry_source_reference(candidate, trajectory_id=trajectory.trajectory_id)
+
+        if existing is not None:
+            record = existing.model_copy(deep=True)
+            action = "updated"
+            existing_refs = list(record.source_references or [])
+            if not any(ref.source_id == source_reference.source_id for ref in existing_refs):
+                existing_refs.append(source_reference)
+            record.source_references = existing_refs
+            metadata = dict(record.metadata) if isinstance(record.metadata, dict) else {}
+            lifecycle_notes = list(record.lifecycle_notes or [])
+            product_groups = list(record.product_groups or [])
+            created_at = record.created_at
+        else:
+            action = "created"
+            metadata = {}
+            lifecycle_notes = []
+            product_groups = []
+            created_at = now
+            record = ManagedWellRecord(
+                managed_well_id=managed_well_id,
+                well_id=well_id,
+                well_name=well_name,
+                depth_unit="ft",
+                status=ManagedInventoryLifecycleState.REGISTERED,
+                lifecycle_state=ManagedInventoryLifecycleState.REGISTERED,
+                wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,
+                wdv_state=ManagedWdvState.NOT_LOADED,
+                source_intake_candidate_id=candidate.source_file_id,
+                wmdp_available=True,
+                source_references=[source_reference],
+                product_groups=product_groups,
+                tags=["source-intake", "wellbore-geometry"],
+                metadata=metadata,
+                lifecycle_notes=lifecycle_notes,
+                created_at=created_at,
+                updated_at=now,
+            )
+
+        existing_trajectories = self._metadata_trajectory_records(metadata)
+        next_trajectories = [item for item in existing_trajectories if item.trajectory_id != trajectory.trajectory_id]
+        next_trajectories.append(trajectory)
+        metadata["wbv_trajectory_records"] = [item.model_dump(mode="json") for item in next_trajectories]
+        metadata["wellbore_geometry_status"] = "registered_trajectory_available"
+        metadata["wellbore_geometry_registered_count"] = len(next_trajectories)
+        metadata["source_intake_geometry_registration"] = {
+            "source_intake_candidate_id": candidate.source_file_id,
+            "trajectory_id": trajectory.trajectory_id,
+            "registered_at": now,
+            "approved_by": approved_by,
+            "approval_note": approval_note,
+            "parser_status": candidate.parser_status.value,
+            "qaqc_status": candidate.qaqc_status.model_dump(mode="json"),
+        }
+        metadata["wmdp_state"] = ManagedWmdpState.STAGED_IN_WMDP.value
+        metadata["wdv_state"] = ManagedWdvState.NOT_LOADED.value
+        metadata["wmdp_available"] = True
+
+        tags = list(getattr(record, "tags", []) or [])
+        for tag in ["source-intake", "wellbore-geometry"]:
+            if tag not in tags:
+                tags.append(tag)
+        record.tags = tags
+        record.metadata = metadata
+        record.wmdp_state = ManagedWmdpState.STAGED_IN_WMDP
+        record.wdv_state = ManagedWdvState.NOT_LOADED
+        record.wmdp_available = True
+        record.source_intake_candidate_id = candidate.source_file_id
+        record.updated_at = now
+        record.lifecycle_notes = lifecycle_notes + [
+            f"Registered Source Intake wellbore geometry candidate {candidate.source_file_id} as trajectory {trajectory.trajectory_id}."
+        ]
+
+        result = inventory_service.upsert_managed_record(record)
+        if isinstance(result, tuple):
+            _, saved = result
+            return action, saved, len(next_trajectories)
+        return action, result, len(next_trajectories)
+
+    def _managed_trajectory_from_geometry_candidate(
+        self,
+        candidate: SourceFileCandidate,
+        *,
+        well_name: str,
+        approved_at: str,
+    ) -> WbvManagedTrajectoryRecord:
+        preview = candidate.geometry_preview
+        assert preview is not None
+        package = self._trajectory_package_from_geometry_preview(candidate, well_name=well_name)
+        trajectory_id = f"traj:source-intake:{hashlib.sha1(candidate.source_file_id.encode('utf-8')).hexdigest()[:16]}"
+        status = WbvManagedTrajectoryStatus.APPROVED
+        return WbvManagedTrajectoryRecord(
+            trajectory_id=trajectory_id,
+            trajectory_name=f"{candidate.file_name} deviation survey",
+            trajectory_type="deviation_survey",
+            status=status,
+            wbv_eligible=bool(package.get("render_points")),
+            is_active=False,
+            is_canonical=False,
+            is_synthetic=False,
+            source_file_id=candidate.source_file_id,
+            source_label=candidate.file_name,
+            station_count=preview.station_count,
+            md_min=preview.md_min,
+            md_max=preview.md_max,
+            tvd_min=preview.tvd_min,
+            tvd_max=preview.tvd_max,
+            geometry_class="registered_deviation_survey_preview",
+            coordinate_mode=WbvCoordinateMode.RELATIVE,
+            trajectory_package=package,
+            qa_flags=[message for message in preview.warnings[:10]],
+            warnings=[{"code": "source_intake_preview_warning", "severity": "warning", "message": message} for message in preview.warnings[:10]],
+            created_at=approved_at,
+            approved_at=approved_at,
+        )
+
+    def _trajectory_package_from_geometry_preview(self, candidate: SourceFileCandidate, *, well_name: str) -> dict[str, Any]:
+        preview = candidate.geometry_preview
+        assert preview is not None
+        stations = [station.model_dump(mode="json") for station in preview.stations_preview]
+        render_points: list[dict[str, float]] = []
+        for station in preview.stations_preview:
+            tvd = station.tvd if station.tvd is not None else station.md
+            x_value = station.x_offset if station.x_offset is not None else station.easting if station.easting is not None else 0.0
+            y_value = station.y_offset if station.y_offset is not None else station.northing if station.northing is not None else 0.0
+            render_points.append(
+                {
+                    "md": float(station.md),
+                    "tvd": float(tvd),
+                    "x": float(x_value),
+                    "y": float(y_value),
+                    "z": -float(tvd),
+                }
+            )
+        bbox = self._geometry_bounding_box(render_points, preview)
+        warnings = [
+            {"code": "source_intake_preview_limited", "severity": "warning", "message": "Registered trajectory uses the bounded Source Intake preview station payload; full-station promotion can be added in a later block."}
+        ]
+        warnings.extend({"code": "source_intake_preview_warning", "severity": "warning", "message": message} for message in preview.warnings[:10])
+        return {
+            "method": "source_intake_preview_registration",
+            "source": "source_intake_deviation_survey_preview",
+            "source_type": "deviation_survey",
+            "source_intake_candidate_id": candidate.source_file_id,
+            "source_file_id": candidate.source_file_id,
+            "source_label": candidate.file_name,
+            "well_name": well_name,
+            "coordinate_mode": WbvCoordinateMode.RELATIVE.value,
+            "trajectory_class": "registered_deviation_survey_preview",
+            "depth_unit": "ft",
+            "angle_unit": "deg",
+            "station_count": preview.station_count,
+            "source_station_count": preview.station_count,
+            "preview_station_count": preview.preview_station_count,
+            "stations": stations,
+            "render_points": render_points,
+            "bounding_box": bbox,
+            "column_mapping": preview.column_mapping.model_dump(mode="json"),
+            "warnings": warnings,
+        }
+
+    @staticmethod
+    def _geometry_bounding_box(render_points: list[dict[str, float]], preview) -> dict[str, Any]:
+        box: dict[str, Any] = {
+            "md": {"min": preview.md_min, "max": preview.md_max},
+        }
+        if preview.tvd_min is not None and preview.tvd_max is not None:
+            box["tvd"] = {"min": preview.tvd_min, "max": preview.tvd_max}
+        if render_points:
+            for key in ["x", "y", "z"]:
+                values = [point[key] for point in render_points]
+                box[key] = {"min": min(values), "max": max(values)}
+        return box
+
+    def _geometry_source_reference(self, candidate: SourceFileCandidate, *, trajectory_id: str) -> ManagedSourceReference:
+        return ManagedSourceReference(
+            source_id=candidate.source_file_id,
+            source_kind=ManagedSourceKind.DOCUMENT,
+            display_name=candidate.file_name,
+            original_path=candidate.original_path,
+            file_name=candidate.file_name,
+            file_format=candidate.detected_file_type.value,
+            checksum=candidate.checksum,
+            metadata={
+                "source_intake_candidate_id": candidate.source_file_id,
+                "repository_id": candidate.repository_id,
+                "scan_id": candidate.scan_id,
+                "relative_path": candidate.relative_path,
+                "original_path": candidate.original_path,
+                "checksum": candidate.checksum,
+                "managed_record_class": "wellbore_geometry",
+                "managed_record_type": "deviation_survey",
+                "trajectory_id": trajectory_id,
+                "parser_status": candidate.parser_status.value,
+                "geometry_preview": candidate.geometry_preview.model_dump(mode="json") if candidate.geometry_preview else None,
+            },
+        )
+
+    def _match_existing_managed_well(self, candidate: SourceFileCandidate, inventory_service) -> ManagedWellRecord | None:
+        records = inventory_service.list_wells()
+        if not records:
+            return None
+        candidate_text = self._normalize_identity_text(" ".join([candidate.file_name, candidate.relative_path]))
+        for record in records:
+            record_key = self._normalize_identity_text(record.well_name)
+            if record_key and record_key in candidate_text:
+                return record
+        candidate_name = self._normalize_identity_text(self._geometry_well_name(candidate))
+        for record in records:
+            if self._normalize_identity_text(record.well_name) == candidate_name:
+                return record
+        return None
+
+    @staticmethod
+    def _metadata_trajectory_records(metadata: dict[str, Any]) -> list[WbvManagedTrajectoryRecord]:
+        raw = metadata.get("wbv_trajectory_records") if isinstance(metadata, dict) else None
+        records: list[WbvManagedTrajectoryRecord] = []
+        if not isinstance(raw, list):
+            return records
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            try:
+                records.append(WbvManagedTrajectoryRecord(**item))
+            except Exception:
+                continue
+        return records
+
+    def _geometry_well_name(self, candidate: SourceFileCandidate) -> str:
+        resolved = candidate.resolved_metadata.well_name.value if candidate.resolved_metadata and candidate.resolved_metadata.well_name else None
+        if resolved:
+            return str(resolved)
+        stem = Path(candidate.file_name).stem
+        cleaned = stem
+        for token in [
+            "final", "corrected", "preliminary", "prelim", "deviation", "directional", "survey",
+            "trajectory", "wellbore", "geometry", "md", "inc", "incl", "azi", "azimuth", "tvd",
+        ]:
+            cleaned = cleaned.replace(token, " ").replace(token.upper(), " ").replace(token.title(), " ")
+        cleaned = " ".join(part for part in cleaned.replace("_", " ").replace("-", " ").split() if part)
+        return cleaned or stem
+
+    @staticmethod
+    def _managed_geometry_well_id(well_name: str) -> str:
+        normalized = WlvSourceIntakeService._normalize_identity_text(well_name) or "geometry-well"
+        digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
+        return f"wlv-intake-name-{digest}"
+
+    @staticmethod
+    def _normalize_identity_text(value: str | None) -> str:
+        return "".join(ch.lower() for ch in str(value or "") if ch.isalnum())
 
     def _candidate_diagnostics(self, candidate: SourceFileCandidate) -> SourceIntakeCandidateDiagnostics:
         flags: list[SourceIntakeDiagnosticFlag] = []
@@ -527,7 +883,7 @@ class WlvSourceIntakeService:
                 )
             ]
 
-        blocked_reason = registration_block_reason(candidate)
+        blocked_reason = self._registration_block_reason(candidate)
         if blocked_reason is not None:
             return [
                 SourceIntakeDiagnosticFlag(
@@ -596,7 +952,7 @@ class WlvSourceIntakeService:
                 )
             )
 
-        blocked_reason = registration_block_reason(candidate)
+        blocked_reason = self._registration_block_reason(candidate)
         if blocked_reason is None and candidate.registration_status != "registered":
             actions.append(
                 SourceIntakeDiagnosticAction(
@@ -624,7 +980,7 @@ class WlvSourceIntakeService:
     def _mdp_ready_status(self, candidate: SourceFileCandidate) -> str:
         if candidate.registration_status == "registered":
             return "registered"
-        blocked_reason = registration_block_reason(candidate)
+        blocked_reason = self._registration_block_reason(candidate)
         if blocked_reason is None:
             return "ready"
         if candidate.review_required or candidate.qaqc_status.review_required:

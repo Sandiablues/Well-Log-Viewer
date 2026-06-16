@@ -352,6 +352,7 @@ class SourceFileCandidate(BaseModel):
     wdv_state: Optional[str] = None
     registered_product_count: int = 0
     registered_curve_count: int = 0
+    registered_trajectory_count: int = 0
 
 
 class SourceRepositoryScanResult(BaseModel):
@@ -417,6 +418,7 @@ class SourceIntakeRegisterResult(BaseModel):
     well_name: Optional[str] = None
     registered_product_count: int = 0
     registered_curve_count: int = 0
+    registered_trajectory_count: int = 0
     action: Optional[str] = None
 
 

@@ -57,7 +57,10 @@ def test_source_intake_attaches_deviation_preview_without_registering_to_mdp(tmp
     assert any(check.check_id == "geometry.preview.present" for check in candidate.qaqc_status.checks)
 
     diagnostics = service.get_candidate_diagnostics(candidate.source_file_id)
-    assert diagnostics.mdp_ready_status == "needs_review"
+
+    # GEOM-4 makes parsed wellbore-geometry candidates eligible for explicit
+    # registration while still preserving review_required QAQC state.
+    assert diagnostics.mdp_ready_status == "ready"
     assert any(flag.code == "parse_complete" for flag in diagnostics.flags)
 
 

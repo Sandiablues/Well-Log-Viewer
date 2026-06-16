@@ -52,6 +52,7 @@ type SourceFileCandidate = {
   wdv_state?: string | null;
   registered_product_count?: number;
   registered_curve_count?: number;
+  registered_trajectory_count?: number;
   parsed_metadata?: {
     log_header?: { curve_count?: number | null } | null;
     curve_headers?: Array<{ mnemonic?: string | null }> | null;
@@ -290,11 +291,14 @@ function candidateCurveCount(candidate: SourceFileCandidate): number {
 
 function candidateIsRegisterable(candidate: SourceFileCandidate): boolean {
   if (candidateIsRegistered(candidate)) return false;
-  const roleOk = candidate.candidate_role === 'well_log_candidate';
   const parserOk = candidate.parser_status === 'parsed' || candidate.parser_status === 'parsed_with_warnings';
   const qaqc = candidate.qaqc_status;
   const qaqcOk = qaqc?.status === 'pass' || qaqc?.status === 'warning' || qaqc?.status === 'review_required';
   const noFailures = (qaqc?.failure_count ?? 0) === 0;
+  if (candidate.candidate_role === 'wellbore_geometry_candidate') {
+    return Boolean(parserOk && qaqcOk && noFailures && candidate.geometry_preview?.stations_preview?.length);
+  }
+  const roleOk = candidate.candidate_role === 'well_log_candidate';
   const wellName = candidate.resolved_metadata?.well_name?.value;
   return Boolean(roleOk && parserOk && qaqcOk && noFailures && wellName);
 }
@@ -559,7 +563,7 @@ export function SourceIntakeWorkbench() {
       .filter((candidate) => selectedCandidateIds.has(candidate.source_file_id) && candidateIsRegisterable(candidate))
       .map((candidate) => candidate.source_file_id);
     if (candidateIds.length === 0) {
-      throw new Error('Select at least one eligible well log candidate before registering.');
+      throw new Error('Select at least one eligible well log or wellbore geometry candidate before registering.');
     }
     const response = await fetchWlvJson<RegisterResponse>('/api/wlv/source-intake/register', {
       method: 'POST',
@@ -961,7 +965,7 @@ export function SourceIntakeWorkbench() {
                           {registered ? (
                             <div className="wlv-si-status-stack">
                               <span className="wlv-si-pill is-ok">Staged in MDP</span>
-                              <small>{candidate.registered_curve_count ?? curveCount} curves · {labelize(candidate.wdv_state ?? 'not_loaded')}</small>
+                              <small>{candidate.candidate_role === 'wellbore_geometry_candidate' ? `${candidate.registered_trajectory_count ?? 1} trajectory` : `${candidate.registered_curve_count ?? curveCount} curves`} · {labelize(candidate.wdv_state ?? 'not_loaded')}</small>
                             </div>
                           ) : eligible ? (
                             <div className="wlv-si-status-stack">
