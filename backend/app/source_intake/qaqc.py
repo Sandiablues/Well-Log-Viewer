@@ -43,6 +43,9 @@ def run_source_intake_qaqc(candidate: SourceFileCandidate) -> SourceIntakeQaqcRe
         _check_depth_log(candidate, checks)
         _check_curve_headers(candidate, checks)
 
+    if candidate.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
+        _check_wellbore_geometry_preview(candidate, checks)
+
     return _summarize(checks)
 
 
@@ -74,7 +77,7 @@ def _check_candidate_role(candidate: SourceFileCandidate, checks: list[SourceInt
         checks.append(
             _review(
                 "candidate.role.wellbore_geometry",
-                "Wellbore Geometry candidate detected. Deviation-survey parsing and trajectory registration are not enabled in this block.",
+                "Wellbore Geometry candidate detected. Structured deviation-survey preview may be parsed, but trajectory registration is still disabled.",
                 field_name="candidate_role",
                 severity=SourceIntakeQaqcSeverity.MEDIUM,
             )
@@ -82,6 +85,85 @@ def _check_candidate_role(candidate: SourceFileCandidate, checks: list[SourceInt
         return
 
     checks.append(_pass("candidate.role.recognized", "Candidate role is recognized."))
+
+
+
+def _check_wellbore_geometry_preview(candidate: SourceFileCandidate, checks: list[SourceIntakeQaqcCheck]) -> None:
+    preview = candidate.geometry_preview
+
+    if candidate.parser_status == SourceIntakeParseStatus.PARSE_FAILED:
+        checks.append(
+            _fail(
+                "geometry.preview.parse_failed",
+                f"Deviation survey preview parse failed: {candidate.parse_error or 'unknown parser error'}",
+                field_name="geometry_preview",
+            )
+        )
+        return
+
+    if candidate.parser_status == SourceIntakeParseStatus.UNSUPPORTED:
+        checks.append(
+            _review(
+                "geometry.preview.unsupported",
+                "This Wellbore Geometry candidate cannot be preview-parsed by the structured CSV/TXT/XLSX deviation-survey parser.",
+                field_name="parser_status",
+                severity=SourceIntakeQaqcSeverity.MEDIUM,
+            )
+        )
+        return
+
+    if preview is None:
+        checks.append(
+            _review(
+                "geometry.preview.missing",
+                "Structured deviation-survey preview is missing.",
+                field_name="geometry_preview",
+                severity=SourceIntakeQaqcSeverity.MEDIUM,
+            )
+        )
+        return
+
+    checks.append(_pass("geometry.preview.present", "Structured deviation-survey preview is present."))
+
+    if preview.station_count >= 2:
+        checks.append(_pass("geometry.station_count.valid", f"Deviation survey contains {preview.station_count} valid station rows."))
+    else:
+        checks.append(_fail("geometry.station_count.too_low", "Deviation survey needs at least two station rows for trajectory review.", field_name="station_count"))
+
+    mapping = preview.column_mapping
+    for field_name, label in (
+        ("measured_depth", "MD"),
+        ("inclination", "inclination"),
+        ("azimuth", "azimuth"),
+    ):
+        if getattr(mapping, field_name):
+            checks.append(_pass(f"geometry.column.{field_name}", f"Deviation survey {label} column mapped."))
+        else:
+            checks.append(_fail(f"geometry.column.{field_name}.missing", f"Deviation survey {label} column is missing.", field_name=field_name))
+
+    if mapping.tvd:
+        checks.append(_pass("geometry.column.tvd", "Deviation survey TVD column mapped."))
+    else:
+        checks.append(
+            _warning(
+                "geometry.column.tvd.missing",
+                "Deviation survey has no mapped TVD column; later trajectory calculation will be required before WBV loading.",
+                field_name="tvd",
+                review_required=True,
+                severity=SourceIntakeQaqcSeverity.MEDIUM,
+            )
+        )
+
+    for warning in preview.warnings[:10]:
+        checks.append(
+            _warning(
+                "geometry.preview.warning",
+                warning,
+                field_name="geometry_preview",
+                review_required=True,
+                severity=SourceIntakeQaqcSeverity.MEDIUM,
+            )
+        )
 
 
 def _check_las_parse(candidate: SourceFileCandidate, checks: list[SourceIntakeQaqcCheck]) -> None:

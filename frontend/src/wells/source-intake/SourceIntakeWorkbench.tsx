@@ -56,6 +56,42 @@ type SourceFileCandidate = {
     log_header?: { curve_count?: number | null } | null;
     curve_headers?: Array<{ mnemonic?: string | null }> | null;
   } | null;
+  geometry_preview?: {
+    source_format?: string;
+    row_count?: number;
+    station_count?: number;
+    preview_station_count?: number;
+    md_min?: number | null;
+    md_max?: number | null;
+    tvd_min?: number | null;
+    tvd_max?: number | null;
+    warning_count?: number;
+    error_count?: number;
+    column_mapping?: {
+      measured_depth?: string | null;
+      inclination?: string | null;
+      azimuth?: string | null;
+      tvd?: string | null;
+      x_offset?: string | null;
+      y_offset?: string | null;
+      northing?: string | null;
+      easting?: string | null;
+      unmapped_headers?: string[];
+    };
+    stations_preview?: Array<{
+      row_index: number;
+      md: number;
+      inclination: number;
+      azimuth: number;
+      tvd?: number | null;
+      x_offset?: number | null;
+      y_offset?: number | null;
+      northing?: number | null;
+      easting?: number | null;
+    }>;
+    warnings?: string[];
+    errors?: string[];
+  } | null;
   resolved_metadata?: {
     well_name?: ResolvedField;
     uwi?: ResolvedField;
@@ -263,6 +299,16 @@ function candidateIsRegisterable(candidate: SourceFileCandidate): boolean {
   return Boolean(roleOk && parserOk && qaqcOk && noFailures && wellName);
 }
 
+
+function geometryPreviewLabel(candidate: SourceFileCandidate): string {
+  const preview = candidate.geometry_preview;
+  if (!preview) return candidate.candidate_role === 'wellbore_geometry_candidate' ? 'No preview' : '—';
+  const mdRange = typeof preview.md_min === 'number' && typeof preview.md_max === 'number'
+    ? `MD ${preview.md_min.toLocaleString()}–${preview.md_max.toLocaleString()}`
+    : 'MD —';
+  return `${preview.station_count ?? 0} stations · ${mdRange}`;
+}
+
 function SummaryTile({ label, value }: { label: string; value: number }) {
   return (
     <div className="wlv-si-summary-tile">
@@ -418,7 +464,7 @@ export function SourceIntakeWorkbench() {
       { label: 'Field', value: fallback?.resolved_metadata?.field?.value ?? '—' },
       { label: 'File Type', value: labelize(candidateDiagnostics?.summary.detected_file_type ?? fallback?.detected_file_type ?? 'unknown') },
       { label: 'Role', value: labelize(candidateDiagnostics?.summary.candidate_role ?? fallback?.candidate_role ?? 'unknown') },
-      { label: 'Curves', value: String(candidateDiagnostics?.summary.curve_count ?? (fallback ? candidateCurveCount(fallback) : 0)) },
+      { label: fallback?.candidate_role === 'wellbore_geometry_candidate' ? 'Geometry Preview' : 'Curves', value: fallback?.candidate_role === 'wellbore_geometry_candidate' ? geometryPreviewLabel(fallback) : String(candidateDiagnostics?.summary.curve_count ?? (fallback ? candidateCurveCount(fallback) : 0)) },
       { label: 'Parse', value: parseStatusLabel(candidateDiagnostics?.parse_status ?? fallback?.parser_status ?? 'not_parsed') },
       { label: 'QAQC', value: labelize(candidateDiagnostics?.qaqc_status.status ?? fallback?.qaqc_status?.status ?? 'not_checked') },
       { label: 'MDP Ready', value: labelize(candidateDiagnostics?.mdp_ready_status ?? (fallback && candidateIsRegisterable(fallback) ? 'ready' : 'not_ready')) },
@@ -871,6 +917,7 @@ export function SourceIntakeWorkbench() {
                     const eligible = candidateIsRegisterable(candidate);
                     const registered = candidateIsRegistered(candidate);
                     const curveCount = candidateCurveCount(candidate);
+                    const geometryPreview = geometryPreviewLabel(candidate);
                     return (
                       <tr
                         key={candidate.source_file_id}
@@ -895,7 +942,7 @@ export function SourceIntakeWorkbench() {
                         </td>
                         <td className="wlv-si-cell-well wlv-si-well-cell">{wellName}</td>
                         <td className="wlv-si-cell-role"><span className="wlv-si-pill">{labelize(candidate.candidate_role)}</span></td>
-                        <td className="wlv-si-cell-curves">{curveCount}</td>
+                        <td className="wlv-si-cell-curves">{candidate.candidate_role === 'wellbore_geometry_candidate' ? geometryPreview : curveCount}</td>
                         <td className="wlv-si-cell-parse wlv-si-parse-cell">
                           <span
                             className={`wlv-si-pill ${parseStatusClass(candidate.parser_status)}`}
@@ -1032,6 +1079,23 @@ export function SourceIntakeWorkbench() {
                   </div>
                 </dl>
               </section>
+
+
+
+              {diagnosticFallbackCandidate?.geometry_preview ? (
+                <section className="wlv-si-diagnostic-section">
+                  <h3>Wellbore Geometry Preview</h3>
+                  <dl className="wlv-si-diagnostic-summary">
+                    <div><dt>Format</dt><dd>{diagnosticFallbackCandidate.geometry_preview.source_format ?? '—'}</dd></div>
+                    <div><dt>Stations</dt><dd>{diagnosticFallbackCandidate.geometry_preview.station_count ?? 0}</dd></div>
+                    <div><dt>MD Range</dt><dd>{geometryPreviewLabel(diagnosticFallbackCandidate)}</dd></div>
+                    <div><dt>Warnings</dt><dd>{diagnosticFallbackCandidate.geometry_preview.warning_count ?? 0}</dd></div>
+                  </dl>
+                  <p className="wlv-si-diagnostic-note">
+                    Preview only. Registration to MSI and WBV loading remain disabled until trajectory approval is implemented.
+                  </p>
+                </section>
+              ) : null}
 
               {(['parse', 'qaqc', 'mdp_ready'] as CandidateDiagnosticPhase[]).map((phase) => {
                 const phaseFlags = candidateDiagnostics.flags.filter((flag) => flag.phase === phase);

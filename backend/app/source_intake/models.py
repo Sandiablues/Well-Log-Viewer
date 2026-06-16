@@ -281,6 +281,48 @@ class SourceIntakeResolvedMetadata(BaseModel):
     evidence_count: int = 0
 
 
+class SourceIntakeDeviationSurveyColumnMapping(BaseModel):
+    measured_depth: Optional[str] = None
+    inclination: Optional[str] = None
+    azimuth: Optional[str] = None
+    tvd: Optional[str] = None
+    x_offset: Optional[str] = None
+    y_offset: Optional[str] = None
+    northing: Optional[str] = None
+    easting: Optional[str] = None
+    unmapped_headers: list[str] = Field(default_factory=list)
+
+
+class SourceIntakeDeviationSurveyStationPreview(BaseModel):
+    row_index: int
+    md: float
+    inclination: float
+    azimuth: float
+    tvd: Optional[float] = None
+    x_offset: Optional[float] = None
+    y_offset: Optional[float] = None
+    northing: Optional[float] = None
+    easting: Optional[float] = None
+
+
+class SourceIntakeDeviationSurveyPreview(BaseModel):
+    parser_id: str = "wlv_deviation_survey_parser_v1"
+    source_format: str
+    row_count: int
+    station_count: int
+    preview_station_count: int
+    column_mapping: SourceIntakeDeviationSurveyColumnMapping
+    md_min: float
+    md_max: float
+    tvd_min: Optional[float] = None
+    tvd_max: Optional[float] = None
+    warning_count: int = 0
+    error_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    stations_preview: list[SourceIntakeDeviationSurveyStationPreview] = Field(default_factory=list)
+
+
 class SourceFileCandidate(BaseModel):
     source_file_id: str
     repository_id: str
@@ -297,6 +339,7 @@ class SourceFileCandidate(BaseModel):
     fingerprint_status: str = "computed"
     parser_status: SourceIntakeParseStatus = SourceIntakeParseStatus.NOT_PARSED
     parsed_metadata: Optional[SourceIntakeParsedMetadata] = None
+    geometry_preview: Optional[SourceIntakeDeviationSurveyPreview] = None
     resolved_metadata: Optional[SourceIntakeResolvedMetadata] = None
     qaqc_status: SourceIntakeQaqcResult = Field(default_factory=SourceIntakeQaqcResult)
     parse_error: Optional[str] = None

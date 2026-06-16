@@ -19,6 +19,7 @@ from .metadata_resolver import resolve_candidate_metadata
 from .identity_gate import apply_identity_gate
 from .qaqc import run_source_intake_qaqc
 from .registration import register_candidate_to_inventory, registration_block_reason
+from .deviation_survey_parser import DeviationSurveyParseError, parse_deviation_survey_preview
 
 from .models import (
     SourceFileCandidate,
@@ -683,7 +684,7 @@ class WlvSourceIntakeService:
         warnings = ["File type requires review before WMDP staging."] if candidate_role == SourceIntakeCandidateRole.OTHER_REVIEW_REQUIRED else []
         if candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
             warnings.append(
-                "Wellbore geometry candidate detected; deviation-survey parsing and trajectory registration are reserved for a later Source Intake block."
+                "Wellbore geometry candidate detected; structured deviation-survey preview is enabled, while trajectory registration remains reserved for a later Source Intake block."
             )
         relative_path = str(file_path.relative_to(root))
         stat = file_path.stat()
@@ -716,7 +717,9 @@ class WlvSourceIntakeService:
         # Discovery alone is not "parsed"; unsupported/container states are
         # explicit so the UI does not show every non-LAS record as Not Parsed.
         candidate.parser_status = self._initial_parser_status(file_path, detected_file_type)
-        if candidate.parser_status == SourceIntakeParseStatus.CONTAINER_PENDING_EXTRACTION:
+        if candidate.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
+            self._attach_deviation_survey_preview(candidate, file_path)
+        elif candidate.parser_status == SourceIntakeParseStatus.CONTAINER_PENDING_EXTRACTION:
             candidate.review_required = True
             candidate.warnings.append("Container/archive candidate pending extraction and child-file classification.")
         elif candidate.parser_status == SourceIntakeParseStatus.UNSUPPORTED:
@@ -740,6 +743,41 @@ class WlvSourceIntakeService:
         if detected_file_type != SourceIntakeFileType.UNKNOWN:
             return SourceIntakeParseStatus.UNSUPPORTED
         return SourceIntakeParseStatus.NOT_PARSED
+
+
+    def _attach_deviation_survey_preview(self, candidate: SourceFileCandidate, file_path: Path) -> None:
+        """Attach a structured deviation-survey preview to a geometry candidate.
+
+        WLV-GEOM-3 stops at backend-owned parser preview and QAQC. It does not
+        register a trajectory into MSI and does not make the record WBV-loadable.
+        """
+        ext = file_path.suffix.lower().lstrip(".")
+        if ext not in {"csv", "txt", "asc", "xlsx", "xls"}:
+            candidate.parser_status = SourceIntakeParseStatus.UNSUPPORTED
+            candidate.warnings.append(
+                f"Wellbore Geometry candidate uses {candidate.detected_file_type.value}; structured deviation-survey preview supports CSV, TXT/ASC, and XLSX only."
+            )
+            return
+
+        try:
+            preview = parse_deviation_survey_preview(file_path)
+        except DeviationSurveyParseError as exc:
+            candidate.parser_status = SourceIntakeParseStatus.PARSE_FAILED
+            candidate.parse_error = str(exc)
+            candidate.review_required = True
+            candidate.warnings.append(f"Deviation survey preview parse failed: {exc}")
+            return
+
+        candidate.geometry_preview = preview
+        candidate.parser_status = (
+            SourceIntakeParseStatus.PARSED_WITH_WARNINGS
+            if preview.warning_count or preview.error_count
+            else SourceIntakeParseStatus.PARSED
+        )
+        candidate.review_required = True
+        for message in preview.warnings:
+            if message not in candidate.warnings:
+                candidate.warnings.append(message)
 
     def _attach_las_metadata(self, candidate: SourceFileCandidate, file_path: Path) -> None:
         """Parse LAS headers into the three-level source-intake metadata model.
