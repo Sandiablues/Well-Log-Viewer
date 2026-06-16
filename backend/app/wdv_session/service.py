@@ -54,15 +54,17 @@ class WdvSessionLayoutStateService:
             data = self._read_store()
             sessions = data.setdefault("sessions", {})
             current_revision = int(sessions.get(managed_well_id, {}).get("revision", 0) or 0)
+            layout_tracks = self._normalise_persisted_tracks(request.tracks)
+            selected_track_id = request.selected_track_id if layout_tracks else None
             session = WdvSessionLayoutStateResponse(
                 managed_well_id=managed_well_id,
                 layout_session_id=f"wdv_layout_session:{managed_well_id}",
                 revision=current_revision + 1,
-                state_status="active" if request.tracks else "empty",
+                state_status="active" if layout_tracks else "empty",
                 source=request.source,
                 updated_at=self._now(),
-                selected_track_id=request.selected_track_id,
-                tracks=request.tracks,
+                selected_track_id=selected_track_id,
+                tracks=layout_tracks,
                 warnings=[],
             )
             sessions[managed_well_id] = session.model_dump(mode="json")
@@ -129,6 +131,21 @@ class WdvSessionLayoutStateService:
             handle.write("\n")
             tmp_name = handle.name
         Path(tmp_name).replace(self.storage_path)
+
+    @staticmethod
+    def _normalise_persisted_tracks(tracks: list[Any]) -> list[Any]:
+        """Persist only renderable WDV template/track content.
+
+        A depth/reference track by itself is not a populated WDV section.
+        Empty curve tracks are also not restorable display content.  This
+        prevents a cleared viewer from relaunching with an inherited depth
+        track and no curve section.
+        """
+        has_curve_assignment = any(
+            getattr(track, "track_type", None) == "curve" and bool(getattr(track, "curves", None))
+            for track in tracks
+        )
+        return tracks if has_curve_assignment else []
 
     def _validate_layout_request(self, request: WdvSessionLayoutPutRequest) -> None:
         track_ids: set[str] = set()

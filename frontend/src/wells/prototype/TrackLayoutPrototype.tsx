@@ -703,6 +703,14 @@ function frontendTracksFromSession(session: WdvSessionLayoutResponse, catalog: C
   return reindexTracks(restoredTracks);
 }
 
+function hasRenderableWdvTrackContent(tracks: WellLogTrack[]): boolean {
+  return tracks.some((track) => track.trackType === 'curve' && track.curves.length > 0);
+}
+
+function sessionTracksForBackendPersistence(tracks: WellLogTrack[], catalog: CurveCatalogItem[]): WdvSessionLayoutTrackState[] {
+  return hasRenderableWdvTrackContent(tracks) ? sessionTracksFromFrontend(tracks, catalog) : [];
+}
+
 function selectedTrackIdFromSession(session: WdvSessionLayoutResponse): string | null {
   return session.selected_track_id ?? session.selectedTrackId ?? null;
 }
@@ -4579,15 +4587,20 @@ export function TrackLayoutPrototype() {
     void fetchWlvJson<WdvSessionLayoutResponse>(`/api/wlv/wdv/sessions/${managedViewerWellId}/layout`)
       .then((session) => {
         if (cancelled) return;
-        const restoredTracks = session.state_status === 'active'
+        const candidateTracks = session.state_status === 'active'
           ? frontendTracksFromSession(session, activeCurveCatalog)
           : [];
+        const restoredTracks = hasRenderableWdvTrackContent(candidateTracks) ? candidateTracks : [];
 
         if (restoredTracks.length > 0) {
           setTracks(restoredTracks);
           const selectedTrackId = selectedTrackIdFromSession(session);
           const selectedTrackExists = selectedTrackId && restoredTracks.some((track) => track.trackId === selectedTrackId);
           setSelection({ kind: 'track', trackId: selectedTrackExists ? selectedTrackId : restoredTracks[0].trackId });
+        } else {
+          setTracks([]);
+          setSelection({ kind: 'track', trackId: '' });
+          setSelectedInventoryCurveIds([]);
         }
 
         wdvSessionHydratedKeyRef.current = wdvSessionKey;
@@ -4608,12 +4621,17 @@ export function TrackLayoutPrototype() {
     }
 
     wdvSessionSaveTimerRef.current = window.setTimeout(() => {
+      const persistedTracks = sessionTracksForBackendPersistence(tracks, activeCurveCatalog);
+      const selectedTrackId = persistedTracks.length > 0 && (selection.kind === 'track' || selection.kind === 'curve')
+        ? selection.trackId
+        : null;
+
       void fetchWlvJson<WdvSessionLayoutResponse>(`/api/wlv/wdv/sessions/${managedViewerWellId}/layout`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          selected_track_id: selection.kind === 'track' || selection.kind === 'curve' ? selection.trackId : null,
-          tracks: sessionTracksFromFrontend(tracks, activeCurveCatalog),
+          selected_track_id: selectedTrackId,
+          tracks: persistedTracks,
           source: 'frontend_user_layout_update',
         }),
       }).catch(() => {

@@ -113,3 +113,58 @@ def test_layout_rejects_duplicate_track_ids(monkeypatch, tmp_path):
 
     assert response.status_code == 422
     assert response.json()["detail"]["error"] == "invalid_wdv_layout_state"
+
+def test_depth_only_layout_is_persisted_as_empty(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    request = {
+        "selected_track_id": "depth-track",
+        "source": "test_depth_only_clear",
+        "tracks": [
+            {
+                "track_id": "depth-track",
+                "track_name": "MD",
+                "track_type": "depth",
+                "width_px": 86,
+                "curves": [],
+            }
+        ],
+    }
+
+    put_response = client.put("/api/wlv/wdv/sessions/well-a/layout", json=request)
+
+    assert put_response.status_code == 200
+    payload = put_response.json()
+    assert payload["state_status"] == "empty"
+    assert payload["selected_track_id"] is None
+    assert payload["tracks"] == []
+
+    get_response = client.get("/api/wlv/wdv/sessions/well-a/layout")
+    assert get_response.status_code == 200
+    restored = get_response.json()
+    assert restored["state_status"] == "empty"
+    assert restored["tracks"] == []
+
+
+def test_empty_curve_tracks_are_persisted_as_empty(monkeypatch, tmp_path):
+    client = _client(monkeypatch, tmp_path)
+    request = {
+        "selected_track_id": "empty-curve-track",
+        "source": "test_empty_curve_track_clear",
+        "tracks": [
+            {
+                "track_id": "empty-curve-track",
+                "track_name": "Gamma Ray",
+                "track_type": "curve",
+                "curves": [],
+            }
+        ],
+    }
+
+    put_response = client.put("/api/wlv/wdv/sessions/well-a/layout", json=request)
+
+    assert put_response.status_code == 200
+    payload = put_response.json()
+    assert payload["state_status"] == "empty"
+    assert payload["selected_track_id"] is None
+    assert payload["tracks"] == []
+
