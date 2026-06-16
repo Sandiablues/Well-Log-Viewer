@@ -1279,25 +1279,174 @@ class ManagedWellInventoryService:
         return record.model_copy(update={"product_groups": normalized_groups, "updated_at": utc_now_iso()})
 
     def _with_product_groups(self, record: ManagedWellRecord) -> ManagedWellRecord:
-        """Return a record with backend-owned product_groups populated."""
-        if record.product_groups:
-            return record
-        contract = record.metadata.get("viewer_package_contract")
-        if not isinstance(contract, dict):
-            return record
-        viewer_package = WellMultitrackV1.model_validate(contract)
-        viewer_package_reference = record.viewer_packages[0] if record.viewer_packages else self._viewer_package_reference(viewer_package)
-        return record.model_copy(
-            update={
-                "product_groups": self._product_groups_from_viewer_package(
-                    viewer_package=viewer_package,
-                    viewer_package_reference=viewer_package_reference,
-                    source_references=record.source_references,
-                    run_date="—",
-                    run_number="—",
+        """Return a record with backend-owned product_groups populated.
+
+        Curve/log groups are derived from WDV viewer packages. Wellbore geometry
+        groups are derived from managed trajectory metadata. This keeps MDP
+        placement backend-owned and prevents the frontend from inventing a
+        destination for registered deviation surveys.
+        """
+        working = record
+        if not working.product_groups:
+            contract = working.metadata.get("viewer_package_contract")
+            if isinstance(contract, dict):
+                viewer_package = WellMultitrackV1.model_validate(contract)
+                viewer_package_reference = working.viewer_packages[0] if working.viewer_packages else self._viewer_package_reference(viewer_package)
+                working = working.model_copy(
+                    update={
+                        "product_groups": self._product_groups_from_viewer_package(
+                            viewer_package=viewer_package,
+                            viewer_package_reference=viewer_package_reference,
+                            source_references=working.source_references,
+                            run_date="—",
+                            run_number="—",
+                        )
+                    }
                 )
-            }
+        return self._with_wellbore_geometry_product_group(working)
+
+    def _with_wellbore_geometry_product_group(self, record: ManagedWellRecord) -> ManagedWellRecord:
+        """Attach one MDP Wellbore Geometry row per managed trajectory.
+
+        The row represents the trajectory/deviation survey object. Station-level
+        data remains in trajectory metadata/package detail and is not expanded
+        into primary MDP rows.
+        """
+        trajectories = self._managed_trajectory_metadata_records(record)
+        if not trajectories:
+            return record
+
+        items = [self._wellbore_geometry_product_item(record, trajectory) for trajectory in trajectories]
+        geometry_group = ManagedProductGroup(
+            group_key="wellbore_geometry",
+            group_label="Wellbore Geometry",
+            collapsed_by_default=False,
+            items=items,
         )
+
+        groups = [group for group in (record.product_groups or []) if group.group_key != "wellbore_geometry"]
+        insert_at = next((index for index, group in enumerate(groups) if group.group_key == "supporting_documents"), len(groups))
+        groups.insert(insert_at, geometry_group)
+        return record.model_copy(update={"product_groups": groups})
+
+    @staticmethod
+    def _managed_trajectory_metadata_records(record: ManagedWellRecord) -> list[dict[str, Any]]:
+        metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        raw = metadata.get("wbv_trajectory_records")
+        if not isinstance(raw, list):
+            return []
+        return [item for item in raw if isinstance(item, dict) and str(item.get("trajectory_id") or "").strip()]
+
+    def _wellbore_geometry_product_item(self, record: ManagedWellRecord, trajectory: dict[str, Any]) -> ManagedProductGroupItem:
+        trajectory_id = str(trajectory.get("trajectory_id") or "").strip()
+        trajectory_name = str(trajectory.get("trajectory_name") or trajectory_id).strip() or trajectory_id
+        trajectory_type = str(trajectory.get("trajectory_type") or "trajectory").strip() or "trajectory"
+        status = str(trajectory.get("status") or "registered").strip() or "registered"
+        active_trajectory_id = None
+        if isinstance(record.metadata, dict):
+            active_trajectory_id = record.metadata.get("active_trajectory_id")
+        is_active = bool(trajectory.get("is_active") or (active_trajectory_id and trajectory_id == str(active_trajectory_id)))
+        is_synthetic = bool(trajectory.get("is_synthetic"))
+        wbv_eligible = bool(trajectory.get("wbv_eligible"))
+        role = "Active trajectory" if is_active else "Demo / synthetic" if is_synthetic else "Available"
+        run_interval = self._trajectory_depth_range_label(
+            trajectory.get("md_min"),
+            trajectory.get("md_max"),
+            record.depth_unit or "ft",
+        )
+        source_label = trajectory.get("source_label") or trajectory.get("source_file_id") or trajectory_id
+
+        return ManagedProductGroupItem(
+            product_id=trajectory_id,
+            display_name=trajectory_name,
+            curve_name=trajectory_name,
+            curve_type=trajectory_type,
+            curve_description="Managed wellbore trajectory",
+            curve_unit=record.depth_unit or "ft",
+            product_category="wellbore_geometry",
+            product_subgroup_key=trajectory_type,
+            product_subgroup_label=self._display_label(trajectory_type),
+            curve_family="Wellbore Geometry",
+            classification_confidence="high" if wbv_eligible else "review",
+            classification_source="managed_inventory_trajectory_metadata",
+            classification_reasons=[
+                "Registered Source Intake wellbore geometry is exposed as one managed MDP trajectory row.",
+                "Station-level deviation data remains in trajectory detail metadata, not primary MDP rows.",
+            ],
+            review_required=status not in {"approved", "registered"} or not wbv_eligible,
+            run_date="—",
+            run_interval=run_interval,
+            run_number=role,
+            qa_flag=self._display_label(status),
+            selectable=False,
+            source_kind="wellbore_geometry",
+            source_id=str(source_label),
+            viewer_package_id=None,
+            wmdp_state=record.wmdp_state,
+            wdv_state=record.wdv_state,
+            source_intake_candidate_id=str(trajectory.get("source_file_id") or "") or None,
+            trajectory_id=trajectory_id,
+            trajectory_status=status,
+            trajectory_role=role,
+            wbv_eligible=wbv_eligible,
+            source_label=str(source_label),
+            station_count=self._optional_int(trajectory.get("station_count")),
+            md_min=self._optional_float(trajectory.get("md_min")),
+            md_max=self._optional_float(trajectory.get("md_max")),
+            tvd_min=self._optional_float(trajectory.get("tvd_min")),
+            tvd_max=self._optional_float(trajectory.get("tvd_max")),
+            is_active_trajectory=is_active,
+            is_synthetic_trajectory=is_synthetic,
+            provenance={
+                "managed_record_class": "wellbore_geometry",
+                "managed_record_type": trajectory_type,
+                "trajectory_id": trajectory_id,
+                "source_file_id": trajectory.get("source_file_id"),
+                "source_label": source_label,
+                "station_count": trajectory.get("station_count"),
+                "md_min": trajectory.get("md_min"),
+                "md_max": trajectory.get("md_max"),
+                "tvd_min": trajectory.get("tvd_min"),
+                "tvd_max": trajectory.get("tvd_max"),
+            },
+        )
+
+    @staticmethod
+    def _trajectory_depth_range_label(min_value: Any, max_value: Any, unit: str = "ft") -> str:
+        left = ManagedWellInventoryService._optional_float(min_value)
+        right = ManagedWellInventoryService._optional_float(max_value)
+        if left is None and right is None:
+            return "—"
+        left_text = "—" if left is None else f"{left:g}"
+        right_text = "—" if right is None else f"{right:g}"
+        return f"{left_text}–{right_text} {unit}"
+
+    @staticmethod
+    def _display_label(value: Any) -> str:
+        text = str(value or "unknown").strip().replace("_", " ")
+        return text[:1].upper() + text[1:] if text else "Unknown"
+
+    @staticmethod
+    def _optional_float(value: Any) -> float | None:
+        try:
+            if value is None:
+                return None
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        if math.isfinite(number):
+            return number
+        return None
+
+    @staticmethod
+    def _optional_int(value: Any) -> int | None:
+        try:
+            if value is None:
+                return None
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
 
     def _product_groups_from_viewer_package(
         self,

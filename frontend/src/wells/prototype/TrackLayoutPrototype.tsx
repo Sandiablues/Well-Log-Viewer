@@ -1182,42 +1182,47 @@ function WmdpProductItemRow({
           <strong className="wlv-wmdp-product-item-code">{productItemDisplayName(item)}</strong>
         </span>
         {isGeometry ? (
-          <>
-            <span className="wlv-wmdp-product-item-description" title={safeText(item.curve_type)}>
-              <strong>Type:</strong> {statusLabel(item.curve_type)}
+          <span className="wlv-wmdp-geometry-row">
+            <span className="wlv-wmdp-geometry-main">
+              <span className="wlv-wmdp-geometry-title-line">
+                <strong className="wlv-wmdp-geometry-title">{productItemDisplayName(item)}</strong>
+                <span className={item.is_active_trajectory ? 'wlv-wmdp-geometry-badge active' : 'wlv-wmdp-geometry-badge'}>
+                  {item.is_active_trajectory ? 'Active' : 'Available'}
+                </span>
+              </span>
+              <span className="wlv-wmdp-geometry-source" title={safeText(item.source_label || item.source_id)}>
+                <strong>Source:</strong> {expandableProductName(item.source_label || item.source_id || '—')}
+              </span>
             </span>
-            <span className="wlv-wmdp-product-item-name" title={safeText(item.source_label || item.source_id)}>
-              <strong>Source:</strong> {expandableProductName(item.source_label || item.source_id || '—')}
+            <span className="wlv-wmdp-geometry-meta-grid">
+              <span><strong>Type</strong><em>{statusLabel(item.curve_type)}</em></span>
+              <span><strong>Status</strong><em>{safeText(item.qa_flag)}</em></span>
+              <span><strong>Role</strong><em>{safeText(item.trajectory_role)}</em></span>
+              <span><strong>Stations</strong><em>{safeText(item.station_count)}</em></span>
+              <span><strong>MD Range</strong><em>{safeText(item.run_interval)}</em></span>
+              <span><strong>TVD Range</strong><em>{optionalDepthRangeLabel(item.tvd_min, item.tvd_max, 'ft')}</em></span>
             </span>
-            <span className="wlv-wmdp-product-item-run-date" title={safeText(item.trajectory_role)}>
-              <strong>Role:</strong> {safeText(item.trajectory_role)}
+            <span className="wlv-wmdp-geometry-actions">
+              {canSetActive ? (
+                <button
+                  type="button"
+                  className="wlv-wmdp-product-item-action"
+                  disabled={applying}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (managedWellId && item.trajectory_id && onSetActiveTrajectory) {
+                      onSetActiveTrajectory(managedWellId, item.trajectory_id);
+                    }
+                  }}
+                >
+                  {applying ? 'Setting active…' : 'Set Active Trajectory'}
+                </button>
+              ) : (
+                <span className="wlv-wmdp-geometry-action-placeholder">Trajectory selected</span>
+              )}
             </span>
-            <span className="wlv-wmdp-product-item-run-interval" title={safeText(item.run_interval)}>
-              <strong>MD Range:</strong> {safeText(item.run_interval)}
-            </span>
-            <span className="wlv-wmdp-product-item-run-number" title={safeText(item.station_count)}>
-              <strong>Stations:</strong> {safeText(item.station_count)}
-            </span>
-            <span className="wlv-wmdp-product-item-qa-flag" title={safeText(item.qa_flag)}>
-              <strong>Status:</strong> {safeText(item.qa_flag)}
-            </span>
-            {canSetActive ? (
-              <button
-                type="button"
-                className="wlv-wmdp-product-item-action"
-                disabled={applying}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  if (managedWellId && item.trajectory_id && onSetActiveTrajectory) {
-                    onSetActiveTrajectory(managedWellId, item.trajectory_id);
-                  }
-                }}
-              >
-                {applying ? 'Setting active…' : 'Set Active Trajectory'}
-              </button>
-            ) : null}
-          </>
+          </span>
         ) : (
           <>
             <span className="wlv-wmdp-product-item-description" title={safeText(item.curve_type)}>

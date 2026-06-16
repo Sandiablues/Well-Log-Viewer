@@ -921,7 +921,6 @@ export function SourceIntakeWorkbench() {
                     const eligible = candidateIsRegisterable(candidate);
                     const registered = candidateIsRegistered(candidate);
                     const curveCount = candidateCurveCount(candidate);
-                    const geometryPreview = geometryPreviewLabel(candidate);
                     return (
                       <tr
                         key={candidate.source_file_id}
@@ -946,7 +945,7 @@ export function SourceIntakeWorkbench() {
                         </td>
                         <td className="wlv-si-cell-well wlv-si-well-cell">{wellName}</td>
                         <td className="wlv-si-cell-role"><span className="wlv-si-pill">{labelize(candidate.candidate_role)}</span></td>
-                        <td className="wlv-si-cell-curves">{candidate.candidate_role === 'wellbore_geometry_candidate' ? geometryPreview : curveCount}</td>
+                        <td className="wlv-si-cell-curves">{candidate.candidate_role === 'wellbore_geometry_candidate' ? '—' : curveCount}</td>
                         <td className="wlv-si-cell-parse wlv-si-parse-cell">
                           <span
                             className={`wlv-si-pill ${parseStatusClass(candidate.parser_status)}`}

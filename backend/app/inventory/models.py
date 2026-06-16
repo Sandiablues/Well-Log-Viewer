@@ -119,6 +119,18 @@ class ManagedProductGroupItem(BaseModel):
     wmdp_state: ManagedWmdpState = ManagedWmdpState.REGISTERED
     wdv_state: ManagedWdvState = ManagedWdvState.NOT_LOADED
     source_intake_candidate_id: Optional[str] = None
+    trajectory_id: Optional[str] = None
+    trajectory_status: Optional[str] = None
+    trajectory_role: Optional[str] = None
+    wbv_eligible: Optional[bool] = None
+    source_label: Optional[str] = None
+    station_count: Optional[int] = None
+    md_min: Optional[float] = None
+    md_max: Optional[float] = None
+    tvd_min: Optional[float] = None
+    tvd_max: Optional[float] = None
+    is_active_trajectory: Optional[bool] = None
+    is_synthetic_trajectory: Optional[bool] = None
     provenance: dict[str, Any] = Field(default_factory=dict)
 
 
