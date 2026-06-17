@@ -77,7 +77,7 @@ def _check_candidate_role(candidate: SourceFileCandidate, checks: list[SourceInt
         checks.append(
             _review(
                 "candidate.role.wellbore_geometry",
-                "Wellbore Geometry candidate detected. Structured deviation-survey preview may be parsed, but trajectory registration is still disabled.",
+                "Wellbore geometry candidate detected. Review the parsed trajectory and any warnings before MSI registration.",
                 field_name="candidate_role",
                 severity=SourceIntakeQaqcSeverity.MEDIUM,
             )

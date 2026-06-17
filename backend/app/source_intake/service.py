@@ -1110,10 +1110,6 @@ class WlvSourceIntakeService:
             SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE,
         }
         warnings = ["File type requires review before WMDP staging."] if candidate_role == SourceIntakeCandidateRole.OTHER_REVIEW_REQUIRED else []
-        if candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
-            warnings.append(
-                "Wellbore geometry candidate detected; structured deviation-survey preview is enabled, while trajectory registration remains reserved for a later Source Intake block."
-            )
         relative_path = str(file_path.relative_to(root))
         stat = file_path.stat()
         modified_at = utc_now_iso()
