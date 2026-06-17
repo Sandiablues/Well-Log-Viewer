@@ -267,7 +267,6 @@ class WlvSourceIntakeService:
         fresh.resolved_at = existing.resolved_at
         fresh.resolution_reason = existing.resolution_reason
         fresh.current_decision = existing.current_decision
-        fresh.resolved_metadata = existing.resolved_metadata
 
         fresh.registration_status = existing.registration_status
         fresh.managed_well_id = existing.managed_well_id
@@ -294,7 +293,15 @@ class WlvSourceIntakeService:
         if candidate.current_decision is None:
             return
 
+        WlvSourceIntakeService._reapply_decision_payload(candidate)
         recompute_qaqc_after_resolution(candidate, candidate.current_decision)
+
+    @staticmethod
+    def _reapply_decision_payload(
+        candidate: SourceFileCandidate,
+    ) -> None:
+        """Replay durable human intent without restoring stale inferred state."""
+        SourceIntakeResolutionService().reapply_current_decision(candidate)
 
     def get_workbench(self) -> SourceIntakeWorkbench:
         snapshot = self._load_snapshot()

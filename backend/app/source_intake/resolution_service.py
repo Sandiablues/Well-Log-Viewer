@@ -142,6 +142,40 @@ class SourceIntakeResolutionService:
 
         return rows
 
+    def reapply_current_decision(
+        self,
+        candidate: SourceFileCandidate,
+    ) -> SourceFileCandidate:
+        """Reapply only durable human intent to fresh scan evidence.
+
+        Fresh parser output, inferred metadata, QAQC, and classifications remain
+        authoritative after rescan. Only the current human decision is replayed.
+        """
+        decision = candidate.current_decision
+        if decision is None:
+            return candidate
+
+        if (
+            decision.decision == SourceIntakeHumanDecision.ACCEPT
+            and decision.legacy_action
+            == SourceIntakeResolutionAction.CONFIRM_SUGGESTION
+        ):
+            self._confirm_current_suggestions(candidate)
+
+        if decision.corrected_values:
+            self._apply_resolved_values(
+                candidate,
+                decision.corrected_values,
+            )
+
+        if (
+            decision.decision == SourceIntakeHumanDecision.ASSIGN
+            and decision.assignment_target
+        ):
+            candidate.canonical_occurrence_id = decision.assignment_target
+
+        return candidate
+
     def apply_bulk(
         self,
         candidates: list[SourceFileCandidate],

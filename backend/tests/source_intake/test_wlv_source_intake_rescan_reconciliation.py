@@ -173,3 +173,126 @@ def test_exact_duplicate_across_repositories_uses_fingerprint_only(tmp_path: Pat
     assert rows[0].content_fingerprint == rows[1].content_fingerprint
     assert rows[0].duplicate_group_id == rows[1].duplicate_group_id
     assert sum(row.resolution_state == SourceIntakeResolutionState.DUPLICATE for row in rows) == 1
+
+
+
+def test_rescan_refreshes_stale_inference_and_keeps_manual_correction(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repository-a"
+    _write(root / "well.las")
+    service = _service(tmp_path)
+    repository = service.create_repository(
+        SourceRepositoryCreateRequest(
+            root_path=str(root),
+            include_subfolders=True,
+        )
+    )
+    candidate = service.scan_repository(
+        repository.repository_id
+    ).candidates[0]
+
+    service.resolve_candidates(
+        SourceIntakeBulkResolutionRequest(
+            decisions=[
+                SourceIntakeResolutionDecision(
+                    occurrence_id=candidate.occurrence_id,
+                    action=SourceIntakeResolutionAction.METADATA_OVERRIDE,
+                    actor="reviewer",
+                    reason="Correct operator only.",
+                    resolved_values={
+                        "operator": "Reviewed Operator",
+                    },
+                )
+            ]
+        )
+    )
+
+    snapshot = service._load_snapshot()
+    persisted = snapshot.candidates[0]
+    assert persisted.resolved_metadata is not None
+
+    persisted.resolved_metadata.well_name.value = "STALE INFERRED NAME"
+    persisted.resolved_metadata.well_name.source = "filename_inference"
+    persisted.resolved_metadata.uwi.value = "STALE-INFERRED-UWI"
+    persisted.resolved_metadata.uwi.source = "filename_inference"
+    persisted.qaqc_status.messages = ["stale message"]
+    persisted.readiness_issues = ["stale readiness issue"]
+
+    service._save_snapshot(snapshot)
+
+    rescanned = service.scan_repository(
+        repository.repository_id
+    ).candidates[0]
+
+    assert rescanned.occurrence_id == candidate.occurrence_id
+    assert rescanned.resolved_metadata is not None
+
+    # The fixture contains the generic value "WELL", which the resolver
+    # intentionally treats as weak/missing identity rather than a canonical
+    # well name. The important contract is that the injected stale inference
+    # is gone.
+    assert rescanned.resolved_metadata.well_name.value is None
+    assert rescanned.resolved_metadata.well_name.source == "missing"
+
+    assert rescanned.resolved_metadata.uwi.value is None
+    assert rescanned.resolved_metadata.uwi.source != "filename_inference"
+
+    assert (
+        rescanned.resolved_metadata.operator.value
+        == "Reviewed Operator"
+    )
+    assert (
+        rescanned.resolved_metadata.operator.source
+        == "manual_resolution"
+    )
+
+    assert "stale message" not in rescanned.qaqc_status.messages
+    assert "stale readiness issue" not in rescanned.readiness_issues
+
+
+def test_changed_content_creates_new_occurrence_without_inheriting_decision(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repository-a"
+    path = root / "well.las"
+    _write(path)
+
+    service = _service(tmp_path)
+    repository = service.create_repository(
+        SourceRepositoryCreateRequest(
+            root_path=str(root),
+            include_subfolders=True,
+        )
+    )
+
+    original = service.scan_repository(
+        repository.repository_id
+    ).candidates[0]
+
+    service.resolve_candidates(
+        SourceIntakeBulkResolutionRequest(
+            decisions=[
+                SourceIntakeResolutionDecision(
+                    occurrence_id=original.occurrence_id,
+                    action=SourceIntakeResolutionAction.METADATA_OVERRIDE,
+                    actor="reviewer",
+                    reason="Original occurrence correction.",
+                    resolved_values={
+                        "operator": "Reviewed Operator",
+                    },
+                )
+            ]
+        )
+    )
+
+    _write(path, LAS.replace("50.0", "60.0"))
+
+    changed = service.scan_repository(
+        repository.repository_id
+    ).candidates[0]
+
+    assert changed.occurrence_id != original.occurrence_id
+    assert changed.current_decision is None
+    assert changed.resolved_metadata is not None
+    assert changed.resolved_metadata.operator.value is None
