@@ -16,7 +16,6 @@ from .models import (
     SourceIntakeCandidateRole,
     SourceIntakeFileType,
     SourceIntakeFindingClass,
-    SourceIntakeFindingDisposition,
     SourceIntakeParseStatus,
     SourceIntakeQaqcCheck,
     SourceIntakeQaqcResult,
@@ -342,42 +341,38 @@ def _check_curve_headers(candidate: SourceFileCandidate, checks: list[SourceInta
 
 
 def summarize_source_intake_qaqc(checks: Iterable[SourceIntakeQaqcCheck]) -> SourceIntakeQaqcResult:
+    """Summarize only the candidate's current QAQC findings."""
     check_list = list(checks)
-    active_checks = [
-        check
-        for check in check_list
-        if check.disposition == SourceIntakeFindingDisposition.ACTIVE
-    ]
     warning_count = sum(
         1
-        for check in active_checks
+        for check in check_list
         if check.status in {
             SourceIntakeQaqcStatus.WARNING,
             SourceIntakeQaqcStatus.REVIEW_REQUIRED,
         }
     )
     failure_count = sum(
-        1 for check in active_checks if check.status == SourceIntakeQaqcStatus.FAIL
+        1 for check in check_list if check.status == SourceIntakeQaqcStatus.FAIL
     )
     hard_failure_count = sum(
         1
-        for check in active_checks
+        for check in check_list
         if check.finding_class == SourceIntakeFindingClass.HARD_FAILURE
     )
     review_controlled_count = sum(
         1
-        for check in active_checks
+        for check in check_list
         if check.finding_class == SourceIntakeFindingClass.REVIEW_CONTROLLED
     )
     non_blocking_warning_count = sum(
         1
-        for check in active_checks
+        for check in check_list
         if check.finding_class == SourceIntakeFindingClass.NON_BLOCKING_WARNING
     )
     review_required = any(
         check.review_required
         or check.status == SourceIntakeQaqcStatus.REVIEW_REQUIRED
-        for check in active_checks
+        for check in check_list
     )
     severity = _max_severity(check.severity for check in check_list)
 
@@ -402,12 +397,11 @@ def summarize_source_intake_qaqc(checks: Iterable[SourceIntakeQaqcCheck]) -> Sou
         review_required=review_required,
         messages=[
             check.message
-            for check in active_checks
+            for check in check_list
             if check.status != SourceIntakeQaqcStatus.PASS
         ],
         checks=check_list,
     )
-
 
 def _max_severity(severities: Iterable[SourceIntakeQaqcSeverity]) -> SourceIntakeQaqcSeverity:
     selected = SourceIntakeQaqcSeverity.NONE

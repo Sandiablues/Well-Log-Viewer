@@ -1,13 +1,15 @@
 from pathlib import Path
 
+import pytest
+
 from app.source_intake.models import (
     SourceIntakeBulkResolutionRequest,
-    SourceIntakeFindingDisposition,
     SourceIntakeResolutionAction,
     SourceIntakeResolutionDecision,
     SourceRepositoryCreateRequest,
 )
-from app.source_intake.service import WlvSourceIntakeService
+from app.source_intake.qaqc import run_source_intake_qaqc
+from app.source_intake.service import SourceIntakeError, WlvSourceIntakeService
 
 
 LAS = """~Version
@@ -34,7 +36,10 @@ def _scan(tmp_path: Path):
     (root / "candidate.las").write_text(LAS)
     service = WlvSourceIntakeService(storage_path=tmp_path / "source.json")
     repository = service.create_repository(
-        SourceRepositoryCreateRequest(root_path=str(root), include_subfolders=True)
+        SourceRepositoryCreateRequest(
+            root_path=str(root),
+            include_subfolders=True,
+        )
     )
     candidate = service.scan_repository(repository.repository_id).candidates[0]
     return service, candidate
@@ -46,8 +51,9 @@ def _resolve(service, decision):
     )
 
 
-def test_manual_correction_recomputes_identity_and_archives_prior_qaqc(tmp_path: Path) -> None:
+def test_manual_correction_replaces_current_qaqc_state(tmp_path: Path) -> None:
     service, candidate = _scan(tmp_path)
+
     assert any(
         check.check_id == "identity.uwi.missing"
         for check in candidate.qaqc_status.checks
@@ -65,20 +71,23 @@ def test_manual_correction_recomputes_identity_and_archives_prior_qaqc(tmp_path:
     )
 
     updated = service.get_workbench().candidates[0]
-    assert updated.qaqc_history
-    assert any(
-        check.check_id == "identity.uwi.missing"
-        for check in updated.qaqc_history[-1].result.checks
-    )
+
     assert any(
         check.check_id == "identity.uwi.present"
         for check in updated.qaqc_status.checks
     )
+    assert not any(
+        check.check_id == "identity.uwi.missing"
+        for check in updated.qaqc_status.checks
+    )
+    assert not hasattr(updated, "qaqc_history")
 
 
-def test_warning_acceptance_deactivates_only_the_target_finding(tmp_path: Path) -> None:
+def test_warning_acceptance_removes_only_current_target_finding(
+    tmp_path: Path,
+) -> None:
     service, candidate = _scan(tmp_path)
-    before_review_count = candidate.qaqc_status.review_controlled_count
+    before_ids = {check.check_id for check in candidate.qaqc_status.checks}
 
     _resolve(
         service,
@@ -92,45 +101,42 @@ def test_warning_acceptance_deactivates_only_the_target_finding(tmp_path: Path) 
     )
 
     updated = service.get_workbench().candidates[0]
-    check = next(
-        item
-        for item in updated.qaqc_status.checks
-        if item.check_id == "identity.uwi.missing"
-    )
-    assert check.disposition == SourceIntakeFindingDisposition.ACCEPTED
-    assert check.disposition_event_id == updated.resolution_history[-1].event_id
-    assert check.review_required is False
-    assert updated.qaqc_status.review_controlled_count == before_review_count - 1
-    assert updated.qaqc_status.review_controlled_count > 0
-    assert updated.qaqc_history[-1].result.review_controlled_count == before_review_count
+    after_ids = {check.check_id for check in updated.qaqc_status.checks}
+
+    assert "identity.uwi.missing" not in after_ids
+    assert after_ids == before_ids - {"identity.uwi.missing"}
+    assert updated.resolution_history[-1].actor == "reviewer"
 
 
-def test_promote_with_exception_accepts_review_findings_without_erasing_them(tmp_path: Path) -> None:
+def test_hard_failure_override_is_rejected(tmp_path: Path) -> None:
     service, candidate = _scan(tmp_path)
+    candidate.parse_error = "Unreadable source."
+    candidate.qaqc_status = run_source_intake_qaqc(candidate)
 
-    _resolve(
-        service,
-        SourceIntakeResolutionDecision(
-            occurrence_id=candidate.occurrence_id,
-            action=SourceIntakeResolutionAction.PROMOTE_WITH_EXCEPTION,
-            actor="reviewer",
-            reason="Package evidence reviewed.",
-            accepted_warning_codes=["missing_uwi"],
-        ),
+    snapshot = service._load_snapshot()
+    service._save_snapshot(
+        snapshot.model_copy(update={"candidates": [candidate]})
     )
 
-    updated = service.get_workbench().candidates[0]
-    accepted = [
-        check
-        for check in updated.qaqc_status.checks
-        if check.disposition == SourceIntakeFindingDisposition.ACCEPTED
-    ]
-    assert accepted
-    assert all(check.finding_class.value != "hard_failure" for check in accepted)
-    assert updated.qaqc_history
+    with pytest.raises(
+        SourceIntakeError,
+        match="Hard failures cannot be overridden",
+    ):
+        _resolve(
+            service,
+            SourceIntakeResolutionDecision(
+                occurrence_id=candidate.occurrence_id,
+                action=SourceIntakeResolutionAction.PROMOTE_WITH_EXCEPTION,
+                actor="reviewer",
+                reason="Attempted exception.",
+                accepted_warning_codes=["review_required"],
+            ),
+        )
 
 
-def test_qaqc_history_survives_persistence_reload(tmp_path: Path) -> None:
+def test_current_state_survives_persistence_without_qaqc_history(
+    tmp_path: Path,
+) -> None:
     service, candidate = _scan(tmp_path)
 
     _resolve(
@@ -144,7 +150,14 @@ def test_qaqc_history_survives_persistence_reload(tmp_path: Path) -> None:
         ),
     )
 
-    reloaded = WlvSourceIntakeService(storage_path=tmp_path / "source.json")
+    reloaded = WlvSourceIntakeService(
+        storage_path=tmp_path / "source.json"
+    )
     updated = reloaded.get_workbench().candidates[0]
-    assert len(updated.qaqc_history) == 1
-    assert updated.qaqc_history[0].trigger_event_id == updated.resolution_history[-1].event_id
+
+    assert not hasattr(updated, "qaqc_history")
+    assert not any(
+        check.check_id == "identity.uwi.missing"
+        for check in updated.qaqc_status.checks
+    )
+    assert updated.resolution_history[-1].actor == "reviewer"

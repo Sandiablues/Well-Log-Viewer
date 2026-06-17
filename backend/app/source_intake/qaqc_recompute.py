@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-from copy import deepcopy
-
 from .models import (
     SourceFileCandidate,
     SourceIntakeFindingClass,
-    SourceIntakeFindingDisposition,
-    SourceIntakeQaqcAuditSnapshot,
     SourceIntakeResolutionAction,
     SourceIntakeResolutionAuditEvent,
 )
@@ -31,32 +27,25 @@ def recompute_qaqc_after_resolution(
     candidate: SourceFileCandidate,
     event: SourceIntakeResolutionAuditEvent,
 ) -> SourceFileCandidate:
-    candidate.qaqc_history.append(
-        SourceIntakeQaqcAuditSnapshot(
-            trigger_event_id=event.event_id,
-            trigger_action=event.action.value,
-            result=deepcopy(candidate.qaqc_status),
-        )
-    )
-
+    """Replace current QAQC after a human decision; retain no QAQC history."""
     current = run_source_intake_qaqc(candidate)
-    accepted_ids = _accepted_check_ids(current.checks, event)
+    checks = list(current.checks)
 
     if event.action in {
         SourceIntakeResolutionAction.WARNING_ACCEPTED,
         SourceIntakeResolutionAction.PROMOTE_WITH_EXCEPTION,
     }:
-        for check in current.checks:
-            if check.check_id not in accepted_ids:
-                continue
-            if check.finding_class == SourceIntakeFindingClass.HARD_FAILURE:
-                continue
-            check.disposition = SourceIntakeFindingDisposition.ACCEPTED
-            check.disposition_event_id = event.event_id
-            check.disposition_reason = event.reason
-            check.review_required = False
+        accepted_ids = _accepted_check_ids(checks, event)
+        checks = [
+            check
+            for check in checks
+            if (
+                check.check_id not in accepted_ids
+                or check.finding_class == SourceIntakeFindingClass.HARD_FAILURE
+            )
+        ]
 
-    candidate.qaqc_status = summarize_source_intake_qaqc(current.checks)
+    candidate.qaqc_status = summarize_source_intake_qaqc(checks)
     candidate.review_required = candidate.qaqc_status.review_required
     return candidate
 
@@ -79,11 +68,13 @@ def _accepted_check_ids(
                 for check in checks
                 if check.finding_class == SourceIntakeFindingClass.REVIEW_CONTROLLED
             )
+
         if code in _ALL_WARNING_ALIASES:
             accepted.update(
                 check.check_id
                 for check in checks
-                if check.finding_class == SourceIntakeFindingClass.NON_BLOCKING_WARNING
+                if check.finding_class
+                == SourceIntakeFindingClass.NON_BLOCKING_WARNING
             )
 
     if event.action == SourceIntakeResolutionAction.PROMOTE_WITH_EXCEPTION:
