@@ -110,7 +110,8 @@ def test_passing_las_candidate_registers_to_managed_inventory(tmp_path: Path) ->
     assert record.product_groups[0].items[0].curve_name == "GR"
     persisted = source.get_workbench().candidates[0]
     assert persisted.resolution_state == SourceIntakeResolutionState.REGISTERED
-    assert persisted.resolution_history[-1].action == SourceIntakeResolutionAction.REGISTERED
+    assert persisted.registration_status == "registered"
+    assert persisted.current_decision is None
 
 
 def test_missing_uwi_candidate_registers_without_using_internal_well_id_as_uwi(tmp_path: Path) -> None:

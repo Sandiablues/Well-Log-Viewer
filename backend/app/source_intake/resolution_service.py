@@ -16,7 +16,8 @@ from .models import (
     SourceIntakeBulkResolutionRequest,
     SourceIntakeBulkResolutionResponse,
     SourceIntakeResolutionAction,
-    SourceIntakeResolutionAuditEvent,
+    SourceIntakeCurrentDecision,
+    SourceIntakeHumanDecision,
     SourceIntakeResolutionDecision,
     SourceIntakeResolutionResult,
     SourceIntakeResolutionState,
@@ -178,24 +179,7 @@ class SourceIntakeResolutionService:
         candidate.resolved_at = now
         candidate.resolution_reason = reason or candidate.resolution_reason
         candidate.resolution_version += 1
-        candidate.resolution_history.append(
-            SourceIntakeResolutionAuditEvent(
-                event_id=self._event_id_for_transition(
-                    candidate,
-                    SourceIntakeResolutionAction.REGISTERED,
-                    now,
-                ),
-                action=SourceIntakeResolutionAction.REGISTERED,
-                actor=actor,
-                reason=reason,
-                occurred_at=now,
-                previous_state=previous,
-                next_state=SourceIntakeResolutionState.REGISTERED,
-                original_values=self._current_values(candidate),
-                resolved_values={},
-                accepted_warning_codes=[],
-            )
-        )
+
 
     @staticmethod
     def accounting(candidates: Iterable[SourceFileCandidate]) -> SourceIntakeOccurrenceAccounting:
@@ -265,25 +249,47 @@ class SourceIntakeResolutionService:
         candidate.resolved_at = now
         candidate.resolution_reason = decision.reason
         candidate.resolution_version += 1
-        event = SourceIntakeResolutionAuditEvent(
-            event_id=self._event_id(candidate, decision, now),
-            action=decision.action,
+        candidate.current_decision = SourceIntakeCurrentDecision(
+            decision=self._human_decision_kind(decision.action),
             actor=decision.actor,
             reason=decision.reason,
-            occurred_at=now,
-            previous_state=previous,
-            next_state=next_state,
-            original_values=original_values,
-            resolved_values=decision.resolved_values,
-            accepted_warning_codes=decision.accepted_warning_codes,
+            decided_at=now,
+            corrected_values=decision.resolved_values,
+            accepted_finding_codes=decision.accepted_warning_codes,
+            assignment_target=decision.canonical_occurrence_id,
+            legacy_action=decision.action,
         )
-        candidate.resolution_history.append(event)
         return SourceIntakeResolutionResult(
             occurrence_id=decision.occurrence_id,
             previous_state=previous,
             next_state=next_state,
             ingestible=is_ingestible(candidate),
             message=f"Resolution state changed from {previous.value} to {next_state.value}.",
+        )
+
+    @staticmethod
+    def _human_decision_kind(
+        action: SourceIntakeResolutionAction,
+    ) -> SourceIntakeHumanDecision:
+        if action in {
+            SourceIntakeResolutionAction.CONFIRM_SUGGESTION,
+            SourceIntakeResolutionAction.WARNING_ACCEPTED,
+            SourceIntakeResolutionAction.PROMOTE_WITH_EXCEPTION,
+        }:
+            return SourceIntakeHumanDecision.ACCEPT
+        if action in {
+            SourceIntakeResolutionAction.MANUAL_CORRECTION,
+            SourceIntakeResolutionAction.METADATA_OVERRIDE,
+        }:
+            return SourceIntakeHumanDecision.CORRECT
+        if action == SourceIntakeResolutionAction.CANONICAL_SELECTED:
+            return SourceIntakeHumanDecision.ASSIGN
+        if action == SourceIntakeResolutionAction.EXCLUDED:
+            return SourceIntakeHumanDecision.EXCLUDE
+        if action == SourceIntakeResolutionAction.REOPENED:
+            return SourceIntakeHumanDecision.CLEAR_DECISION
+        raise SourceIntakeResolutionError(
+            f"Unsupported human decision action: {action.value}"
         )
 
     def _next_state(self, candidate, decision, by_id):
@@ -312,6 +318,7 @@ class SourceIntakeResolutionService:
             candidate.canonical_occurrence_id = canonical_id
             return SourceIntakeResolutionState.RESOLVED if canonical_id == decision.occurrence_id else SourceIntakeResolutionState.DUPLICATE
         if action == SourceIntakeResolutionAction.REOPENED:
+            candidate.current_decision = None
             return SourceIntakeResolutionState.UNRESOLVED
         raise SourceIntakeResolutionError(f"Unsupported resolution action: {action.value}")
 

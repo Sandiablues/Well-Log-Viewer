@@ -266,7 +266,7 @@ class WlvSourceIntakeService:
         fresh.resolved_by = existing.resolved_by
         fresh.resolved_at = existing.resolved_at
         fresh.resolution_reason = existing.resolution_reason
-        fresh.resolution_history = list(existing.resolution_history)
+        fresh.current_decision = existing.current_decision
         fresh.resolved_metadata = existing.resolved_metadata
 
         fresh.registration_status = existing.registration_status
@@ -291,13 +291,10 @@ class WlvSourceIntakeService:
         current decision prevents a rescan from reopening already reviewed
         findings without creating a QAQC history timeline.
         """
-        if not candidate.resolution_history:
+        if candidate.current_decision is None:
             return
 
-        recompute_qaqc_after_resolution(
-            candidate,
-            candidate.resolution_history[-1],
-        )
+        recompute_qaqc_after_resolution(candidate, candidate.current_decision)
 
     def get_workbench(self) -> SourceIntakeWorkbench:
         snapshot = self._load_snapshot()
@@ -336,12 +333,9 @@ class WlvSourceIntakeService:
         }
         for result in response.results:
             candidate = by_occurrence.get(result.occurrence_id)
-            if candidate is None or not candidate.resolution_history:
+            if candidate is None or candidate.current_decision is None:
                 continue
-            recompute_qaqc_after_resolution(
-                candidate,
-                candidate.resolution_history[-1],
-            )
+            recompute_qaqc_after_resolution(candidate, candidate.current_decision)
         for candidate in snapshot.candidates:
             evaluate_registration_readiness(candidate)
         self._save_snapshot(snapshot)

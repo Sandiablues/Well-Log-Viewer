@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 WLV_SOURCE_INTAKE_WORKFLOW_STEPS: tuple[str, ...] = (
@@ -324,17 +324,31 @@ class SourceIntakeResolutionAction(str, Enum):
     REGISTERED = "registered"
 
 
-class SourceIntakeResolutionAuditEvent(BaseModel):
-    event_id: str
-    action: SourceIntakeResolutionAction
+class SourceIntakeHumanDecision(str, Enum):
+    ACCEPT = "accept"
+    CORRECT = "correct"
+    ASSIGN = "assign"
+    EXCLUDE = "exclude"
+    CLEAR_DECISION = "clear_decision"
+
+
+class SourceIntakeCurrentDecision(BaseModel):
+    decision: SourceIntakeHumanDecision
     actor: Optional[str] = None
+    decided_at: str = Field(default_factory=utc_now_iso)
     reason: Optional[str] = None
-    occurred_at: str = Field(default_factory=utc_now_iso)
-    previous_state: Optional[SourceIntakeResolutionState] = None
-    next_state: SourceIntakeResolutionState
-    original_values: dict[str, Any] = Field(default_factory=dict)
-    resolved_values: dict[str, Any] = Field(default_factory=dict)
-    accepted_warning_codes: list[str] = Field(default_factory=list)
+    corrected_values: dict[str, Any] = Field(default_factory=dict)
+    accepted_finding_codes: list[str] = Field(default_factory=list)
+    assignment_target: Optional[str] = None
+    legacy_action: Optional[SourceIntakeResolutionAction] = None
+
+    @property
+    def action(self) -> Optional[SourceIntakeResolutionAction]:
+        return self.legacy_action
+
+    @property
+    def accepted_warning_codes(self) -> list[str]:
+        return self.accepted_finding_codes
 
 
 class SourceIntakeResolutionDecision(BaseModel):
@@ -419,7 +433,48 @@ class SourceFileCandidate(BaseModel):
     resolved_by: Optional[str] = None
     resolved_at: Optional[str] = None
     resolution_reason: Optional[str] = None
-    resolution_history: list[SourceIntakeResolutionAuditEvent] = Field(default_factory=list)
+    current_decision: Optional[SourceIntakeCurrentDecision] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_resolution_history(cls, values: Any) -> Any:
+        if not isinstance(values, dict):
+            return values
+        if values.get("current_decision") is not None:
+            return values
+        history = values.get("resolution_history") or []
+        if not history:
+            return values
+        latest = history[-1]
+        action = latest.get("action")
+        mapping = {
+            "confirm_suggestion": "accept",
+            "warning_accepted": "accept",
+            "promote_with_exception": "accept",
+            "manual_correction": "correct",
+            "metadata_override": "correct",
+            "canonical_selected": "assign",
+            "excluded": "exclude",
+            "reopened": "clear_decision",
+        }
+        decision = mapping.get(action)
+        if decision:
+            values["current_decision"] = {
+                "decision": decision,
+                "actor": latest.get("actor"),
+                "decided_at": latest.get("occurred_at") or utc_now_iso(),
+                "reason": latest.get("reason"),
+                "corrected_values": latest.get("resolved_values") or {},
+                "accepted_finding_codes": latest.get("accepted_warning_codes") or [],
+                "assignment_target": latest.get("canonical_occurrence_id"),
+                "legacy_action": action,
+            }
+        values.pop("resolution_history", None)
+        return values
+
+    @property
+    def resolution_history(self) -> list[SourceIntakeCurrentDecision]:
+        return [self.current_decision] if self.current_decision is not None else []
     repository_id: str
     scan_id: str
     file_name: str

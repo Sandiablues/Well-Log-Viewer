@@ -187,3 +187,28 @@ def test_backend_advertises_small_human_action_set(tmp_path: Path) -> None:
         "assign",
         "exclude",
     }
+
+
+def test_candidate_keeps_only_current_human_decision(tmp_path: Path) -> None:
+    service, candidate = _scan(tmp_path)
+
+    service.resolve_candidates(
+        SourceIntakeBulkResolutionRequest(
+            decisions=[
+                SourceIntakeResolutionDecision(
+                    occurrence_id=candidate.occurrence_id,
+                    action=SourceIntakeResolutionAction.WARNING_ACCEPTED,
+                    actor="reviewer",
+                    reason="Accepted current finding.",
+                    accepted_warning_codes=["missing_uwi"],
+                )
+            ]
+        )
+    )
+
+    updated = service.get_workbench().candidates[0]
+    assert "resolution_history" not in type(updated).model_fields
+    assert updated.current_decision is not None
+    assert updated.current_decision.decision.value == "accept"
+    assert updated.current_decision.actor == "reviewer"
+    assert len(updated.resolution_history) == 1

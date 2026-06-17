@@ -3,8 +3,8 @@ from __future__ import annotations
 from .models import (
     SourceFileCandidate,
     SourceIntakeFindingClass,
-    SourceIntakeResolutionAction,
-    SourceIntakeResolutionAuditEvent,
+    SourceIntakeCurrentDecision,
+    SourceIntakeHumanDecision,
 )
 from .qaqc import run_source_intake_qaqc, summarize_source_intake_qaqc
 
@@ -25,16 +25,13 @@ _ALL_WARNING_ALIASES = {"optional_warning"}
 
 def recompute_qaqc_after_resolution(
     candidate: SourceFileCandidate,
-    event: SourceIntakeResolutionAuditEvent,
+    event: SourceIntakeCurrentDecision,
 ) -> SourceFileCandidate:
     """Replace current QAQC after a human decision; retain no QAQC history."""
     current = run_source_intake_qaqc(candidate)
     checks = list(current.checks)
 
-    if event.action in {
-        SourceIntakeResolutionAction.WARNING_ACCEPTED,
-        SourceIntakeResolutionAction.PROMOTE_WITH_EXCEPTION,
-    }:
+    if event.decision == SourceIntakeHumanDecision.ACCEPT:
         accepted_ids = _accepted_check_ids(checks, event)
         checks = [
             check
@@ -52,12 +49,12 @@ def recompute_qaqc_after_resolution(
 
 def _accepted_check_ids(
     checks,
-    event: SourceIntakeResolutionAuditEvent,
+    event: SourceIntakeCurrentDecision,
 ) -> set[str]:
     accepted: set[str] = set()
     available = {check.check_id for check in checks}
 
-    for code in event.accepted_warning_codes:
+    for code in event.accepted_finding_codes:
         if code in available:
             accepted.add(code)
         accepted.update(_CODE_ALIASES.get(code, set()))
@@ -77,7 +74,7 @@ def _accepted_check_ids(
                 == SourceIntakeFindingClass.NON_BLOCKING_WARNING
             )
 
-    if event.action == SourceIntakeResolutionAction.PROMOTE_WITH_EXCEPTION:
+    if event.legacy_action and event.legacy_action.value == "promote_with_exception":
         accepted.update(
             check.check_id
             for check in checks
