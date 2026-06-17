@@ -307,6 +307,8 @@ class WlvSourceIntakeService:
             response = self.resolution_service.apply_bulk(snapshot.candidates, request)
         except SourceIntakeResolutionError as exc:
             raise SourceIntakeError(str(exc)) from exc
+        for candidate in snapshot.candidates:
+            evaluate_registration_readiness(candidate)
         self._save_snapshot(snapshot)
         return response
 

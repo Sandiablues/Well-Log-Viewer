@@ -146,7 +146,8 @@ def evaluate_registration_readiness(candidate: SourceFileCandidate) -> SourceFil
                 [
                     "assign_existing_well",
                     "create_new_well",
-                    "correct_identity",
+                    "confirm_suggestion",
+                    "manual_correction",
                     "exclude_candidate",
                 ]
             )
@@ -177,7 +178,32 @@ def evaluate_registration_readiness(candidate: SourceFileCandidate) -> SourceFil
             SourceIntakeReadinessBlockCategory.REVIEW_REQUIRED,
             "Candidate resolution state requires review before registration.",
         )
-        actions.extend(["correct_identity", "accept_warnings", "exclude_candidate"])
+        actions.extend(
+            [
+                "confirm_suggestion",
+                "manual_correction",
+                "accept_warnings",
+                "promote_with_exception",
+                "exclude_candidate",
+            ]
+        )
+
+    if candidate.qaqc_status.non_blocking_warning_count > 0:
+        actions.append("accept_warnings")
+    if candidate.qaqc_status.review_controlled_count > 0:
+        actions.append("promote_with_exception")
+    if candidate.resolved_metadata is not None and any(
+        getattr(candidate.resolved_metadata, name).value
+        for name in ("well_name", "uwi", "operator", "field", "block")
+    ):
+        actions.append("confirm_suggestion")
+    if candidate.resolution_state not in {
+        SourceIntakeResolutionState.REGISTERED,
+        SourceIntakeResolutionState.EXCLUDED,
+        SourceIntakeResolutionState.DUPLICATE,
+        SourceIntakeResolutionState.HARD_FAILED,
+    }:
+        actions.append("manual_correction")
 
     candidate.registration_block_reasons = reasons
     candidate.available_resolution_actions = list(dict.fromkeys(actions))

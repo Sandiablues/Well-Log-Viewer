@@ -320,8 +320,11 @@ class SourceIntakeResolutionState(str, Enum):
 
 class SourceIntakeResolutionAction(str, Enum):
     AUTO_CLASSIFIED = "auto_classified"
+    CONFIRM_SUGGESTION = "confirm_suggestion"
+    MANUAL_CORRECTION = "manual_correction"
     METADATA_OVERRIDE = "metadata_override"
     WARNING_ACCEPTED = "warning_accepted"
+    PROMOTE_WITH_EXCEPTION = "promote_with_exception"
     CANONICAL_SELECTED = "canonical_selected"
     EXCLUDED = "excluded"
     REOPENED = "reopened"

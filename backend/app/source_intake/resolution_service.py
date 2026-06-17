@@ -251,7 +251,11 @@ class SourceIntakeResolutionService:
             raise SourceIntakeResolutionError("Registered candidates cannot be modified through review resolution.")
 
         original_values = self._current_values(candidate)
+        self._validate_explicit_action(candidate, decision)
         next_state = self._next_state(candidate, decision, by_id)
+
+        if decision.action == SourceIntakeResolutionAction.CONFIRM_SUGGESTION:
+            self._confirm_current_suggestions(candidate)
         if decision.resolved_values:
             self._apply_resolved_values(candidate, decision.resolved_values)
 
@@ -284,7 +288,13 @@ class SourceIntakeResolutionService:
 
     def _next_state(self, candidate, decision, by_id):
         action = decision.action
-        if action in {SourceIntakeResolutionAction.METADATA_OVERRIDE, SourceIntakeResolutionAction.WARNING_ACCEPTED}:
+        if action in {
+            SourceIntakeResolutionAction.CONFIRM_SUGGESTION,
+            SourceIntakeResolutionAction.MANUAL_CORRECTION,
+            SourceIntakeResolutionAction.METADATA_OVERRIDE,
+            SourceIntakeResolutionAction.WARNING_ACCEPTED,
+            SourceIntakeResolutionAction.PROMOTE_WITH_EXCEPTION,
+        }:
             if candidate.qaqc_status.failure_count > 0 or candidate.parse_error:
                 raise SourceIntakeResolutionError("Hard failures cannot be overridden as ingestible.")
             return SourceIntakeResolutionState.RESOLVED
@@ -304,6 +314,67 @@ class SourceIntakeResolutionService:
         if action == SourceIntakeResolutionAction.REOPENED:
             return SourceIntakeResolutionState.UNRESOLVED
         raise SourceIntakeResolutionError(f"Unsupported resolution action: {action.value}")
+
+    @staticmethod
+    def _validate_explicit_action(
+        candidate: SourceFileCandidate,
+        decision: SourceIntakeResolutionDecision,
+    ) -> None:
+        action = decision.action
+
+        if action == SourceIntakeResolutionAction.CONFIRM_SUGGESTION:
+            if candidate.resolved_metadata is None:
+                raise SourceIntakeResolutionError("Candidate has no suggested metadata to confirm.")
+            if not any(
+                getattr(candidate.resolved_metadata, name).value
+                for name in ("well_name", "uwi", "operator", "field", "block")
+            ):
+                raise SourceIntakeResolutionError(
+                    "Candidate has no non-empty suggested metadata to confirm."
+                )
+
+        if action == SourceIntakeResolutionAction.MANUAL_CORRECTION:
+            if not decision.resolved_values:
+                raise SourceIntakeResolutionError(
+                    "Manual correction requires at least one resolved value."
+                )
+
+        if action == SourceIntakeResolutionAction.PROMOTE_WITH_EXCEPTION:
+            if not decision.reason:
+                raise SourceIntakeResolutionError(
+                    "Promotion with exception requires a reason."
+                )
+            if not decision.accepted_warning_codes:
+                raise SourceIntakeResolutionError(
+                    "Promotion with exception requires at least one accepted finding code."
+                )
+
+        if action in {
+            SourceIntakeResolutionAction.CONFIRM_SUGGESTION,
+            SourceIntakeResolutionAction.MANUAL_CORRECTION,
+            SourceIntakeResolutionAction.PROMOTE_WITH_EXCEPTION,
+        }:
+            if candidate.qaqc_status.failure_count > 0 or candidate.parse_error:
+                raise SourceIntakeResolutionError(
+                    "Hard failures cannot be overridden as ingestible."
+                )
+
+    @staticmethod
+    def _confirm_current_suggestions(candidate: SourceFileCandidate) -> None:
+        if candidate.resolved_metadata is None:
+            raise SourceIntakeResolutionError(
+                "Candidate has no resolved metadata contract."
+            )
+        for name in ("well_name", "uwi", "operator", "field", "block"):
+            field = getattr(candidate.resolved_metadata, name)
+            if field.value is not None:
+                field.source = "confirmed_suggestion"
+                field.confidence = "reviewed"
+                field.review_required = False
+        candidate.resolved_metadata.review_required = any(
+            getattr(candidate.resolved_metadata, name).review_required
+            for name in ("well_name", "uwi", "operator", "field", "block")
+        )
 
     @staticmethod
     def _apply_resolved_values(candidate: SourceFileCandidate, values: dict[str, object]) -> None:
