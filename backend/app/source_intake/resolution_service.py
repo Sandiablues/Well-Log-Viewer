@@ -75,6 +75,10 @@ class SourceIntakeResolutionService:
                 relative_path=candidate.relative_path,
                 checksum=fingerprint,
             )
+            # Source Intake candidate identity now represents one discovered
+            # occurrence. Content identity remains separate in
+            # content_fingerprint / duplicate_group_id.
+            candidate.source_file_id = candidate.occurrence_id
             candidate.duplicate_group_id = duplicate_group_identity(fingerprint)
             candidate.resolution_state = classify_initial_resolution(candidate)
             by_fingerprint.setdefault(fingerprint, []).append(candidate)

@@ -29,6 +29,11 @@ from .metadata_resolver import resolve_candidate_metadata
 from .identity_gate import apply_identity_gate
 from .qaqc import run_source_intake_qaqc
 from .registration import register_candidate_to_inventory, registration_block_reason
+from .resolution_service import (
+    SourceIntakeResolutionError,
+    SourceIntakeResolutionService,
+    occurrence_identity,
+)
 from .deviation_survey_parser import DeviationSurveyParseError, parse_deviation_survey_preview
 
 from .models import (
@@ -49,6 +54,8 @@ from .models import (
     SourceIntakeRegisterRequest,
     SourceIntakeRegisterResponse,
     SourceIntakeRegisterResult,
+    SourceIntakeBulkResolutionRequest,
+    SourceIntakeBulkResolutionResponse,
     SourceIntakeRepositoryStatus,
     SourceIntakeWellHeader,
     SourceIntakeCurveHeader,
@@ -76,6 +83,7 @@ class WlvSourceIntakeService:
             storage_path = backend_root / "data" / "source_intake" / "source_intake.json"
         self.storage_path = storage_path
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
+        self.resolution_service = SourceIntakeResolutionService()
 
     def health(self) -> dict[str, object]:
         snapshot = self._load_snapshot()
@@ -182,6 +190,8 @@ class WlvSourceIntakeService:
             candidate.qaqc_status = run_source_intake_qaqc(candidate)
             candidate.review_required = candidate.review_required or candidate.qaqc_status.review_required
 
+        candidates = self.resolution_service.initialize_candidates(candidates)
+
         snapshot.candidates = [candidate for candidate in snapshot.candidates if candidate.repository_id != repository_id]
         snapshot.candidates.extend(candidates)
 
@@ -219,6 +229,19 @@ class WlvSourceIntakeService:
         if candidate is None:
             raise SourceIntakeError(f"Source Intake candidate not found: {candidate_id}")
         return self._candidate_diagnostics(candidate)
+
+    def resolve_candidates(
+        self,
+        request: SourceIntakeBulkResolutionRequest,
+    ) -> SourceIntakeBulkResolutionResponse:
+        """Persist backend-owned post-scan review decisions."""
+        snapshot = self._load_snapshot()
+        try:
+            response = self.resolution_service.apply_bulk(snapshot.candidates, request)
+        except SourceIntakeResolutionError as exc:
+            raise SourceIntakeError(str(exc)) from exc
+        self._save_snapshot(snapshot)
+        return response
 
     def clear_workbench_selection(
         self,
@@ -1052,7 +1075,11 @@ class WlvSourceIntakeService:
             pass
 
         candidate = SourceFileCandidate(
-            source_file_id=f"src:{repository_id}:{checksum[:16]}",
+            source_file_id=occurrence_identity(
+                repository_id=repository_id,
+                relative_path=relative_path,
+                checksum=checksum,
+            ),
             repository_id=repository_id,
             scan_id=scan_id,
             file_name=file_path.name,

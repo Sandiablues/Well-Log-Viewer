@@ -9,6 +9,8 @@ from .models import (
     SourceIntakeClearRequest,
     SourceIntakeClearResponse,
     SourceIntakeHealth,
+    SourceIntakeBulkResolutionRequest,
+    SourceIntakeBulkResolutionResponse,
     SourceIntakeRegisterRequest,
     SourceIntakeRegisterResponse,
     SourceIntakeWorkbench,
@@ -84,6 +86,18 @@ def get_candidate_diagnostics(candidate_id: str) -> SourceIntakeCandidateDiagnos
         return _service.get_candidate_diagnostics(candidate_id)
     except SourceIntakeError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.post(
+    "/resolve",
+    response_model=SourceIntakeBulkResolutionResponse,
+    summary="Resolve WLV Source Intake review flags",
+)
+def resolve_candidates(request: SourceIntakeBulkResolutionRequest) -> SourceIntakeBulkResolutionResponse:
+    try:
+        return _service.resolve_candidates(request)
+    except SourceIntakeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/workbench/clear", response_model=SourceIntakeClearResponse, summary="Clear active WLV Source Intake selection")
