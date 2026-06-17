@@ -283,6 +283,20 @@ class SourceIntakeResolvedMetadata(BaseModel):
 
 
 
+
+class SourceIntakeReadinessBlockCategory(str, Enum):
+    HARD_FAILURE = "hard_failure"
+    REVIEW_REQUIRED = "review_required"
+    LIFECYCLE = "lifecycle"
+
+
+class SourceIntakeReadinessBlockReason(BaseModel):
+    code: str
+    category: SourceIntakeReadinessBlockCategory
+    message: str
+    overridable: bool = False
+
+
 class SourceIntakeResolutionState(str, Enum):
     UNRESOLVED = "unresolved"
     AUTO_INGESTIBLE = "auto_ingestible"
@@ -427,6 +441,13 @@ class SourceFileCandidate(BaseModel):
     registered_product_count: int = 0
     registered_curve_count: int = 0
     registered_trajectory_count: int = 0
+    registration_eligible: bool = False
+    registration_block_reasons: list[SourceIntakeReadinessBlockReason] = Field(default_factory=list)
+    available_resolution_actions: list[str] = Field(default_factory=list)
+    hard_failure_count: int = 0
+    overridable_review_count: int = 0
+    non_blocking_warning_count: int = 0
+    canonical_well_resolved: bool = False
 
 
 class SourceRepositoryScanResult(BaseModel):

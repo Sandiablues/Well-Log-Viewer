@@ -35,6 +35,7 @@ from app.inventory.repository import ManagedWellNotFoundError
 from app.inventory.service import ManagedWellInventoryService
 
 from .identity_gate import clean_identity_value
+from .readiness import evaluate_registration_readiness
 from .models import (
     SourceFileCandidate,
     SourceIntakeCandidateRole,
@@ -52,7 +53,42 @@ _ALLOWED_REGISTER_QAQC_STATUSES = {
 
 
 def registration_block_reason(candidate: SourceFileCandidate) -> str | None:
-    """Return a durable reason when a candidate is not registration-eligible."""
+    """Return the established registration diagnostic for an ineligible candidate.
+
+    Structured eligibility is computed by readiness.py. This function preserves
+    the existing public/tested rejection wording consumed by registration callers.
+    """
+    evaluate_registration_readiness(candidate)
+    if candidate.registration_eligible:
+        return None
+
+    if candidate.registration_status == "registered" or candidate.resolution_state == SourceIntakeResolutionState.REGISTERED:
+        return "Candidate is already registered to Managed Well Inventory."
+
+    if candidate.resolution_state == SourceIntakeResolutionState.DUPLICATE:
+        return "Candidate is an exact-content duplicate and cannot be registered again."
+
+    if candidate.resolution_state == SourceIntakeResolutionState.EXCLUDED:
+        return "Candidate is excluded from ingestion. Reopen it before registration."
+
+    if candidate.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
+        if candidate.parser_status not in {SourceIntakeParseStatus.PARSED, SourceIntakeParseStatus.PARSED_WITH_WARNINGS}:
+            return f"Geometry candidate parser_status is not registration-ready: {candidate.parser_status.value}."
+        if candidate.geometry_preview is None:
+            return "Geometry candidate has no parsed deviation-survey preview."
+        if not candidate.geometry_preview.stations_preview:
+            return "Geometry candidate preview has no station payload to register."
+        if candidate.qaqc_status.status not in _ALLOWED_REGISTER_QAQC_STATUSES:
+            return f"Geometry candidate QAQC status is not registration-ready: {candidate.qaqc_status.status.value}."
+        if candidate.qaqc_status.failure_count > 0:
+            return "Geometry candidate QAQC has failures and cannot be registered."
+        if not is_ingestible(candidate):
+            return (
+                "Geometry candidate resolution state is not registration-ready: "
+                f"{candidate.resolution_state.value}. Resolve the candidate first."
+            )
+        return candidate.registration_block_reasons[0].message if candidate.registration_block_reasons else None
+
     if candidate.candidate_role != SourceIntakeCandidateRole.WELL_LOG_CANDIDATE:
         return f"Only well_log_candidate records can be registered; got {candidate.candidate_role.value}."
 
@@ -69,20 +105,16 @@ def registration_block_reason(candidate: SourceFileCandidate) -> str | None:
         return "Candidate QAQC has failures and cannot be registered."
 
     well_name = _resolved_value(candidate, "well_name") or candidate.parsed_metadata.well_header.well_name
-    if not _clean(well_name):
+    if clean_identity_value(well_name) is None:
         return "Candidate has no resolved well name."
 
-    if not (
-        is_ingestible(candidate)
-        or candidate.resolution_state == SourceIntakeResolutionState.REGISTERED
-    ):
+    if not is_ingestible(candidate):
         return (
             "Candidate resolution state is not registration-ready: "
             f"{candidate.resolution_state.value}. Resolve or explicitly disposition the candidate first."
         )
 
-    return None
-
+    return candidate.registration_block_reasons[0].message if candidate.registration_block_reasons else "Candidate is not registration-ready."
 
 def _source_intake_provenance(candidate: SourceFileCandidate) -> dict[str, object]:
     return {

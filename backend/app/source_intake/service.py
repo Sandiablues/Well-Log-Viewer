@@ -29,6 +29,7 @@ from .metadata_resolver import resolve_candidate_metadata
 from .identity_gate import apply_identity_gate
 from .qaqc import run_source_intake_qaqc
 from .registration import register_candidate_to_inventory, registration_block_reason
+from .readiness import evaluate_registration_readiness
 from .resolution_service import (
     SourceIntakeResolutionError,
     SourceIntakeResolutionService,
@@ -232,6 +233,7 @@ class WlvSourceIntakeService:
         repository.updated_at = utc_now_iso()
 
         self._save_snapshot(snapshot)
+        candidates = [evaluate_registration_readiness(candidate) for candidate in candidates]
         return SourceRepositoryScanResult(
             ok=True,
             repository=repository,
@@ -277,10 +279,11 @@ class WlvSourceIntakeService:
 
     def get_workbench(self) -> SourceIntakeWorkbench:
         snapshot = self._load_snapshot()
+        candidates = [evaluate_registration_readiness(candidate) for candidate in snapshot.candidates]
         return SourceIntakeWorkbench(
-            summary=self._summary(snapshot.repositories, snapshot.candidates),
+            summary=self._summary(snapshot.repositories, candidates),
             repositories=snapshot.repositories,
-            candidates=snapshot.candidates,
+            candidates=candidates,
         )
 
     def get_candidate_diagnostics(self, candidate_id: str) -> SourceIntakeCandidateDiagnostics:

@@ -165,15 +165,17 @@ def test_unknown_non_log_candidate_is_blocked_from_registration(tmp_path: Path) 
     assert inventory.list_wells() == []
 
 
-def test_register_response_is_idempotent_and_updates_existing_record(tmp_path: Path) -> None:
+def test_registered_candidate_cannot_be_registered_again(tmp_path: Path) -> None:
     source, inventory, candidate = _scan(tmp_path, "FORGE_21_31.las", LAS_WITH_UWI)
 
     first = _register(source, inventory, candidate.source_file_id)
     second = _register(source, inventory, candidate.source_file_id)
 
     assert first.results[0].action == "created"
-    assert second.results[0].action == "updated"
-    assert first.results[0].managed_well_id == second.results[0].managed_well_id
+    assert second.registered_count == 0
+    assert second.skipped_count == 1
+    assert second.results[0].status == "blocked"
+    assert "already registered" in second.results[0].reason.lower()
     assert len(inventory.list_wells()) == 1
 
 
