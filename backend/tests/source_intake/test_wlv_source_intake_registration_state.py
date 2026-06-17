@@ -2,7 +2,13 @@ from pathlib import Path
 
 from app.inventory.repository import ManagedWellInventoryRepository
 from app.inventory.service import ManagedWellInventoryService
-from app.source_intake.models import SourceIntakeRegisterRequest, SourceRepositoryCreateRequest
+from app.source_intake.models import (
+    SourceIntakeBulkResolutionRequest,
+    SourceIntakeRegisterRequest,
+    SourceIntakeResolutionAction,
+    SourceIntakeResolutionDecision,
+    SourceRepositoryCreateRequest,
+)
 from app.source_intake.service import WlvSourceIntakeService
 
 LAS_WITHOUT_UWI = """~Version
@@ -41,6 +47,19 @@ def test_registered_candidate_state_is_returned_and_persisted_in_workbench(tmp_p
     repository = source.create_repository(SourceRepositoryCreateRequest(root_path=str(root), include_subfolders=True))
     scan = source.scan_repository(repository.repository_id)
     candidate = scan.candidates[0]
+    source.resolve_candidates(
+        SourceIntakeBulkResolutionRequest(
+            decisions=[
+                SourceIntakeResolutionDecision(
+                    occurrence_id=candidate.occurrence_id,
+                    action=SourceIntakeResolutionAction.WARNING_ACCEPTED,
+                    actor="test",
+                    reason="Missing UWI reviewed and accepted.",
+                    accepted_warning_codes=["missing_uwi"],
+                )
+            ]
+        )
+    )
 
     response = source.register_candidates(
         SourceIntakeRegisterRequest(candidate_ids=[candidate.source_file_id]),

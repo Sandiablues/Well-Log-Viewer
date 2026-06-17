@@ -450,6 +450,21 @@ class SourceIntakeWorkbenchSummary(BaseModel):
     review_required_count: int
 
 
+class SourceIntakeOccurrenceAccounting(BaseModel):
+    total_occurrences: int = 0
+    registered_count: int = 0
+    excluded_count: int = 0
+    duplicate_count: int = 0
+    hard_failed_count: int = 0
+    unresolved_count: int = 0
+    ingestible_count: int = 0
+    accounted_count: int = 0
+    unaccounted_count: int = 0
+    balanced: bool = True
+    state_counts: dict[str, int] = Field(default_factory=dict)
+
+
+
 class SourceIntakeWorkbench(BaseModel):
     ok: bool = True
     service: str = "wlv-source-intake"

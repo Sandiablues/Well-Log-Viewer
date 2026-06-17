@@ -2,7 +2,14 @@ from pathlib import Path
 
 from app.inventory.repository import ManagedWellInventoryRepository
 from app.inventory.service import ManagedWellInventoryService
-from app.source_intake.models import SourceIntakeRegisterRequest, SourceRepositoryCreateRequest
+from app.source_intake.models import (
+    SourceIntakeBulkResolutionRequest,
+    SourceIntakeRegisterRequest,
+    SourceIntakeResolutionAction,
+    SourceIntakeResolutionDecision,
+    SourceIntakeResolutionState,
+    SourceRepositoryCreateRequest,
+)
 from app.source_intake.service import WlvSourceIntakeService
 
 LAS_STRONG_FORGE = """~Version
@@ -76,6 +83,26 @@ def test_identity_gate_assigns_generic_las_to_single_package_well_before_registr
     assert weak.resolved_metadata.uwi.value == "2700190539"
     assert weak.review_required is True
     assert any("assigned to the package well identity" in warning for warning in weak.warnings)
+
+    unresolved = [
+        candidate
+        for candidate in source.get_workbench().candidates
+        if candidate.resolution_state == SourceIntakeResolutionState.UNRESOLVED
+    ]
+    source.resolve_candidates(
+        SourceIntakeBulkResolutionRequest(
+            decisions=[
+                SourceIntakeResolutionDecision(
+                    occurrence_id=candidate.occurrence_id,
+                    action=SourceIntakeResolutionAction.WARNING_ACCEPTED,
+                    actor="test",
+                    reason="Candidate warnings reviewed and accepted before package registration.",
+                    accepted_warning_codes=["review_required"],
+                )
+                for candidate in unresolved
+            ]
+        )
+    )
 
     response = source.register_candidates(
         SourceIntakeRegisterRequest(candidate_ids=[candidate.source_file_id for candidate in scan.candidates]),

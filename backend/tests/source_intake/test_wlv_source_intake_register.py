@@ -2,7 +2,14 @@ from pathlib import Path
 
 from app.inventory.repository import ManagedWellInventoryRepository
 from app.inventory.service import ManagedWellInventoryService
-from app.source_intake.models import SourceIntakeRegisterRequest, SourceRepositoryCreateRequest
+from app.source_intake.models import (
+    SourceIntakeBulkResolutionRequest,
+    SourceIntakeRegisterRequest,
+    SourceIntakeResolutionAction,
+    SourceIntakeResolutionDecision,
+    SourceIntakeResolutionState,
+    SourceRepositoryCreateRequest,
+)
 from app.source_intake.service import WlvSourceIntakeService
 
 LAS_WITH_UWI = """~Version
@@ -101,10 +108,26 @@ def test_passing_las_candidate_registers_to_managed_inventory(tmp_path: Path) ->
     assert record.metadata["uwi"] == "1234567890"
     assert record.source_references[0].source_id == candidate.source_file_id
     assert record.product_groups[0].items[0].curve_name == "GR"
+    persisted = source.get_workbench().candidates[0]
+    assert persisted.resolution_state == SourceIntakeResolutionState.REGISTERED
+    assert persisted.resolution_history[-1].action == SourceIntakeResolutionAction.REGISTERED
 
 
 def test_missing_uwi_candidate_registers_without_using_internal_well_id_as_uwi(tmp_path: Path) -> None:
     source, inventory, candidate = _scan(tmp_path, "FORGE_21_31.las", LAS_WITHOUT_UWI)
+    source.resolve_candidates(
+        SourceIntakeBulkResolutionRequest(
+            decisions=[
+                SourceIntakeResolutionDecision(
+                    occurrence_id=candidate.occurrence_id,
+                    action=SourceIntakeResolutionAction.WARNING_ACCEPTED,
+                    actor="test",
+                    reason="Missing UWI reviewed and accepted.",
+                    accepted_warning_codes=["missing_uwi"],
+                )
+            ]
+        )
+    )
 
     response = _register(source, inventory, candidate.source_file_id)
 
@@ -165,3 +188,33 @@ def test_registered_inventory_is_visible_through_inventory_service(tmp_path: Pat
     assert detail.well_name == "Forge 21-31"
     assert detail.source_references[0].file_format == "LAS"
     assert sum(len(group.items) for group in detail.product_groups) == 2
+
+
+def test_unresolved_warning_candidate_is_blocked_until_resolution(tmp_path: Path) -> None:
+    source, inventory, candidate = _scan(tmp_path, "FORGE_21_31.las", LAS_WITHOUT_UWI)
+
+    response = _register(source, inventory, candidate.source_file_id)
+
+    assert response.registered_count == 0
+    assert response.skipped_count == 1
+    assert response.results[0].status == "blocked"
+    assert "resolution state" in response.results[0].reason
+    assert inventory.list_wells() == []
+
+
+def test_occurrence_accounting_balances_after_registration(tmp_path: Path) -> None:
+    source, inventory, candidate = _scan(tmp_path, "FORGE_21_31.las", LAS_WITH_UWI)
+    before = source.get_occurrence_accounting()
+    assert before.total_occurrences == 1
+    assert before.ingestible_count == 1
+    assert before.balanced is True
+
+    response = _register(source, inventory, candidate.source_file_id)
+    assert response.registered_count == 1
+
+    after = source.get_occurrence_accounting()
+    assert after.total_occurrences == 1
+    assert after.registered_count == 1
+    assert after.accounted_count == 1
+    assert after.unaccounted_count == 0
+    assert after.balanced is True

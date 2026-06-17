@@ -20,6 +20,7 @@ from .models import (
     SourceIntakeResolutionDecision,
     SourceIntakeResolutionResult,
     SourceIntakeResolutionState,
+    SourceIntakeOccurrenceAccounting,
     utc_now_iso,
 )
 
@@ -109,6 +110,88 @@ class SourceIntakeResolutionService:
             resolved_count=len(results),
             results=results,
         )
+
+    def mark_registered(
+        self,
+        candidate: SourceFileCandidate,
+        *,
+        actor: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        if candidate.resolution_state == SourceIntakeResolutionState.REGISTERED:
+            return
+        if not is_ingestible(candidate):
+            raise SourceIntakeResolutionError(
+                f"Candidate resolution state is not ingestible: {candidate.resolution_state.value}."
+            )
+        previous = candidate.resolution_state
+        now = utc_now_iso()
+        candidate.resolution_state = SourceIntakeResolutionState.REGISTERED
+        candidate.resolved_by = actor or candidate.resolved_by
+        candidate.resolved_at = now
+        candidate.resolution_reason = reason or candidate.resolution_reason
+        candidate.resolution_version += 1
+        candidate.resolution_history.append(
+            SourceIntakeResolutionAuditEvent(
+                event_id=self._event_id_for_transition(
+                    candidate,
+                    SourceIntakeResolutionAction.REGISTERED,
+                    now,
+                ),
+                action=SourceIntakeResolutionAction.REGISTERED,
+                actor=actor,
+                reason=reason,
+                occurred_at=now,
+                previous_state=previous,
+                next_state=SourceIntakeResolutionState.REGISTERED,
+                original_values=self._current_values(candidate),
+                resolved_values={},
+                accepted_warning_codes=[],
+            )
+        )
+
+    @staticmethod
+    def accounting(candidates: Iterable[SourceFileCandidate]) -> SourceIntakeOccurrenceAccounting:
+        rows = list(candidates)
+        state_counts = {state.value: 0 for state in SourceIntakeResolutionState}
+        for candidate in rows:
+            state_counts[candidate.resolution_state.value] = (
+                state_counts.get(candidate.resolution_state.value, 0) + 1
+            )
+
+        registered = state_counts.get(SourceIntakeResolutionState.REGISTERED.value, 0)
+        excluded = state_counts.get(SourceIntakeResolutionState.EXCLUDED.value, 0)
+        duplicate = state_counts.get(SourceIntakeResolutionState.DUPLICATE.value, 0)
+        hard_failed = state_counts.get(SourceIntakeResolutionState.HARD_FAILED.value, 0)
+        unresolved = state_counts.get(SourceIntakeResolutionState.UNRESOLVED.value, 0)
+        ingestible = (
+            state_counts.get(SourceIntakeResolutionState.AUTO_INGESTIBLE.value, 0)
+            + state_counts.get(SourceIntakeResolutionState.RESOLVED.value, 0)
+        )
+        accounted = registered + excluded + duplicate + hard_failed + unresolved + ingestible
+        total = len(rows)
+        return SourceIntakeOccurrenceAccounting(
+            total_occurrences=total,
+            registered_count=registered,
+            excluded_count=excluded,
+            duplicate_count=duplicate,
+            hard_failed_count=hard_failed,
+            unresolved_count=unresolved,
+            ingestible_count=ingestible,
+            accounted_count=accounted,
+            unaccounted_count=max(total - accounted, 0),
+            balanced=accounted == total,
+            state_counts=state_counts,
+        )
+
+    @staticmethod
+    def _event_id_for_transition(
+        candidate: SourceFileCandidate,
+        action: SourceIntakeResolutionAction,
+        occurred_at: str,
+    ) -> str:
+        seed = f"{candidate.occurrence_id}:{action.value}:{occurred_at}:{candidate.resolution_version}"
+        return f"wlv-resolution-event:{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:20]}"
 
     def _apply_decision(
         self,

@@ -11,6 +11,7 @@ from .models import (
     SourceIntakeHealth,
     SourceIntakeBulkResolutionRequest,
     SourceIntakeBulkResolutionResponse,
+    SourceIntakeOccurrenceAccounting,
     SourceIntakeRegisterRequest,
     SourceIntakeRegisterResponse,
     SourceIntakeWorkbench,
@@ -86,6 +87,15 @@ def get_candidate_diagnostics(candidate_id: str) -> SourceIntakeCandidateDiagnos
         return _service.get_candidate_diagnostics(candidate_id)
     except SourceIntakeError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get(
+    "/accounting",
+    response_model=SourceIntakeOccurrenceAccounting,
+    summary="Account for every WLV Source Intake occurrence",
+)
+def get_occurrence_accounting() -> SourceIntakeOccurrenceAccounting:
+    return _service.get_occurrence_accounting()
 
 
 @router.post(

@@ -56,6 +56,7 @@ from .models import (
     SourceIntakeRegisterResult,
     SourceIntakeBulkResolutionRequest,
     SourceIntakeBulkResolutionResponse,
+    SourceIntakeOccurrenceAccounting,
     SourceIntakeRepositoryStatus,
     SourceIntakeWellHeader,
     SourceIntakeCurveHeader,
@@ -243,6 +244,10 @@ class WlvSourceIntakeService:
         self._save_snapshot(snapshot)
         return response
 
+    def get_occurrence_accounting(self) -> SourceIntakeOccurrenceAccounting:
+        snapshot = self._load_snapshot()
+        return self.resolution_service.accounting(snapshot.candidates)
+
     def clear_workbench_selection(
         self,
         repository_id: str | None = None,
@@ -393,6 +398,14 @@ class WlvSourceIntakeService:
             candidate.wdv_state = record.wdv_state.value if hasattr(record.wdv_state, "value") else str(record.wdv_state)
             candidate.registered_product_count = registered_product_count
             candidate.registered_curve_count = registered_curve_count
+            try:
+                self.resolution_service.mark_registered(
+                    candidate,
+                    actor=request.approval.approved_by,
+                    reason=request.approval.approval_note,
+                )
+            except SourceIntakeResolutionError as exc:
+                raise SourceIntakeError(str(exc)) from exc
             snapshot_changed = True
             registered_count += 1
             results.append(SourceIntakeRegisterResult(

@@ -40,7 +40,9 @@ from .models import (
     SourceIntakeCandidateRole,
     SourceIntakeParseStatus,
     SourceIntakeQaqcStatus,
+    SourceIntakeResolutionState,
 )
+from .resolution_service import is_ingestible
 
 _ALLOWED_REGISTER_QAQC_STATUSES = {
     SourceIntakeQaqcStatus.PASS,
@@ -69,6 +71,15 @@ def registration_block_reason(candidate: SourceFileCandidate) -> str | None:
     well_name = _resolved_value(candidate, "well_name") or candidate.parsed_metadata.well_header.well_name
     if not _clean(well_name):
         return "Candidate has no resolved well name."
+
+    if not (
+        is_ingestible(candidate)
+        or candidate.resolution_state == SourceIntakeResolutionState.REGISTERED
+    ):
+        return (
+            "Candidate resolution state is not registration-ready: "
+            f"{candidate.resolution_state.value}. Resolve or explicitly disposition the candidate first."
+        )
 
     return None
 
