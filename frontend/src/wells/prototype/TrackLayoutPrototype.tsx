@@ -945,9 +945,10 @@ function optionalDepthRangeLabel(min?: number | null, max?: number | null, unit 
   return `${left}–${right} ${unit}`;
 }
 
-function wmdpWellboreGeometryGroup(well: ManagedInventoryWellRecord): ManagedProductGroup | null {
-  const records = well.metadata?.wbv_trajectory_records ?? [];
-  if (!Array.isArray(records) || records.length === 0) return null;
+function wmdpWellboreGeometryGroup(well: ManagedInventoryWellRecord): ManagedProductGroup {
+  const records = Array.isArray(well.metadata?.wbv_trajectory_records)
+    ? well.metadata?.wbv_trajectory_records ?? []
+    : [];
   const activeTrajectoryId = well.metadata?.active_trajectory_id ?? records.find((record) => record.is_active)?.trajectory_id ?? null;
   const items: ManagedProductGroupItem[] = records.map((record) => {
     const isActive = Boolean(record.is_active || (activeTrajectoryId && record.trajectory_id === activeTrajectoryId));
@@ -996,7 +997,6 @@ function wmdpWellboreGeometryGroup(well: ManagedInventoryWellRecord): ManagedPro
 function wmdpProductGroupsForWell(well: ManagedInventoryWellRecord): ManagedProductGroup[] {
   const groups = [...(well.product_groups ?? [])];
   const geometryGroup = wmdpWellboreGeometryGroup(well);
-  if (!geometryGroup) return groups;
   const existingIndex = groups.findIndex((group) => group.group_key === 'wellbore_geometry');
   if (existingIndex >= 0) {
     groups[existingIndex] = geometryGroup;

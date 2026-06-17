@@ -18,6 +18,8 @@ from app.inventory.models import (
     ManagedInventoryLifecycleState,
     ManagedSourceKind,
     ManagedSourceReference,
+    ManagedProductGroup,
+    ManagedProductGroupItem,
     ManagedWdvState,
     ManagedWellRecord,
     ManagedWmdpState,
@@ -54,6 +56,8 @@ from .models import (
     SourceIntakeDiagnosticPhase,
     SourceIntakeDiagnosticSeverity,
     SourceIntakeFileType,
+    SourceIntakeHumanDecision,
+    SourceIntakeWellAssignmentMode,
     SourceIntakeLogHeader,
     SourceIntakeParseStatus,
     SourceIntakeParsedMetadata,
@@ -620,7 +624,7 @@ class WlvSourceIntakeService:
                 f"scan={preview.station_count}, registration={full_survey.station_count}."
             )
 
-        existing = self._match_existing_managed_well(candidate, inventory_service)
+        existing = self._resolve_geometry_target_well(candidate, inventory_service)
         well_name = existing.well_name if existing is not None else self._geometry_well_name(candidate)
         well_id = existing.well_id if existing is not None else self._managed_geometry_well_id(well_name)
         managed_well_id = existing.managed_well_id if existing is not None else f"managed-well:{well_id}"
@@ -696,6 +700,11 @@ class WlvSourceIntakeService:
                 tags.append(tag)
         record.tags = tags
         record.metadata = metadata
+        record.product_groups = self._merge_geometry_product_group(
+            record.product_groups,
+            candidate=candidate,
+            trajectory=trajectory,
+        )
         record.wmdp_state = ManagedWmdpState.STAGED_IN_WMDP
         record.wdv_state = ManagedWdvState.NOT_LOADED
         record.wmdp_available = True
@@ -830,6 +839,86 @@ class WlvSourceIntakeService:
                 "geometry_preview": candidate.geometry_preview.model_dump(mode="json") if candidate.geometry_preview else None,
             },
         )
+
+    def _resolve_geometry_target_well(self, candidate: SourceFileCandidate, inventory_service) -> ManagedWellRecord | None:
+        decision = candidate.current_decision
+        if (
+            decision is not None
+            and decision.decision == SourceIntakeHumanDecision.ASSIGN
+            and decision.assignment_mode == SourceIntakeWellAssignmentMode.EXISTING_WELL
+            and decision.assignment_target
+        ):
+            target_id = str(decision.assignment_target)
+            try:
+                return inventory_service.get_well(target_id)
+            except Exception as exc:
+                raise ValueError(f"Assigned managed well does not exist: {target_id}") from exc
+
+        return self._match_existing_managed_well(candidate, inventory_service)
+
+    @staticmethod
+    def _merge_geometry_product_group(
+        groups: list[ManagedProductGroup],
+        *,
+        candidate: SourceFileCandidate,
+        trajectory: WbvManagedTrajectoryRecord,
+    ) -> list[ManagedProductGroup]:
+        geometry_item = ManagedProductGroupItem(
+            product_id=trajectory.trajectory_id,
+            display_name=trajectory.trajectory_name,
+            curve_name=trajectory.trajectory_name,
+            curve_type=trajectory.trajectory_type,
+            curve_description="Registered wellbore deviation survey",
+            curve_unit="ft",
+            product_category="wellbore_geometry",
+            product_subgroup_key=trajectory.trajectory_type,
+            product_subgroup_label="Deviation Survey",
+            curve_family="Wellbore Geometry",
+            classification_confidence="high" if trajectory.wbv_eligible else "review",
+            classification_source="source_intake_geometry_registration",
+            classification_reasons=[
+                "Parsed deviation-survey geometry was registered as a managed trajectory."
+            ],
+            review_required=not trajectory.wbv_eligible,
+            run_interval=f"{trajectory.md_min:g}–{trajectory.md_max:g} ft",
+            run_number="Available",
+            qa_flag=trajectory.status.value if hasattr(trajectory.status, "value") else str(trajectory.status),
+            selectable=bool(trajectory.wbv_eligible),
+            source_kind="wellbore_geometry",
+            source_id=candidate.source_file_id,
+            wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,
+            wdv_state=ManagedWdvState.NOT_LOADED,
+            source_intake_candidate_id=candidate.source_file_id,
+            provenance={
+                "source_intake_candidate_id": candidate.source_file_id,
+                "repository_id": candidate.repository_id,
+                "relative_path": candidate.relative_path,
+                "original_path": candidate.original_path,
+                "checksum": candidate.checksum,
+                "trajectory_id": trajectory.trajectory_id,
+                "station_count": trajectory.station_count,
+            },
+        )
+
+        merged = [group.model_copy(deep=True) for group in groups]
+        for group in merged:
+            if group.group_key != "wellbore_geometry":
+                continue
+            group.group_label = "Wellbore Geometry"
+            group.collapsed_by_default = False
+            group.items = [
+                item for item in group.items
+                if item.product_id != geometry_item.product_id
+            ] + [geometry_item]
+            return merged
+
+        merged.append(ManagedProductGroup(
+            group_key="wellbore_geometry",
+            group_label="Wellbore Geometry",
+            collapsed_by_default=False,
+            items=[geometry_item],
+        ))
+        return merged
 
     def _match_existing_managed_well(self, candidate: SourceFileCandidate, inventory_service) -> ManagedWellRecord | None:
         records = inventory_service.list_wells()

@@ -152,7 +152,18 @@ GR.GAPI : Gamma Ray
 
     assert las_response.results[0].managed_well_id == geometry_response.results[0].managed_well_id
     record = inventory.get_well(las_response.results[0].managed_well_id)
-    assert sum(len(group.items) for group in record.product_groups) == 1
+    curve_items = [
+        item
+        for group in record.product_groups
+        if group.group_key != "wellbore_geometry"
+        for item in group.items
+    ]
+    geometry_group = next(
+        group for group in record.product_groups
+        if group.group_key == "wellbore_geometry"
+    )
+    assert len(curve_items) == 1
+    assert len(geometry_group.items) == 1
     assert len(record.metadata["wbv_trajectory_records"]) == 1
     assert any(ref.source_id == geom_candidate.source_file_id for ref in record.source_references)
 
