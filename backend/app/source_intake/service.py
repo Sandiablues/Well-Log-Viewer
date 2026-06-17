@@ -198,8 +198,32 @@ class WlvSourceIntakeService:
 
         candidates = self.resolution_service.initialize_candidates(candidates)
 
-        snapshot.candidates = [candidate for candidate in snapshot.candidates if candidate.repository_id != repository_id]
-        snapshot.candidates.extend(candidates)
+        existing_repository_candidates = {
+            candidate.occurrence_id: candidate
+            for candidate in snapshot.candidates
+            if candidate.repository_id == repository_id and candidate.occurrence_id
+        }
+        reconciled_candidates = [
+            self._preserve_candidate_lifecycle(
+                fresh_candidate,
+                existing_repository_candidates.get(fresh_candidate.occurrence_id),
+            )
+            for fresh_candidate in candidates
+        ]
+
+        other_repository_candidates = [
+            candidate
+            for candidate in snapshot.candidates
+            if candidate.repository_id != repository_id
+        ]
+        snapshot.candidates = self.resolution_service.reconcile_duplicate_groups(
+            [*other_repository_candidates, *reconciled_candidates]
+        )
+        candidates = [
+            candidate
+            for candidate in snapshot.candidates
+            if candidate.repository_id == repository_id
+        ]
 
         self._apply_counts(repository, candidates)
         repository.status = SourceIntakeRepositoryStatus.SCANNED
@@ -216,6 +240,40 @@ class WlvSourceIntakeService:
             file_count=len(candidates),
             candidates=candidates,
         )
+
+    @staticmethod
+    def _preserve_candidate_lifecycle(
+        fresh: SourceFileCandidate,
+        existing: SourceFileCandidate | None,
+    ) -> SourceFileCandidate:
+        """Merge fresh discovery evidence with durable candidate lifecycle truth.
+
+        A repository scan owns current file discovery, parsing, and QAQC evidence.
+        It does not own prior human resolution decisions, registration linkage,
+        or managed lifecycle state. Those fields survive when the occurrence
+        identity is unchanged.
+        """
+        if existing is None:
+            return fresh
+
+        fresh.resolution_state = existing.resolution_state
+        fresh.resolution_version = existing.resolution_version
+        fresh.resolved_by = existing.resolved_by
+        fresh.resolved_at = existing.resolved_at
+        fresh.resolution_reason = existing.resolution_reason
+        fresh.resolution_history = list(existing.resolution_history)
+        fresh.resolved_metadata = existing.resolved_metadata
+
+        fresh.registration_status = existing.registration_status
+        fresh.managed_well_id = existing.managed_well_id
+        fresh.managed_well_name = existing.managed_well_name
+        fresh.wmdp_state = existing.wmdp_state
+        fresh.wdv_state = existing.wdv_state
+        fresh.registered_product_count = existing.registered_product_count
+        fresh.registered_curve_count = existing.registered_curve_count
+        fresh.registered_trajectory_count = existing.registered_trajectory_count
+
+        return fresh
 
     def get_workbench(self) -> SourceIntakeWorkbench:
         snapshot = self._load_snapshot()

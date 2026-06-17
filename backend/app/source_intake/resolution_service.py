@@ -94,6 +94,53 @@ class SourceIntakeResolutionService:
                 candidate.resolution_state = SourceIntakeResolutionState.DUPLICATE
         return initialized
 
+    def reconcile_duplicate_groups(
+        self,
+        candidates: Iterable[SourceFileCandidate],
+    ) -> list[SourceFileCandidate]:
+        """Reconcile exact-content duplicate groups without erasing lifecycle truth.
+
+        Duplicate status is based only on the content fingerprint. A registered
+        occurrence is preferred as the canonical occurrence so a later scan of
+        another repository cannot demote already-managed data.
+        """
+        rows = list(candidates)
+        by_fingerprint: dict[str, list[SourceFileCandidate]] = {}
+        for candidate in rows:
+            fingerprint = candidate.content_fingerprint or candidate.checksum
+            candidate.content_fingerprint = fingerprint
+            candidate.duplicate_group_id = duplicate_group_identity(fingerprint)
+            by_fingerprint.setdefault(fingerprint, []).append(candidate)
+
+        protected_states = {
+            SourceIntakeResolutionState.REGISTERED,
+            SourceIntakeResolutionState.EXCLUDED,
+            SourceIntakeResolutionState.HARD_FAILED,
+        }
+
+        for group in by_fingerprint.values():
+            canonical = min(
+                group,
+                key=lambda item: (
+                    0 if item.resolution_state == SourceIntakeResolutionState.REGISTERED else 1,
+                    item.repository_id,
+                    item.relative_path,
+                    item.occurrence_id or "",
+                ),
+            )
+            canonical.canonical_occurrence_id = canonical.occurrence_id
+            if canonical.resolution_state == SourceIntakeResolutionState.DUPLICATE:
+                canonical.resolution_state = classify_initial_resolution(canonical)
+
+            for candidate in group:
+                candidate.canonical_occurrence_id = canonical.occurrence_id
+                if candidate is canonical:
+                    continue
+                if candidate.resolution_state not in protected_states:
+                    candidate.resolution_state = SourceIntakeResolutionState.DUPLICATE
+
+        return rows
+
     def apply_bulk(
         self,
         candidates: list[SourceFileCandidate],
