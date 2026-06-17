@@ -322,6 +322,12 @@ class SourceIntakeResolutionAction(str, Enum):
     EXCLUDED = "excluded"
     REOPENED = "reopened"
     REGISTERED = "registered"
+    WELL_ASSIGNED = "well_assigned"
+
+
+class SourceIntakeWellAssignmentMode(str, Enum):
+    EXISTING_WELL = "existing_well"
+    NEW_WELL = "new_well"
 
 
 class SourceIntakeHumanDecision(str, Enum):
@@ -340,6 +346,8 @@ class SourceIntakeCurrentDecision(BaseModel):
     corrected_values: dict[str, Any] = Field(default_factory=dict)
     accepted_finding_codes: list[str] = Field(default_factory=list)
     assignment_target: Optional[str] = None
+    assignment_mode: Optional[SourceIntakeWellAssignmentMode] = None
+    new_well_values: dict[str, Any] = Field(default_factory=dict)
     legacy_action: Optional[SourceIntakeResolutionAction] = None
 
     @property
@@ -359,6 +367,9 @@ class SourceIntakeResolutionDecision(BaseModel):
     resolved_values: dict[str, Any] = Field(default_factory=dict)
     accepted_warning_codes: list[str] = Field(default_factory=list)
     canonical_occurrence_id: Optional[str] = None
+    assignment_mode: Optional[SourceIntakeWellAssignmentMode] = None
+    target_managed_well_id: Optional[str] = None
+    new_well_values: dict[str, Any] = Field(default_factory=dict)
 
 
 class SourceIntakeBulkResolutionRequest(BaseModel):

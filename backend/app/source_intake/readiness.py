@@ -10,6 +10,8 @@ from .models import (
     SourceIntakeQaqcStatus,
     SourceIntakeReadinessState,
     SourceIntakeResolutionState,
+    SourceIntakeHumanDecision,
+    SourceIntakeWellAssignmentMode,
 )
 from .resolution_service import is_ingestible
 
@@ -46,6 +48,18 @@ def _canonical_well_name(candidate: SourceFileCandidate) -> str | None:
             return cleaned
 
     return None
+
+
+
+def _has_existing_well_assignment(candidate: SourceFileCandidate) -> bool:
+    decision = candidate.current_decision
+    return bool(
+        decision
+        and decision.decision == SourceIntakeHumanDecision.ASSIGN
+        and decision.assignment_mode
+        == SourceIntakeWellAssignmentMode.EXISTING_WELL
+        and decision.assignment_target
+    )
 
 
 def evaluate_registration_readiness(
@@ -136,6 +150,7 @@ def evaluate_registration_readiness(
     if (
         candidate.candidate_role == SourceIntakeCandidateRole.WELL_LOG_CANDIDATE
         and not _canonical_well_name(candidate)
+        and not _has_existing_well_assignment(candidate)
     ):
         review_issues.append(
             "A human must assign or confirm the destination well."

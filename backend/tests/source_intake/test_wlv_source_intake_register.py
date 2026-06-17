@@ -8,6 +8,7 @@ from app.source_intake.models import (
     SourceIntakeResolutionAction,
     SourceIntakeResolutionDecision,
     SourceIntakeResolutionState,
+    SourceIntakeWellAssignmentMode,
     SourceRepositoryCreateRequest,
 )
 from app.source_intake.service import WlvSourceIntakeService
@@ -221,3 +222,172 @@ def test_occurrence_accounting_balances_after_registration(tmp_path: Path) -> No
     assert after.accounted_count == 1
     assert after.unaccounted_count == 0
     assert after.balanced is True
+
+
+def test_human_assignment_appends_candidate_to_selected_existing_well(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    _write(source_root / "first.las", LAS_WITH_UWI)
+
+    source, inventory = _services(tmp_path)
+    repository = source.create_repository(
+        SourceRepositoryCreateRequest(
+            root_path=str(source_root),
+            include_subfolders=True,
+        )
+    )
+    first_candidate = source.scan_repository(
+        repository.repository_id
+    ).candidates[0]
+    first_response = _register(
+        source,
+        inventory,
+        first_candidate.source_file_id,
+    )
+    target_id = first_response.results[0].managed_well_id
+    assert target_id is not None
+
+    second_las = LAS_WITHOUT_UWI.replace(
+        "WELL. Forge 21-31",
+        "WELL. Alternate Source Name",
+    ).replace(
+        "GR.GAPI : Gamma Ray",
+        "CALI.IN : Caliper",
+    )
+    _write(source_root / "second.las", second_las)
+
+    candidates = source.scan_repository(
+        repository.repository_id
+    ).candidates
+    second_candidate = next(
+        item for item in candidates
+        if item.file_name == "second.las"
+    )
+
+    source.resolve_candidates(
+        SourceIntakeBulkResolutionRequest(
+            decisions=[
+                SourceIntakeResolutionDecision(
+                    occurrence_id=second_candidate.occurrence_id,
+                    action=SourceIntakeResolutionAction.WELL_ASSIGNED,
+                    actor="reviewer",
+                    reason="Human selected the existing managed well.",
+                    assignment_mode=(
+                        SourceIntakeWellAssignmentMode.EXISTING_WELL
+                    ),
+                    target_managed_well_id=target_id,
+                )
+            ]
+        )
+    )
+
+    response = _register(
+        source,
+        inventory,
+        second_candidate.source_file_id,
+    )
+
+    assert response.registered_count == 1
+    assert response.results[0].managed_well_id == target_id
+
+    records = inventory.list_wells()
+    assert len(records) == 1
+    record = records[0]
+    assert record.managed_well_id == target_id
+    assert record.well_name == "Forge 21-31"
+    assert len(record.source_references) == 2
+    curve_names = {
+        item.curve_name
+        for group in record.product_groups
+        for item in group.items
+    }
+    assert "GR" in curve_names
+    assert "CALI" in curve_names
+
+
+def test_human_assignment_creates_new_well_from_confirmed_values(
+    tmp_path: Path,
+) -> None:
+    generic_las = LAS_WITHOUT_UWI.replace(
+        "WELL. Forge 21-31",
+        "WELL. WELL",
+    )
+    source, inventory, candidate = _scan(
+        tmp_path,
+        "generic.las",
+        generic_las,
+    )
+
+    source.resolve_candidates(
+        SourceIntakeBulkResolutionRequest(
+            decisions=[
+                SourceIntakeResolutionDecision(
+                    occurrence_id=candidate.occurrence_id,
+                    action=SourceIntakeResolutionAction.WELL_ASSIGNED,
+                    actor="reviewer",
+                    reason="Human created a new managed well.",
+                    assignment_mode=(
+                        SourceIntakeWellAssignmentMode.NEW_WELL
+                    ),
+                    new_well_values={
+                        "well_name": "Confirmed New Well",
+                        "operator": "Confirmed Operator",
+                        "field": "Confirmed Field",
+                    },
+                )
+            ]
+        )
+    )
+
+    response = _register(
+        source,
+        inventory,
+        candidate.source_file_id,
+    )
+
+    assert response.registered_count == 1
+    record = inventory.list_wells()[0]
+    assert record.well_name == "Confirmed New Well"
+    assert record.operator == "Confirmed Operator"
+    assert record.field == "Confirmed Field"
+
+
+def test_existing_well_assignment_rejects_unknown_target(
+    tmp_path: Path,
+) -> None:
+    source, inventory, candidate = _scan(
+        tmp_path,
+        "FORGE_21_31.las",
+        LAS_WITHOUT_UWI,
+    )
+
+    source.resolve_candidates(
+        SourceIntakeBulkResolutionRequest(
+            decisions=[
+                SourceIntakeResolutionDecision(
+                    occurrence_id=candidate.occurrence_id,
+                    action=SourceIntakeResolutionAction.WELL_ASSIGNED,
+                    actor="reviewer",
+                    reason="Selected target.",
+                    assignment_mode=(
+                        SourceIntakeWellAssignmentMode.EXISTING_WELL
+                    ),
+                    target_managed_well_id=(
+                        "managed-well:does-not-exist"
+                    ),
+                )
+            ]
+        )
+    )
+
+    response = _register(
+        source,
+        inventory,
+        candidate.source_file_id,
+    )
+
+    assert response.registered_count == 0
+    assert response.skipped_count == 1
+    assert "does not exist" in response.results[0].reason
+    assert inventory.list_wells() == []

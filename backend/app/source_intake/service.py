@@ -495,13 +495,28 @@ class WlvSourceIntakeService:
                 ))
                 continue
 
-            action, record = register_candidate_to_inventory(
-                candidate=candidate,
-                inventory_service=inventory_service,
-                approved_by=request.approval.approved_by,
-                approval_note=request.approval.approval_note,
+            try:
+                action, record = register_candidate_to_inventory(
+                    candidate=candidate,
+                    inventory_service=inventory_service,
+                    approved_by=request.approval.approved_by,
+                    approval_note=request.approval.approval_note,
+                )
+            except ValueError as exc:
+                skipped_count += 1
+                results.append(
+                    SourceIntakeRegisterResult(
+                        candidate_id=candidate.source_file_id,
+                        status="skipped",
+                        reason=str(exc),
+                    )
+                )
+                continue
+
+            registered_curve_count = sum(
+                len(group.items)
+                for group in record.product_groups
             )
-            registered_curve_count = sum(len(group.items) for group in record.product_groups)
             registered_product_count = sum(1 for group in record.product_groups if group.items)
             candidate.registration_status = "registered"
             candidate.managed_well_id = record.managed_well_id

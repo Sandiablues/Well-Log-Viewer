@@ -21,6 +21,7 @@ from .models import (
     SourceIntakeResolutionDecision,
     SourceIntakeResolutionResult,
     SourceIntakeResolutionState,
+    SourceIntakeWellAssignmentMode,
     SourceIntakeOccurrenceAccounting,
     utc_now_iso,
 )
@@ -170,6 +171,19 @@ class SourceIntakeResolutionService:
 
         if (
             decision.decision == SourceIntakeHumanDecision.ASSIGN
+            and decision.assignment_mode
+            == SourceIntakeWellAssignmentMode.NEW_WELL
+            and decision.new_well_values
+        ):
+            self._apply_resolved_values(
+                candidate,
+                decision.new_well_values,
+            )
+
+        if (
+            decision.decision == SourceIntakeHumanDecision.ASSIGN
+            and decision.legacy_action
+            == SourceIntakeResolutionAction.CANONICAL_SELECTED
             and decision.assignment_target
         ):
             candidate.canonical_occurrence_id = decision.assignment_target
@@ -277,6 +291,16 @@ class SourceIntakeResolutionService:
         if decision.resolved_values:
             self._apply_resolved_values(candidate, decision.resolved_values)
 
+        if (
+            decision.action == SourceIntakeResolutionAction.WELL_ASSIGNED
+            and decision.assignment_mode
+            == SourceIntakeWellAssignmentMode.NEW_WELL
+        ):
+            self._apply_resolved_values(
+                candidate,
+                decision.new_well_values,
+            )
+
         now = utc_now_iso()
         candidate.resolution_state = next_state
         candidate.resolved_by = decision.actor
@@ -290,7 +314,12 @@ class SourceIntakeResolutionService:
             decided_at=now,
             corrected_values=decision.resolved_values,
             accepted_finding_codes=decision.accepted_warning_codes,
-            assignment_target=decision.canonical_occurrence_id,
+            assignment_target=(
+                decision.target_managed_well_id
+                or decision.canonical_occurrence_id
+            ),
+            assignment_mode=decision.assignment_mode,
+            new_well_values=decision.new_well_values,
             legacy_action=decision.action,
         )
         return SourceIntakeResolutionResult(
@@ -316,7 +345,10 @@ class SourceIntakeResolutionService:
             SourceIntakeResolutionAction.METADATA_OVERRIDE,
         }:
             return SourceIntakeHumanDecision.CORRECT
-        if action == SourceIntakeResolutionAction.CANONICAL_SELECTED:
+        if action in {
+            SourceIntakeResolutionAction.CANONICAL_SELECTED,
+            SourceIntakeResolutionAction.WELL_ASSIGNED,
+        }:
             return SourceIntakeHumanDecision.ASSIGN
         if action == SourceIntakeResolutionAction.EXCLUDED:
             return SourceIntakeHumanDecision.EXCLUDE
@@ -342,6 +374,12 @@ class SourceIntakeResolutionService:
             if not decision.reason:
                 raise SourceIntakeResolutionError("Exclusion requires a reason.")
             return SourceIntakeResolutionState.EXCLUDED
+        if action == SourceIntakeResolutionAction.WELL_ASSIGNED:
+            if candidate.qaqc_status.failure_count > 0 or candidate.parse_error:
+                raise SourceIntakeResolutionError(
+                    "Hard failures cannot be assigned as ingestible."
+                )
+            return SourceIntakeResolutionState.RESOLVED
         if action == SourceIntakeResolutionAction.CANONICAL_SELECTED:
             canonical_id = decision.canonical_occurrence_id or decision.occurrence_id
             canonical = by_id.get(canonical_id)
@@ -362,6 +400,35 @@ class SourceIntakeResolutionService:
         decision: SourceIntakeResolutionDecision,
     ) -> None:
         action = decision.action
+
+        if action == SourceIntakeResolutionAction.WELL_ASSIGNED:
+            if decision.assignment_mode is None:
+                raise SourceIntakeResolutionError(
+                    "Well assignment requires assignment_mode."
+                )
+            if (
+                decision.assignment_mode
+                == SourceIntakeWellAssignmentMode.EXISTING_WELL
+                and not decision.target_managed_well_id
+            ):
+                raise SourceIntakeResolutionError(
+                    "Existing-well assignment requires target_managed_well_id."
+                )
+            if (
+                decision.assignment_mode
+                == SourceIntakeWellAssignmentMode.NEW_WELL
+            ):
+                well_name = decision.new_well_values.get("well_name")
+                if not isinstance(well_name, str) or not well_name.strip():
+                    raise SourceIntakeResolutionError(
+                        "New-well assignment requires a non-empty well_name."
+                    )
+                allowed = {"well_name", "uwi", "operator", "field", "block"}
+                unknown = set(decision.new_well_values) - allowed
+                if unknown:
+                    raise SourceIntakeResolutionError(
+                        f"Unsupported new-well fields: {sorted(unknown)}"
+                    )
 
         if action == SourceIntakeResolutionAction.CONFIRM_SUGGESTION:
             if candidate.resolved_metadata is None:

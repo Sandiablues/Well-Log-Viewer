@@ -43,6 +43,8 @@ from .models import (
     SourceIntakeQaqcStatus,
     SourceIntakeReadinessState,
     SourceIntakeResolutionState,
+    SourceIntakeHumanDecision,
+    SourceIntakeWellAssignmentMode,
 )
 from .resolution_service import is_ingestible
 
@@ -148,14 +150,74 @@ def register_candidate_to_inventory(
     log_header = parsed.log_header
     well_header = parsed.well_header
 
-    well_name = _clean(_resolved_value(candidate, "well_name") or well_header.well_name) or candidate.file_name
-    uwi = _clean(_resolved_value(candidate, "uwi") or well_header.uwi) or None
-    operator = _clean(_resolved_value(candidate, "operator") or well_header.operator) or None
-    field = _clean(_resolved_value(candidate, "field") or well_header.field) or None
-    block = _clean(_resolved_value(candidate, "block") or well_header.block) or None
+    decision = candidate.current_decision
+    assigned_existing = bool(
+        decision
+        and decision.decision == SourceIntakeHumanDecision.ASSIGN
+        and decision.assignment_mode
+        == SourceIntakeWellAssignmentMode.EXISTING_WELL
+        and decision.assignment_target
+    )
 
-    well_id = _managed_well_identity(well_name=well_name, uwi=uwi)
-    managed_well_id = f"managed-well:{well_id}"
+    existing = None
+    if assigned_existing:
+        managed_well_id = str(decision.assignment_target)
+        existing = _get_existing_record(
+            inventory_service,
+            managed_well_id,
+        )
+        if existing is None:
+            raise ValueError(
+                "Assigned managed well does not exist: "
+                f"{managed_well_id}"
+            )
+        well_id = existing.well_id
+        well_name = existing.well_name
+        uwi = _clean(existing.metadata.get("uwi")) or None
+        operator = existing.operator
+        field = existing.field
+        block = existing.block
+    else:
+        well_name = (
+            _clean(
+                _resolved_value(candidate, "well_name")
+                or well_header.well_name
+            )
+            or candidate.file_name
+        )
+        uwi = (
+            _clean(
+                _resolved_value(candidate, "uwi")
+                or well_header.uwi
+            )
+            or None
+        )
+        operator = (
+            _clean(
+                _resolved_value(candidate, "operator")
+                or well_header.operator
+            )
+            or None
+        )
+        field = (
+            _clean(
+                _resolved_value(candidate, "field")
+                or well_header.field
+            )
+            or None
+        )
+        block = (
+            _clean(
+                _resolved_value(candidate, "block")
+                or well_header.block
+            )
+            or None
+        )
+        well_id = _managed_well_identity(
+            well_name=well_name,
+            uwi=uwi,
+        )
+        managed_well_id = f"managed-well:{well_id}"
     provenance = _source_intake_provenance(candidate)
     source_reference = ManagedSourceReference(
         source_id=candidate.source_file_id,
@@ -174,7 +236,11 @@ def register_candidate_to_inventory(
     )
     now = utc_now_iso()
     created_at = now
-    existing = _get_existing_record(inventory_service, managed_well_id)
+    if existing is None:
+        existing = _get_existing_record(
+            inventory_service,
+            managed_well_id,
+        )
     if existing is not None:
         created_at = existing.created_at
 
@@ -188,8 +254,20 @@ def register_candidate_to_inventory(
         operator=operator,
         field=field,
         block=block,
-        country=well_header.country,
-        depth_unit=(well_header.depth_unit or (log_header.depth_unit if log_header else None) or "ft"),
+        country=(
+            existing.country
+            if existing is not None and existing.country
+            else well_header.country
+        ),
+        depth_unit=(
+            existing.depth_unit
+            if existing is not None and existing.depth_unit
+            else (
+                well_header.depth_unit
+                or (log_header.depth_unit if log_header else None)
+                or "ft"
+            )
+        ),
         top_depth=log_header.start_depth if log_header else None,
         base_depth=log_header.stop_depth if log_header else None,
         status=lifecycle_state,
