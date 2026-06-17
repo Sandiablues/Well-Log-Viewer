@@ -7,7 +7,6 @@ create a viewer representation/conversion.
 
 from __future__ import annotations
 
-import hashlib
 import re
 from typing import Iterable
 
@@ -33,6 +32,12 @@ from app.inventory.models import (
 )
 from app.inventory.repository import ManagedWellNotFoundError
 from app.inventory.service import ManagedWellInventoryService
+from app.inventory.well_identity import (
+    consolidate_well_metadata,
+    find_record_by_canonical_name,
+    managed_well_identity_from_name,
+    normalize_well_name_key,
+)
 
 from .identity_gate import clean_identity_value
 from .readiness import evaluate_registration_readiness
@@ -158,6 +163,57 @@ def register_candidate_to_inventory(
         == SourceIntakeWellAssignmentMode.EXISTING_WELL
         and decision.assignment_target
     )
+    human_new_well_values = (
+        dict(decision.new_well_values)
+        if (
+            decision
+            and decision.decision == SourceIntakeHumanDecision.ASSIGN
+            and decision.assignment_mode
+            == SourceIntakeWellAssignmentMode.NEW_WELL
+        )
+        else {}
+    )
+
+    source_evidence_values = {
+        "well_name": (
+            _clean(well_header.well_name)
+            or candidate.file_name
+        ),
+        "uwi": _clean(well_header.uwi) or None,
+        "operator": _clean(well_header.operator) or None,
+        "field": _clean(well_header.field) or None,
+        "block": _clean(well_header.block) or None,
+        "country": _clean(well_header.country) or None,
+        "depth_unit": (
+            well_header.depth_unit
+            or (log_header.depth_unit if log_header else None)
+            or "ft"
+        ),
+    }
+
+    resolved_values = {
+        "well_name": _clean(_resolved_value(candidate, "well_name")),
+        "uwi": _clean(_resolved_value(candidate, "uwi")),
+        "operator": _clean(_resolved_value(candidate, "operator")),
+        "field": _clean(_resolved_value(candidate, "field")),
+        "block": _clean(_resolved_value(candidate, "block")),
+    }
+
+    incoming_values = {
+        **source_evidence_values,
+        **{
+            key: value
+            for key, value in resolved_values.items()
+            if value is not None
+        },
+    }
+
+    human_well_name = _clean(
+        human_new_well_values.get("well_name")
+        if isinstance(human_new_well_values.get("well_name"), str)
+        else None
+    )
+    canonical_display_name = human_well_name or incoming_values["well_name"]
 
     existing = None
     if assigned_existing:
@@ -172,52 +228,56 @@ def register_candidate_to_inventory(
                 f"{managed_well_id}"
             )
         well_id = existing.well_id
-        well_name = existing.well_name
-        uwi = _clean(existing.metadata.get("uwi")) or None
-        operator = existing.operator
-        field = existing.field
-        block = existing.block
+        canonical_display_name = existing.well_name
     else:
-        well_name = (
-            _clean(
-                _resolved_value(candidate, "well_name")
-                or well_header.well_name
+        existing = find_record_by_canonical_name(
+            inventory_service.repository.list_records(),
+            canonical_display_name,
+        )
+        if existing is not None:
+            managed_well_id = existing.managed_well_id
+            well_id = existing.well_id
+        else:
+            (
+                well_id,
+                managed_well_id,
+                _canonical_key,
+            ) = managed_well_identity_from_name(
+                canonical_display_name
             )
-            or candidate.file_name
+
+    decision_corrections = (
+        dict(decision.corrected_values)
+        if decision and decision.corrected_values
+        else {}
+    )
+    explicit_metadata = {
+        key: value
+        for key, value in {
+            **decision_corrections,
+            **human_new_well_values,
+        }.items()
+        if key in {"uwi", "operator", "field", "block"}
+    }
+    canonical_metadata, metadata_evidence, metadata_conflicts = (
+        consolidate_well_metadata(
+            existing=existing,
+            incoming=source_evidence_values,
+            explicit=explicit_metadata,
+            source_id=candidate.source_file_id,
         )
-        uwi = (
-            _clean(
-                _resolved_value(candidate, "uwi")
-                or well_header.uwi
-            )
-            or None
-        )
-        operator = (
-            _clean(
-                _resolved_value(candidate, "operator")
-                or well_header.operator
-            )
-            or None
-        )
-        field = (
-            _clean(
-                _resolved_value(candidate, "field")
-                or well_header.field
-            )
-            or None
-        )
-        block = (
-            _clean(
-                _resolved_value(candidate, "block")
-                or well_header.block
-            )
-            or None
-        )
-        well_id = _managed_well_identity(
-            well_name=well_name,
-            uwi=uwi,
-        )
-        managed_well_id = f"managed-well:{well_id}"
+    )
+
+    well_name = (
+        human_well_name
+        or (existing.well_name if existing is not None else None)
+        or canonical_display_name
+    )
+    canonical_well_key = normalize_well_name_key(well_name)
+    uwi = canonical_metadata["uwi"]
+    operator = canonical_metadata["operator"]
+    field = canonical_metadata["field"]
+    block = canonical_metadata["block"]
     provenance = _source_intake_provenance(candidate)
     source_reference = ManagedSourceReference(
         source_id=candidate.source_file_id,
@@ -254,22 +314,16 @@ def register_candidate_to_inventory(
         operator=operator,
         field=field,
         block=block,
-        country=(
-            existing.country
-            if existing is not None and existing.country
-            else well_header.country
+        country=canonical_metadata["country"],
+        depth_unit=canonical_metadata["depth_unit"] or "ft",
+        top_depth=_merged_top_depth(
+            existing.top_depth if existing else None,
+            log_header.start_depth if log_header else None,
         ),
-        depth_unit=(
-            existing.depth_unit
-            if existing is not None and existing.depth_unit
-            else (
-                well_header.depth_unit
-                or (log_header.depth_unit if log_header else None)
-                or "ft"
-            )
+        base_depth=_merged_base_depth(
+            existing.base_depth if existing else None,
+            log_header.stop_depth if log_header else None,
         ),
-        top_depth=log_header.start_depth if log_header else None,
-        base_depth=log_header.stop_depth if log_header else None,
         status=lifecycle_state,
         lifecycle_state=lifecycle_state,
         wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,
@@ -282,8 +336,17 @@ def register_candidate_to_inventory(
         tags=_merge_tags(existing.tags if existing else [], ["source-intake", "las"]),
         metadata={
             **(existing.metadata if existing else {}),
+            "canonical_well_name": well_name,
+            "canonical_well_key": canonical_well_key,
+            "identity_source": (
+                "human_wsi_well_name"
+                if human_well_name
+                else "normalized_well_name"
+            ),
             "uwi": uwi,
             "uwi_missing": uwi is None,
+            "well_metadata_evidence": metadata_evidence,
+            "well_metadata_conflicts": metadata_conflicts,
             "source_intake_registered": True,
             "wmdp_state": ManagedWmdpState.STAGED_IN_WMDP.value,
             "wdv_state": ManagedWdvState.NOT_LOADED.value,
@@ -583,11 +646,28 @@ def _resolved_value(candidate: SourceFileCandidate, field_name: str) -> str | No
     return value if isinstance(value, str) and value.strip() else None
 
 
-def _managed_well_identity(*, well_name: str, uwi: str | None) -> str:
-    if uwi:
-        return f"wlv-intake-uwi-{_slug(uwi)}"
-    digest = hashlib.sha256(well_name.strip().lower().encode("utf-8")).hexdigest()[:10]
-    return f"wlv-intake-name-{_slug(well_name)}-{digest}"
+def _merged_top_depth(
+    existing_value: float | None,
+    incoming_value: float | None,
+) -> float | None:
+    values = [
+        value
+        for value in (existing_value, incoming_value)
+        if value is not None
+    ]
+    return min(values) if values else None
+
+
+def _merged_base_depth(
+    existing_value: float | None,
+    incoming_value: float | None,
+) -> float | None:
+    values = [
+        value
+        for value in (existing_value, incoming_value)
+        if value is not None
+    ]
+    return max(values) if values else None
 
 
 def _run_interval(log_header) -> str:

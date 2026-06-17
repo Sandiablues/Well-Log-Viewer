@@ -391,3 +391,207 @@ def test_existing_well_assignment_rejects_unknown_target(
     assert response.skipped_count == 1
     assert "does not exist" in response.results[0].reason
     assert inventory.list_wells() == []
+
+
+
+def test_human_entered_well_name_groups_multiple_candidates_with_conflicting_uwi(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "source"
+    first = LAS_WITH_UWI.replace(
+        "WELL. Forge 21-31",
+        "WELL. Source Alpha",
+    ).replace(
+        "UWI. 1234567890",
+        "UWI. 1111111111",
+    )
+    second = LAS_WITH_UWI.replace(
+        "WELL. Forge 21-31",
+        "WELL. Source Beta",
+    ).replace(
+        "UWI. 1234567890",
+        "UWI. 2222222222",
+    ).replace(
+        "GR.GAPI : Gamma Ray",
+        "CALI.IN : Caliper",
+    )
+    _write(root / "alpha.las", first)
+    _write(root / "beta.las", second)
+
+    source, inventory = _services(tmp_path)
+    repository = source.create_repository(
+        SourceRepositoryCreateRequest(
+            root_path=str(root),
+            include_subfolders=True,
+        )
+    )
+    candidates = source.scan_repository(
+        repository.repository_id
+    ).candidates
+
+    source.resolve_candidates(
+        SourceIntakeBulkResolutionRequest(
+            decisions=[
+                SourceIntakeResolutionDecision(
+                    occurrence_id=candidate.occurrence_id,
+                    action=SourceIntakeResolutionAction.WELL_ASSIGNED,
+                    actor="reviewer",
+                    reason="Human confirmed one canonical well.",
+                    assignment_mode=(
+                        SourceIntakeWellAssignmentMode.NEW_WELL
+                    ),
+                    new_well_values={
+                        "well_name": "Forge 21-31",
+                    },
+                )
+                for candidate in candidates
+            ]
+        )
+    )
+
+    for candidate in candidates:
+        response = _register(
+            source,
+            inventory,
+            candidate.source_file_id,
+        )
+        assert response.registered_count == 1
+
+    records = inventory.list_wells()
+    assert len(records) == 1
+    record = records[0]
+    assert record.well_name == "Forge 21-31"
+    assert (
+        record.metadata["canonical_well_key"]
+        == "forge 21 31"
+    )
+    assert (
+        record.metadata["identity_source"]
+        == "human_wsi_well_name"
+    )
+    assert len(record.source_references) == 2
+
+    conflicts = record.metadata["well_metadata_conflicts"]
+    assert conflicts["uwi"]["status"] == "review_required"
+    assert set(conflicts["uwi"]["candidate_values"]) == {
+        "1111111111",
+        "2222222222",
+    }
+
+    curve_names = {
+        item.curve_name
+        for group in record.product_groups
+        for item in group.items
+    }
+    assert "GR" in curve_names
+    assert "CALI" in curve_names
+
+
+def test_normalized_well_name_is_primary_identity_when_uwi_differs(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "source"
+    first = LAS_WITH_UWI.replace(
+        "UWI. 1234567890",
+        "UWI. 3333333333",
+    )
+    second = LAS_WITH_UWI.replace(
+        "WELL. Forge 21-31",
+        "WELL. FORGE_21 31",
+    ).replace(
+        "UWI. 1234567890",
+        "UWI. 4444444444",
+    ).replace(
+        "GR.GAPI : Gamma Ray",
+        "CALI.IN : Caliper",
+    )
+    _write(root / "first.las", first)
+    _write(root / "second.las", second)
+
+    source, inventory = _services(tmp_path)
+    repository = source.create_repository(
+        SourceRepositoryCreateRequest(
+            root_path=str(root),
+            include_subfolders=True,
+        )
+    )
+    candidates = source.scan_repository(
+        repository.repository_id
+    ).candidates
+
+    for candidate in candidates:
+        if candidate.resolution_state != SourceIntakeResolutionState.AUTO_INGESTIBLE:
+            source.resolve_candidates(
+                SourceIntakeBulkResolutionRequest(
+                    decisions=[
+                        SourceIntakeResolutionDecision(
+                            occurrence_id=candidate.occurrence_id,
+                            action=SourceIntakeResolutionAction.WARNING_ACCEPTED,
+                            actor="reviewer",
+                            reason="Identity evidence reviewed.",
+                            accepted_warning_codes=["identity_review"],
+                        )
+                    ]
+                )
+            )
+        response = _register(
+            source,
+            inventory,
+            candidate.source_file_id,
+        )
+        assert response.registered_count == 1
+
+    records = inventory.list_wells()
+    assert len(records) == 1
+    assert records[0].well_name == "Forge 21-31"
+    assert (
+        records[0].metadata["canonical_well_key"]
+        == "forge 21 31"
+    )
+
+
+def test_human_metadata_overrides_source_and_preserves_conflict_evidence(
+    tmp_path: Path,
+) -> None:
+    source, inventory, candidate = _scan(
+        tmp_path,
+        "source.las",
+        LAS_WITH_UWI,
+    )
+
+    source.resolve_candidates(
+        SourceIntakeBulkResolutionRequest(
+            decisions=[
+                SourceIntakeResolutionDecision(
+                    occurrence_id=candidate.occurrence_id,
+                    action=SourceIntakeResolutionAction.WELL_ASSIGNED,
+                    actor="reviewer",
+                    reason="Human confirmed canonical well metadata.",
+                    assignment_mode=(
+                        SourceIntakeWellAssignmentMode.NEW_WELL
+                    ),
+                    new_well_values={
+                        "well_name": "Forge 21-31",
+                        "uwi": "2700190539",
+                        "operator": "Confirmed Operator",
+                    },
+                )
+            ]
+        )
+    )
+
+    response = _register(
+        source,
+        inventory,
+        candidate.source_file_id,
+    )
+    assert response.registered_count == 1
+
+    record = inventory.list_wells()[0]
+    assert record.metadata["uwi"] == "2700190539"
+    assert record.operator == "Confirmed Operator"
+    assert set(
+        record.metadata["well_metadata_conflicts"]["uwi"][
+            "candidate_values"
+        ]
+    ) == {"1234567890", "2700190539"}
