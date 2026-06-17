@@ -1,9 +1,5 @@
-"""Backend-authoritative Source Intake registration readiness contract.
+"""Small backend-owned human-gated Source Intake readiness contract."""
 
-This module classifies readiness with structured codes. It does not own the
-legacy human-readable registration rejection wording; registration.py maps
-these codes back to the established public diagnostic contract.
-"""
 from __future__ import annotations
 
 from .identity_gate import clean_identity_value
@@ -12,11 +8,11 @@ from .models import (
     SourceIntakeCandidateRole,
     SourceIntakeParseStatus,
     SourceIntakeQaqcStatus,
-    SourceIntakeReadinessBlockCategory,
-    SourceIntakeReadinessBlockReason,
+    SourceIntakeReadinessState,
     SourceIntakeResolutionState,
 )
 from .resolution_service import is_ingestible
+
 
 _USABLE_PARSE = {
     SourceIntakeParseStatus.PARSED,
@@ -35,190 +31,133 @@ _SUPPORTED_ROLES = {
 
 def _canonical_well_name(candidate: SourceFileCandidate) -> str | None:
     values: list[object | None] = []
+
     if candidate.resolved_metadata is not None:
         values.append(candidate.resolved_metadata.well_name.value)
+
     if candidate.parsed_metadata is not None:
         values.append(candidate.parsed_metadata.well_header.well_name)
+
     values.append(candidate.managed_well_name)
+
     for value in values:
         cleaned = clean_identity_value(value)
         if cleaned:
             return cleaned
+
     return None
 
 
-def evaluate_registration_readiness(candidate: SourceFileCandidate) -> SourceFileCandidate:
-    """Populate and return the backend-owned registration readiness contract."""
-    reasons: list[SourceIntakeReadinessBlockReason] = []
-    actions: list[str] = []
-    hard_failure_count = 0
-    overridable_review_count = 0
+def evaluate_registration_readiness(
+    candidate: SourceFileCandidate,
+) -> SourceFileCandidate:
+    """Set one current readiness state.
 
-    def add(
-        code: str,
-        category: SourceIntakeReadinessBlockCategory,
-        message: str,
-        *,
-        overridable: bool = False,
-    ) -> None:
-        nonlocal hard_failure_count, overridable_review_count
-        if any(item.code == code for item in reasons):
-            return
-        reasons.append(
-            SourceIntakeReadinessBlockReason(
-                code=code,
-                category=category,
-                message=message,
-                overridable=overridable,
-            )
-        )
-        if category == SourceIntakeReadinessBlockCategory.HARD_FAILURE:
-            hard_failure_count += 1
-        elif category == SourceIntakeReadinessBlockCategory.REVIEW_REQUIRED:
-            overridable_review_count += 1
-
-    if candidate.registration_status == "registered" or candidate.resolution_state == SourceIntakeResolutionState.REGISTERED:
-        add(
-            "already_registered",
-            SourceIntakeReadinessBlockCategory.LIFECYCLE,
-            "Candidate is already registered to Managed Well Inventory.",
-        )
-
-    if candidate.resolution_state == SourceIntakeResolutionState.DUPLICATE:
-        add(
-            "exact_content_duplicate",
-            SourceIntakeReadinessBlockCategory.LIFECYCLE,
-            "Candidate is an exact-content duplicate.",
-        )
+    QAQC findings remain available for review and display. Once a human has made
+    an explicit resolution decision, those non-hard findings do not become a
+    second hidden registration gate. Only technical failure, unsupported data,
+    missing required payload, or unresolved identity blocks progression.
+    """
+    if (
+        candidate.registration_status == "registered"
+        or candidate.resolution_state == SourceIntakeResolutionState.REGISTERED
+    ):
+        candidate.readiness_state = SourceIntakeReadinessState.REGISTERED
+        candidate.readiness_issues = []
+        candidate.available_human_actions = []
+        return candidate
 
     if candidate.resolution_state == SourceIntakeResolutionState.EXCLUDED:
-        add(
-            "candidate_excluded",
-            SourceIntakeReadinessBlockCategory.LIFECYCLE,
-            "Candidate is excluded from ingestion.",
-        )
-        actions.append("reopen_candidate")
+        candidate.readiness_state = SourceIntakeReadinessState.EXCLUDED
+        candidate.readiness_issues = ["Candidate is excluded from ingestion."]
+        candidate.available_human_actions = ["clear_decision"]
+        return candidate
+
+    if candidate.resolution_state == SourceIntakeResolutionState.DUPLICATE:
+        candidate.readiness_state = SourceIntakeReadinessState.BLOCKED
+        candidate.readiness_issues = [
+            "Candidate is an exact-content duplicate."
+        ]
+        candidate.available_human_actions = []
+        return candidate
+
+    hard_issues: list[str] = []
 
     if candidate.candidate_role not in _SUPPORTED_ROLES:
-        add(
-            "unsupported_candidate_role",
-            SourceIntakeReadinessBlockCategory.HARD_FAILURE,
-            f"Candidate role is not registration-supported: {candidate.candidate_role.value}.",
+        hard_issues.append(
+            "Candidate role is not supported for registration: "
+            f"{candidate.candidate_role.value}."
         )
 
     if candidate.parser_status not in _USABLE_PARSE:
-        add(
-            "parser_not_usable",
-            SourceIntakeReadinessBlockCategory.HARD_FAILURE,
-            f"Candidate parser status is not usable: {candidate.parser_status.value}.",
+        hard_issues.append(
+            "Candidate parser status is not usable: "
+            f"{candidate.parser_status.value}."
         )
 
     if candidate.resolution_state == SourceIntakeResolutionState.HARD_FAILED:
-        add(
-            "hard_failed",
-            SourceIntakeReadinessBlockCategory.HARD_FAILURE,
-            "Candidate has a non-overridable technical failure.",
+        hard_issues.append(
+            "Candidate has a non-overridable technical failure."
         )
 
-    if candidate.qaqc_status.status not in _USABLE_QAQC or candidate.qaqc_status.failure_count > 0:
-        add(
-            "qaqc_failure",
-            SourceIntakeReadinessBlockCategory.HARD_FAILURE,
-            "Candidate QAQC contains blocking failures.",
+    if (
+        candidate.qaqc_status.status not in _USABLE_QAQC
+        or candidate.qaqc_status.failure_count > 0
+    ):
+        hard_issues.append(
+            "Candidate QAQC contains a blocking technical failure."
         )
-
-    canonical_well_resolved = bool(_canonical_well_name(candidate))
 
     if candidate.candidate_role == SourceIntakeCandidateRole.WELL_LOG_CANDIDATE:
         if candidate.parsed_metadata is None:
-            add(
-                "parsed_metadata_missing",
-                SourceIntakeReadinessBlockCategory.HARD_FAILURE,
-                "Candidate has no parsed LAS metadata.",
-            )
-        if not canonical_well_resolved:
-            add(
-                "canonical_well_unresolved",
-                SourceIntakeReadinessBlockCategory.REVIEW_REQUIRED,
-                "Candidate must be assigned to a canonical well.",
-            )
-            actions.extend(
-                [
-                    "assign_existing_well",
-                    "create_new_well",
-                    "confirm_suggestion",
-                    "manual_correction",
-                    "exclude_candidate",
-                ]
-            )
+            hard_issues.append("Candidate has no parsed LAS metadata.")
 
-    if candidate.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
+    if (
+        candidate.candidate_role
+        == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE
+    ):
         if candidate.geometry_preview is None:
-            add(
-                "geometry_preview_missing",
-                SourceIntakeReadinessBlockCategory.HARD_FAILURE,
-                "Geometry candidate has no parsed deviation-survey preview.",
+            hard_issues.append(
+                "Geometry candidate has no parsed deviation-survey preview."
             )
         elif not candidate.geometry_preview.stations_preview:
-            add(
-                "geometry_station_payload_missing",
-                SourceIntakeReadinessBlockCategory.HARD_FAILURE,
-                "Geometry candidate preview has no station payload to register.",
+            hard_issues.append(
+                "Geometry candidate has no station payload to register."
             )
 
-    terminal_codes = {
-        "already_registered",
-        "exact_content_duplicate",
-        "candidate_excluded",
-        "hard_failed",
-    }
-    if not is_ingestible(candidate) and not any(item.code in terminal_codes for item in reasons):
-        add(
-            "resolution_required",
-            SourceIntakeReadinessBlockCategory.REVIEW_REQUIRED,
-            "Candidate resolution state requires review before registration.",
-        )
-        actions.extend(
-            [
-                "confirm_suggestion",
-                "manual_correction",
-                "accept_warnings",
-                "promote_with_exception",
-                "exclude_candidate",
-            ]
-        )
+    if hard_issues:
+        candidate.readiness_state = SourceIntakeReadinessState.BLOCKED
+        candidate.readiness_issues = list(dict.fromkeys(hard_issues))
+        candidate.available_human_actions = []
+        return candidate
 
-    if candidate.qaqc_status.non_blocking_warning_count > 0:
-        actions.append("accept_warnings")
-    if candidate.qaqc_status.review_controlled_count > 0:
-        actions.append("promote_with_exception")
-    if candidate.resolved_metadata is not None and any(
-        getattr(candidate.resolved_metadata, name).value
-        for name in ("well_name", "uwi", "operator", "field", "block")
+    review_issues: list[str] = []
+
+    if (
+        candidate.candidate_role == SourceIntakeCandidateRole.WELL_LOG_CANDIDATE
+        and not _canonical_well_name(candidate)
     ):
-        actions.append("confirm_suggestion")
-    if candidate.resolution_state not in {
-        SourceIntakeResolutionState.REGISTERED,
-        SourceIntakeResolutionState.EXCLUDED,
-        SourceIntakeResolutionState.DUPLICATE,
-        SourceIntakeResolutionState.HARD_FAILED,
-    }:
-        actions.append("manual_correction")
+        review_issues.append(
+            "A human must assign or confirm the destination well."
+        )
 
-    candidate.registration_block_reasons = reasons
-    candidate.available_resolution_actions = list(dict.fromkeys(actions))
-    candidate.hard_failure_count = max(
-        hard_failure_count,
-        candidate.qaqc_status.hard_failure_count,
-    )
-    candidate.overridable_review_count = max(
-        overridable_review_count,
-        candidate.qaqc_status.review_controlled_count,
-    )
-    candidate.non_blocking_warning_count = max(
-        candidate.qaqc_status.non_blocking_warning_count,
-        0,
-    )
-    candidate.canonical_well_resolved = canonical_well_resolved
-    candidate.registration_eligible = not reasons
+    if not is_ingestible(candidate):
+        review_issues.append(
+            "A human decision is required before registration."
+        )
+
+    if review_issues:
+        candidate.readiness_state = SourceIntakeReadinessState.REVIEW_REQUIRED
+        candidate.readiness_issues = list(dict.fromkeys(review_issues))
+        candidate.available_human_actions = [
+            "accept",
+            "correct",
+            "assign",
+            "exclude",
+        ]
+        return candidate
+
+    candidate.readiness_state = SourceIntakeReadinessState.READY
+    candidate.readiness_issues = []
+    candidate.available_human_actions = []
     return candidate

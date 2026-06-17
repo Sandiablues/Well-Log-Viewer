@@ -79,9 +79,8 @@ def test_review_and_warning_findings_are_separated(tmp_path: Path) -> None:
 
     assert candidate.qaqc_status.review_controlled_count >= 1
     assert candidate.qaqc_status.non_blocking_warning_count >= 1
-    assert candidate.overridable_review_count >= 1
-    assert candidate.non_blocking_warning_count >= 1
-    assert candidate.hard_failure_count == 0
+    assert candidate.readiness_state.value == "review_required"
+    assert candidate.readiness_issues
 
 
 def test_hard_failures_are_non_overridable_policy_findings(tmp_path: Path) -> None:
@@ -93,8 +92,8 @@ def test_hard_failures_are_non_overridable_policy_findings(tmp_path: Path) -> No
     ]
     assert hard
     assert candidate.qaqc_status.hard_failure_count == len(hard)
-    assert candidate.hard_failure_count >= 1
-    assert candidate.registration_eligible is False
+    assert candidate.readiness_state.value == "blocked"
+    assert candidate.readiness_issues
 
 
 def test_finding_policy_survives_persistence_reload(tmp_path: Path) -> None:

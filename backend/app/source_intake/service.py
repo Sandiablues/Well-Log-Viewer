@@ -212,6 +212,8 @@ class WlvSourceIntakeService:
             )
             for fresh_candidate in candidates
         ]
+        for candidate in reconciled_candidates:
+            self._reapply_current_human_decision(candidate)
 
         other_repository_candidates = [
             candidate
@@ -277,6 +279,25 @@ class WlvSourceIntakeService:
         fresh.registered_trajectory_count = existing.registered_trajectory_count
 
         return fresh
+
+    @staticmethod
+    def _reapply_current_human_decision(
+        candidate: SourceFileCandidate,
+    ) -> None:
+        """Reapply the current human decision to freshly recomputed QAQC.
+
+        Rescan owns current source evidence. The most recent human decision owns
+        accepted review findings and corrected metadata. Reapplying that single
+        current decision prevents a rescan from reopening already reviewed
+        findings without creating a QAQC history timeline.
+        """
+        if not candidate.resolution_history:
+            return
+
+        recompute_qaqc_after_resolution(
+            candidate,
+            candidate.resolution_history[-1],
+        )
 
     def get_workbench(self) -> SourceIntakeWorkbench:
         snapshot = self._load_snapshot()

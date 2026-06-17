@@ -41,6 +41,7 @@ from .models import (
     SourceIntakeCandidateRole,
     SourceIntakeParseStatus,
     SourceIntakeQaqcStatus,
+    SourceIntakeReadinessState,
     SourceIntakeResolutionState,
 )
 from .resolution_service import is_ingestible
@@ -59,7 +60,7 @@ def registration_block_reason(candidate: SourceFileCandidate) -> str | None:
     the existing public/tested rejection wording consumed by registration callers.
     """
     evaluate_registration_readiness(candidate)
-    if candidate.registration_eligible:
+    if candidate.readiness_state == SourceIntakeReadinessState.READY:
         return None
 
     if candidate.registration_status == "registered" or candidate.resolution_state == SourceIntakeResolutionState.REGISTERED:
@@ -87,7 +88,7 @@ def registration_block_reason(candidate: SourceFileCandidate) -> str | None:
                 "Geometry candidate resolution state is not registration-ready: "
                 f"{candidate.resolution_state.value}. Resolve the candidate first."
             )
-        return candidate.registration_block_reasons[0].message if candidate.registration_block_reasons else None
+        return candidate.readiness_issues[0] if candidate.readiness_issues else None
 
     if candidate.candidate_role != SourceIntakeCandidateRole.WELL_LOG_CANDIDATE:
         return f"Only well_log_candidate records can be registered; got {candidate.candidate_role.value}."
@@ -114,7 +115,7 @@ def registration_block_reason(candidate: SourceFileCandidate) -> str | None:
             f"{candidate.resolution_state.value}. Resolve or explicitly disposition the candidate first."
         )
 
-    return candidate.registration_block_reasons[0].message if candidate.registration_block_reasons else "Candidate is not registration-ready."
+    return candidate.readiness_issues[0] if candidate.readiness_issues else "Candidate is not registration-ready."
 
 def _source_intake_provenance(candidate: SourceFileCandidate) -> dict[str, object]:
     return {

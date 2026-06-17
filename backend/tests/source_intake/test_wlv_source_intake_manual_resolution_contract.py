@@ -177,12 +177,13 @@ def test_hard_failure_cannot_be_promoted(tmp_path: Path) -> None:
         )
 
 
-def test_backend_advertises_explicit_resolution_actions(tmp_path: Path) -> None:
+def test_backend_advertises_small_human_action_set(tmp_path: Path) -> None:
     service, _ = _scan(tmp_path)
     candidate = service.get_workbench().candidates[0]
 
-    assert "confirm_suggestion" in candidate.available_resolution_actions
-    assert "manual_correction" in candidate.available_resolution_actions
-    assert "accept_warnings" in candidate.available_resolution_actions
-    assert "promote_with_exception" in candidate.available_resolution_actions
-    assert "exclude_candidate" in candidate.available_resolution_actions
+    assert set(candidate.available_human_actions) == {
+        "accept",
+        "correct",
+        "assign",
+        "exclude",
+    }

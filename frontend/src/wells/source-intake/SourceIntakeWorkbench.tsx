@@ -53,13 +53,9 @@ type SourceFileCandidate = {
   registered_product_count?: number;
   registered_curve_count?: number;
   registered_trajectory_count?: number;
-  registration_eligible: boolean;
-  registration_block_reasons: Array<{ code: string; category: string; message: string; overridable: boolean }>;
-  available_resolution_actions: string[];
-  hard_failure_count: number;
-  overridable_review_count: number;
-  non_blocking_warning_count: number;
-  canonical_well_resolved: boolean;
+  readiness_state: 'ready' | 'review_required' | 'blocked' | 'excluded' | 'registered';
+  readiness_issues: string[];
+  available_human_actions: string[];
   parsed_metadata?: {
     log_header?: { curve_count?: number | null } | null;
     curve_headers?: Array<{ mnemonic?: string | null }> | null;
@@ -297,7 +293,7 @@ function candidateCurveCount(candidate: SourceFileCandidate): number {
 }
 
 function candidateIsRegisterable(candidate: SourceFileCandidate): boolean {
-  return candidate.registration_eligible === true;
+  return candidate.readiness_state === 'ready';
 }
 
 
@@ -468,7 +464,7 @@ export function SourceIntakeWorkbench() {
       { label: fallback?.candidate_role === 'wellbore_geometry_candidate' ? 'Geometry Preview' : 'Curves', value: fallback?.candidate_role === 'wellbore_geometry_candidate' ? geometryPreviewLabel(fallback) : String(candidateDiagnostics?.summary.curve_count ?? (fallback ? candidateCurveCount(fallback) : 0)) },
       { label: 'Parse', value: parseStatusLabel(candidateDiagnostics?.parse_status ?? fallback?.parser_status ?? 'not_parsed') },
       { label: 'QAQC', value: labelize(candidateDiagnostics?.qaqc_status.status ?? fallback?.qaqc_status?.status ?? 'not_checked') },
-      { label: 'MDP Ready', value: labelize(candidateDiagnostics?.mdp_ready_status ?? (fallback?.registration_eligible ? 'ready' : 'not_ready')) },
+      { label: 'MDP Ready', value: labelize(candidateDiagnostics?.mdp_ready_status ?? fallback?.readiness_state ?? 'review_required') },
       { label: 'Registration', value: labelize(candidateDiagnostics?.summary.registration_status ?? fallback?.registration_status ?? 'not_registered') },
     ];
   }, [candidateDiagnostics, diagnosticFallbackCandidate]);
@@ -933,7 +929,7 @@ export function SourceIntakeWorkbench() {
                           <input
                             type="checkbox"
                             checked={selectedCandidateIds.has(candidate.source_file_id)}
-                            disabled={!candidate.registration_eligible}
+                            disabled={candidate.readiness_state !== 'ready'}
                             onClick={(event) => event.stopPropagation()}
                             onChange={(event) => setCandidateSelected(candidate.source_file_id, event.currentTarget.checked)}
                             aria-label={`Select ${candidate.file_name}`}
