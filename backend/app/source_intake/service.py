@@ -32,9 +32,14 @@ from .registration import register_candidate_to_inventory, registration_block_re
 from .resolution_service import (
     SourceIntakeResolutionError,
     SourceIntakeResolutionService,
+    is_ingestible,
     occurrence_identity,
 )
-from .deviation_survey_parser import DeviationSurveyParseError, parse_deviation_survey_preview
+from .deviation_survey_parser import (
+    DeviationSurveyParseError,
+    parse_deviation_survey_full,
+    parse_deviation_survey_preview,
+)
 
 from .models import (
     SourceFileCandidate,
@@ -357,6 +362,14 @@ class WlvSourceIntakeService:
                 candidate.registered_product_count = 0
                 candidate.registered_curve_count = 0
                 candidate.registered_trajectory_count = trajectory_count
+                try:
+                    self.resolution_service.mark_registered(
+                        candidate,
+                        actor=request.approval.approved_by,
+                        reason=request.approval.approval_note,
+                    )
+                except SourceIntakeResolutionError as exc:
+                    raise SourceIntakeError(str(exc)) from exc
                 snapshot_changed = True
                 registered_count += 1
                 results.append(SourceIntakeRegisterResult(
@@ -454,6 +467,11 @@ class WlvSourceIntakeService:
             return f"Geometry candidate QAQC status is not registration-ready: {candidate.qaqc_status.status.value}."
         if candidate.qaqc_status.failure_count > 0:
             return "Geometry candidate QAQC has failures and cannot be registered."
+        if not is_ingestible(candidate):
+            return (
+                "Geometry candidate resolution state is not registration-ready: "
+                f"{candidate.resolution_state.value}. Resolve the candidate first."
+            )
         return None
 
     def _register_geometry_candidate_to_inventory(
@@ -475,6 +493,18 @@ class WlvSourceIntakeService:
             raise ValueError(blocked)
         preview = candidate.geometry_preview
         assert preview is not None
+        source_path = Path(candidate.original_path)
+        if not source_path.exists():
+            raise ValueError(f"Geometry source file is unavailable for full registration parse: {source_path}")
+        try:
+            full_survey = parse_deviation_survey_full(source_path)
+        except DeviationSurveyParseError as exc:
+            raise ValueError(f"Geometry source failed full registration parse: {exc}") from exc
+        if full_survey.station_count != preview.station_count:
+            raise ValueError(
+                "Geometry source station count changed between scan and registration: "
+                f"scan={preview.station_count}, registration={full_survey.station_count}."
+            )
 
         existing = self._match_existing_managed_well(candidate, inventory_service)
         well_name = existing.well_name if existing is not None else self._geometry_well_name(candidate)
@@ -482,7 +512,12 @@ class WlvSourceIntakeService:
         managed_well_id = existing.managed_well_id if existing is not None else f"managed-well:{well_id}"
 
         now = utc_now_iso()
-        trajectory = self._managed_trajectory_from_geometry_candidate(candidate, well_name=well_name, approved_at=now)
+        trajectory = self._managed_trajectory_from_geometry_candidate(
+            candidate,
+            full_survey=full_survey,
+            well_name=well_name,
+            approved_at=now,
+        )
         source_reference = self._geometry_source_reference(candidate, trajectory_id=trajectory.trajectory_id)
 
         if existing is not None:
@@ -566,12 +601,15 @@ class WlvSourceIntakeService:
         self,
         candidate: SourceFileCandidate,
         *,
+        full_survey,
         well_name: str,
         approved_at: str,
     ) -> WbvManagedTrajectoryRecord:
-        preview = candidate.geometry_preview
-        assert preview is not None
-        package = self._trajectory_package_from_geometry_preview(candidate, well_name=well_name)
+        package = self._trajectory_package_from_full_geometry(
+            candidate,
+            full_survey=full_survey,
+            well_name=well_name,
+        )
         trajectory_id = f"traj:source-intake:{hashlib.sha1(candidate.source_file_id.encode('utf-8')).hexdigest()[:16]}"
         status = WbvManagedTrajectoryStatus.APPROVED
         return WbvManagedTrajectoryRecord(
@@ -585,26 +623,24 @@ class WlvSourceIntakeService:
             is_synthetic=False,
             source_file_id=candidate.source_file_id,
             source_label=candidate.file_name,
-            station_count=preview.station_count,
-            md_min=preview.md_min,
-            md_max=preview.md_max,
-            tvd_min=preview.tvd_min,
-            tvd_max=preview.tvd_max,
-            geometry_class="registered_deviation_survey_preview",
+            station_count=full_survey.station_count,
+            md_min=full_survey.md_min,
+            md_max=full_survey.md_max,
+            tvd_min=full_survey.tvd_min,
+            tvd_max=full_survey.tvd_max,
+            geometry_class="registered_deviation_survey_full",
             coordinate_mode=WbvCoordinateMode.RELATIVE,
             trajectory_package=package,
-            qa_flags=[message for message in preview.warnings[:10]],
-            warnings=[{"code": "source_intake_preview_warning", "severity": "warning", "message": message} for message in preview.warnings[:10]],
+            qa_flags=[message for message in full_survey.warnings[:10]],
+            warnings=[{"code": "source_intake_geometry_warning", "severity": "warning", "message": message} for message in full_survey.warnings[:10]],
             created_at=approved_at,
             approved_at=approved_at,
         )
 
-    def _trajectory_package_from_geometry_preview(self, candidate: SourceFileCandidate, *, well_name: str) -> dict[str, Any]:
-        preview = candidate.geometry_preview
-        assert preview is not None
-        stations = [station.model_dump(mode="json") for station in preview.stations_preview]
+    def _trajectory_package_from_full_geometry(self, candidate: SourceFileCandidate, *, full_survey, well_name: str) -> dict[str, Any]:
+        stations = [station.model_dump(mode="json") for station in full_survey.stations_preview]
         render_points: list[dict[str, float]] = []
-        for station in preview.stations_preview:
+        for station in full_survey.stations_preview:
             tvd = station.tvd if station.tvd is not None else station.md
             x_value = station.x_offset if station.x_offset is not None else station.easting if station.easting is not None else 0.0
             y_value = station.y_offset if station.y_offset is not None else station.northing if station.northing is not None else 0.0
@@ -617,30 +653,30 @@ class WlvSourceIntakeService:
                     "z": -float(tvd),
                 }
             )
-        bbox = self._geometry_bounding_box(render_points, preview)
+        bbox = self._geometry_bounding_box(render_points, full_survey)
         warnings = [
-            {"code": "source_intake_preview_limited", "severity": "warning", "message": "Registered trajectory uses the bounded Source Intake preview station payload; full-station promotion can be added in a later block."}
+            {"code": "source_intake_geometry_warning", "severity": "warning", "message": message}
+            for message in full_survey.warnings[:10]
         ]
-        warnings.extend({"code": "source_intake_preview_warning", "severity": "warning", "message": message} for message in preview.warnings[:10])
         return {
-            "method": "source_intake_preview_registration",
-            "source": "source_intake_deviation_survey_preview",
+            "method": "source_intake_full_registration",
+            "source": "source_intake_deviation_survey_full",
             "source_type": "deviation_survey",
             "source_intake_candidate_id": candidate.source_file_id,
             "source_file_id": candidate.source_file_id,
             "source_label": candidate.file_name,
             "well_name": well_name,
             "coordinate_mode": WbvCoordinateMode.RELATIVE.value,
-            "trajectory_class": "registered_deviation_survey_preview",
+            "trajectory_class": "registered_deviation_survey_full",
             "depth_unit": "ft",
             "angle_unit": "deg",
-            "station_count": preview.station_count,
-            "source_station_count": preview.station_count,
-            "preview_station_count": preview.preview_station_count,
+            "station_count": full_survey.station_count,
+            "source_station_count": full_survey.station_count,
+            "preview_station_count": candidate.geometry_preview.preview_station_count if candidate.geometry_preview else 0,
             "stations": stations,
             "render_points": render_points,
             "bounding_box": bbox,
-            "column_mapping": preview.column_mapping.model_dump(mode="json"),
+            "column_mapping": full_survey.column_mapping.model_dump(mode="json"),
             "warnings": warnings,
         }
 

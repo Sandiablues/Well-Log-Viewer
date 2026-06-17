@@ -2,7 +2,14 @@ from pathlib import Path
 
 from app.inventory.repository import ManagedWellInventoryRepository
 from app.inventory.service import ManagedWellInventoryService
-from app.source_intake.models import SourceIntakeRegisterRequest, SourceRepositoryCreateRequest
+from app.source_intake.models import (
+    SourceIntakeBulkResolutionRequest,
+    SourceIntakeRegisterRequest,
+    SourceIntakeResolutionAction,
+    SourceIntakeResolutionDecision,
+    SourceIntakeResolutionState,
+    SourceRepositoryCreateRequest,
+)
 from app.source_intake.service import WlvSourceIntakeService
 from app.wbv.service import WbvService
 
@@ -30,6 +37,23 @@ def _services(tmp_path: Path):
     return source, inventory, repository
 
 
+
+
+def _resolve_geometry(source: WlvSourceIntakeService, candidate) -> None:
+    source.resolve_candidates(
+        SourceIntakeBulkResolutionRequest(
+            decisions=[
+                SourceIntakeResolutionDecision(
+                    occurrence_id=candidate.occurrence_id,
+                    action=SourceIntakeResolutionAction.WARNING_ACCEPTED,
+                    actor="test",
+                    reason="Geometry mapping and QAQC warnings reviewed.",
+                    accepted_warning_codes=["geometry_review"],
+                )
+            ]
+        )
+    )
+
 def _scan_geometry(tmp_path: Path, file_name: str, text: str):
     root = tmp_path / "source"
     _write(root / file_name, text)
@@ -45,6 +69,8 @@ def test_parsed_wellbore_geometry_candidate_registers_as_managed_trajectory(tmp_
         "FORGE_21_31_Final_Deviation_Survey.csv",
         GEOMETRY_CSV,
     )
+
+    _resolve_geometry(source, candidate)
 
     response = source.register_candidates(
         SourceIntakeRegisterRequest(
@@ -118,6 +144,7 @@ GR.GAPI : Gamma Ray
     assert las_response.results[0].status == "registered"
     assert las_response.results[0].managed_well_id is not None
 
+    _resolve_geometry(source, geom_candidate)
     geometry_response = source.register_candidates(SourceIntakeRegisterRequest(candidate_ids=[geom_candidate.source_file_id]), inventory_service=inventory)
     assert geometry_response.registered_count == 1
     assert geometry_response.results[0].status == "registered"
@@ -147,3 +174,48 @@ def test_parse_failed_geometry_candidate_is_blocked_from_registration(tmp_path: 
     assert response.results[0].status == "blocked"
     assert "parser_status" in response.results[0].reason
     assert inventory.list_wells() == []
+
+
+def test_geometry_registration_reparses_and_registers_all_61_stations(tmp_path: Path) -> None:
+    rows = ["MD,INC,AZI,TVD,Northing,Easting,X_OFFSET,Y_OFFSET"]
+    rows.extend(
+        f"{index * 100},{min(index, 30)},{(index * 5) % 360},{index * 90},{5000 + index},{6000 + index},{index * 10},{index * 20}"
+        for index in range(61)
+    )
+    source, inventory, repository, candidate = _scan_geometry(
+        tmp_path,
+        "FORGE_21_31_deviation_survey_2000ft_offset_bottom30_log.csv",
+        "\n".join(rows) + "\n",
+    )
+    assert candidate.geometry_preview.station_count == 61
+    assert candidate.geometry_preview.preview_station_count == 25
+    _resolve_geometry(source, candidate)
+
+    response = source.register_candidates(
+        SourceIntakeRegisterRequest(
+            candidate_ids=[candidate.source_file_id],
+            approval={"approved_by": "test", "approval_note": "full geometry registration"},
+        ),
+        inventory_service=inventory,
+    )
+
+    assert response.registered_count == 1
+    saved_candidate = source.get_workbench().candidates[0]
+    assert saved_candidate.resolution_state == SourceIntakeResolutionState.REGISTERED
+    record = inventory.get_well(response.results[0].managed_well_id)
+    trajectory = record.metadata["wbv_trajectory_records"][0]
+    package = trajectory["trajectory_package"]
+    assert trajectory["station_count"] == 61
+    assert trajectory["geometry_class"] == "registered_deviation_survey_full"
+    assert package["method"] == "source_intake_full_registration"
+    assert package["source_station_count"] == 61
+    assert package["preview_station_count"] == 25
+    assert len(package["stations"]) == 61
+    assert len(package["render_points"]) == 61
+    assert package["column_mapping"]["inclination"] == "INC"
+    assert package["column_mapping"]["northing"] == "Northing"
+    assert package["column_mapping"]["easting"] == "Easting"
+    assert package["column_mapping"]["x_offset"] == "X_OFFSET"
+    assert package["column_mapping"]["y_offset"] == "Y_OFFSET"
+    assert trajectory["is_active"] is False
+    assert "active_trajectory_id" not in record.metadata

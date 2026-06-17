@@ -1,8 +1,8 @@
 """Structured deviation/directional survey parser for WLV Source Intake.
 
-This parser is intentionally scoped to preview/QAQC only. It does not register
-trajectories into MSI, does not set active WBV trajectory state, and does not
-create viewer packages.
+This parser supports both bounded scan-time preview and complete registration-time
+parsing. It does not itself register trajectories, set active WBV state, or create
+viewer packages.
 """
 
 from __future__ import annotations
@@ -53,6 +53,20 @@ _PREVIEW_LIMIT = 25
 
 def parse_deviation_survey_preview(path: Path) -> SourceIntakeDeviationSurveyPreview:
     """Parse a structured survey file into a bounded backend-owned preview."""
+    return _parse_deviation_survey(path, station_limit=_PREVIEW_LIMIT, parser_id="wlv_deviation_survey_parser_v2_preview")
+
+
+def parse_deviation_survey_full(path: Path) -> SourceIntakeDeviationSurveyPreview:
+    """Parse every valid survey station for durable MSI/WBV registration."""
+    return _parse_deviation_survey(path, station_limit=None, parser_id="wlv_deviation_survey_parser_v2_full")
+
+
+def _parse_deviation_survey(
+    path: Path,
+    *,
+    station_limit: int | None,
+    parser_id: str,
+) -> SourceIntakeDeviationSurveyPreview:
     ext = path.suffix.lower().lstrip(".")
     if ext == "csv":
         headers, rows = _read_csv(path)
@@ -116,7 +130,7 @@ def parse_deviation_survey_preview(path: Path) -> SourceIntakeDeviationSurveyPre
         if tvd is not None:
             tvd_values.append(tvd)
 
-        if len(stations) < _PREVIEW_LIMIT:
+        if station_limit is None or len(stations) < station_limit:
             stations.append(
                 SourceIntakeDeviationSurveyStationPreview(
                     row_index=row_index,
@@ -142,6 +156,7 @@ def parse_deviation_survey_preview(path: Path) -> SourceIntakeDeviationSurveyPre
     warnings.extend(row_warnings)
 
     return SourceIntakeDeviationSurveyPreview(
+        parser_id=parser_id,
         source_format=source_format,
         row_count=len(rows),
         station_count=len(md_values),
@@ -279,21 +294,35 @@ def _split_text_line(line: str, delimiter: str | None) -> list[str]:
 
 
 def _map_columns(headers: list[str]) -> tuple[SourceIntakeDeviationSurveyColumnMapping, list[str]]:
-    normalized = {_normalize_header(header): header for header in headers if header.strip()}
+    normalized_headers = [(_normalize_header(header), header) for header in headers if header.strip()]
     selected: dict[str, str | None] = {field: None for field in _ALIAS_GROUPS}
+    used_headers: set[str] = set()
     warnings: list[str] = []
 
+    # First pass: exact normalized alias equality. This is deterministic and
+    # prevents short aliases such as "n" from matching INC or Northing.
     for field, aliases in _ALIAS_GROUPS.items():
-        for alias in aliases:
-            key = _normalize_header(alias)
-            if key in normalized:
-                selected[field] = normalized[key]
+        alias_keys = {_normalize_header(alias) for alias in aliases}
+        for key, header in normalized_headers:
+            if header in used_headers:
+                continue
+            if key in alias_keys:
+                selected[field] = header
+                used_headers.add(header)
                 break
-        if selected[field] is None:
-            for key, header in normalized.items():
-                if any(_normalize_header(alias) in key for alias in aliases):
-                    selected[field] = header
-                    break
+
+    # Second pass: conservative token/phrase matching for descriptive headers.
+    # One- and two-character aliases are deliberately excluded from fuzzy use.
+    for field, aliases in _ALIAS_GROUPS.items():
+        if selected[field] is not None:
+            continue
+        for key, header in normalized_headers:
+            if header in used_headers:
+                continue
+            if any(_header_matches_alias(key, alias) for alias in aliases):
+                selected[field] = header
+                used_headers.add(header)
+                break
 
     mapped_headers = {value for value in selected.values() if value}
     unmapped_headers = [header for header in headers if header and header not in mapped_headers]
@@ -312,6 +341,17 @@ def _map_columns(headers: list[str]) -> tuple[SourceIntakeDeviationSurveyColumnM
         unmapped_headers=unmapped_headers,
     ), warnings
 
+
+def _header_matches_alias(normalized_header: str, alias: str) -> bool:
+    alias_key = _normalize_header(alias)
+    if len(alias_key.replace(" ", "")) < 3:
+        return False
+    header_tokens = normalized_header.split()
+    alias_tokens = alias_key.split()
+    if len(alias_tokens) == 1:
+        return alias_tokens[0] in header_tokens
+    width = len(alias_tokens)
+    return any(header_tokens[index:index + width] == alias_tokens for index in range(len(header_tokens) - width + 1))
 
 def _normalize_header(value: str) -> str:
     value = value.strip().lower()
