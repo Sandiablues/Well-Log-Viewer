@@ -108,6 +108,8 @@ def test_backend_contract_preserves_visual_diagnostics_for_loaded_curve() -> Non
 
     contract = service._wdv_curve_contract_from_product_item(record, item)  # type: ignore[arg-type]
 
+    assert contract["curve_uid"].startswith("wlv_curve:")
+    assert contract["well_uid"] is None
     assert contract["scale_direction"] == "reversed"
     assert contract["scale_source"] == "robust_observed_statistics"
     assert contract["display_scale_mode"] == "robust_observed"

@@ -735,7 +735,7 @@ class ManagedWellInventoryService:
         return {
             "product_id": item.product_id,
             "curve_uid": item.curve_uid or self._curve_uid_from_product_item(record, item),
-            "well_uid": item.well_uid or record.managed_well_id,
+            "well_uid": item.well_uid or self._managed_well_identity(record),
             "source_uid": item.source_uid or item.source_id,
             "kr_curve_type_id": item.kr_curve_type_id,
             "observed_mnemonic": item.observed_mnemonic or item.curve_name,
@@ -1470,9 +1470,24 @@ class ManagedWellInventoryService:
         return f"wlv_curve:{digest}"
 
     @staticmethod
+    def _managed_well_identity(record: ManagedWellRecord | Any) -> str | None:
+        """Return the stable well identity available on a managed record.
+
+        Some backend contract builders operate on partial record projections.
+        Identity resolution must therefore tolerate absent optional attributes
+        while remaining deterministic from the product item when no well
+        identity is available.
+        """
+
+        return (
+            getattr(record, "well_id", None)
+            or getattr(record, "managed_well_id", None)
+        )
+
+    @staticmethod
     def _curve_uid_from_product_item(record: ManagedWellRecord, item: ManagedProductGroupItem) -> str:
         return ManagedWellInventoryService._curve_uid_for_registered_curve(
-            well_id=item.well_uid or record.well_id or record.managed_well_id,
+            well_id=item.well_uid or ManagedWellInventoryService._managed_well_identity(record),
             source_id=item.source_uid or item.source_id,
             representation_id=item.viewer_package_id,
             product_id=item.product_id,
