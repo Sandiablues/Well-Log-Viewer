@@ -281,6 +281,70 @@ class SourceIntakeResolvedMetadata(BaseModel):
     evidence_count: int = 0
 
 
+
+
+class SourceIntakeResolutionState(str, Enum):
+    UNRESOLVED = "unresolved"
+    AUTO_INGESTIBLE = "auto_ingestible"
+    RESOLVED = "resolved"
+    DUPLICATE = "duplicate"
+    EXCLUDED = "excluded"
+    HARD_FAILED = "hard_failed"
+    REGISTERED = "registered"
+
+
+class SourceIntakeResolutionAction(str, Enum):
+    AUTO_CLASSIFIED = "auto_classified"
+    METADATA_OVERRIDE = "metadata_override"
+    WARNING_ACCEPTED = "warning_accepted"
+    CANONICAL_SELECTED = "canonical_selected"
+    EXCLUDED = "excluded"
+    REOPENED = "reopened"
+    REGISTERED = "registered"
+
+
+class SourceIntakeResolutionAuditEvent(BaseModel):
+    event_id: str
+    action: SourceIntakeResolutionAction
+    actor: Optional[str] = None
+    reason: Optional[str] = None
+    occurred_at: str = Field(default_factory=utc_now_iso)
+    previous_state: Optional[SourceIntakeResolutionState] = None
+    next_state: SourceIntakeResolutionState
+    original_values: dict[str, Any] = Field(default_factory=dict)
+    resolved_values: dict[str, Any] = Field(default_factory=dict)
+    accepted_warning_codes: list[str] = Field(default_factory=list)
+
+
+class SourceIntakeResolutionDecision(BaseModel):
+    occurrence_id: str
+    action: SourceIntakeResolutionAction
+    actor: Optional[str] = None
+    reason: Optional[str] = None
+    resolved_values: dict[str, Any] = Field(default_factory=dict)
+    accepted_warning_codes: list[str] = Field(default_factory=list)
+    canonical_occurrence_id: Optional[str] = None
+
+
+class SourceIntakeBulkResolutionRequest(BaseModel):
+    decisions: list[SourceIntakeResolutionDecision]
+
+
+class SourceIntakeResolutionResult(BaseModel):
+    occurrence_id: str
+    previous_state: SourceIntakeResolutionState
+    next_state: SourceIntakeResolutionState
+    ingestible: bool
+    message: str
+
+
+class SourceIntakeBulkResolutionResponse(BaseModel):
+    ok: bool = True
+    action: str = "resolve_source_intake_candidates"
+    resolved_count: int = 0
+    results: list[SourceIntakeResolutionResult] = Field(default_factory=list)
+
+
 class SourceIntakeDeviationSurveyColumnMapping(BaseModel):
     measured_depth: Optional[str] = None
     inclination: Optional[str] = None
@@ -325,6 +389,16 @@ class SourceIntakeDeviationSurveyPreview(BaseModel):
 
 class SourceFileCandidate(BaseModel):
     source_file_id: str
+    occurrence_id: Optional[str] = None
+    content_fingerprint: Optional[str] = None
+    duplicate_group_id: Optional[str] = None
+    canonical_occurrence_id: Optional[str] = None
+    resolution_state: SourceIntakeResolutionState = SourceIntakeResolutionState.UNRESOLVED
+    resolution_version: int = 1
+    resolved_by: Optional[str] = None
+    resolved_at: Optional[str] = None
+    resolution_reason: Optional[str] = None
+    resolution_history: list[SourceIntakeResolutionAuditEvent] = Field(default_factory=list)
     repository_id: str
     scan_id: str
     file_name: str
