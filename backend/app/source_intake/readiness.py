@@ -181,9 +181,18 @@ def evaluate_registration_readiness(candidate: SourceFileCandidate) -> SourceFil
 
     candidate.registration_block_reasons = reasons
     candidate.available_resolution_actions = list(dict.fromkeys(actions))
-    candidate.hard_failure_count = hard_failure_count
-    candidate.overridable_review_count = overridable_review_count
-    candidate.non_blocking_warning_count = max(candidate.qaqc_status.warning_count, 0)
+    candidate.hard_failure_count = max(
+        hard_failure_count,
+        candidate.qaqc_status.hard_failure_count,
+    )
+    candidate.overridable_review_count = max(
+        overridable_review_count,
+        candidate.qaqc_status.review_controlled_count,
+    )
+    candidate.non_blocking_warning_count = max(
+        candidate.qaqc_status.non_blocking_warning_count,
+        0,
+    )
     candidate.canonical_well_resolved = canonical_well_resolved
     candidate.registration_eligible = not reasons
     return candidate

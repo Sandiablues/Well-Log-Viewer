@@ -84,10 +84,18 @@ class SourceIntakeQaqcSeverity(str, Enum):
     HIGH = "high"
 
 
+class SourceIntakeFindingClass(str, Enum):
+    INFORMATIONAL = "informational"
+    NON_BLOCKING_WARNING = "non_blocking_warning"
+    REVIEW_CONTROLLED = "review_controlled"
+    HARD_FAILURE = "hard_failure"
+
+
 class SourceIntakeQaqcCheck(BaseModel):
     check_id: str
     status: SourceIntakeQaqcStatus
     severity: SourceIntakeQaqcSeverity = SourceIntakeQaqcSeverity.NONE
+    finding_class: SourceIntakeFindingClass = SourceIntakeFindingClass.INFORMATIONAL
     message: str
     field_name: Optional[str] = None
     review_required: bool = False
@@ -99,6 +107,9 @@ class SourceIntakeQaqcResult(BaseModel):
     check_count: int = 0
     warning_count: int = 0
     failure_count: int = 0
+    hard_failure_count: int = 0
+    review_controlled_count: int = 0
+    non_blocking_warning_count: int = 0
     review_required: bool = False
     messages: list[str] = Field(default_factory=list)
     checks: list[SourceIntakeQaqcCheck] = Field(default_factory=list)

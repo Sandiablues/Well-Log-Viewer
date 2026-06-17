@@ -15,6 +15,7 @@ from .models import (
     SourceFileCandidate,
     SourceIntakeCandidateRole,
     SourceIntakeFileType,
+    SourceIntakeFindingClass,
     SourceIntakeParseStatus,
     SourceIntakeQaqcCheck,
     SourceIntakeQaqcResult,
@@ -343,6 +344,15 @@ def _summarize(checks: Iterable[SourceIntakeQaqcCheck]) -> SourceIntakeQaqcResul
     check_list = list(checks)
     warning_count = sum(1 for check in check_list if check.status in {SourceIntakeQaqcStatus.WARNING, SourceIntakeQaqcStatus.REVIEW_REQUIRED})
     failure_count = sum(1 for check in check_list if check.status == SourceIntakeQaqcStatus.FAIL)
+    hard_failure_count = sum(
+        1 for check in check_list if check.finding_class == SourceIntakeFindingClass.HARD_FAILURE
+    )
+    review_controlled_count = sum(
+        1 for check in check_list if check.finding_class == SourceIntakeFindingClass.REVIEW_CONTROLLED
+    )
+    non_blocking_warning_count = sum(
+        1 for check in check_list if check.finding_class == SourceIntakeFindingClass.NON_BLOCKING_WARNING
+    )
     review_required = any(check.review_required or check.status == SourceIntakeQaqcStatus.REVIEW_REQUIRED for check in check_list)
     severity = _max_severity(check.severity for check in check_list)
 
@@ -361,6 +371,9 @@ def _summarize(checks: Iterable[SourceIntakeQaqcCheck]) -> SourceIntakeQaqcResul
         check_count=len(check_list),
         warning_count=warning_count,
         failure_count=failure_count,
+        hard_failure_count=hard_failure_count,
+        review_controlled_count=review_controlled_count,
+        non_blocking_warning_count=non_blocking_warning_count,
         review_required=review_required,
         messages=[check.message for check in check_list if check.status != SourceIntakeQaqcStatus.PASS],
         checks=check_list,
@@ -380,6 +393,7 @@ def _pass(check_id: str, message: str, field_name: str | None = None) -> SourceI
         check_id=check_id,
         status=SourceIntakeQaqcStatus.PASS,
         severity=SourceIntakeQaqcSeverity.NONE,
+        finding_class=SourceIntakeFindingClass.INFORMATIONAL,
         message=message,
         field_name=field_name,
     )
@@ -396,6 +410,11 @@ def _warning(
         check_id=check_id,
         status=SourceIntakeQaqcStatus.WARNING,
         severity=severity,
+        finding_class=(
+            SourceIntakeFindingClass.REVIEW_CONTROLLED
+            if review_required
+            else SourceIntakeFindingClass.NON_BLOCKING_WARNING
+        ),
         message=message,
         field_name=field_name,
         review_required=review_required,
@@ -412,6 +431,7 @@ def _review(
         check_id=check_id,
         status=SourceIntakeQaqcStatus.REVIEW_REQUIRED,
         severity=severity,
+        finding_class=SourceIntakeFindingClass.REVIEW_CONTROLLED,
         message=message,
         field_name=field_name,
         review_required=True,
@@ -423,6 +443,7 @@ def _fail(check_id: str, message: str, field_name: str | None = None) -> SourceI
         check_id=check_id,
         status=SourceIntakeQaqcStatus.FAIL,
         severity=SourceIntakeQaqcSeverity.HIGH,
+        finding_class=SourceIntakeFindingClass.HARD_FAILURE,
         message=message,
         field_name=field_name,
         review_required=True,
