@@ -35,8 +35,15 @@ type QaqcStatus = {
   messages?: string[];
 };
 
+type SourceIntakeCurrentDecision = {
+  decision: 'accept' | 'correct' | 'assign' | 'exclude' | 'clear_decision';
+  assignment_target?: string | null;
+  assignment_mode?: 'existing_well' | 'new_well' | null;
+};
+
 type SourceFileCandidate = {
   source_file_id: string;
+  occurrence_id: string;
   repository_id: string;
   file_name: string;
   relative_path: string;
@@ -56,6 +63,7 @@ type SourceFileCandidate = {
   readiness_state: 'ready' | 'review_required' | 'blocked' | 'excluded' | 'registered';
   readiness_issues: string[];
   available_human_actions: string[];
+  current_decision?: SourceIntakeCurrentDecision | null;
   parsed_metadata?: {
     log_header?: { curve_count?: number | null } | null;
     curve_headers?: Array<{ mnemonic?: string | null }> | null;
@@ -168,6 +176,30 @@ type SourceRepositoryRemoveResponse = {
   candidate_rows_removed: number;
   message: string;
   workbench: SourceIntakeWorkbenchResponse;
+};
+
+
+type ManagedWellSummary = {
+  managed_well_id: string;
+  well_name: string;
+  well_id: string;
+  operator?: string | null;
+  field?: string | null;
+  metadata?: {
+    uwi?: string | null;
+  };
+};
+
+type HumanActionChoice =
+  | ''
+  | 'assign_existing'
+  | 'create_new'
+  | 'leave_unresolved'
+  | 'exclude';
+
+type ResolveResponse = {
+  ok: boolean;
+  resolved_count: number;
 };
 
 type CandidateDiagnosticPhase = 'parse' | 'qaqc' | 'mdp_ready' | 'evidence';
@@ -350,6 +382,15 @@ export function SourceIntakeWorkbench() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [managedWells, setManagedWells] = useState<ManagedWellSummary[]>([]);
+  const [humanAction, setHumanAction] = useState<HumanActionChoice>('');
+  const [assignmentTargetId, setAssignmentTargetId] = useState('');
+  const [decisionReason, setDecisionReason] = useState('');
+  const [newWellName, setNewWellName] = useState('');
+  const [newWellUwi, setNewWellUwi] = useState('');
+  const [newWellOperator, setNewWellOperator] = useState('');
+  const [newWellField, setNewWellField] = useState('');
+  const [newWellBlock, setNewWellBlock] = useState('');
 
   const repositories = workbench?.repositories ?? [];
   const candidates = workbench?.candidates ?? [];
@@ -420,6 +461,16 @@ export function SourceIntakeWorkbench() {
   );
 
   const selectedCandidateCount = selectedCandidateIds.size;
+  const selectedCandidates = useMemo(
+    () => candidates.filter((candidate) => selectedCandidateIds.has(candidate.source_file_id)),
+    [candidates, selectedCandidateIds],
+  );
+  const selectedCanAssign = selectedCandidates.length > 0
+    && selectedCandidates.every((candidate) => candidate.available_human_actions.includes('assign'));
+  const selectedCanExclude = selectedCandidates.length > 0
+    && selectedCandidates.every((candidate) => candidate.available_human_actions.includes('exclude'));
+  const selectedCanClearDecision = selectedCandidates.length > 0
+    && selectedCandidates.every((candidate) => Boolean(candidate.current_decision));
   const visibleSelectedCandidateCount = visibleCandidateIds.filter((candidateId) => selectedCandidateIds.has(candidateId)).length;
   const selectedRegisterableCount = visibleEligibleCandidateIds.filter((candidateId) => selectedCandidateIds.has(candidateId)).length;
   const allVisibleCandidatesSelected = visibleCandidateIds.length > 0
@@ -469,6 +520,13 @@ export function SourceIntakeWorkbench() {
     ];
   }, [candidateDiagnostics, diagnosticFallbackCandidate]);
 
+  const loadManagedWells = useCallback(async () => {
+    const records = await fetchWlvJson<ManagedWellSummary[]>('/api/wlv/inventory/wells');
+    setManagedWells(
+      [...records].sort((a, b) => a.well_name.localeCompare(b.well_name)),
+    );
+  }, []);
+
   const loadWorkbench = useCallback(async () => {
     const data = await fetchWlvJson<SourceIntakeWorkbenchResponse>('/api/wlv/source-intake/workbench');
     setWorkbench(data);
@@ -486,10 +544,10 @@ export function SourceIntakeWorkbench() {
 
   useEffect(() => {
     setBusyAction('refresh');
-    loadWorkbench()
+    Promise.all([loadWorkbench(), loadManagedWells()])
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Unable to load Source Intake workbench.'))
       .finally(() => setBusyAction(null));
-  }, [loadWorkbench]);
+  }, [loadManagedWells, loadWorkbench]);
 
   useEffect(() => {
     if (headerSelectRef.current) {
@@ -547,8 +605,103 @@ export function SourceIntakeWorkbench() {
   });
 
   const handleRefresh = () => runAction('refresh', async () => {
-    await loadWorkbench();
+    await Promise.all([loadWorkbench(), loadManagedWells()]);
     setMessage('Source Intake workbench refreshed from backend.');
+  });
+
+  const resetHumanActionForm = () => {
+    setHumanAction('');
+    setAssignmentTargetId('');
+    setDecisionReason('');
+    setNewWellName('');
+    setNewWellUwi('');
+    setNewWellOperator('');
+    setNewWellField('');
+    setNewWellBlock('');
+  };
+
+  const handleApplyHumanAction = () => runAction('human-action', async () => {
+    if (selectedCandidates.length === 0) {
+      throw new Error('Select at least one Source Intake candidate.');
+    }
+    if (!humanAction) {
+      throw new Error('Select a human action before applying.');
+    }
+    if (
+      (humanAction === 'assign_existing' || humanAction === 'create_new')
+      && !selectedCanAssign
+    ) {
+      throw new Error('The backend does not allow assignment for every selected candidate.');
+    }
+    if (humanAction === 'exclude' && !selectedCanExclude) {
+      throw new Error('The backend does not allow exclusion for every selected candidate.');
+    }
+    if (humanAction === 'leave_unresolved' && !selectedCanClearDecision) {
+      throw new Error('Every selected candidate must have a current decision before it can be cleared.');
+    }
+    if (humanAction === 'assign_existing' && !assignmentTargetId) {
+      throw new Error('Select an existing managed well.');
+    }
+    if (humanAction === 'create_new' && !newWellName.trim()) {
+      throw new Error('Enter the confirmed new well name.');
+    }
+    if (humanAction === 'exclude' && !decisionReason.trim()) {
+      throw new Error('Enter a reason for exclusion.');
+    }
+
+    const decisions = selectedCandidates.map((candidate) => {
+      if (humanAction === 'assign_existing') {
+        return {
+          occurrence_id: candidate.occurrence_id,
+          action: 'well_assigned',
+          actor: 'user',
+          reason: decisionReason.trim() || 'Assigned from Source Intake.',
+          assignment_mode: 'existing_well',
+          target_managed_well_id: assignmentTargetId,
+        };
+      }
+      if (humanAction === 'create_new') {
+        return {
+          occurrence_id: candidate.occurrence_id,
+          action: 'well_assigned',
+          actor: 'user',
+          reason: decisionReason.trim() || 'New well confirmed from Source Intake.',
+          assignment_mode: 'new_well',
+          new_well_values: {
+            well_name: newWellName.trim(),
+            ...(newWellUwi.trim() ? { uwi: newWellUwi.trim() } : {}),
+            ...(newWellOperator.trim() ? { operator: newWellOperator.trim() } : {}),
+            ...(newWellField.trim() ? { field: newWellField.trim() } : {}),
+            ...(newWellBlock.trim() ? { block: newWellBlock.trim() } : {}),
+          },
+        };
+      }
+      if (humanAction === 'exclude') {
+        return {
+          occurrence_id: candidate.occurrence_id,
+          action: 'excluded',
+          actor: 'user',
+          reason: decisionReason.trim(),
+        };
+      }
+      return {
+        occurrence_id: candidate.occurrence_id,
+        action: 'reopened',
+        actor: 'user',
+        reason: decisionReason.trim() || 'Current decision cleared from Source Intake.',
+      };
+    });
+
+    const response = await fetchWlvJson<ResolveResponse>('/api/wlv/source-intake/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decisions }),
+    });
+
+    await Promise.all([loadWorkbench(), loadManagedWells()]);
+    setSelectedCandidateIds(new Set());
+    resetHumanActionForm();
+    setMessage(`Applied human decision to ${response.resolved_count} candidate(s).`);
   });
 
   const handleRegister = () => runAction('register', async () => {
@@ -866,6 +1019,92 @@ export function SourceIntakeWorkbench() {
                   Refresh
                 </button>
               </div>
+            </div>
+
+            <div className="wlv-si-button-row wlv-si-candidate-controls" aria-label="Selected candidate human action">
+              <label className="wlv-si-sift-sort-control">
+                <span>Selected Action</span>
+                <select
+                  value={humanAction}
+                  onChange={(event) => setHumanAction(event.currentTarget.value as HumanActionChoice)}
+                  disabled={selectedCandidateCount === 0 || Boolean(busyAction)}
+                >
+                  <option value="">Choose action</option>
+                  <option value="assign_existing" disabled={!selectedCanAssign}>
+                    Assign selected to existing well
+                  </option>
+                  <option value="create_new" disabled={!selectedCanAssign}>
+                    Create new well from selected
+                  </option>
+                  <option value="leave_unresolved" disabled={!selectedCanClearDecision}>
+                    Clear current decision / leave unresolved
+                  </option>
+                  <option value="exclude" disabled={!selectedCanExclude}>
+                    Exclude selected from intake
+                  </option>
+                </select>
+              </label>
+
+              {humanAction === 'assign_existing' && (
+                <label className="wlv-si-sift-sort-control">
+                  <span>Existing Well</span>
+                  <select
+                    value={assignmentTargetId}
+                    onChange={(event) => setAssignmentTargetId(event.currentTarget.value)}
+                  >
+                    <option value="">Select managed well</option>
+                    {managedWells.map((well) => (
+                      <option key={well.managed_well_id} value={well.managed_well_id}>
+                        {well.well_name}{well.metadata?.uwi ? ` · ${well.metadata.uwi}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {humanAction === 'create_new' && (
+                <>
+                  <label className="wlv-si-sift-sort-control">
+                    <span>New Well Name</span>
+                    <input value={newWellName} onChange={(event) => setNewWellName(event.currentTarget.value)} />
+                  </label>
+                  <label className="wlv-si-sift-sort-control">
+                    <span>UWI / API</span>
+                    <input value={newWellUwi} onChange={(event) => setNewWellUwi(event.currentTarget.value)} />
+                  </label>
+                  <label className="wlv-si-sift-sort-control">
+                    <span>Operator</span>
+                    <input value={newWellOperator} onChange={(event) => setNewWellOperator(event.currentTarget.value)} />
+                  </label>
+                  <label className="wlv-si-sift-sort-control">
+                    <span>Field</span>
+                    <input value={newWellField} onChange={(event) => setNewWellField(event.currentTarget.value)} />
+                  </label>
+                  <label className="wlv-si-sift-sort-control">
+                    <span>Block</span>
+                    <input value={newWellBlock} onChange={(event) => setNewWellBlock(event.currentTarget.value)} />
+                  </label>
+                </>
+              )}
+
+              {humanAction && (
+                <label className="wlv-si-sift-sort-control">
+                  <span>{humanAction === 'exclude' ? 'Reason (required)' : 'Reason / Note'}</span>
+                  <input
+                    value={decisionReason}
+                    onChange={(event) => setDecisionReason(event.currentTarget.value)}
+                  />
+                </label>
+              )}
+
+              <button
+                type="button"
+                className="wlv-si-button wlv-si-button--primary"
+                onClick={handleApplyHumanAction}
+                disabled={Boolean(busyAction || selectedCandidateCount === 0 || !humanAction)}
+              >
+                Apply to Selected ({selectedCandidateCount})
+              </button>
             </div>
 
             <div className="wlv-si-table-wrap">
