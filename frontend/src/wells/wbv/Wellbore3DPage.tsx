@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchWlvJson } from '../../api/wlvBackendClient';
 import { WellboreTrajectoryRenderer, type WbvViewPreset } from './WellboreTrajectoryRenderer';
 
@@ -250,11 +250,13 @@ export function Wellbore3DPage({ activeManagedWellId, onOpenLogViewer }: Wellbor
     setViewCommandId((current) => current + 1);
   };
 
-  const loadWbvSession = async () => {
+  const loadWbvSession = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const session = await fetchWlvJson<WbvSessionContract>('/api/wlv/wbv/session');
-      const managedWellId = session.active_managed_well_id ?? activeManagedWellId;
+      // An explicit managed-well context from the application shell is authoritative.
+      // The session fallback is used only when WBV is opened without a selected well.
+      const managedWellId = activeManagedWellId ?? session.active_managed_well_id;
       const viewerPackage = managedWellId
         ? await fetchWlvJson<WbvViewerPackageContract>(`/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/viewer-package`)
         : null;
@@ -267,11 +269,30 @@ export function Wellbore3DPage({ activeManagedWellId, onOpenLogViewer }: Wellbor
         error: caught instanceof Error ? caught.message : 'Unable to load WBV session',
       });
     }
-  };
+  }, [activeManagedWellId]);
 
   useEffect(() => {
     void loadWbvSession();
-  }, [activeManagedWellId]);
+  }, [loadWbvSession]);
+
+  useEffect(() => {
+    const refreshFromBackend = () => {
+      void loadWbvSession();
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        refreshFromBackend();
+      }
+    };
+
+    window.addEventListener('focus', refreshFromBackend);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+
+    return () => {
+      window.removeEventListener('focus', refreshFromBackend);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [loadWbvSession]);
 
   const session = state.session;
   const viewerPackage = state.viewerPackage;
