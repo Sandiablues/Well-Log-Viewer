@@ -1168,7 +1168,6 @@ export function SourceIntakeWorkbench() {
                           <input
                             type="checkbox"
                             checked={selectedCandidateIds.has(candidate.source_file_id)}
-                            disabled={candidate.readiness_state !== 'ready'}
                             onClick={(event) => event.stopPropagation()}
                             onChange={(event) => setCandidateSelected(candidate.source_file_id, event.currentTarget.checked)}
                             aria-label={`Select ${candidate.file_name}`}
