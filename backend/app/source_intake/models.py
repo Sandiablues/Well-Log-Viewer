@@ -91,11 +91,20 @@ class SourceIntakeFindingClass(str, Enum):
     HARD_FAILURE = "hard_failure"
 
 
+class SourceIntakeFindingDisposition(str, Enum):
+    ACTIVE = "active"
+    ACCEPTED = "accepted"
+    RESOLVED_BY_CORRECTION = "resolved_by_correction"
+
+
 class SourceIntakeQaqcCheck(BaseModel):
     check_id: str
     status: SourceIntakeQaqcStatus
     severity: SourceIntakeQaqcSeverity = SourceIntakeQaqcSeverity.NONE
     finding_class: SourceIntakeFindingClass = SourceIntakeFindingClass.INFORMATIONAL
+    disposition: SourceIntakeFindingDisposition = SourceIntakeFindingDisposition.ACTIVE
+    disposition_event_id: Optional[str] = None
+    disposition_reason: Optional[str] = None
     message: str
     field_name: Optional[str] = None
     review_required: bool = False
@@ -113,6 +122,13 @@ class SourceIntakeQaqcResult(BaseModel):
     review_required: bool = False
     messages: list[str] = Field(default_factory=list)
     checks: list[SourceIntakeQaqcCheck] = Field(default_factory=list)
+
+
+class SourceIntakeQaqcAuditSnapshot(BaseModel):
+    captured_at: str = Field(default_factory=utc_now_iso)
+    trigger_event_id: Optional[str] = None
+    trigger_action: Optional[str] = None
+    result: SourceIntakeQaqcResult
 
 
 
@@ -444,6 +460,7 @@ class SourceFileCandidate(BaseModel):
     geometry_preview: Optional[SourceIntakeDeviationSurveyPreview] = None
     resolved_metadata: Optional[SourceIntakeResolvedMetadata] = None
     qaqc_status: SourceIntakeQaqcResult = Field(default_factory=SourceIntakeQaqcResult)
+    qaqc_history: list[SourceIntakeQaqcAuditSnapshot] = Field(default_factory=list)
     parse_error: Optional[str] = None
     review_required: bool = False
     warnings: list[str] = Field(default_factory=list)

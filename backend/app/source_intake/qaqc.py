@@ -16,6 +16,7 @@ from .models import (
     SourceIntakeCandidateRole,
     SourceIntakeFileType,
     SourceIntakeFindingClass,
+    SourceIntakeFindingDisposition,
     SourceIntakeParseStatus,
     SourceIntakeQaqcCheck,
     SourceIntakeQaqcResult,
@@ -47,7 +48,7 @@ def run_source_intake_qaqc(candidate: SourceFileCandidate) -> SourceIntakeQaqcRe
     if candidate.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
         _check_wellbore_geometry_preview(candidate, checks)
 
-    return _summarize(checks)
+    return summarize_source_intake_qaqc(checks)
 
 
 def _check_file_integrity(candidate: SourceFileCandidate, checks: list[SourceIntakeQaqcCheck]) -> None:
@@ -340,20 +341,44 @@ def _check_curve_headers(candidate: SourceFileCandidate, checks: list[SourceInta
         )
 
 
-def _summarize(checks: Iterable[SourceIntakeQaqcCheck]) -> SourceIntakeQaqcResult:
+def summarize_source_intake_qaqc(checks: Iterable[SourceIntakeQaqcCheck]) -> SourceIntakeQaqcResult:
     check_list = list(checks)
-    warning_count = sum(1 for check in check_list if check.status in {SourceIntakeQaqcStatus.WARNING, SourceIntakeQaqcStatus.REVIEW_REQUIRED})
-    failure_count = sum(1 for check in check_list if check.status == SourceIntakeQaqcStatus.FAIL)
+    active_checks = [
+        check
+        for check in check_list
+        if check.disposition == SourceIntakeFindingDisposition.ACTIVE
+    ]
+    warning_count = sum(
+        1
+        for check in active_checks
+        if check.status in {
+            SourceIntakeQaqcStatus.WARNING,
+            SourceIntakeQaqcStatus.REVIEW_REQUIRED,
+        }
+    )
+    failure_count = sum(
+        1 for check in active_checks if check.status == SourceIntakeQaqcStatus.FAIL
+    )
     hard_failure_count = sum(
-        1 for check in check_list if check.finding_class == SourceIntakeFindingClass.HARD_FAILURE
+        1
+        for check in active_checks
+        if check.finding_class == SourceIntakeFindingClass.HARD_FAILURE
     )
     review_controlled_count = sum(
-        1 for check in check_list if check.finding_class == SourceIntakeFindingClass.REVIEW_CONTROLLED
+        1
+        for check in active_checks
+        if check.finding_class == SourceIntakeFindingClass.REVIEW_CONTROLLED
     )
     non_blocking_warning_count = sum(
-        1 for check in check_list if check.finding_class == SourceIntakeFindingClass.NON_BLOCKING_WARNING
+        1
+        for check in active_checks
+        if check.finding_class == SourceIntakeFindingClass.NON_BLOCKING_WARNING
     )
-    review_required = any(check.review_required or check.status == SourceIntakeQaqcStatus.REVIEW_REQUIRED for check in check_list)
+    review_required = any(
+        check.review_required
+        or check.status == SourceIntakeQaqcStatus.REVIEW_REQUIRED
+        for check in active_checks
+    )
     severity = _max_severity(check.severity for check in check_list)
 
     if failure_count:
@@ -375,7 +400,11 @@ def _summarize(checks: Iterable[SourceIntakeQaqcCheck]) -> SourceIntakeQaqcResul
         review_controlled_count=review_controlled_count,
         non_blocking_warning_count=non_blocking_warning_count,
         review_required=review_required,
-        messages=[check.message for check in check_list if check.status != SourceIntakeQaqcStatus.PASS],
+        messages=[
+            check.message
+            for check in active_checks
+            if check.status != SourceIntakeQaqcStatus.PASS
+        ],
         checks=check_list,
     )
 

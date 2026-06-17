@@ -28,6 +28,7 @@ from app.wbv.models import WbvCoordinateMode, WbvManagedTrajectoryRecord, WbvMan
 from .metadata_resolver import resolve_candidate_metadata
 from .identity_gate import apply_identity_gate
 from .qaqc import run_source_intake_qaqc
+from .qaqc_recompute import recompute_qaqc_after_resolution
 from .registration import register_candidate_to_inventory, registration_block_reason
 from .readiness import evaluate_registration_readiness
 from .resolution_service import (
@@ -307,6 +308,19 @@ class WlvSourceIntakeService:
             response = self.resolution_service.apply_bulk(snapshot.candidates, request)
         except SourceIntakeResolutionError as exc:
             raise SourceIntakeError(str(exc)) from exc
+        by_occurrence = {
+            candidate.occurrence_id: candidate
+            for candidate in snapshot.candidates
+            if candidate.occurrence_id
+        }
+        for result in response.results:
+            candidate = by_occurrence.get(result.occurrence_id)
+            if candidate is None or not candidate.resolution_history:
+                continue
+            recompute_qaqc_after_resolution(
+                candidate,
+                candidate.resolution_history[-1],
+            )
         for candidate in snapshot.candidates:
             evaluate_registration_readiness(candidate)
         self._save_snapshot(snapshot)
