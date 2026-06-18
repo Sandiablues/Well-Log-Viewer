@@ -11,6 +11,8 @@ from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
+from app.inventory.models import CanonicalUuid7
+
 
 WDV_SESSION_LAYOUT_CONTRACT_VERSION = "wdv_session_layout_state_v1"
 
@@ -21,7 +23,12 @@ class WdvSessionCurveAssignmentState(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
     assignment_id: str = Field(validation_alias=AliasChoices("assignment_id", "assignmentId"))
-    curve_uid: str | None = Field(default=None, validation_alias=AliasChoices("curve_uid", "curveUid", "managed_curve_uid", "managedCurveUid"))
+    managed_product_uid: CanonicalUuid7 | None = Field(default=None, validation_alias=AliasChoices("managed_product_uid", "managedProductUid"))
+    managed_curve_uid: CanonicalUuid7 | None = Field(default=None, validation_alias=AliasChoices("managed_curve_uid", "managedCurveUid"))
+    managed_well_uid: CanonicalUuid7 | None = Field(default=None, validation_alias=AliasChoices("managed_well_uid", "managedWellUid"))
+    managed_wellbore_uid: CanonicalUuid7 | None = Field(default=None, validation_alias=AliasChoices("managed_wellbore_uid", "managedWellboreUid"))
+    managed_source_uid: CanonicalUuid7 | None = Field(default=None, validation_alias=AliasChoices("managed_source_uid", "managedSourceUid"))
+    curve_uid: str | None = Field(default=None, validation_alias=AliasChoices("curve_uid", "curveUid"))
     well_uid: str | None = Field(default=None, validation_alias=AliasChoices("well_uid", "wellUid", "managed_well_id", "managedWellId"))
     source_uid: str | None = Field(default=None, validation_alias=AliasChoices("source_uid", "sourceUid", "source_id", "sourceId"))
     kr_curve_type_id: str | None = Field(default=None, validation_alias=AliasChoices("kr_curve_type_id", "krCurveTypeId", "canonical_curve_type_id", "canonicalCurveTypeId"))
@@ -73,6 +80,7 @@ class WdvSessionLayoutStateResponse(BaseModel):
     service: str = "wdv_session_layout_state_service"
     contract_version: str = WDV_SESSION_LAYOUT_CONTRACT_VERSION
     managed_well_id: str
+    managed_well_uid: CanonicalUuid7 | None = None
     layout_session_id: str
     revision: int = 0
     state_status: Literal["empty", "active", "cleared"] = "empty"
@@ -88,6 +96,7 @@ class WdvSessionLayoutPutRequest(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
+    managed_well_uid: CanonicalUuid7 | None = Field(default=None, validation_alias=AliasChoices("managed_well_uid", "managedWellUid"))
     selected_track_id: str | None = Field(default=None, validation_alias=AliasChoices("selected_track_id", "selectedTrackId"))
     tracks: list[WdvSessionTrackLayoutState] = Field(default_factory=list)
     source: str = "explicit_user_layout_update"

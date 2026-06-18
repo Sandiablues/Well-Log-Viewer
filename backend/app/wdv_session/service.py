@@ -56,8 +56,10 @@ class WdvSessionLayoutStateService:
             current_revision = int(sessions.get(managed_well_id, {}).get("revision", 0) or 0)
             layout_tracks = self._normalise_persisted_tracks(request.tracks)
             selected_track_id = request.selected_track_id if layout_tracks else None
+            existing_session = sessions.get(managed_well_id, {})
             session = WdvSessionLayoutStateResponse(
                 managed_well_id=managed_well_id,
+                managed_well_uid=request.managed_well_uid or existing_session.get("managed_well_uid"),
                 layout_session_id=f"wdv_layout_session:{managed_well_id}",
                 revision=current_revision + 1,
                 state_status="active" if layout_tracks else "empty",
@@ -76,8 +78,10 @@ class WdvSessionLayoutStateService:
             data = self._read_store()
             sessions = data.setdefault("sessions", {})
             current_revision = int(sessions.get(managed_well_id, {}).get("revision", 0) or 0)
+            existing_session = sessions.get(managed_well_id, {})
             session = WdvSessionLayoutStateResponse(
                 managed_well_id=managed_well_id,
+                managed_well_uid=existing_session.get("managed_well_uid"),
                 layout_session_id=f"wdv_layout_session:{managed_well_id}",
                 revision=current_revision + 1,
                 state_status="cleared",

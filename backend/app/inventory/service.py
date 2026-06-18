@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.wells.models import Curve, WellMultitrackV1
+from app.identity import new_uuid7_str
 from app.wells.seed_repository import SeedWellRepository
 from app.classification.well_log_classifier import classify_well_log_curve
 from app.classification.well_log_vocabulary import PRODUCT_GROUP_ORDER
@@ -572,6 +573,8 @@ class ManagedWellInventoryService:
         record.wdv_state = ManagedWdvState.LOADED_TO_WDV
         contract = self._build_wdv_load_session_contract(record, loaded_items)
         reference = self._wdv_load_session_reference(record, contract)
+        contract["viewer_package_uid"] = str(reference.viewer_package_uid) if reference.viewer_package_uid else None
+        contract["representation_uid"] = str(reference.representation_uid) if reference.representation_uid else None
         record.metadata["wdv_load_session"] = {
             "session_id": contract["representation_id"],
             "managed_well_id": record.managed_well_id,
@@ -633,6 +636,8 @@ class ManagedWellInventoryService:
             "representation_id": session_id,
             "wdv_session_id": session_id,
             "managed_well_id": record.managed_well_id,
+            "managed_well_uid": str(record.managed_well_uid) if record.managed_well_uid else None,
+            "managed_wellbore_uid": str(record.managed_wellbore_uid) if record.managed_wellbore_uid else None,
             "well_id": record.well_id,
             "well_name": record.well_name,
             "wellbore_id": record.wellbore_id or record.well_id,
@@ -744,6 +749,10 @@ class ManagedWellInventoryService:
             warnings.append(str(sample_stats.get("statistics_status") or "statistics_unavailable"))
         return {
             "product_id": item.product_id,
+            "managed_product_uid": str(item.managed_product_uid) if item.managed_product_uid else None,
+            "managed_curve_uid": str(item.managed_curve_uid) if item.managed_curve_uid else None,
+            "managed_wellbore_uid": str(item.managed_wellbore_uid or record.managed_wellbore_uid) if (item.managed_wellbore_uid or record.managed_wellbore_uid) else None,
+            "managed_source_uid": str(item.managed_source_uid) if item.managed_source_uid else None,
             "curve_uid": item.curve_uid or self._curve_uid_from_product_item(record, item),
             "well_uid": item.well_uid or self._managed_well_identity(record),
             "source_uid": item.source_uid or item.source_id,
@@ -1080,8 +1089,14 @@ class ManagedWellInventoryService:
 
     def _wdv_load_session_reference(self, record: ManagedWellRecord, contract: dict[str, Any]) -> ViewerPackageReference:
         session_id = str(contract["representation_id"])
+        existing = next(
+            (package for package in record.viewer_packages if package.viewer_package_id == session_id),
+            None,
+        )
         return ViewerPackageReference(
             viewer_package_id=session_id,
+            viewer_package_uid=(existing.viewer_package_uid if existing and existing.viewer_package_uid else new_uuid7_str()),
+            representation_uid=(existing.representation_uid if existing and existing.representation_uid else new_uuid7_str()),
             viewer_package_version=str(contract.get("viewer_package_version") or "well_multitrack_v1"),
             dataset_id=record.managed_well_id,
             representation_id=session_id,
