@@ -83,8 +83,10 @@ def test_wdv_identity_contract_accepts_complete_canonical_session() -> None:
 
 def test_wbv_request_accepts_canonical_or_legacy_reference() -> None:
     uid = _uuid7("01976c6d-4aa7-7e43-b118-d7d30e773e41")
-    canonical = WbvSetActiveTrajectoryRequest(trajectory_uid=uid)
+    canonical = WbvSetActiveTrajectoryRequest(managed_trajectory_uid=uid)
     assert canonical.canonical_or_legacy_reference == uid
+    previous_canonical_alias = WbvSetActiveTrajectoryRequest(trajectory_uid=uid)
+    assert previous_canonical_alias.canonical_or_legacy_reference == uid
     legacy = WbvSetActiveTrajectoryRequest(trajectory_id="traj:legacy")
     assert legacy.canonical_or_legacy_reference == "traj:legacy"
     with pytest.raises(ValueError):

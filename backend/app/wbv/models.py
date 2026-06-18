@@ -169,20 +169,31 @@ class WbvTrajectoryListContract(BaseModel):
 
 
 class WbvSetActiveTrajectoryRequest(BaseModel):
-    trajectory_id: str | None = None
+    managed_trajectory_uid: CanonicalUuid7 | None = None
     trajectory_uid: CanonicalUuid7 | None = None
+    trajectory_id: str | None = None
     requested_by: str | None = None
     note: str | None = None
 
     @model_validator(mode="after")
     def require_trajectory_reference(self) -> "WbvSetActiveTrajectoryRequest":
-        if not self.trajectory_uid and not str(self.trajectory_id or "").strip():
-            raise ValueError("trajectory_uid or trajectory_id is required")
+        if (
+            not self.managed_trajectory_uid
+            and not self.trajectory_uid
+            and not str(self.trajectory_id or "").strip()
+        ):
+            raise ValueError(
+                "managed_trajectory_uid, trajectory_uid, or trajectory_id is required"
+            )
         return self
 
     @property
     def canonical_or_legacy_reference(self) -> str:
-        return str(self.trajectory_uid or self.trajectory_id)
+        return str(
+            self.managed_trajectory_uid
+            or self.trajectory_uid
+            or self.trajectory_id
+        )
 
 
 class WbvSetActiveTrajectoryResponse(BaseModel):

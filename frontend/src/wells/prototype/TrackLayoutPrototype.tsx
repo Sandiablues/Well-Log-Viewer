@@ -70,6 +70,7 @@ type ManagedInventoryViewerPackageReference = {
 
 type WmdpTrajectoryRecord = {
   trajectory_id: string;
+  managed_trajectory_uid?: string | null;
   trajectory_name?: string | null;
   trajectory_type?: string | null;
   status?: string | null;
@@ -107,6 +108,7 @@ type ManagedProductGroupItem = {
   wdv_state?: string | null;
   product_category?: string | null;
   trajectory_id?: string | null;
+  managed_trajectory_uid?: string | null;
   trajectory_status?: string | null;
   trajectory_role?: string | null;
   wbv_eligible?: boolean | null;
@@ -150,6 +152,7 @@ type ManagedInventoryWellRecord = {
   metadata?: {
     wbv_trajectory_records?: WmdpTrajectoryRecord[];
     active_trajectory_id?: string | null;
+    active_trajectory_uid?: string | null;
     wellbore_geometry_status?: string | null;
   } | null;
   wmdp_state?: string | null;
@@ -949,9 +952,24 @@ function wmdpWellboreGeometryGroup(well: ManagedInventoryWellRecord): ManagedPro
   const records = Array.isArray(well.metadata?.wbv_trajectory_records)
     ? well.metadata?.wbv_trajectory_records ?? []
     : [];
-  const activeTrajectoryId = well.metadata?.active_trajectory_id ?? records.find((record) => record.is_active)?.trajectory_id ?? null;
+  const activeTrajectoryUid = well.metadata?.active_trajectory_uid
+    ?? records.find((record) => record.is_active)?.managed_trajectory_uid
+    ?? null;
+  const activeTrajectoryId = well.metadata?.active_trajectory_id
+    ?? records.find((record) => record.is_active)?.trajectory_id
+    ?? null;
   const items: ManagedProductGroupItem[] = records.map((record) => {
-    const isActive = Boolean(record.is_active || (activeTrajectoryId && record.trajectory_id === activeTrajectoryId));
+    const isActive = Boolean(
+      record.is_active
+      || (
+        activeTrajectoryUid
+        && record.managed_trajectory_uid === activeTrajectoryUid
+      )
+      || (
+        activeTrajectoryId
+        && record.trajectory_id === activeTrajectoryId
+      )
+    );
     const role = isActive ? 'Active trajectory' : record.is_canonical ? 'Canonical / available' : record.is_synthetic ? 'Demo / synthetic' : 'Available';
     return {
       product_id: record.trajectory_id,
@@ -973,6 +991,7 @@ function wmdpWellboreGeometryGroup(well: ManagedInventoryWellRecord): ManagedPro
       wmdp_state: well.wmdp_state ?? null,
       wdv_state: well.wdv_state ?? null,
       trajectory_id: record.trajectory_id,
+      managed_trajectory_uid: record.managed_trajectory_uid ?? null,
       trajectory_status: record.status ?? null,
       trajectory_role: role,
       wbv_eligible: Boolean(record.wbv_eligible),
@@ -1166,8 +1185,18 @@ function WmdpProductItemRow({
   trajectoryApplyingId?: string | null;
 }) {
   const isGeometry = item.product_category === 'wellbore_geometry' || item.source_kind === 'wellbore_geometry';
-  const canSetActive = Boolean(isGeometry && managedWellId && item.trajectory_id && item.wbv_eligible && !item.is_active_trajectory);
-  const applying = Boolean(item.trajectory_id && trajectoryApplyingId === item.trajectory_id);
+  const trajectoryReference = item.managed_trajectory_uid || item.trajectory_id;
+  const canSetActive = Boolean(
+    isGeometry
+    && managedWellId
+    && trajectoryReference
+    && item.wbv_eligible
+    && !item.is_active_trajectory
+  );
+  const applying = Boolean(
+    trajectoryReference
+    && trajectoryApplyingId === trajectoryReference
+  );
   return (
     <label className={isGeometry ? 'wlv-wmdp-product-item wlv-wmdp-product-item-geometry' : 'wlv-wmdp-product-item'} key={item.product_id}>
       <input
@@ -1209,8 +1238,8 @@ function WmdpProductItemRow({
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
-                  if (managedWellId && item.trajectory_id && onSetActiveTrajectory) {
-                    onSetActiveTrajectory(managedWellId, item.trajectory_id);
+                  if (managedWellId && trajectoryReference && onSetActiveTrajectory) {
+                    onSetActiveTrajectory(managedWellId, trajectoryReference);
                   }
                 }}
               >
@@ -1569,14 +1598,14 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
   };
 
 
-  const setActiveTrajectory = async (managedWellId: string, trajectoryId: string) => {
-    setTrajectoryApplyingId(trajectoryId);
+  const setActiveTrajectory = async (managedWellId: string, managedTrajectoryUid: string) => {
+    setTrajectoryApplyingId(managedTrajectoryUid);
     setError(null);
     try {
       await fetchWlvJson(`/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/trajectories/active`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trajectory_id: trajectoryId, requested_by: 'mdp' }),
+        body: JSON.stringify({ managed_trajectory_uid: managedTrajectoryUid, requested_by: 'mdp' }),
       });
       await loadInventory();
     } catch (caught) {

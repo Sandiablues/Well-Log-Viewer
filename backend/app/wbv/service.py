@@ -124,28 +124,27 @@ class WbvService:
     def set_active_trajectory(
         self,
         managed_well_id: str,
-        trajectory_id: str,
+        trajectory_reference: str,
         *,
         requested_by: str | None = None,
         note: str | None = None,
     ) -> WbvSetActiveTrajectoryResponse:
         record = self.repository.get_record(managed_well_id)
         trajectories = self._trajectory_records(record)
-        selected = next(
-            (
-                trajectory
-                for trajectory in trajectories
-                if trajectory.trajectory_id == trajectory_id
-                or str(trajectory.managed_trajectory_uid or "") == trajectory_id
-            ),
-            None,
+        selected = self._resolve_trajectory_reference(
+            trajectories,
+            trajectory_reference,
         )
         if selected is None:
-            raise ValueError(f"Trajectory not found for managed well {managed_well_id}: {trajectory_id}")
+            raise ValueError(
+                f"Trajectory not found for managed well {managed_well_id}: "
+                f"{trajectory_reference}"
+            )
         if not self._trajectory_selectable(selected):
             raise ValueError(
                 "Only approved/synthetic-demo, WBV-eligible trajectories can be set active. "
-                f"Trajectory {trajectory_id} has status={selected.status.value!r}, wbv_eligible={selected.wbv_eligible!r}."
+                f"Trajectory {trajectory_reference} has status={selected.status.value!r}, "
+                f"wbv_eligible={selected.wbv_eligible!r}."
             )
 
         persisted = self._metadata_trajectory_records(record)
@@ -207,6 +206,37 @@ class WbvService:
             geometry_status=geometry_status,
             wbv_ready=bool(next_active and next_active.wbv_eligible),
             trajectories=next_trajectories,
+        )
+
+    @staticmethod
+    def _resolve_trajectory_reference(
+        trajectories: list[WbvManagedTrajectoryRecord],
+        reference: str,
+    ) -> WbvManagedTrajectoryRecord | None:
+        normalized = str(reference or "").strip()
+        if not normalized:
+            return None
+
+        # Canonical managed trajectory UUIDv7 is authoritative. Legacy
+        # trajectory_id remains accepted only as a request-boundary alias.
+        canonical = next(
+            (
+                trajectory
+                for trajectory in trajectories
+                if str(trajectory.managed_trajectory_uid or "") == normalized
+            ),
+            None,
+        )
+        if canonical is not None:
+            return canonical
+
+        return next(
+            (
+                trajectory
+                for trajectory in trajectories
+                if trajectory.trajectory_id == normalized
+            ),
+            None,
         )
 
     def _active_loaded_records(self) -> list[ManagedWellRecord]:
