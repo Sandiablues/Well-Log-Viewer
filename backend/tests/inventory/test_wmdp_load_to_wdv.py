@@ -153,16 +153,19 @@ def test_viewer_package_contract_filters_to_loaded_wmdp_curves(tmp_path: Path) -
     service.load_managed_well_to_wdv("managed-well:a", product_ids=["GR"])
     package = service.get_viewer_package_contract("managed-well:a")
 
-    assert package["contract_kind"] == "wdv_viewer_package"
+    assert package["contract_kind"] == "wdv_load_session"
     assert package["source_product_ids"] == ["GR"]
     assert package["loaded_product_count"] == 1
-    assert [item["product_id"] for item in package["curves"]] == ["GR"]
+    assert package["loaded_curve_names"] == ["GR"]
+    assert package["mdp_loaded_curve_names"] == ["GR"]
+    assert package["wmdp_loaded_curve_names"] == ["GR"]
+    assert [item["product_id"] for item in package["loaded_curve_items"]] == ["GR"]
     assert [track["track_id"] for track in package["tracks"]] == ["depth"]
     assert package["tracks"][0]["curves"] == []
     assert package["visible_tracks"] == []
     assert package["display_tracks"] == []
     assert package["track_layout_state"] == "manual_empty"
-    loaded_curve = package["curves"][0]
+    loaded_curve = package["loaded_curve_items"][0]
     assert loaded_curve["original_mnemonic"] == "GR"
     assert loaded_curve["canonical_curve_id"] == "gamma_ray"
     assert loaded_curve["display_curve_id"] == "GR"
@@ -226,18 +229,21 @@ def test_load_to_wdv_creates_backend_owned_load_session_package(tmp_path: Path) 
     loaded = service.load_managed_well_to_wdv("managed-well:a", product_ids=["GR", "RT"])
 
     assert loaded.result.active_viewer_package_id is not None
-    assert loaded.result.active_viewer_package_id.startswith("wdv-viewer-package:")
+    assert loaded.result.active_viewer_package_id.startswith("wdv-load-session:")
     saved = repository.get_record("managed-well:a")
     assert saved.metadata["wdv_load_session"]["loaded_product_count"] == 2
-    assert saved.metadata["wdv_load_session_contract"]["contract_kind"] == "wdv_viewer_package"
+    assert saved.metadata["wdv_load_session_contract"]["contract_kind"] == "wdv_load_session"
     assert len(saved.viewer_packages) == 1
     assert saved.viewer_packages[0].viewer_package_id == loaded.result.active_viewer_package_id
 
     package = service.get_viewer_package_contract("managed-well:a")
-    loaded_curves = package["curves"]
+    loaded_curves = package["loaded_curve_items"]
     visible_curves = [curve for track in package["tracks"] for curve in track.get("curves", [])]
     assert package["loaded_product_count"] == 2
     assert package["source_product_ids"] == ["GR", "RT"]
+    assert package["loaded_curve_names"] == ["GR", "RT"]
+    assert package["mdp_loaded_curve_names"] == ["GR", "RT"]
+    assert package["wmdp_loaded_curve_names"] == ["GR", "RT"]
     assert [item["product_id"] for item in loaded_curves] == ["GR", "RT"]
     assert visible_curves == []
     assert package["visible_tracks"] == []
@@ -258,11 +264,11 @@ def test_viewer_package_endpoint_repairs_legacy_loaded_state_without_session(tmp
 
     package = service.get_viewer_package_contract("managed-well:a")
 
-    assert package["contract_kind"] == "wdv_viewer_package"
+    assert package["contract_kind"] == "wdv_load_session"
     assert package["loaded_product_count"] == 1
     repaired = repository.get_record("managed-well:a")
     assert isinstance(repaired.metadata.get("wdv_load_session_contract"), dict)
-    assert repaired.viewer_packages[0].viewer_package_id.startswith("wdv-viewer-package:")
+    assert repaired.viewer_packages[0].viewer_package_id.startswith("wdv-load-session:")
 
 
 def test_unload_from_wdv_clears_backend_owned_load_session_package(tmp_path: Path) -> None:

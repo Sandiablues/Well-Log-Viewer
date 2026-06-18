@@ -4892,15 +4892,20 @@ export function TrackLayoutPrototype() {
     return metadata;
   }, [wdvPackageState.loadedCurveItems]);
   const activeCurveCatalog = useMemo(() => {
-    // Per-well package curves are merged into an immutable local catalogue.
-    // Never mutate the shared prototype catalogue: doing so leaks curves from
-    // previously active wells into later well sessions.
-    const merged = new Map<string, CurveCatalogItem>();
-    curveCatalog.forEach((curve) => merged.set(curve.curveId, curve));
+    // WLV-WDV-CURVE-ASSIGNMENT-IDENTITY-1:
+    // Loaded backend curve products must be registered in the same catalog
+    // used by track rendering/properties code before any assignment is made.
+    // This preserves duplicate mnemonics as distinct product-backed curveIds.
+    const mutableCatalog = curveCatalog as CurveCatalogItem[];
+    const existingCurveIds = new Set(mutableCatalog.map((curve) => curve.curveId));
+
     activeViewerCurves.forEach((curve) => {
-      if (curve.curveId) merged.set(curve.curveId, curve);
+      if (!curve.curveId || existingCurveIds.has(curve.curveId)) return;
+      mutableCatalog.push(curve);
+      existingCurveIds.add(curve.curveId);
     });
-    return Array.from(merged.values());
+
+    return [...mutableCatalog];
   }, [activeViewerCurves]);
   const wdvSessionKey = useMemo(() => {
     if (!managedViewerWellId) return null;
@@ -5707,7 +5712,7 @@ export function TrackLayoutPrototype() {
                   {activeInventoryWell ? ` Active well: ${activeInventoryWell.wellName}.` : ''}
                 </p>
                 <p>
-                  {wdvPackageState.displayableCurveCount} displayable curve{wdvPackageState.displayableCurveCount === 1 ? '' : 's'} available for the active well.
+                  {activeWorkspaceWell?.displayable_curve_count ?? 0} displayable curve{(activeWorkspaceWell?.displayable_curve_count ?? 0) === 1 ? '' : 's'} available for the active well.
                 </p>
                 <p className="wlv-empty-viewer-note">
                   Select loaded curves and use Add Track, or drag curves into a manually created curve track.

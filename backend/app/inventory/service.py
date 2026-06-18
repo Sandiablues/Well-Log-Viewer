@@ -53,12 +53,7 @@ from .models import (
 from .repository import ManagedWellInventoryRepository, ManagedWellNotFoundError
 from .curve_sample_service import CurveSampleService, CurveSampleServiceError
 from .identity_reconciliation import reconcile_managed_record_identity
-from .wdv_workspace import WdvWorkspaceService
-from .wdv_viewer_package import (
-    WDV_VIEWER_PACKAGE_CONTRACT_VERSION,
-    build_wdv_viewer_package,
-    summarize_wdv_viewer_package,
-)
+from .wdv_workspace import WdvWorkspaceService, wdv_curve_counts
 
 
 class ManagedWellInventoryService:
@@ -161,7 +156,7 @@ class ManagedWellInventoryService:
     def list_wells(self) -> list[ManagedWellRecord]:
         return [
             self._with_inventory_identity_contract(self._with_product_groups(record))
-            for record in self._materialize_wdv_viewer_packages()
+            for record in self.repository.list_records()
             if record.wmdp_available and record.wmdp_state != ManagedWmdpState.REMOVED_FROM_WMDP
         ]
 
@@ -173,81 +168,6 @@ class ManagedWellInventoryService:
         for record in self.repository.list_records():
             packages.extend(record.viewer_packages)
         return packages
-
-    def _materialize_wdv_viewer_packages(
-        self,
-    ) -> list[ManagedWellRecord]:
-        """Materialize current authoritative WDV packages before workspace reads.
-
-        Workspace summaries and MDP counts must be derived from the same package
-        that the per-well viewer-package endpoint returns. This method repairs all
-        loaded records in one inventory snapshot before any aggregate state is
-        calculated, preventing workspace/package count drift after restart or
-        contract migration.
-        """
-        snapshot = self.repository.snapshot()
-        records: list[ManagedWellRecord] = []
-        changed = False
-
-        for source_record in snapshot.records:
-            record = self._with_inventory_identity_contract(
-                self._with_product_groups(source_record)
-            )
-            loaded_items = self._loaded_wdv_product_items(record)
-            existing_session = (
-                record.metadata.get("wdv_load_session_contract")
-                if isinstance(record.metadata, dict)
-                else None
-            )
-
-            if loaded_items:
-                loaded_product_ids = [item.product_id for item in loaded_items]
-                existing_product_ids = (
-                    [str(pid) for pid in existing_session.get("source_product_ids", [])]
-                    if isinstance(existing_session, dict)
-                    else []
-                )
-                stale = (
-                    not isinstance(existing_session, dict)
-                    or existing_product_ids != loaded_product_ids
-                    or existing_session.get("contract_version")
-                    != WDV_VIEWER_PACKAGE_CONTRACT_VERSION
-                    or not self._wdv_session_depth_domain_is_current(
-                        existing_session, record, loaded_items
-                    )
-                    or not self._wdv_session_identity_contract_is_current(
-                        existing_session, record, loaded_items
-                    )
-                )
-                if stale:
-                    self._sync_wdv_load_session_for_record(record)
-                    record.updated_at = utc_now_iso()
-                    changed = True
-            elif (
-                isinstance(existing_session, dict)
-                or record.metadata.get("wdv_load_session")
-                or any(
-                    package.viewer_package_id.startswith("wdv-load-session:")
-                    or package.viewer_package_id.startswith("wdv-viewer-package:")
-                    for package in record.viewer_packages
-                )
-            ):
-                self._sync_wdv_load_session_for_record(record)
-                record.updated_at = utc_now_iso()
-                changed = True
-
-            records.append(record)
-
-        if changed:
-            self.repository.write_snapshot(
-                snapshot.model_copy(
-                    update={
-                        "records": records,
-                        "updated_at": utc_now_iso(),
-                    }
-                )
-            )
-        return records
 
     def get_viewer_package_contract(self, managed_well_id: str) -> dict[str, Any]:
         """Return the backend-owned WDV viewer package/session contract.
@@ -270,10 +190,6 @@ class ManagedWellInventoryService:
                 isinstance(existing_session, dict)
                 and not self._wdv_session_depth_domain_is_current(existing_session, record, loaded_items)
             )
-            session_contract_stale = (
-                isinstance(existing_session, dict)
-                and existing_session.get("contract_version") != WDV_VIEWER_PACKAGE_CONTRACT_VERSION
-            )
             session_identity_stale = (
                 isinstance(existing_session, dict)
                 and not self._wdv_session_identity_contract_is_current(existing_session, record, loaded_items)
@@ -281,7 +197,6 @@ class ManagedWellInventoryService:
             if (
                 not isinstance(existing_session, dict)
                 or existing_product_ids != loaded_product_ids
-                or session_contract_stale
                 or session_depth_stale
                 or session_identity_stale
             ):
@@ -663,11 +578,9 @@ class ManagedWellInventoryService:
         )
 
     def get_wdv_workspace(self) -> WdvWorkspaceStateResponse:
-        records = self._materialize_wdv_viewer_packages()
-        return self.workspace_service.reconcile(records)
+        return self.workspace_service.get_workspace()
 
     def set_active_wdv_well(self, managed_well_reference: str) -> WdvWorkspaceStateResponse:
-        self._materialize_wdv_viewer_packages()
         return self.workspace_service.set_active_well(managed_well_reference)
 
     def restore_source_candidates_to_mdp(
@@ -1053,10 +966,7 @@ class ManagedWellInventoryService:
             record.viewer_packages = [
                 package
                 for package in record.viewer_packages
-                if not (
-                    package.viewer_package_id.startswith("wdv-load-session:")
-                    or package.viewer_package_id.startswith("wdv-viewer-package:")
-                )
+                if not package.viewer_package_id.startswith("wdv-load-session:")
             ]
             if record.wdv_state == ManagedWdvState.LOADED_TO_WDV:
                 record.wdv_state = ManagedWdvState.NOT_LOADED
@@ -1073,16 +983,13 @@ class ManagedWellInventoryService:
             "loaded_product_count": len(loaded_items),
             "source_product_ids": contract["source_product_ids"],
             "updated_at": contract["updated_at"],
-            "contract_version": WDV_VIEWER_PACKAGE_CONTRACT_VERSION,
+            "contract_version": "wdv_load_session_v1",
         }
         record.metadata["wdv_load_session_contract"] = contract
         retained_packages = [
             package
             for package in record.viewer_packages
-            if not (
-                package.viewer_package_id.startswith("wdv-load-session:")
-                or package.viewer_package_id.startswith("wdv-viewer-package:")
-            )
+            if not package.viewer_package_id.startswith("wdv-load-session:")
         ]
         record.viewer_packages = [reference, *retained_packages]
         return reference.viewer_package_id
@@ -1092,24 +999,81 @@ class ManagedWellInventoryService:
         record: ManagedWellRecord,
         loaded_items: list[ManagedProductGroupItem],
     ) -> dict[str, Any]:
+        product_ids = [item.product_id for item in loaded_items]
+        loaded_curve_items = [self._wdv_curve_contract_from_product_item(record, item) for item in loaded_items]
+        loaded_curve_names = [
+            str(curve.get("mnemonic") or curve.get("curve_id") or curve.get("display_name") or "").strip()
+            for curve in loaded_curve_items
+        ]
+        loaded_curve_names = [name for name in loaded_curve_names if name]
+        source_candidate_ids = self._unique_non_empty([item.source_intake_candidate_id for item in loaded_items])
+        source_ids = self._unique_non_empty([item.source_id for item in loaded_items])
+        session_hash = hashlib.sha1("|".join(product_ids).encode("utf-8")).hexdigest()[:16]
+        session_id = f"wdv-load-session:{record.well_id}:{session_hash}"
         depth_unit = record.depth_unit or "ft"
         depth_min, depth_max, depth_domain_source, depth_contributing_product_ids = self._wdv_loaded_depth_domain(
             record,
             loaded_items,
         )
-        return build_wdv_viewer_package(
-            record=record,
-            loaded_items=loaded_items,
-            curve_builder=self._wdv_curve_contract_from_product_item,
-            updated_at=utc_now_iso(),
-            depth_domain={
+
+        # Loaded products are WDV inventory, not visible display layout.
+        # A fresh MDP load must populate loaded_curve_items for the left panel
+        # while leaving visible curve tracks empty until the user manually
+        # assigns curves to tracks in the WDV.
+        tracks: list[dict[str, Any]] = [
+            {
+                "track_id": "depth",
+                "track_type": "depth",
+                "title": "Depth",
+                "curves": [],
+            }
+        ]
+        visible_tracks: list[dict[str, Any]] = []
+
+        return {
+            "viewer_package_version": "well_multitrack_v1",
+            "contract_kind": "wdv_load_session",
+            "contract_version": "wdv_load_session_v1",
+            "dataset_id": record.managed_well_id,
+            "representation_id": session_id,
+            "wdv_session_id": session_id,
+            "managed_well_id": record.managed_well_id,
+            "managed_well_uid": str(record.managed_well_uid) if record.managed_well_uid else None,
+            "managed_wellbore_uid": str(record.managed_wellbore_uid) if record.managed_wellbore_uid else None,
+            "well_id": record.well_id,
+            "well_name": record.well_name,
+            "wellbore_id": record.wellbore_id or record.well_id,
+            "wellbore_name": record.wellbore_name or record.well_name,
+            "operator": record.operator,
+            "field": record.field,
+            "country": record.country,
+            "display_domain": "MD",
+            "depth_unit": depth_unit,
+            "depth_range": {"min": depth_min, "max": depth_max},
+            "depth_domain": {
                 "min": depth_min,
                 "max": depth_max,
                 "unit": depth_unit,
                 "source": depth_domain_source,
                 "contributing_product_ids": depth_contributing_product_ids,
             },
-        )
+            "tracks": tracks,
+            "visible_tracks": visible_tracks,
+            "display_tracks": visible_tracks,
+            "track_layout_state": "manual_empty",
+            "source_product_ids": product_ids,
+            "source_candidate_ids": source_candidate_ids,
+            "source_ids": source_ids,
+            "loaded_product_count": len(product_ids),
+            "loaded_curve_names": loaded_curve_names,
+            "mdp_loaded_curve_names": loaded_curve_names,
+            "wmdp_loaded_curve_names": loaded_curve_names,
+            "loaded_curve_items": loaded_curve_items,
+            "unsupported_products": [],
+            "messages": [],
+            "created_by": "ManagedWellInventoryService._build_wdv_load_session_contract",
+            "updated_at": utc_now_iso(),
+        }
 
     @staticmethod
     def _wdv_session_identity_contract_is_current(
@@ -1124,7 +1088,7 @@ class ManagedWellInventoryService:
         if not session.get("viewer_package_uid") or not session.get("representation_uid"):
             return False
 
-        raw_items = session.get("curves")
+        raw_items = session.get("loaded_curve_items")
         if not isinstance(raw_items, list) or len(raw_items) != len(loaded_items):
             return False
         by_product_id = {
@@ -1762,17 +1726,7 @@ class ManagedWellInventoryService:
                 normalized_groups.append(group)
 
         normalized_record = record.model_copy(update={"product_groups": normalized_groups}) if changed else record
-        loaded_product_ids = [
-            item.product_id
-            for group in normalized_record.product_groups
-            for item in group.items
-            if item.wdv_state == ManagedWdvState.LOADED_TO_WDV
-        ]
-        package = normalized_record.metadata.get("wdv_load_session_contract") if isinstance(normalized_record.metadata, dict) else None
-        loaded_product_count, viewer_curve_count, displayable_curve_count = summarize_wdv_viewer_package(
-            package if isinstance(package, dict) else None,
-            loaded_product_ids,
-        )
+        loaded_product_count, viewer_curve_count, displayable_curve_count = wdv_curve_counts(normalized_record)
         updates: dict[str, Any] = {
             "loaded_product_count": loaded_product_count,
             "viewer_curve_count": viewer_curve_count,
