@@ -62,7 +62,7 @@ def _curve_items(record: ManagedWellRecord) -> list[ManagedProductGroupItem]:
     return [item for group in record.product_groups for item in group.items]
 
 
-def test_uid_backfill_persists_distinct_curve_uids_for_duplicate_mnemonics(tmp_path):
+def test_metadata_backfill_does_not_manufacture_legacy_curve_uids(tmp_path):
     repository = ManagedWellInventoryRepository(storage_path=tmp_path / "managed_wells.json")
     repository.write_snapshot(ManagedInventorySnapshot(records=[_legacy_record_without_curve_uids()]))
     service = ManagedWellInventoryService(repository=repository)
@@ -77,16 +77,18 @@ def test_uid_backfill_persists_distinct_curve_uids_for_duplicate_mnemonics(tmp_p
 
     saved = repository.get_record("managed-well:uid-block2")
     items = _curve_items(saved)
-    assert len({item.curve_uid for item in items}) == 2
-    assert all(item.curve_uid and item.curve_uid.startswith("wlv_curve:") for item in items)
+    assert all(item.curve_uid is None for item in items)
+    assert all(item.managed_curve_uid is None for item in items)
     assert [item.normalized_mnemonic for item in items] == ["NPHI", "NPHI"]
     assert all(item.well_uid == "well-uid-block2" for item in items)
     assert all(item.source_uid == "source:uid-block2:las" for item in items)
 
-    first_uids = [item.curve_uid for item in items]
     second = service.backfill_inventory_identity_contract()
     assert second["product_identity_updates"] == 0
-    assert [item.curve_uid for item in _curve_items(repository.get_record("managed-well:uid-block2"))] == first_uids
+    assert all(
+        item.curve_uid is None
+        for item in _curve_items(repository.get_record("managed-well:uid-block2"))
+    )
 
 
 def test_upsert_managed_record_backfills_identity_before_write(tmp_path):
@@ -97,12 +99,16 @@ def test_upsert_managed_record_backfills_identity_before_write(tmp_path):
 
     assert action == "created"
     items = _curve_items(saved)
-    assert len({item.curve_uid for item in items}) == 2
+    assert len({str(item.managed_curve_uid) for item in items}) == 2
+    assert all(item.managed_curve_uid is not None for item in items)
+    assert all(item.curve_uid is None for item in items)
     assert all(item.observed_mnemonic == "NPHI" for item in items)
     assert all(item.normalized_mnemonic == "NPHI" for item in items)
 
     persisted = repository.get_record("managed-well:uid-block2")
-    assert [item.curve_uid for item in _curve_items(persisted)] == [item.curve_uid for item in items]
+    assert [item.managed_curve_uid for item in _curve_items(persisted)] == [
+        item.managed_curve_uid for item in items
+    ]
 
 
 def test_list_wells_returns_identity_contract_for_legacy_rows_without_mutating_storage(tmp_path):
@@ -113,6 +119,9 @@ def test_list_wells_returns_identity_contract_for_legacy_rows_without_mutating_s
     listed = service.list_wells()
     listed_items = _curve_items(listed[0])
 
-    assert all(item.curve_uid for item in listed_items)
+    assert all(item.curve_uid is None for item in listed_items)
     assert all(item.normalized_mnemonic == "NPHI" for item in listed_items)
-    assert all(item.curve_uid is None for item in _curve_items(repository.get_record("managed-well:uid-block2")))
+    assert all(
+        item.curve_uid is None
+        for item in _curve_items(repository.get_record("managed-well:uid-block2"))
+    )

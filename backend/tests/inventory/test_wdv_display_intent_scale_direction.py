@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from app.inventory.curve_sample_service import _read_las_curve_samples
-from app.inventory.models import ManagedProductGroupItem
+from app.inventory.models import ManagedProductGroupItem, ManagedWellRecord
 from app.inventory.service import ManagedWellInventoryService
 
 
@@ -104,12 +104,16 @@ def test_backend_contract_preserves_visual_diagnostics_for_loaded_curve() -> Non
 
     service = ManagedWellInventoryService.__new__(ManagedWellInventoryService)
     service._wdv_curve_sample_statistics = lambda _record, _item: stats  # type: ignore[method-assign]
-    record = object()
+    record = ManagedWellRecord(
+        managed_well_id="managed-well:uid9b-test",
+        well_id="well-uid9b-test",
+        well_name="UID-9B Test Well",
+    )
 
-    contract = service._wdv_curve_contract_from_product_item(record, item)  # type: ignore[arg-type]
+    contract = service._wdv_curve_contract_from_product_item(record, item)
 
-    assert contract["curve_uid"].startswith("wlv_curve:")
-    assert contract["well_uid"] is None
+    assert contract["curve_uid"] == "p-dnph"
+    assert contract["well_uid"] == "well-uid9b-test"
     assert contract["scale_direction"] == "reversed"
     assert contract["scale_source"] == "robust_observed_statistics"
     assert contract["display_scale_mode"] == "robust_observed"
