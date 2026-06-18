@@ -24,6 +24,8 @@ from .models import (
     ManagedWellRecord,
     RegisterSeedWellResponse,
     ViewerPackageReference,
+    SetActiveWdvWellRequest,
+    WdvWorkspaceStateResponse,
 )
 from .repository import ManagedInventoryStoreError, ManagedWellNotFoundError
 from .service import ManagedWellInventoryService
@@ -67,6 +69,38 @@ def maintenance_status() -> ManagedInventoryMaintenanceStatus:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
 
+
+
+
+@router.get(
+    "/wdv-workspace",
+    response_model=WdvWorkspaceStateResponse,
+    summary="Return the backend-owned multi-well WDV workspace",
+)
+def get_wdv_workspace() -> WdvWorkspaceStateResponse:
+    try:
+        return _service.get_wdv_workspace()
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+
+@router.put(
+    "/wdv-workspace/active-well",
+    response_model=WdvWorkspaceStateResponse,
+    summary="Set the active well within the loaded multi-well WDV workspace",
+)
+def set_active_wdv_well(request: SetActiveWdvWellRequest) -> WdvWorkspaceStateResponse:
+    try:
+        return _service.set_active_wdv_well(request.well_reference)
+    except ManagedWellNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Managed well not found: {exc.args[0]}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 
 @router.post(

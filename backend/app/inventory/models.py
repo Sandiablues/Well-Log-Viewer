@@ -248,6 +248,43 @@ class LoadManagedWellToWdvResponse(BaseModel):
     record: ManagedWellRecord
 
 
+WDV_WORKSPACE_CONTRACT_VERSION = "wdv_workspace_v1"
+
+
+class WdvWorkspaceLoadedWellSummary(BaseModel):
+    managed_well_id: str
+    managed_well_uid: CanonicalUuid7 | None = None
+    well_name: str
+    loaded_product_ids: list[str] = Field(default_factory=list)
+    loaded_curve_count: int = 0
+    viewer_package_endpoint: str | None = None
+
+
+class WdvWorkspaceStateResponse(BaseModel):
+    service: str = "wdv_workspace_service"
+    contract_version: str = WDV_WORKSPACE_CONTRACT_VERSION
+    workspace_id: str = "default"
+    revision: int = 0
+    active_managed_well_id: str | None = None
+    loaded_wells: list[WdvWorkspaceLoadedWellSummary] = Field(default_factory=list)
+    updated_at: str = Field(default_factory=utc_now_iso)
+
+
+class SetActiveWdvWellRequest(BaseModel):
+    managed_well_uid: CanonicalUuid7 | None = None
+    managed_well_id: str | None = None
+
+    @model_validator(mode="after")
+    def require_well_reference(self) -> "SetActiveWdvWellRequest":
+        if not self.managed_well_uid and not str(self.managed_well_id or "").strip():
+            raise ValueError("managed_well_uid or managed_well_id is required")
+        return self
+
+    @property
+    def well_reference(self) -> str:
+        return str(self.managed_well_uid or self.managed_well_id)
+
+
 class UnloadManagedWellFromWdvRequest(BaseModel):
     managed_well_uid: CanonicalUuid7 | None = None
     managed_well_id: str | None = None

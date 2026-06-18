@@ -63,7 +63,7 @@ def _record(managed_well_id: str, product_ids: list[str]) -> ManagedWellRecord:
     )
 
 
-def test_load_to_wdv_marks_one_well_loaded_and_unloads_others(tmp_path: Path) -> None:
+def test_load_to_wdv_is_additive_and_preserves_other_loaded_wells(tmp_path: Path) -> None:
     repository = ManagedWellInventoryRepository(storage_path=tmp_path / "inventory.json")
     service = ManagedWellInventoryService(repository=repository)
     repository.upsert_record(_record("managed-well:a", ["curve:a:gr", "curve:a:rt"]))
@@ -77,13 +77,25 @@ def test_load_to_wdv_marks_one_well_loaded_and_unloads_others(tmp_path: Path) ->
     second = service.load_managed_well_to_wdv("managed-well:b", product_ids=["curve:b:gr"])
     assert second.record.wdv_state == ManagedWdvState.LOADED_TO_WDV
     assert second.result.loaded_product_ids == ["curve:b:gr"]
-    assert "managed-well:a" in second.result.unloaded_managed_well_ids
+    assert second.result.unloaded_managed_well_ids == []
 
     reloaded_a = repository.get_record("managed-well:a")
     reloaded_b = repository.get_record("managed-well:b")
-    assert reloaded_a.wdv_state == ManagedWdvState.NOT_LOADED
-    assert all(item.wdv_state == ManagedWdvState.NOT_LOADED for group in reloaded_a.product_groups for item in group.items)
+    assert reloaded_a.wdv_state == ManagedWdvState.LOADED_TO_WDV
+    assert {
+        item.product_id
+        for group in reloaded_a.product_groups
+        for item in group.items
+        if item.wdv_state == ManagedWdvState.LOADED_TO_WDV
+    } == {"curve:a:gr", "curve:a:rt"}
     assert reloaded_b.wdv_state == ManagedWdvState.LOADED_TO_WDV
+
+    workspace = service.get_wdv_workspace()
+    assert workspace.active_managed_well_id == "managed-well:b"
+    assert {item.managed_well_id for item in workspace.loaded_wells} == {
+        "managed-well:a",
+        "managed-well:b",
+    }
 
 
 def test_unload_from_wdv_is_non_destructive_and_preserves_wmdp_state(tmp_path: Path) -> None:

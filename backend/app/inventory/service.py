@@ -40,11 +40,13 @@ from .models import (
     ManagedWmdpState,
     RegisterSeedWellResponse,
     ViewerPackageReference,
+    WdvWorkspaceStateResponse,
     utc_now_iso,
 )
 from .repository import ManagedWellInventoryRepository, ManagedWellNotFoundError
 from .curve_sample_service import CurveSampleService, CurveSampleServiceError
 from .identity_reconciliation import reconcile_managed_record_identity
+from .wdv_workspace import WdvWorkspaceService
 
 
 class ManagedWellInventoryService:
@@ -52,10 +54,12 @@ class ManagedWellInventoryService:
         self,
         repository: ManagedWellInventoryRepository | None = None,
         seed_repository: SeedWellRepository | None = None,
+        workspace_service: WdvWorkspaceService | None = None,
     ) -> None:
         self.repository = repository or ManagedWellInventoryRepository()
         self.seed_repository = seed_repository or SeedWellRepository()
         self.curve_sample_service = CurveSampleService(repository=self.repository)
+        self.workspace_service = workspace_service or WdvWorkspaceService(repository=self.repository)
 
     def health(self) -> ManagedInventoryHealth:
         return ManagedInventoryHealth()
@@ -335,8 +339,8 @@ class ManagedWellInventoryService:
 
         The Managed Well Inventory remains authoritative for WMDP/WDV state.
         Loading is deliberately state-only here: it does not generate viewer
-        representations or mutate source-intake records. Only one managed well
-        may be loaded at a time.
+        representations or mutate source-intake records. Loading is additive:
+        other managed wells already loaded into the WDV workspace remain loaded.
         """
         records = self.repository.list_records()
         target = self._resolve_managed_well_reference(managed_well_id, records)
@@ -346,16 +350,6 @@ class ManagedWellInventoryService:
         )
 
         unloaded_managed_well_ids: list[str] = []
-        for record in records:
-            if record.managed_well_id == target.managed_well_id:
-                continue
-            if record.wdv_state != ManagedWdvState.NOT_LOADED:
-                unloaded_managed_well_ids.append(record.managed_well_id)
-            record.wdv_state = ManagedWdvState.NOT_LOADED
-            for group in record.product_groups:
-                for item in group.items:
-                    item.wdv_state = ManagedWdvState.NOT_LOADED
-            self.repository.upsert_record(record)
 
         loadable_items = [
             item
@@ -381,6 +375,10 @@ class ManagedWellInventoryService:
         active_package_id = self._sync_wdv_load_session_for_record(target)
         target.updated_at = utc_now_iso()
         _action, saved = self.repository.upsert_record(target)
+        self.workspace_service.reconcile(
+            self.repository.list_records(),
+            preferred_active=saved.managed_well_id,
+        )
 
         return LoadManagedWellToWdvResponse(
             result=LoadManagedWellToWdvResult(
@@ -391,6 +389,12 @@ class ManagedWellInventoryService:
             ),
             record=saved,
         )
+
+    def get_wdv_workspace(self) -> WdvWorkspaceStateResponse:
+        return self.workspace_service.get_workspace()
+
+    def set_active_wdv_well(self, managed_well_reference: str) -> WdvWorkspaceStateResponse:
+        return self.workspace_service.set_active_well(managed_well_reference)
 
     def remove_managed_data_from_mdp(
         self,
@@ -544,6 +548,7 @@ class ManagedWellInventoryService:
         self._sync_wdv_load_session_for_record(record)
         record.updated_at = utc_now_iso()
         _action, saved = self.repository.upsert_record(record)
+        self.workspace_service.reconcile(self.repository.list_records())
 
         return UnloadManagedWellFromWdvResponse(
             result=UnloadManagedWellFromWdvResult(
