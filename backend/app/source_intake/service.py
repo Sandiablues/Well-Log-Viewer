@@ -65,6 +65,9 @@ from .models import (
     SourceIntakeRegisterRequest,
     SourceIntakeRegisterResponse,
     SourceIntakeRegisterResult,
+    SourceIntakeRestoreToMdpRequest,
+    SourceIntakeRestoreToMdpResponse,
+    SourceIntakeRestoreToMdpResult,
     SourceIntakeBulkResolutionRequest,
     SourceIntakeBulkResolutionResponse,
     SourceIntakeOccurrenceAccounting,
@@ -408,6 +411,110 @@ class WlvSourceIntakeService:
                 f"{'s' if rows_removed != 1 else ''} from the Source Intake register. "
                 "Source files and managed inventory were not deleted."
             ),
+            workbench=self.get_workbench(),
+        )
+
+    def restore_candidates_to_mdp(
+        self,
+        request: SourceIntakeRestoreToMdpRequest,
+        inventory_service: Any,
+    ) -> SourceIntakeRestoreToMdpResponse:
+        candidate_ids = [value for value in dict.fromkeys(request.candidate_ids) if value]
+        if not candidate_ids:
+            raise SourceIntakeError("Select at least one Source Intake candidate to restore to MDP.")
+
+        snapshot = self._load_snapshot()
+        candidates_by_id = {candidate.source_file_id: candidate for candidate in snapshot.candidates}
+        eligible_ids: list[str] = []
+        results: list[SourceIntakeRestoreToMdpResult] = []
+
+        for candidate_id in candidate_ids:
+            candidate = candidates_by_id.get(candidate_id)
+            if candidate is None:
+                results.append(SourceIntakeRestoreToMdpResult(
+                    candidate_id=candidate_id,
+                    status="blocked",
+                    reason="Candidate not found in Source Intake workbench.",
+                ))
+                continue
+            if candidate.registration_status != "registered" or not candidate.managed_well_id:
+                results.append(SourceIntakeRestoreToMdpResult(
+                    candidate_id=candidate_id,
+                    status="blocked",
+                    reason="Candidate has no retained MSI registration to restore.",
+                ))
+                continue
+            eligible_ids.append(candidate_id)
+
+        inventory_response = inventory_service.restore_source_candidates_to_mdp(eligible_ids) if eligible_ids else None
+        restored_ids = set()
+        already_visible_ids = set()
+        missing_ids = set()
+
+        if inventory_response is not None:
+            missing_ids = set(inventory_response.result.missing_source_candidate_ids)
+            restored_wells = set(inventory_response.result.restored_managed_well_ids)
+            restored_products = set(inventory_response.result.restored_product_ids)
+            already_wells = set(inventory_response.result.already_visible_managed_well_ids)
+            already_products = set(inventory_response.result.already_visible_product_ids)
+
+            for candidate_id in eligible_ids:
+                candidate = candidates_by_id[candidate_id]
+                if candidate_id in missing_ids:
+                    continue
+                record = inventory_service.get_well(candidate.managed_well_id)
+                candidate.wmdp_state = record.wmdp_state.value
+                candidate.wdv_state = record.wdv_state.value
+                candidate.managed_well_name = record.well_name
+                matching_items = [
+                    item
+                    for group in record.product_groups
+                    for item in group.items
+                    if candidate_id in {
+                        item.source_id,
+                        item.source_intake_candidate_id,
+                        item.provenance.get("source_file_id") if item.provenance else None,
+                        item.provenance.get("source_intake_candidate_id") if item.provenance else None,
+                    }
+                ]
+                if record.managed_well_id in restored_wells or any(item.product_id in restored_products for item in matching_items):
+                    restored_ids.add(candidate_id)
+                    results.append(SourceIntakeRestoreToMdpResult(
+                        candidate_id=candidate_id,
+                        status="restored",
+                        managed_well_id=record.managed_well_id,
+                    ))
+                elif record.managed_well_id in already_wells or any(item.product_id in already_products for item in matching_items):
+                    already_visible_ids.add(candidate_id)
+                    results.append(SourceIntakeRestoreToMdpResult(
+                        candidate_id=candidate_id,
+                        status="already_visible",
+                        managed_well_id=record.managed_well_id,
+                    ))
+                else:
+                    results.append(SourceIntakeRestoreToMdpResult(
+                        candidate_id=candidate_id,
+                        status="blocked",
+                        managed_well_id=record.managed_well_id,
+                        reason="No retained MSI product matched the selected Source Intake candidate.",
+                    ))
+
+        for candidate_id in sorted(missing_ids):
+            candidate = candidates_by_id[candidate_id]
+            results.append(SourceIntakeRestoreToMdpResult(
+                candidate_id=candidate_id,
+                status="blocked",
+                managed_well_id=candidate.managed_well_id,
+                reason="No retained MSI source/product identity matched this candidate.",
+            ))
+
+        self._save_snapshot(snapshot)
+        blocked_count = sum(1 for result in results if result.status == "blocked")
+        return SourceIntakeRestoreToMdpResponse(
+            restored_count=len(restored_ids),
+            already_visible_count=len(already_visible_ids),
+            blocked_count=blocked_count,
+            results=results,
             workbench=self.get_workbench(),
         )
 

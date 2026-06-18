@@ -611,6 +611,30 @@ class SourceIntakeRegisterResponse(BaseModel):
     workbench: Optional[SourceIntakeWorkbench] = None
 
 
+class SourceIntakeRestoreToMdpRequest(BaseModel):
+    candidate_ids: list[str]
+    actor: str = "user"
+    reason: Optional[str] = None
+
+
+class SourceIntakeRestoreToMdpResult(BaseModel):
+    candidate_id: str
+    status: str
+    managed_well_id: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class SourceIntakeRestoreToMdpResponse(BaseModel):
+    ok: bool = True
+    action: str = "restore_to_mdp"
+    destructive: bool = False
+    restored_count: int = 0
+    already_visible_count: int = 0
+    blocked_count: int = 0
+    results: list[SourceIntakeRestoreToMdpResult] = Field(default_factory=list)
+    workbench: Optional[SourceIntakeWorkbench] = None
+
+
 class SourceIntakeClearRequest(BaseModel):
     # WLV-WSI-CLEAR-CANDIDATE-ROWS-1: candidate register clear is backend-owned.
     repository_id: Optional[str] = None

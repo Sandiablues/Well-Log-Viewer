@@ -31,6 +31,8 @@ from .models import (
     UnloadManagedWellFromWdvResult,
     RemoveManagedDataFromMdpResponse,
     RemoveManagedDataFromMdpResult,
+    RestoreManagedDataToMdpResponse,
+    RestoreManagedDataToMdpResult,
     ManagedProductGroup,
     ManagedProductGroupItem,
     ManagedSourceKind,
@@ -395,6 +397,100 @@ class ManagedWellInventoryService:
 
     def set_active_wdv_well(self, managed_well_reference: str) -> WdvWorkspaceStateResponse:
         return self.workspace_service.set_active_well(managed_well_reference)
+
+    def restore_source_candidates_to_mdp(
+        self,
+        source_candidate_ids: list[str],
+    ) -> RestoreManagedDataToMdpResponse:
+        """Restore retained MSI products for selected WSI candidates to MDP visibility.
+
+        Source candidate identity is matched only against persisted MSI source
+        references and product provenance. No filename or display-name inference
+        is allowed. The operation is additive and idempotent.
+        """
+        candidate_ids = [value for value in dict.fromkeys(source_candidate_ids) if value]
+        if not candidate_ids:
+            raise ValueError("Select at least one Source Intake candidate to restore to MDP.")
+
+        records = self.repository.list_records()
+        matched_candidates: set[str] = set()
+        restored_well_ids: list[str] = []
+        restored_product_ids: list[str] = []
+        already_visible_well_ids: list[str] = []
+        already_visible_product_ids: list[str] = []
+        touched_records: list[ManagedWellRecord] = []
+
+        for record in records:
+            source_reference_ids = {
+                ref.source_id
+                for ref in record.source_references
+                if ref.source_id
+            }
+            record_candidate_ids = set(candidate_ids) & source_reference_ids
+            matched_items: list[ManagedProductGroupItem] = []
+
+            for group in record.product_groups:
+                for item in group.items:
+                    item_candidate_ids = {
+                        value
+                        for value in (
+                            item.source_id,
+                            item.source_intake_candidate_id,
+                            item.provenance.get("source_file_id") if item.provenance else None,
+                            item.provenance.get("source_intake_candidate_id") if item.provenance else None,
+                        )
+                        if value
+                    }
+                    overlap = set(candidate_ids) & item_candidate_ids
+                    if overlap:
+                        matched_items.append(item)
+                        record_candidate_ids.update(overlap)
+
+            if not record_candidate_ids:
+                continue
+
+            matched_candidates.update(record_candidate_ids)
+            record_changed = False
+
+            for item in matched_items:
+                if item.wmdp_state == ManagedWmdpState.REMOVED_FROM_WMDP:
+                    item.wmdp_state = ManagedWmdpState.STAGED_IN_WMDP
+                    item.wdv_state = ManagedWdvState.NOT_LOADED
+                    restored_product_ids.append(item.product_id)
+                    record_changed = True
+                else:
+                    already_visible_product_ids.append(item.product_id)
+
+            # A candidate may map to a retained managed well even when no product
+            # rows exist (for example a future well-level source type). Restore
+            # the well projection without inventing products.
+            if record.wmdp_state == ManagedWmdpState.REMOVED_FROM_WMDP or not record.wmdp_available:
+                record.wmdp_state = ManagedWmdpState.STAGED_IN_WMDP
+                record.wmdp_available = True
+                record.wdv_state = ManagedWdvState.NOT_LOADED
+                restored_well_ids.append(record.managed_well_id)
+                record_changed = True
+            else:
+                already_visible_well_ids.append(record.managed_well_id)
+
+            if record_changed:
+                record.updated_at = utc_now_iso()
+                _action, saved = self.repository.upsert_record(record)
+                touched_records.append(saved)
+
+        missing = sorted(set(candidate_ids) - matched_candidates)
+        self.workspace_service.reconcile(self.repository.list_records())
+
+        return RestoreManagedDataToMdpResponse(
+            result=RestoreManagedDataToMdpResult(
+                restored_managed_well_ids=sorted(set(restored_well_ids)),
+                restored_product_ids=sorted(set(restored_product_ids)),
+                already_visible_managed_well_ids=sorted(set(already_visible_well_ids)),
+                already_visible_product_ids=sorted(set(already_visible_product_ids)),
+                missing_source_candidate_ids=missing,
+            ),
+            records=touched_records,
+        )
 
     def remove_managed_data_from_mdp(
         self,

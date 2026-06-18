@@ -349,6 +349,21 @@ class RemoveManagedDataFromMdpResponse(BaseModel):
     records: list[ManagedWellRecord] = Field(default_factory=list)
 
 
+class RestoreManagedDataToMdpResult(BaseModel):
+    restored_managed_well_ids: list[str] = Field(default_factory=list)
+    restored_product_ids: list[str] = Field(default_factory=list)
+    already_visible_managed_well_ids: list[str] = Field(default_factory=list)
+    already_visible_product_ids: list[str] = Field(default_factory=list)
+    missing_source_candidate_ids: list[str] = Field(default_factory=list)
+
+
+class RestoreManagedDataToMdpResponse(BaseModel):
+    ok: bool = True
+    action: str = "restored_to_mdp"
+    result: RestoreManagedDataToMdpResult
+    records: list[ManagedWellRecord] = Field(default_factory=list)
+
+
 class InventoryValidationSeverity(str, Enum):
     INFO = "info"
     WARNING = "warning"

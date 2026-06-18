@@ -204,11 +204,20 @@ type HumanActionChoice =
   | 'assign_existing'
   | 'create_new'
   | 'leave_unresolved'
-  | 'exclude';
+  | 'exclude'
+  | 'restore_to_mdp';
 
 type ResolveResponse = {
   ok: boolean;
   resolved_count: number;
+};
+
+type RestoreToMdpResponse = {
+  ok: boolean;
+  action: string;
+  restored_count: number;
+  already_visible_count: number;
+  blocked_count: number;
 };
 
 type CandidateDiagnosticPhase = 'parse' | 'qaqc' | 'mdp_ready' | 'evidence';
@@ -497,6 +506,11 @@ export function SourceIntakeWorkbench() {
     && selectedCandidates.every((candidate) => candidate.available_human_actions.includes('exclude'));
   const selectedCanClearDecision = selectedCandidates.length > 0
     && selectedCandidates.every((candidate) => Boolean(candidate.current_decision));
+  const selectedCanRestoreToMdp = selectedCandidates.length > 0
+    && selectedCandidates.every(
+      (candidate) => candidate.registration_status === 'registered'
+        && Boolean(candidate.managed_well_id),
+    );
   const visibleSelectedCandidateCount = visibleCandidateIds.filter((candidateId) => selectedCandidateIds.has(candidateId)).length;
   const selectedRegisterableCount = visibleEligibleCandidateIds.filter((candidateId) => selectedCandidateIds.has(candidateId)).length;
   const allVisibleCandidatesSelected = visibleCandidateIds.length > 0
@@ -657,6 +671,28 @@ export function SourceIntakeWorkbench() {
     }
     if (!humanAction) {
       throw new Error('Select a human action before applying.');
+    }
+    if (humanAction === 'restore_to_mdp') {
+      if (!selectedCanRestoreToMdp) {
+        throw new Error('Every selected candidate must have a retained MSI registration.');
+      }
+      const response = await fetchWlvJson<RestoreToMdpResponse>('/api/wlv/source-intake/restore-to-mdp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          candidate_ids: selectedCandidates.map((candidate) => candidate.source_file_id),
+          actor: 'user',
+          reason: decisionReason.trim() || 'Restored from WSI to MDP.',
+        }),
+      });
+      await Promise.all([loadWorkbench(), loadManagedWells()]);
+      setSelectedCandidateIds(new Set());
+      resetHumanActionForm();
+      setMessage(
+        `Restore to MDP: ${response.restored_count} restored · `
+        + `${response.already_visible_count} already visible · ${response.blocked_count} blocked.`,
+      );
+      return;
     }
     if (
       (humanAction === 'accept_current' || humanAction === 'accept_with_warning')
@@ -1135,6 +1171,9 @@ export function SourceIntakeWorkbench() {
                     </option>
                     <option value="create_new" disabled={!selectedCanAssign}>
                       Create new well from selected
+                    </option>
+                    <option value="restore_to_mdp" disabled={!selectedCanRestoreToMdp}>
+                      Restore to MDP
                     </option>
                     <option value="leave_unresolved" disabled={!selectedCanClearDecision}>
                       Clear current decision / leave unresolved

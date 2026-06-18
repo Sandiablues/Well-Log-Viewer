@@ -14,6 +14,8 @@ from .models import (
     SourceIntakeOccurrenceAccounting,
     SourceIntakeRegisterRequest,
     SourceIntakeRegisterResponse,
+    SourceIntakeRestoreToMdpRequest,
+    SourceIntakeRestoreToMdpResponse,
     SourceIntakeWorkbench,
     SourceRepositoryCreateRequest,
     SourceRepositoryRecord,
@@ -117,6 +119,20 @@ def clear_workbench(request: SourceIntakeClearRequest | None = None) -> SourceIn
         repository_id=request.repository_id if request else None,
         candidate_ids=request.candidate_ids if request else None,
     )
+
+
+
+
+@router.post(
+    "/restore-to-mdp",
+    response_model=SourceIntakeRestoreToMdpResponse,
+    summary="Restore retained MSI records for selected WSI candidates to the Managed Data Page",
+)
+def restore_candidates_to_mdp(request: SourceIntakeRestoreToMdpRequest) -> SourceIntakeRestoreToMdpResponse:
+    try:
+        return _service.restore_candidates_to_mdp(request, inventory_service=_inventory_service)
+    except SourceIntakeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/register", response_model=SourceIntakeRegisterResponse, summary="Register WLV Source Intake candidates to managed inventory")
