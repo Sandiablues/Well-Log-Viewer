@@ -248,6 +248,39 @@ class LoadManagedWellToWdvResponse(BaseModel):
     record: ManagedWellRecord
 
 
+class BulkLoadWdvWellSelection(BaseModel):
+    managed_well_uid: CanonicalUuid7 | None = None
+    managed_well_id: str | None = None
+    managed_product_uids: list[CanonicalUuid7] = Field(default_factory=list)
+    product_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_well_reference(self) -> "BulkLoadWdvWellSelection":
+        if not self.managed_well_uid and not str(self.managed_well_id or "").strip():
+            raise ValueError("managed_well_uid or managed_well_id is required")
+        return self
+
+    @property
+    def well_reference(self) -> str:
+        return str(self.managed_well_uid or self.managed_well_id)
+
+    @property
+    def product_references(self) -> list[str]:
+        return [*[str(value) for value in self.managed_product_uids], *self.product_ids]
+
+
+class BulkLoadWdvWorkspaceRequest(BaseModel):
+    selections: list[BulkLoadWdvWellSelection] = Field(min_length=1)
+
+
+class BulkLoadWdvWellResult(BaseModel):
+    managed_well_id: str
+    managed_well_uid: CanonicalUuid7 | None = None
+    well_name: str
+    status: str
+    loaded_product_ids: list[str] = Field(default_factory=list)
+
+
 WDV_WORKSPACE_CONTRACT_VERSION = "wdv_workspace_v1"
 
 
@@ -268,6 +301,17 @@ class WdvWorkspaceStateResponse(BaseModel):
     active_managed_well_id: str | None = None
     loaded_wells: list[WdvWorkspaceLoadedWellSummary] = Field(default_factory=list)
     updated_at: str = Field(default_factory=utc_now_iso)
+
+
+class BulkLoadWdvWorkspaceResponse(BaseModel):
+    ok: bool = True
+    action: str = "bulk_loaded_to_wdv"
+    requested_count: int
+    loaded_count: int
+    already_loaded_count: int
+    failed_count: int = 0
+    results: list[BulkLoadWdvWellResult] = Field(default_factory=list)
+    workspace: WdvWorkspaceStateResponse
 
 
 class SetActiveWdvWellRequest(BaseModel):

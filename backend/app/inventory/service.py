@@ -27,6 +27,9 @@ from .models import (
     ManagedInventoryValidationResult,
     LoadManagedWellToWdvResponse,
     LoadManagedWellToWdvResult,
+    BulkLoadWdvWorkspaceResponse,
+    BulkLoadWdvWellResult,
+    BulkLoadWdvWellSelection,
     UnloadManagedWellFromWdvResponse,
     UnloadManagedWellFromWdvResult,
     RemoveManagedDataFromMdpResponse,
@@ -390,6 +393,123 @@ class ManagedWellInventoryService:
                 active_viewer_package_id=active_package_id,
             ),
             record=saved,
+        )
+
+    def bulk_load_wdv_workspace(
+        self,
+        selections: list[BulkLoadWdvWellSelection],
+    ) -> BulkLoadWdvWorkspaceResponse:
+        """Atomically add multiple managed wells/products to the WDV workspace.
+
+        All references are resolved and validated before the inventory snapshot is
+        written. Existing loaded wells remain loaded. The managed inventory is
+        written once, then the workspace is reconciled once.
+        """
+        snapshot = self.repository.snapshot()
+        records = snapshot.records
+        prepared: list[tuple[ManagedWellRecord, list[str], bool]] = []
+        seen_well_ids: set[str] = set()
+
+        for selection in selections:
+            target = self._resolve_managed_well_reference(selection.well_reference, records)
+            if target.managed_well_id in seen_well_ids:
+                raise ValueError(f"Duplicate managed well selection: {target.managed_well_id}")
+            seen_well_ids.add(target.managed_well_id)
+
+            selected_product_ids = self._resolve_product_references(
+                target,
+                selection.product_references,
+            )
+            loadable_items = [
+                item
+                for group in target.product_groups
+                for item in group.items
+                if self._is_wdv_loadable_product(item)
+            ]
+            if selected_product_ids:
+                loadable_items = [
+                    item for item in loadable_items if item.product_id in selected_product_ids
+                ]
+            if not loadable_items:
+                raise ValueError(
+                    f"Managed well has no selected WDV-loadable products: {target.managed_well_id}"
+                )
+
+            loaded_product_ids = [item.product_id for item in loadable_items]
+            currently_loaded_ids = {
+                item.product_id
+                for group in target.product_groups
+                for item in group.items
+                if item.wdv_state == ManagedWdvState.LOADED_TO_WDV
+            }
+            already_loaded = set(loaded_product_ids).issubset(currently_loaded_ids)
+            prepared.append((target, loaded_product_ids, already_loaded))
+
+        now = utc_now_iso()
+        prepared_by_id = {record.managed_well_id: (record, ids, already) for record, ids, already in prepared}
+        updated_records: list[ManagedWellRecord] = []
+        results: list[BulkLoadWdvWellResult] = []
+
+        for record in records:
+            prepared_item = prepared_by_id.get(record.managed_well_id)
+            if prepared_item is None:
+                updated_records.append(record)
+                continue
+
+            target, loaded_product_ids, already_loaded = prepared_item
+            loaded_set = set(loaded_product_ids)
+            target.wdv_state = ManagedWdvState.LOADED_TO_WDV
+            for group in target.product_groups:
+                for item in group.items:
+                    if item.product_id in loaded_set:
+                        item.wdv_state = ManagedWdvState.LOADED_TO_WDV
+            target.updated_at = now
+            updated_records.append(target)
+            results.append(
+                BulkLoadWdvWellResult(
+                    managed_well_id=target.managed_well_id,
+                    managed_well_uid=target.managed_well_uid,
+                    well_name=target.well_name,
+                    status="already_loaded" if already_loaded else "loaded",
+                    loaded_product_ids=loaded_product_ids,
+                )
+            )
+
+        self.repository.write_snapshot(
+            snapshot.model_copy(update={"records": updated_records, "updated_at": now})
+        )
+
+        previous_workspace = self.workspace_service.get_workspace()
+        loaded_record_ids = {
+            record.managed_well_id
+            for record in updated_records
+            if any(
+                item.wdv_state == ManagedWdvState.LOADED_TO_WDV
+                for group in record.product_groups
+                for item in group.items
+            )
+        }
+        preferred_active = previous_workspace.active_managed_well_id
+        if preferred_active not in loaded_record_ids:
+            preferred_active = prepared[0][0].managed_well_id
+
+        active_record = next(
+            record for record in updated_records if record.managed_well_id == preferred_active
+        )
+        self._sync_wdv_load_session_for_record(active_record)
+        workspace = self.workspace_service.reconcile(
+            updated_records,
+            preferred_active=preferred_active,
+        )
+
+        loaded_count = sum(1 for item in results if item.status == "loaded")
+        already_loaded_count = sum(1 for item in results if item.status == "already_loaded")
+        return BulkLoadWdvWorkspaceResponse(
+            requested_count=len(selections),
+            loaded_count=loaded_count,
+            already_loaded_count=already_loaded_count,
+            results=results,
+            workspace=workspace,
         )
 
     def get_wdv_workspace(self) -> WdvWorkspaceStateResponse:

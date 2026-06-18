@@ -1501,6 +1501,20 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
     return owners;
   }, [selectedProductItemIds, wells]);
 
+  const productOwnerById = useMemo(() => {
+    const owners = new Map<string, string>();
+
+    wells.forEach((well) => {
+      (well.product_groups ?? []).forEach((group) => {
+        (group.items ?? []).forEach((item) => {
+          owners.set(item.product_id, well.managed_well_id);
+        });
+      });
+    });
+
+    return owners;
+  }, [wells]);
+
   const selectedProductItems = useMemo(() => (
     wells.flatMap((well) => (well.product_groups ?? []).flatMap((group) => group.items ?? []))
       .filter((item) => selectedProductItemIds.has(item.product_id))
@@ -1549,28 +1563,74 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
 
     if (bulkAction !== 'load' && bulkAction !== 'unload') return;
 
+    if (bulkAction === 'load') {
+      const selectedWells = wells.filter((well) => selectedWellIds.has(well.managed_well_id));
+      const selectedProductsByWell = new Map<string, string[]>();
+      selectedProductItems.forEach((item) => {
+        const ownerId = productOwnerById.get(item.product_id);
+        if (!ownerId) return;
+        selectedProductsByWell.set(ownerId, [
+          ...(selectedProductsByWell.get(ownerId) ?? []),
+          item.product_id,
+        ]);
+      });
+
+      const selectionIds = new Set<string>([
+        ...selectedWells.map((well) => well.managed_well_id),
+        ...selectedProductsByWell.keys(),
+      ]);
+      const selections = [...selectionIds].map((managedWellId) => ({
+        managed_well_id: managedWellId,
+        product_ids: selectedWellIds.has(managedWellId)
+          ? []
+          : selectedProductsByWell.get(managedWellId) ?? [],
+      }));
+
+      if (selections.length === 0) {
+        setError('Select one or more managed wells or product rows to load to the Well Data Viewer.');
+        return;
+      }
+
+      setBulkApplying(true);
+      setError(null);
+      try {
+        const response = await fetchWlvJson<{ workspace?: { active_managed_well_id?: string | null } }>(
+          '/api/wlv/inventory/wdv-workspace/wells/load',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ selections }),
+          },
+        );
+        await loadInventory();
+        const activeWellId = response.workspace?.active_managed_well_id ?? selections[0]?.managed_well_id;
+        if (activeWellId) onOpenLogViewer(activeWellId);
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : 'Unable to load selected managed wells into the Well Data Viewer');
+      } finally {
+        setBulkApplying(false);
+      }
+      return;
+    }
+
     const managedWellId = productIds.length > 0
       ? productOwnerIds[0] ?? null
       : [...selectedWellIds][0] ?? selectedWellId;
 
     if (!managedWellId) {
-      setError(`Select one managed well or product row to ${bulkAction === 'load' ? 'load to' : 'unload from'} the Well Data Viewer.`);
+      setError('Select one managed well or product row to unload from the Well Data Viewer.');
       return;
     }
 
-    if (productOwnerIds.length > 1) {
-      setError(`${bulkAction === 'load' ? 'Load to' : 'Unload from'} WDV supports one managed well at a time. Clear selections from other wells first.`);
+    if (productOwnerIds.length > 1 || selectedWellIds.size > 1) {
+      setError('Unload from WDV currently requires one managed well at a time.');
       return;
     }
-
-    const endpoint = bulkAction === 'load'
-      ? '/api/wlv/inventory/load-to-wdv'
-      : '/api/wlv/inventory/unload-from-wdv';
 
     setBulkApplying(true);
     setError(null);
     try {
-      await fetchWlvJson(endpoint, {
+      await fetchWlvJson('/api/wlv/inventory/unload-from-wdv', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildInventoryActionPayload(
@@ -1580,13 +1640,9 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
         )),
       });
       await loadInventory();
-      if (bulkAction === 'load') {
-        onOpenLogViewer(managedWellId);
-      } else if (managedWellId === activeManagedWellId) {
-        onClearLogViewer();
-      }
+      if (managedWellId === activeManagedWellId) onClearLogViewer();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : `Unable to ${bulkAction === 'load' ? 'load selected managed data to' : 'unload selected managed data from'} the Well Data Viewer`);
+      setError(caught instanceof Error ? caught.message : 'Unable to unload selected managed data from the Well Data Viewer');
     } finally {
       setBulkApplying(false);
     }
@@ -5646,8 +5702,11 @@ export function TrackLayoutPrototype() {
               <div className="wlv-loaded-curves-ready-card">
                 <h2>Loaded curves are ready</h2>
                 <p>
-                  {wdvPackageState.loadedProductCount} loaded curve product{wdvPackageState.loadedProductCount === 1 ? '' : 's'}
-                  {' '}are available in the left Loaded Curves panel.
+                  {wdvWorkspace?.loaded_wells.length ?? 0} well{(wdvWorkspace?.loaded_wells.length ?? 0) === 1 ? '' : 's'} loaded in the WDV workspace.
+                  {activeInventoryWell ? ` Active well: ${activeInventoryWell.wellName}.` : ''}
+                </p>
+                <p>
+                  {activeViewerCurves.length} displayable curve{activeViewerCurves.length === 1 ? '' : 's'} available for the active well.
                 </p>
                 <p className="wlv-empty-viewer-note">
                   Select loaded curves and use Add Track, or drag curves into a manually created curve track.

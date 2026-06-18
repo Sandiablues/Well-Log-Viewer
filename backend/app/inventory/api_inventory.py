@@ -16,6 +16,8 @@ from .models import (
     ManagedInventoryStatus,
     LoadManagedWellToWdvRequest,
     LoadManagedWellToWdvResponse,
+    BulkLoadWdvWorkspaceRequest,
+    BulkLoadWdvWorkspaceResponse,
     UnloadManagedWellFromWdvRequest,
     UnloadManagedWellFromWdvResponse,
     RemoveManagedDataFromMdpRequest,
@@ -92,6 +94,27 @@ def get_wdv_workspace() -> WdvWorkspaceStateResponse:
 def set_active_wdv_well(request: SetActiveWdvWellRequest) -> WdvWorkspaceStateResponse:
     try:
         return _service.set_active_wdv_well(request.well_reference)
+    except ManagedWellNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Managed well not found: {exc.args[0]}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+
+@router.post(
+    "/wdv-workspace/wells/load",
+    response_model=BulkLoadWdvWorkspaceResponse,
+    summary="Atomically load multiple managed wells into the WDV workspace",
+)
+def bulk_load_wdv_workspace(
+    request: BulkLoadWdvWorkspaceRequest,
+) -> BulkLoadWdvWorkspaceResponse:
+    try:
+        return _service.bulk_load_wdv_workspace(request.selections)
     except ManagedWellNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
