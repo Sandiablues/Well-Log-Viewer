@@ -12,6 +12,7 @@ import { Wellbore3DPage } from '../wbv/Wellbore3DPage';
 import { loadBackendViewerPackageWithFallback, type BackendViewerPackageLoadResult } from './backendViewerPackageAdapter';
 import { buildWdvPackageState, emptyWdvPackageState, type WdvLoadedCurveItem, type WdvPackageState } from './wdvPackageState';
 import { useTrackBodyGeometry } from './useTrackBodyGeometry';
+import { buildInventoryActionPayload, buildInventoryRemovalPayload } from '../identity/inventoryActionIdentity';
 import type {
   ActiveTrackType,
   CurveAssignment,
@@ -89,6 +90,8 @@ type WmdpTrajectoryRecord = {
 
 type ManagedProductGroupItem = {
   product_id: string;
+  managed_product_uid?: string | null;
+  managed_curve_uid?: string | null;
   display_name?: string | null;
   curve_name?: string | null;
   curve_type?: string | null;
@@ -131,6 +134,7 @@ type ManagedProductGroup = {
 
 type ManagedInventoryWellRecord = {
   managed_well_id: string;
+  managed_well_uid?: string | null;
   well_id: string;
   uwi?: string | null;
   well_name?: string | null;
@@ -1512,6 +1516,11 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
     return owners;
   }, [selectedProductItemIds, wells]);
 
+  const selectedProductItems = useMemo(() => (
+    wells.flatMap((well) => (well.product_groups ?? []).flatMap((group) => group.items ?? []))
+      .filter((item) => selectedProductItemIds.has(item.product_id))
+  ), [selectedProductItemIds, wells]);
+
   const selectedWellCount = selectedWellIds.size;
   const selectedProductCount = selectedProductItemIds.size;
   const hasSelection = selectedWellCount > 0 || selectedProductCount > 0;
@@ -1532,10 +1541,10 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
         await fetchWlvJson('/api/wlv/inventory/remove-from-mdp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            managed_well_ids: managedWellIds,
-            product_ids: productIds,
-          }),
+          body: JSON.stringify(buildInventoryRemovalPayload(
+            wells.filter((well) => selectedWellIds.has(well.managed_well_id)),
+            selectedProductItems,
+          )),
         });
         const removedActiveWell = activeManagedWellId !== null
           && (managedWellIds.includes(activeManagedWellId) || productOwnerIds.includes(activeManagedWellId));
@@ -1579,10 +1588,11 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
       await fetchWlvJson(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          managed_well_id: managedWellId,
-          product_ids: productIds,
-        }),
+        body: JSON.stringify(buildInventoryActionPayload(
+          wells.find((well) => well.managed_well_id === managedWellId)
+            ?? { managed_well_id: managedWellId },
+          selectedProductItems,
+        )),
       });
       await loadInventory();
       if (bulkAction === 'load') {
@@ -1771,7 +1781,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                       <td>{wellProductCount(well)}</td>
                       <td>
                         <div className="wlv-wmdp-row-actions">
-                          <button type="button" onClick={() => { setSelectedWellIds(new Set([well.managed_well_id])); void fetchWlvJson('/api/wlv/inventory/load-to-wdv', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ managed_well_id: well.managed_well_id, product_ids: [] }) }).then(() => loadInventory()).then(() => onOpenLogViewer(well.managed_well_id)).catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load managed well to WDV')); }}>Load</button>
+                          <button type="button" onClick={() => { setSelectedWellIds(new Set([well.managed_well_id])); void fetchWlvJson('/api/wlv/inventory/load-to-wdv', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildInventoryActionPayload(well, [])) }).then(() => loadInventory()).then(() => onOpenLogViewer(well.managed_well_id)).catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load managed well to WDV')); }}>Load</button>
                           <button type="button" onClick={() => setSelectedWellId(well.managed_well_id)}>Info</button>
                           <button type="button" onClick={() => { setSelectedWellIds(new Set([well.managed_well_id])); setSelectedProductItemIds(new Set()); setBulkAction('remove'); }}>Remove</button>
                         </div>
