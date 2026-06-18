@@ -338,21 +338,16 @@ class ManagedWellInventoryService:
         representations or mutate source-intake records. Only one managed well
         may be loaded at a time.
         """
-        selected_product_ids = set(product_ids or [])
         records = self.repository.list_records()
-        target = None
-
-        for record in records:
-            if record.managed_well_id == managed_well_id:
-                target = record
-                break
-
-        if target is None:
-            raise ManagedWellNotFoundError(managed_well_id)
+        target = self._resolve_managed_well_reference(managed_well_id, records)
+        selected_product_ids = self._resolve_product_references(
+            target,
+            product_ids or [],
+        )
 
         unloaded_managed_well_ids: list[str] = []
         for record in records:
-            if record.managed_well_id == managed_well_id:
+            if record.managed_well_id == target.managed_well_id:
                 continue
             if record.wdv_state != ManagedWdvState.NOT_LOADED:
                 unloaded_managed_well_ids.append(record.managed_well_id)
@@ -409,17 +404,21 @@ class ManagedWellInventoryService:
         user removed from the Managed Data Page. Source files, source-intake
         history, viewer-package metadata, and the MSI record remain intact.
         """
-        selected_well_ids = set(managed_well_ids or [])
-        selected_product_ids = set(product_ids or [])
+        well_references = list(managed_well_ids or [])
+        product_references = list(product_ids or [])
 
-        if not selected_well_ids and not selected_product_ids:
+        if not well_references and not product_references:
             raise ValueError("Select at least one managed well or product to remove from MDP.")
 
         records = self.repository.list_records()
-        known_well_ids = {record.managed_well_id for record in records}
-        missing_well_ids = sorted(selected_well_ids - known_well_ids)
-        if missing_well_ids:
-            raise ManagedWellNotFoundError(missing_well_ids[0])
+        selected_well_ids = {
+            self._resolve_managed_well_reference(reference, records).managed_well_id
+            for reference in well_references
+        }
+        selected_product_ids = self._resolve_product_references_across_records(
+            records,
+            product_references,
+        )
 
         touched_records: list[ManagedWellRecord] = []
         removed_well_ids: list[str] = []
@@ -503,8 +502,12 @@ class ManagedWellInventoryService:
         supplied, only those products are unloaded and the well remains
         loaded_to_wdv while any loadable product remains loaded.
         """
-        selected_product_ids = set(product_ids or [])
-        record = self.repository.get_record(managed_well_id)
+        records = self.repository.list_records()
+        record = self._resolve_managed_well_reference(managed_well_id, records)
+        selected_product_ids = self._resolve_product_references(
+            record,
+            product_ids or [],
+        )
 
         loadable_items = [
             item
@@ -551,6 +554,110 @@ class ManagedWellInventoryService:
             ),
             record=saved,
         )
+
+    @staticmethod
+    def _legacy_alias_values(value: Any) -> set[str]:
+        aliases = getattr(value, "legacy_ids", None)
+        if not isinstance(aliases, list):
+            return set()
+        return {
+            str(alias.value).strip()
+            for alias in aliases
+            if str(getattr(alias, "value", "") or "").strip()
+        }
+
+    def _resolve_managed_well_reference(
+        self,
+        reference: str,
+        records: list[ManagedWellRecord] | None = None,
+    ) -> ManagedWellRecord:
+        normalized = str(reference or "").strip()
+        if not normalized:
+            raise ManagedWellNotFoundError(reference)
+
+        candidates = records if records is not None else self.repository.list_records()
+        for record in candidates:
+            references = {
+                record.managed_well_id,
+                record.well_id,
+                str(record.managed_well_uid or ""),
+                *self._legacy_alias_values(record),
+            }
+            if normalized in references:
+                return record
+        raise ManagedWellNotFoundError(normalized)
+
+    def _resolve_product_references(
+        self,
+        record: ManagedWellRecord,
+        references: list[str],
+    ) -> set[str]:
+        normalized = {str(value).strip() for value in references if str(value).strip()}
+        if not normalized:
+            return set()
+
+        resolved: set[str] = set()
+        for group in record.product_groups:
+            for item in group.items:
+                candidates = {
+                    item.product_id,
+                    str(item.managed_product_uid or ""),
+                    str(item.managed_curve_uid or ""),
+                    str(item.curve_uid or ""),
+                    *self._legacy_alias_values(item),
+                }
+                if normalized.intersection(candidates):
+                    resolved.add(item.product_id)
+
+        missing = sorted(
+            reference
+            for reference in normalized
+            if not any(
+                reference in {
+                    item.product_id,
+                    str(item.managed_product_uid or ""),
+                    str(item.managed_curve_uid or ""),
+                    str(item.curve_uid or ""),
+                    *self._legacy_alias_values(item),
+                }
+                for group in record.product_groups
+                for item in group.items
+            )
+        )
+        if missing:
+            raise ManagedWellNotFoundError(missing[0])
+        return resolved
+
+    def _resolve_product_references_across_records(
+        self,
+        records: list[ManagedWellRecord],
+        references: list[str],
+    ) -> set[str]:
+        normalized = {str(value).strip() for value in references if str(value).strip()}
+        if not normalized:
+            return set()
+
+        resolved: set[str] = set()
+        matched: set[str] = set()
+        for record in records:
+            for group in record.product_groups:
+                for item in group.items:
+                    candidates = {
+                        item.product_id,
+                        str(item.managed_product_uid or ""),
+                        str(item.managed_curve_uid or ""),
+                        str(item.curve_uid or ""),
+                        *self._legacy_alias_values(item),
+                    }
+                    overlap = normalized.intersection(candidates)
+                    if overlap:
+                        resolved.add(item.product_id)
+                        matched.update(overlap)
+
+        missing = sorted(normalized - matched)
+        if missing:
+            raise ManagedWellNotFoundError(missing[0])
+        return resolved
 
     def _loaded_wdv_product_items(self, record: ManagedWellRecord) -> list[ManagedProductGroupItem]:
         return [

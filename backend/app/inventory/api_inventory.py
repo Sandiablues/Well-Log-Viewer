@@ -77,8 +77,8 @@ def maintenance_status() -> ManagedInventoryMaintenanceStatus:
 def load_managed_well_to_wdv(request: LoadManagedWellToWdvRequest) -> LoadManagedWellToWdvResponse:
     try:
         return _service.load_managed_well_to_wdv(
-            managed_well_id=request.managed_well_id,
-            product_ids=request.product_ids,
+            managed_well_id=request.well_reference,
+            product_ids=request.product_references,
         )
     except ManagedWellNotFoundError as exc:
         raise HTTPException(
@@ -96,8 +96,8 @@ def load_managed_well_to_wdv(request: LoadManagedWellToWdvRequest) -> LoadManage
 def unload_managed_well_from_wdv(request: UnloadManagedWellFromWdvRequest) -> UnloadManagedWellFromWdvResponse:
     try:
         return _service.unload_managed_well_from_wdv(
-            managed_well_id=request.managed_well_id,
-            product_ids=request.product_ids,
+            managed_well_id=request.well_reference,
+            product_ids=request.product_references,
         )
     except ManagedWellNotFoundError as exc:
         raise HTTPException(
@@ -115,8 +115,8 @@ def unload_managed_well_from_wdv(request: UnloadManagedWellFromWdvRequest) -> Un
 def remove_managed_data_from_mdp(request: RemoveManagedDataFromMdpRequest) -> RemoveManagedDataFromMdpResponse:
     try:
         return _service.remove_managed_data_from_mdp(
-            managed_well_ids=request.managed_well_ids,
-            product_ids=request.product_ids,
+            managed_well_ids=request.well_references,
+            product_ids=request.product_references,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

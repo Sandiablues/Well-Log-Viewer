@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Any, Optional
 
-from pydantic import AfterValidator, BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field, model_validator
 
 from app.identity import IdentityAssignmentMetadata, LegacyIdentityAlias, parse_uuid7
 
@@ -213,8 +213,24 @@ class RegisterSeedWellResponse(BaseModel):
 
 
 class LoadManagedWellToWdvRequest(BaseModel):
-    managed_well_id: str
+    managed_well_uid: CanonicalUuid7 | None = None
+    managed_well_id: str | None = None
+    managed_product_uids: list[CanonicalUuid7] = Field(default_factory=list)
     product_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_well_reference(self) -> "LoadManagedWellToWdvRequest":
+        if not self.managed_well_uid and not str(self.managed_well_id or "").strip():
+            raise ValueError("managed_well_uid or managed_well_id is required")
+        return self
+
+    @property
+    def well_reference(self) -> str:
+        return str(self.managed_well_uid or self.managed_well_id)
+
+    @property
+    def product_references(self) -> list[str]:
+        return [*[str(value) for value in self.managed_product_uids], *self.product_ids]
 
 
 class LoadManagedWellToWdvResult(BaseModel):
@@ -233,8 +249,24 @@ class LoadManagedWellToWdvResponse(BaseModel):
 
 
 class UnloadManagedWellFromWdvRequest(BaseModel):
-    managed_well_id: str
+    managed_well_uid: CanonicalUuid7 | None = None
+    managed_well_id: str | None = None
+    managed_product_uids: list[CanonicalUuid7] = Field(default_factory=list)
     product_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_well_reference(self) -> "UnloadManagedWellFromWdvRequest":
+        if not self.managed_well_uid and not str(self.managed_well_id or "").strip():
+            raise ValueError("managed_well_uid or managed_well_id is required")
+        return self
+
+    @property
+    def well_reference(self) -> str:
+        return str(self.managed_well_uid or self.managed_well_id)
+
+    @property
+    def product_references(self) -> list[str]:
+        return [*[str(value) for value in self.managed_product_uids], *self.product_ids]
 
 
 class UnloadManagedWellFromWdvResult(BaseModel):
@@ -252,8 +284,18 @@ class UnloadManagedWellFromWdvResponse(BaseModel):
 
 
 class RemoveManagedDataFromMdpRequest(BaseModel):
+    managed_well_uids: list[CanonicalUuid7] = Field(default_factory=list)
     managed_well_ids: list[str] = Field(default_factory=list)
+    managed_product_uids: list[CanonicalUuid7] = Field(default_factory=list)
     product_ids: list[str] = Field(default_factory=list)
+
+    @property
+    def well_references(self) -> list[str]:
+        return [*[str(value) for value in self.managed_well_uids], *self.managed_well_ids]
+
+    @property
+    def product_references(self) -> list[str]:
+        return [*[str(value) for value in self.managed_product_uids], *self.product_ids]
 
 
 class RemoveManagedDataFromMdpResult(BaseModel):
