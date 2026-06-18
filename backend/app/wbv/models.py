@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.inventory.models import CanonicalUuid7
+
 
 class WbvViewerState(str, Enum):
     NOT_LOADED = "not_loaded"
@@ -120,6 +122,13 @@ class WbvManagedTrajectoryRecord(BaseModel):
     """
 
     trajectory_id: str
+    managed_trajectory_uid: CanonicalUuid7 | None = None
+    trajectory_revision_uid: CanonicalUuid7 | None = None
+    representation_uid: CanonicalUuid7 | None = None
+    source_occurrence_uid: CanonicalUuid7 | None = None
+    revision_number: int = 1
+    revision_fingerprint: str | None = None
+    supersedes_trajectory_revision_uid: CanonicalUuid7 | None = None
     trajectory_name: str
     trajectory_type: str = "deviation_survey"
     status: WbvManagedTrajectoryStatus = WbvManagedTrajectoryStatus.CANDIDATE
@@ -152,6 +161,7 @@ class WbvTrajectoryListContract(BaseModel):
     well_id: str
     well_name: str
     active_trajectory_id: str | None = None
+    active_trajectory_uid: CanonicalUuid7 | None = None
     geometry_status: str = "missing"
     wbv_ready: bool = False
     trajectories: list[WbvManagedTrajectoryRecord] = Field(default_factory=list)
@@ -170,6 +180,7 @@ class WbvSetActiveTrajectoryResponse(BaseModel):
     viewer: Literal["WBV"] = "WBV"
     managed_well_id: str
     active_trajectory_id: str
+    active_trajectory_uid: CanonicalUuid7 | None = None
     active_trajectory_name: str
     geometry_status: str
     wbv_ready: bool

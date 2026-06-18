@@ -8,6 +8,9 @@ canonical identities when the same legacy entity is registered again.
 from __future__ import annotations
 
 from collections.abc import Iterable
+import hashlib
+import json
+from typing import Any
 
 from app.identity import IdentityAssignmentMetadata, LegacyIdentityAlias, new_uuid7_str
 
@@ -45,6 +48,95 @@ def _uid(incoming: str | None, existing: str | None) -> str:
     return incoming or existing or new_uuid7_str()
 
 
+
+def _trajectory_fingerprint(raw: dict[str, Any]) -> str:
+    payload = {
+        key: value
+        for key, value in raw.items()
+        if key not in {
+            "managed_trajectory_uid",
+            "trajectory_revision_uid",
+            "representation_uid",
+            "source_occurrence_uid",
+            "revision_number",
+            "revision_fingerprint",
+            "supersedes_trajectory_revision_uid",
+            "is_active",
+        }
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _reconcile_trajectory_metadata(
+    metadata: dict[str, Any],
+    *,
+    existing_metadata: dict[str, Any] | None,
+    source_occurrence_uid_by_legacy_id: dict[str, str],
+) -> dict[str, Any]:
+    next_metadata = dict(metadata)
+    raw_records = next_metadata.get("wbv_trajectory_records")
+    if not isinstance(raw_records, list):
+        return next_metadata
+
+    previous_records = (existing_metadata or {}).get("wbv_trajectory_records")
+    previous_by_legacy_id = {
+        str(item.get("trajectory_id")): item
+        for item in previous_records
+        if isinstance(previous_records, list) and isinstance(item, dict) and item.get("trajectory_id")
+    } if isinstance(previous_records, list) else {}
+
+    reconciled: list[dict[str, Any]] = []
+    for raw in raw_records:
+        if not isinstance(raw, dict):
+            reconciled.append(raw)
+            continue
+        item = dict(raw)
+        legacy_id = str(item.get("trajectory_id") or "").strip()
+        previous = previous_by_legacy_id.get(legacy_id)
+        fingerprint = _trajectory_fingerprint(item)
+        previous_fingerprint = str(previous.get("revision_fingerprint") or "") if previous else ""
+        same_revision = bool(previous and previous_fingerprint == fingerprint)
+
+        managed_uid = str(item.get("managed_trajectory_uid") or (previous or {}).get("managed_trajectory_uid") or new_uuid7_str())
+        if same_revision:
+            revision_uid = str(item.get("trajectory_revision_uid") or previous.get("trajectory_revision_uid") or new_uuid7_str())
+            representation_uid = str(item.get("representation_uid") or previous.get("representation_uid") or new_uuid7_str())
+            revision_number = int(item.get("revision_number") or previous.get("revision_number") or 1)
+            supersedes_uid = item.get("supersedes_trajectory_revision_uid") or previous.get("supersedes_trajectory_revision_uid")
+        else:
+            previous_revision_uid = (previous or {}).get("trajectory_revision_uid")
+            revision_uid = str(item.get("trajectory_revision_uid") or new_uuid7_str())
+            representation_uid = str(item.get("representation_uid") or new_uuid7_str())
+            revision_number = int((previous or {}).get("revision_number") or 0) + 1
+            supersedes_uid = item.get("supersedes_trajectory_revision_uid") or previous_revision_uid
+
+        source_file_id = str(item.get("source_file_id") or "")
+        source_occurrence_uid = (
+            item.get("source_occurrence_uid")
+            or (previous or {}).get("source_occurrence_uid")
+            or source_occurrence_uid_by_legacy_id.get(source_file_id)
+        )
+        item.update({
+            "managed_trajectory_uid": managed_uid,
+            "trajectory_revision_uid": revision_uid,
+            "representation_uid": representation_uid,
+            "source_occurrence_uid": source_occurrence_uid,
+            "revision_number": revision_number,
+            "revision_fingerprint": fingerprint,
+            "supersedes_trajectory_revision_uid": supersedes_uid,
+        })
+        reconciled.append(item)
+
+    next_metadata["wbv_trajectory_records"] = reconciled
+    active_legacy_id = str(next_metadata.get("active_trajectory_id") or "")
+    if active_legacy_id:
+        active = next((item for item in reconciled if isinstance(item, dict) and str(item.get("trajectory_id") or "") == active_legacy_id), None)
+        if active and active.get("managed_trajectory_uid"):
+            next_metadata["active_trajectory_uid"] = active["managed_trajectory_uid"]
+    return next_metadata
+
+
 def reconcile_managed_record_identity(
     record: ManagedWellRecord,
     *,
@@ -72,6 +164,7 @@ def reconcile_managed_record_identity(
     }
     reconciled_sources: list[ManagedSourceReference] = []
     source_uid_by_legacy_id: dict[str, str] = {}
+    source_occurrence_uid_by_legacy_id: dict[str, str] = {}
 
     for source in record.source_references:
         previous = existing_sources.get(source.source_id)
@@ -84,6 +177,7 @@ def reconcile_managed_record_identity(
             previous.source_occurrence_uid if previous else None,
         )
         source_uid_by_legacy_id[source.source_id] = managed_source_uid
+        source_occurrence_uid_by_legacy_id[source.source_id] = occurrence_uid
         reconciled_sources.append(
             source.model_copy(
                 update={
@@ -180,6 +274,12 @@ def reconcile_managed_record_identity(
             )
         reconciled_groups.append(group.model_copy(update={"items": reconciled_items}))
 
+    reconciled_metadata = _reconcile_trajectory_metadata(
+        record.metadata if isinstance(record.metadata, dict) else {},
+        existing_metadata=(existing.metadata if existing and isinstance(existing.metadata, dict) else None),
+        source_occurrence_uid_by_legacy_id=source_occurrence_uid_by_legacy_id,
+    )
+
     return record.model_copy(
         update={
             "managed_well_uid": managed_well_uid,
@@ -196,5 +296,6 @@ def reconcile_managed_record_identity(
             "source_references": reconciled_sources,
             "viewer_packages": reconciled_packages,
             "product_groups": reconciled_groups,
+            "metadata": reconciled_metadata,
         }
     )

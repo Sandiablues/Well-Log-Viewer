@@ -33,6 +33,7 @@ from .models import (
 _VERTICAL_TRAJECTORY_CLASS = "vertical_trajectory_candidate"
 _TRAJECTORY_RECORDS_KEY = "wbv_trajectory_records"
 _ACTIVE_TRAJECTORY_ID_KEY = "active_trajectory_id"
+_ACTIVE_TRAJECTORY_UID_KEY = "active_trajectory_uid"
 
 
 class WbvService:
@@ -113,6 +114,7 @@ class WbvService:
             well_id=record.well_id,
             well_name=record.well_name,
             active_trajectory_id=active.trajectory_id if active else None,
+            active_trajectory_uid=active.managed_trajectory_uid if active else None,
             geometry_status=geometry_status,
             wbv_ready=bool(active and active.wbv_eligible),
             trajectories=trajectories,
@@ -129,7 +131,7 @@ class WbvService:
     ) -> WbvSetActiveTrajectoryResponse:
         record = self.repository.get_record(managed_well_id)
         trajectories = self._trajectory_records(record)
-        selected = next((trajectory for trajectory in trajectories if trajectory.trajectory_id == trajectory_id), None)
+        selected = next((trajectory for trajectory in trajectories if trajectory.trajectory_id == trajectory_id or trajectory.managed_trajectory_uid == trajectory_id), None)
         if selected is None:
             raise ValueError(f"Trajectory not found for managed well {managed_well_id}: {trajectory_id}")
         if not self._trajectory_selectable(selected):
@@ -149,7 +151,9 @@ class WbvService:
 
         metadata = dict(record.metadata) if isinstance(record.metadata, dict) else {}
         metadata[_TRAJECTORY_RECORDS_KEY] = [trajectory.model_dump(mode="json") for trajectory in updated]
-        metadata[_ACTIVE_TRAJECTORY_ID_KEY] = trajectory_id
+        metadata[_ACTIVE_TRAJECTORY_ID_KEY] = selected.trajectory_id
+        if selected.managed_trajectory_uid:
+            metadata[_ACTIVE_TRAJECTORY_UID_KEY] = selected.managed_trajectory_uid
         if selected.trajectory_package:
             metadata["wbv_trajectory_package"] = selected.trajectory_package
             metadata["wbv_coordinate_mode"] = selected.coordinate_mode.value
@@ -180,6 +184,7 @@ class WbvService:
         return WbvSetActiveTrajectoryResponse(
             managed_well_id=refreshed.managed_well_id,
             active_trajectory_id=selected.trajectory_id,
+            active_trajectory_uid=selected.managed_trajectory_uid,
             active_trajectory_name=selected.trajectory_name,
             geometry_status=geometry_status,
             wbv_ready=bool(next_active and next_active.wbv_eligible),
@@ -426,6 +431,11 @@ class WbvService:
         if not trajectories:
             return None
         active_id = str(record.metadata.get(_ACTIVE_TRAJECTORY_ID_KEY) or "") if isinstance(record.metadata, dict) else ""
+        active_uid = str(record.metadata.get(_ACTIVE_TRAJECTORY_UID_KEY) or "") if isinstance(record.metadata, dict) else ""
+        if active_uid:
+            explicit = next((trajectory for trajectory in trajectories if trajectory.managed_trajectory_uid == active_uid), None)
+            if explicit is not None:
+                return explicit
         if active_id:
             explicit = next((trajectory for trajectory in trajectories if trajectory.trajectory_id == active_id), None)
             if explicit is not None:
