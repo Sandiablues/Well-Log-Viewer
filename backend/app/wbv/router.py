@@ -61,7 +61,7 @@ def set_active_wbv_trajectory(
     try:
         return _service.set_active_trajectory(
             managed_well_id,
-            request.trajectory_id,
+            request.canonical_or_legacy_reference,
             requested_by=request.requested_by,
             note=request.note,
         )

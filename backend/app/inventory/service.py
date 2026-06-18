@@ -179,7 +179,16 @@ class ManagedWellInventoryService:
                 isinstance(existing_session, dict)
                 and not self._wdv_session_depth_domain_is_current(existing_session, record, loaded_items)
             )
-            if not isinstance(existing_session, dict) or existing_product_ids != loaded_product_ids or session_depth_stale:
+            session_identity_stale = (
+                isinstance(existing_session, dict)
+                and not self._wdv_session_identity_contract_is_current(existing_session, record, loaded_items)
+            )
+            if (
+                not isinstance(existing_session, dict)
+                or existing_product_ids != loaded_product_ids
+                or session_depth_stale
+                or session_identity_stale
+            ):
                 self._sync_wdv_load_session_for_record(record)
                 record.updated_at = utc_now_iso()
                 _action, record = self.repository.upsert_record(record)
@@ -672,6 +681,39 @@ class ManagedWellInventoryService:
             "created_by": "ManagedWellInventoryService._build_wdv_load_session_contract",
             "updated_at": utc_now_iso(),
         }
+
+    @staticmethod
+    def _wdv_session_identity_contract_is_current(
+        session: dict[str, Any],
+        record: ManagedWellRecord,
+        loaded_items: list[ManagedProductGroupItem],
+    ) -> bool:
+        if not record.managed_well_uid or session.get("managed_well_uid") != str(record.managed_well_uid):
+            return False
+        if record.managed_wellbore_uid and session.get("managed_wellbore_uid") != str(record.managed_wellbore_uid):
+            return False
+        if not session.get("viewer_package_uid") or not session.get("representation_uid"):
+            return False
+
+        raw_items = session.get("loaded_curve_items")
+        if not isinstance(raw_items, list) or len(raw_items) != len(loaded_items):
+            return False
+        by_product_id = {
+            str(item.get("product_id") or ""): item
+            for item in raw_items
+            if isinstance(item, dict)
+        }
+        for item in loaded_items:
+            contract_item = by_product_id.get(item.product_id)
+            if contract_item is None:
+                return False
+            if item.managed_product_uid and contract_item.get("managed_product_uid") != str(item.managed_product_uid):
+                return False
+            if item.managed_curve_uid and contract_item.get("managed_curve_uid") != str(item.managed_curve_uid):
+                return False
+            if item.managed_source_uid and contract_item.get("managed_source_uid") != str(item.managed_source_uid):
+                return False
+        return True
 
     def _wdv_session_depth_domain_is_current(
         self,

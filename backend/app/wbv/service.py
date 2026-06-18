@@ -131,7 +131,15 @@ class WbvService:
     ) -> WbvSetActiveTrajectoryResponse:
         record = self.repository.get_record(managed_well_id)
         trajectories = self._trajectory_records(record)
-        selected = next((trajectory for trajectory in trajectories if trajectory.trajectory_id == trajectory_id or trajectory.managed_trajectory_uid == trajectory_id), None)
+        selected = next(
+            (
+                trajectory
+                for trajectory in trajectories
+                if trajectory.trajectory_id == trajectory_id
+                or str(trajectory.managed_trajectory_uid or "") == trajectory_id
+            ),
+            None,
+        )
         if selected is None:
             raise ValueError(f"Trajectory not found for managed well {managed_well_id}: {trajectory_id}")
         if not self._trajectory_selectable(selected):
@@ -146,7 +154,13 @@ class WbvService:
         updated: list[WbvManagedTrajectoryRecord] = []
         for trajectory in persisted:
             next_trajectory = trajectory.model_copy(deep=True)
-            next_trajectory.is_active = next_trajectory.trajectory_id == trajectory_id
+            next_trajectory.is_active = (
+                next_trajectory.trajectory_id == selected.trajectory_id
+                or (
+                    selected.managed_trajectory_uid is not None
+                    and next_trajectory.managed_trajectory_uid == selected.managed_trajectory_uid
+                )
+            )
             updated.append(next_trajectory)
 
         metadata = dict(record.metadata) if isinstance(record.metadata, dict) else {}
@@ -160,6 +174,10 @@ class WbvService:
         metadata["wellbore_geometry_status"] = "active_trajectory_selected"
         metadata["wellbore_geometry_active_trajectory"] = {
             "trajectory_id": selected.trajectory_id,
+            "managed_trajectory_uid": str(selected.managed_trajectory_uid) if selected.managed_trajectory_uid else None,
+            "trajectory_revision_uid": str(selected.trajectory_revision_uid) if selected.trajectory_revision_uid else None,
+            "representation_uid": str(selected.representation_uid) if selected.representation_uid else None,
+            "source_occurrence_uid": str(selected.source_occurrence_uid) if selected.source_occurrence_uid else None,
             "trajectory_name": selected.trajectory_name,
             "trajectory_type": selected.trajectory_type,
             "status": selected.status.value,

@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.inventory.models import CanonicalUuid7
 
@@ -169,9 +169,20 @@ class WbvTrajectoryListContract(BaseModel):
 
 
 class WbvSetActiveTrajectoryRequest(BaseModel):
-    trajectory_id: str
+    trajectory_id: str | None = None
+    trajectory_uid: CanonicalUuid7 | None = None
     requested_by: str | None = None
     note: str | None = None
+
+    @model_validator(mode="after")
+    def require_trajectory_reference(self) -> "WbvSetActiveTrajectoryRequest":
+        if not self.trajectory_uid and not str(self.trajectory_id or "").strip():
+            raise ValueError("trajectory_uid or trajectory_id is required")
+        return self
+
+    @property
+    def canonical_or_legacy_reference(self) -> str:
+        return str(self.trajectory_uid or self.trajectory_id)
 
 
 class WbvSetActiveTrajectoryResponse(BaseModel):
