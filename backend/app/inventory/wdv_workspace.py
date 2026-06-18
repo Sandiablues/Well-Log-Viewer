@@ -23,6 +23,7 @@ from .models import (
     utc_now_iso,
 )
 from .repository import ManagedWellInventoryRepository, ManagedWellNotFoundError
+from .wdv_viewer_package import summarize_wdv_viewer_package
 
 
 def wdv_curve_counts(record: ManagedWellRecord) -> tuple[int, int, int]:
@@ -32,19 +33,11 @@ def wdv_curve_counts(record: ManagedWellRecord) -> tuple[int, int, int]:
         for item in group.items
         if item.wdv_state == ManagedWdvState.LOADED_TO_WDV
     ]
-    loaded_set = set(loaded_ids)
-    session = record.metadata.get("wdv_load_session_contract") if isinstance(record.metadata, dict) else None
-    raw_items = session.get("loaded_curve_items", []) if isinstance(session, dict) else []
-    viewer_items = [
-        item for item in raw_items
-        if isinstance(item, dict) and str(item.get("product_id") or "") in loaded_set
-    ]
-    viewer_count = len(viewer_items)
-    displayable_count = sum(1 for item in viewer_items if item.get("is_renderable") is True)
-    if not viewer_items and loaded_ids:
-        viewer_count = len(loaded_ids)
-        displayable_count = len(loaded_ids)
-    return len(loaded_ids), viewer_count, displayable_count
+    package = record.metadata.get("wdv_load_session_contract") if isinstance(record.metadata, dict) else None
+    return summarize_wdv_viewer_package(
+        package if isinstance(package, dict) else None,
+        loaded_ids,
+    )
 
 
 class WdvWorkspaceService:

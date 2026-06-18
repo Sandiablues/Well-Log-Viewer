@@ -80,8 +80,13 @@ type BackendDepthRangeLike = {
 
 type BackendViewerPackageLike = {
   tracks?: BackendViewerTrackLike[] | null;
+  curves?: BackendViewerCurveLike[] | null;
   loaded_curve_items?: BackendViewerCurveLike[] | null;
   loaded_product_count?: number | null;
+  viewer_curve_count?: number | null;
+  displayable_curve_count?: number | null;
+  package_revision?: string | null;
+  package_fingerprint?: string | null;
   unsupported_products?: BackendViewerCurveLike[] | null;
   depth_range?: BackendDepthRangeLike | null;
   depth_domain?: BackendDepthRangeLike | null;
@@ -124,6 +129,11 @@ export type WdvPackageState = {
   curveUsageCounts: Map<string, number>;
   loadedProductCount: number;
   unsupportedProductCount: number;
+  viewerCurveCount: number;
+  displayableCurveCount: number;
+  packageRevision: string | null;
+  packageFingerprint: string | null;
+  contractError: string | null;
   depthRange: { min: number; max: number } | null;
 };
 
@@ -134,6 +144,11 @@ export function emptyWdvPackageState(): WdvPackageState {
     curveUsageCounts: new Map<string, number>(),
     loadedProductCount: 0,
     unsupportedProductCount: 0,
+    viewerCurveCount: 0,
+    displayableCurveCount: 0,
+    packageRevision: null,
+    packageFingerprint: null,
+    contractError: null,
     depthRange: null,
   };
 }
@@ -282,9 +297,11 @@ export function buildWdvPackageState(viewerPackage: BackendViewerPackageLike): W
 
   const depthRange = depthRangeFromBackend(viewerPackage);
 
-  const backendLoadedCurves = viewerPackage.loaded_curve_items?.length
-    ? viewerPackage.loaded_curve_items
-    : viewerPackage.tracks?.flatMap((track) => track.curves ?? []) ?? [];
+  const backendLoadedCurves = viewerPackage.curves?.length
+    ? viewerPackage.curves
+    : viewerPackage.loaded_curve_items?.length
+      ? viewerPackage.loaded_curve_items
+      : viewerPackage.tracks?.flatMap((track) => track.curves ?? []) ?? [];
 
   if (!backendLoadedCurves.length) {
     return { ...emptyWdvPackageState(), depthRange };
@@ -302,12 +319,40 @@ export function buildWdvPackageState(viewerPackage: BackendViewerPackageLike): W
     curveUsageCounts.set(loaded.curveId, (curveUsageCounts.get(loaded.curveId) ?? 0) + 1);
   });
 
+  const backendLoadedProductCount = finiteNumber(viewerPackage.loaded_product_count) ?? loadedCurveItems.length;
+  const backendViewerCurveCount = finiteNumber(viewerPackage.viewer_curve_count) ?? loadedCurveItems.length;
+  const backendDisplayableCurveCount = finiteNumber(viewerPackage.displayable_curve_count) ?? loadedCurveItems.length;
+  const actualCurveCount = loadedCurveItems.length;
+  const contractError = (
+    backendViewerCurveCount !== actualCurveCount
+    || backendDisplayableCurveCount !== actualCurveCount
+  )
+    ? `Viewer package count mismatch: backend=${backendDisplayableCurveCount}, curves=${actualCurveCount}`
+    : null;
+
+  if (contractError) {
+    return {
+      ...emptyWdvPackageState(),
+      loadedProductCount: backendLoadedProductCount,
+      unsupportedProductCount: viewerPackage.unsupported_products?.length ?? 0,
+      packageRevision: viewerPackage.package_revision ?? null,
+      packageFingerprint: viewerPackage.package_fingerprint ?? null,
+      contractError,
+      depthRange,
+    };
+  }
+
   return {
     loadedCurveItems,
     availableCurves,
     curveUsageCounts,
-    loadedProductCount: loadedCurveItems.length,
+    loadedProductCount: backendLoadedProductCount,
     unsupportedProductCount: viewerPackage.unsupported_products?.length ?? 0,
+    viewerCurveCount: backendViewerCurveCount,
+    displayableCurveCount: backendDisplayableCurveCount,
+    packageRevision: viewerPackage.package_revision ?? null,
+    packageFingerprint: viewerPackage.package_fingerprint ?? null,
+    contractError: null,
     depthRange,
   };
 }

@@ -141,7 +141,7 @@ def test_bulk_unload_validates_every_reference_before_write(tmp_path: Path) -> N
     assert repository.get_record("managed-well:a").wdv_state == ManagedWdvState.LOADED_TO_WDV
 
 
-def test_workspace_counts_distinguish_loaded_products_and_displayable_curves(tmp_path: Path) -> None:
+def test_workspace_materializes_authoritative_package_before_counting(tmp_path: Path) -> None:
     repository = ManagedWellInventoryRepository(tmp_path / "inventory.json")
     service = ManagedWellInventoryService(repository=repository)
     repository.upsert_record(_record("managed-well:a", ["a:gr", "a:dt", "a:sp", "a:resd"]))
@@ -149,21 +149,29 @@ def test_workspace_counts_distinguish_loaded_products_and_displayable_curves(tmp
 
     record = repository.get_record("managed-well:a")
     session = dict(record.metadata["wdv_load_session_contract"])
-    items = [dict(item) for item in session["loaded_curve_items"]]
-    for index, item in enumerate(items):
-        item["is_renderable"] = index < 2
-    session["loaded_curve_items"] = items
+    session["contract_version"] = "legacy-stale-contract"
+    session["curves"] = session["curves"][:2]
+    session["viewer_curve_count"] = 2
+    session["displayable_curve_count"] = 2
     record.metadata["wdv_load_session_contract"] = session
     repository.upsert_record(record)
 
+    # Workspace is intentionally read first. It must repair/persist the package
+    # before calculating aggregate counts.
     workspace = service.get_wdv_workspace()
+    package = service.get_viewer_package_contract("managed-well:a")
     summary = workspace.loaded_wells[0]
-    assert summary.loaded_product_count == 4
-    assert summary.viewer_curve_count == 4
-    assert summary.displayable_curve_count == 2
-    assert summary.loaded_curve_count == 2
+
+    assert len(package["curves"]) == 4
+    assert package["loaded_product_count"] == 4
+    assert package["viewer_curve_count"] == 4
+    assert package["displayable_curve_count"] == 4
+    assert summary.loaded_product_count == package["loaded_product_count"]
+    assert summary.viewer_curve_count == package["viewer_curve_count"]
+    assert summary.displayable_curve_count == package["displayable_curve_count"]
+    assert summary.loaded_curve_count == package["displayable_curve_count"]
 
     listed = service.list_wells()[0]
-    assert listed.loaded_product_count == 4
-    assert listed.viewer_curve_count == 4
-    assert listed.displayable_curve_count == 2
+    assert listed.loaded_product_count == package["loaded_product_count"]
+    assert listed.viewer_curve_count == package["viewer_curve_count"]
+    assert listed.displayable_curve_count == package["displayable_curve_count"]
