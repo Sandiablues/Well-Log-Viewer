@@ -29,7 +29,9 @@ export interface CurveCatalogItem {
   curveUid?: string | null;
   krCurveTypeId?: string | null;
   wellUid?: string | null;
+  managedWellUid?: string | null;
   sourceUid?: string | null;
+  managedSourceUid?: string | null;
   observedMnemonic?: string | null;
   normalizedMnemonic?: string | null;
   mnemonic: string;
@@ -59,7 +61,9 @@ export interface CurveAssignment {
   curveUid?: string | null;
   krCurveTypeId?: string | null;
   wellUid?: string | null;
+  managedWellUid?: string | null;
   sourceUid?: string | null;
+  managedSourceUid?: string | null;
   observedMnemonic?: string | null;
   normalizedMnemonic?: string | null;
   stackIndex: number;

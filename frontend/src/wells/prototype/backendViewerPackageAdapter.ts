@@ -1,9 +1,12 @@
 import { fetchWlvJson } from '../../api/wlvBackendClient';
 import type { CurveCatalogItem, CurveLattice, WellLogTrack } from './trackLayoutModel';
+import { canonicalCurveIdentity } from '../identity/canonicalIdentity';
 
 type BackendViewerCurve = {
   curve_uid?: string | null;
   managed_curve_uid?: string | null;
+  managed_well_uid?: string | null;
+  managed_source_uid?: string | null;
   well_uid?: string | null;
   source_uid?: string | null;
   kr_curve_type_id?: string | null;
@@ -11,6 +14,7 @@ type BackendViewerCurve = {
   observed_mnemonic?: string | null;
   normalized_mnemonic?: string | null;
   product_id?: string | null;
+  managed_product_uid?: string | null;
   curve_id?: string;
   display_curve_id?: string;
   original_mnemonic?: string;
@@ -89,10 +93,10 @@ function curveCatalogItemFromBackendCurve(curve: BackendViewerCurve, index: numb
   if (!curveId) return null;
 
   const productId = String(curve.product_id || curveId).trim() || curveId;
-  const curveUid = String(curve.curve_uid || curve.managed_curve_uid || productId).trim() || productId;
+  const curveUid = canonicalCurveIdentity(curve, productId);
   const krCurveTypeId = curve.kr_curve_type_id ?? curve.canonical_curve_type_id ?? null;
-  const wellUid = curve.well_uid ?? null;
-  const sourceUid = curve.source_uid ?? null;
+  const wellUid = curve.managed_well_uid ?? curve.well_uid ?? null;
+  const sourceUid = curve.managed_source_uid ?? curve.source_uid ?? null;
   const observedMnemonic = curve.observed_mnemonic ?? curve.original_mnemonic ?? curve.mnemonic ?? curveId;
   const normalizedMnemonic = curve.normalized_mnemonic ?? observedMnemonic;
 
