@@ -8,6 +8,7 @@ import math
 import re
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import quote
 
 from app.wells.models import Curve, WellMultitrackV1
 from app.identity import new_uuid7_str
@@ -1106,6 +1107,11 @@ class ManagedWellInventoryService:
                 return False
             if item.managed_source_uid and contract_item.get("managed_source_uid") != str(item.managed_source_uid):
                 return False
+            sample_access = contract_item.get("sample_access")
+            if not contract_item.get("samples_url") or not contract_item.get("sample_revision"):
+                return False
+            if not isinstance(sample_access, dict) or sample_access.get("contract_version") != "wdv_curve_samples_v1":
+                return False
         return True
 
     def _wdv_session_depth_domain_is_current(
@@ -1182,6 +1188,18 @@ class ManagedWellInventoryService:
         warnings = list(scale.get("warnings") or [])
         if sample_stats.get("statistics_status") != "available":
             warnings.append(str(sample_stats.get("statistics_status") or "statistics_unavailable"))
+        sample_count = int(sample_stats.get("valid_sample_count") or 0)
+        sample_available = sample_stats.get("statistics_status") == "available" and sample_count > 0
+        samples_url = (
+            f"/api/wlv/inventory/wells/{quote(record.managed_well_id, safe='')}/curve-samples"
+            f"?product_id={quote(item.product_id, safe='')}"
+        )
+        provenance = item.provenance if isinstance(item.provenance, dict) else {}
+        source_checksum = str(provenance.get("checksum") or provenance.get("fingerprint") or "")
+        sample_revision = hashlib.sha256(
+            f"{record.managed_well_id}|{item.product_id}|{source_checksum}|{sample_count}".encode("utf-8")
+        ).hexdigest()[:20]
+
         return {
             "product_id": item.product_id,
             "managed_product_uid": str(item.managed_product_uid) if item.managed_product_uid else None,
@@ -1258,8 +1276,21 @@ class ManagedWellInventoryService:
             "observed_rejected_sentinel_count": sample_stats.get("rejected_sentinel_count", 0),
             "observed_rejected_plausibility_count": sample_stats.get("rejected_plausibility_count", 0),
             "observed_statistics_status": sample_stats.get("statistics_status"),
-            "is_renderable": True,
-            "support_status": "renderable",
+            "samples_url": samples_url,
+            "sample_revision": sample_revision,
+            "sample_access": {
+                "contract_version": "wdv_curve_samples_v1",
+                "endpoint": samples_url,
+                "status": "available" if sample_available else "unavailable",
+                "sample_count": sample_count,
+                "depth_min": sample_stats.get("depth_min"),
+                "depth_max": sample_stats.get("depth_max"),
+                "depth_unit": record.depth_unit or "ft",
+                "value_unit": item.curve_unit or "",
+                "revision": sample_revision,
+            },
+            "is_renderable": sample_available,
+            "support_status": "renderable" if sample_available else "samples_unavailable",
             "source_kind": item.source_kind,
             "source_id": item.source_id,
             "source_intake_candidate_id": item.source_intake_candidate_id,
@@ -1298,6 +1329,8 @@ class ManagedWellInventoryService:
             "observed_p50": payload.get("value_p50"),
             "observed_p95": payload.get("value_p95"),
             "observed_p99": payload.get("value_p99"),
+            "depth_min": payload.get("depth_min"),
+            "depth_max": payload.get("depth_max"),
             "valid_sample_count": payload.get("sample_count", 0),
             "raw_numeric_sample_count": payload.get("raw_numeric_sample_count", payload.get("sample_count", 0)),
             "rejected_sample_count": payload.get("rejected_sample_count", 0),

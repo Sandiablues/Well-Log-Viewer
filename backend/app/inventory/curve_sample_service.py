@@ -46,6 +46,8 @@ class CurveSampleService:
             "well_id": record.well_id,
             "well_name": record.well_name,
             "product_id": item.product_id,
+            "managed_curve_uid": str(item.managed_curve_uid) if item.managed_curve_uid else None,
+            "curve_uid": item.curve_uid or (str(item.managed_curve_uid) if item.managed_curve_uid else None),
             "curve_id": item.curve_name,
             "mnemonic": item.curve_name,
             "display_name": item.display_name,

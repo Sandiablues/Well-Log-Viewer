@@ -169,7 +169,10 @@ def test_viewer_package_contract_filters_to_loaded_wmdp_curves(tmp_path: Path) -
     assert loaded_curve["original_mnemonic"] == "GR"
     assert loaded_curve["canonical_curve_id"] == "gamma_ray"
     assert loaded_curve["display_curve_id"] == "GR"
-    assert loaded_curve["is_renderable"] is True
+    assert loaded_curve["is_renderable"] is False
+    assert loaded_curve["support_status"] == "samples_unavailable"
+    assert loaded_curve["sample_access"]["status"] == "unavailable"
+    assert loaded_curve["sample_access"]["sample_count"] == 0
 
 
 def test_wdv_load_session_depth_domain_uses_loaded_curve_interval_union(tmp_path: Path) -> None:
@@ -248,7 +251,10 @@ def test_load_to_wdv_creates_backend_owned_load_session_package(tmp_path: Path) 
     assert visible_curves == []
     assert package["visible_tracks"] == []
     assert package["display_tracks"] == []
-    assert all(curve["is_renderable"] is True for curve in loaded_curves)
+    assert all(curve["is_renderable"] is False for curve in loaded_curves)
+    assert all(curve["support_status"] == "samples_unavailable" for curve in loaded_curves)
+    assert all(curve["sample_access"]["status"] == "unavailable" for curve in loaded_curves)
+    assert all(curve["sample_access"]["sample_count"] == 0 for curve in loaded_curves)
 
 
 def test_viewer_package_endpoint_repairs_legacy_loaded_state_without_session(tmp_path: Path) -> None:

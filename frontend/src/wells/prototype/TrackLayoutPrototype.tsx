@@ -11,6 +11,7 @@ import { KrManagedInstructionsWorkbench } from '../knowledge/KrManagedInstructio
 import { Wellbore3DPage } from '../wbv/Wellbore3DPage';
 import { loadBackendViewerPackageWithFallback, type BackendViewerPackageLoadResult } from './backendViewerPackageAdapter';
 import { buildWdvPackageState, emptyWdvPackageState, type WdvLoadedCurveItem, type WdvPackageState } from './wdvPackageState';
+import { indexManagedCurveSamples, loadManagedCurveSamples, type ManagedCurveSamplesByCurveId, type ManagedCurveSamplesPayload } from './managedCurveSamples';
 import { useTrackBodyGeometry } from './useTrackBodyGeometry';
 import { buildInventoryActionPayload, buildInventoryRemovalPayload } from '../identity/inventoryActionIdentity';
 import type {
@@ -2381,8 +2382,12 @@ function makeMockCurveSamples(
   curve: CurveCatalogItem,
   _assignment: CurveAssignment,
   _trackPosition: number,
+  managedSamplesByCurveId: ManagedCurveSamplesByCurveId,
 ): MockCurveSample[] {
-  const samples = sampleKeysForCurve(curve)
+  const managedSamples = sampleKeysForCurve(curve)
+    .map((key) => managedSamplesByCurveId[key])
+    .find((candidate) => candidate?.length);
+  const samples = managedSamples ?? sampleKeysForCurve(curve)
     .map((key) => realCurveSamplesByCurveId[key])
     .find((candidate) => candidate?.length) ?? [];
   const output: MockCurveSample[] = [];
@@ -2433,9 +2438,10 @@ function visibleCurveSamples(
   assignment: CurveAssignment,
   trackPosition: number,
   viewRange: DepthViewRange,
+  managedSamplesByCurveId: ManagedCurveSamplesByCurveId,
 ): MockCurveSample[] {
   const padding = Math.max(10, (viewRange.max - viewRange.min) * 0.03);
-  return makeMockCurveSamples(curve, assignment, trackPosition).filter((sample) => (
+  return makeMockCurveSamples(curve, assignment, trackPosition, managedSamplesByCurveId).filter((sample) => (
     sample.depth >= viewRange.min - padding && sample.depth <= viewRange.max + padding
   ));
 }
@@ -2454,8 +2460,9 @@ function curveRenderPoints(
   lattice: CurveTrack['lattice'],
   trackWidth: number,
   bodyHeightPx: number,
+  managedSamplesByCurveId: ManagedCurveSamplesByCurveId,
 ): CurveRenderPoint[] {
-  return visibleCurveSamples(curve, assignment, trackPosition, viewRange).map((sample) => ({
+  return visibleCurveSamples(curve, assignment, trackPosition, viewRange, managedSamplesByCurveId).map((sample) => ({
     depth: sample.depth,
     x: valueToX(sample.value, assignment, lattice, trackWidth),
     y: depthToY(sample.depth, viewRange, bodyHeightPx),
@@ -3888,11 +3895,17 @@ function CurveTrackView({
   depthTicks,
   viewDepthRange,
   trackBodyHeightPx,
+  managedSamplesByCurveId,
+  managedSampleErrorsByCurveId,
+  curveCatalogItems,
 }: {
   track: CurveTrack;
   depthTicks: number[];
   viewDepthRange: DepthViewRange;
   trackBodyHeightPx: number;
+  managedSamplesByCurveId: ManagedCurveSamplesByCurveId;
+  managedSampleErrorsByCurveId: Record<string, string>;
+  curveCatalogItems: CurveCatalogItem[];
 }) {
   const ordered = orderedCurves(track);
   const backToFront = [...ordered].sort((a, b) => {
@@ -3900,8 +3913,11 @@ function CurveTrackView({
     if (priorityDelta !== 0) return priorityDelta;
     return b.stackIndex - a.stackIndex;
   });
-  const lattice = resolveTrackLattice(track, curveCatalog);
+  const lattice = resolveTrackLattice(track, curveCatalogItems);
   const trackWidth = clampCurveTrackWidth(track.widthPx);
+  const missingSampleMessages = ordered
+    .map((assignment) => managedSampleErrorsByCurveId[assignment.curveId])
+    .filter((message, index, all): message is string => Boolean(message) && all.indexOf(message) === index);
 
   return (
     <svg className={`wlv-curve-track-svg ${lattice.lattice}`} viewBox={`0 0 ${trackWidth} ${trackBodyHeightPx}`} preserveAspectRatio="none">
@@ -3933,15 +3949,15 @@ function CurveTrackView({
         return <line key={depth} x1="0" x2={trackWidth} y1={y} y2={y} stroke="#aeb8c5" strokeWidth="1" />;
       })}
       {backToFront.map((assignment, index) => {
-        const curve = curveById(curveCatalog, assignment.curveId);
-        const points = curveRenderPoints(curve, assignment, index, viewDepthRange, lattice.lattice, trackWidth, trackBodyHeightPx);
+        const curve = curveById(curveCatalogItems, assignment.curveId);
+        const points = curveRenderPoints(curve, assignment, index, viewDepthRange, lattice.lattice, trackWidth, trackBodyHeightPx, managedSamplesByCurveId);
         const path = pathFromCurvePoints(points);
         const pairedAssignment = assignment.pairedCurveId
           ? ordered.find((candidate) => candidate.assignmentId === assignment.pairedCurveId)
           : null;
-        const pairedCurve = pairedAssignment ? curveById(curveCatalog, pairedAssignment.curveId) : null;
+        const pairedCurve = pairedAssignment ? curveById(curveCatalogItems, pairedAssignment.curveId) : null;
         const pairedPoints = pairedAssignment && pairedCurve
-          ? curveRenderPoints(pairedCurve, pairedAssignment, index, viewDepthRange, lattice.lattice, trackWidth, trackBodyHeightPx)
+          ? curveRenderPoints(pairedCurve, pairedAssignment, index, viewDepthRange, lattice.lattice, trackWidth, trackBodyHeightPx, managedSamplesByCurveId)
           : [];
         const anchorX = fillAnchorForAssignment(assignment, trackWidth);
         const baseFillPath = assignment.fillSide === 'between' && pairedPoints.length > 0
@@ -3999,6 +4015,11 @@ function CurveTrackView({
           </g>
         );
       })}
+      {missingSampleMessages.length > 0 ? (
+        <text x={trackWidth / 2} y={24} textAnchor="middle" className="wlv-curve-sample-error">
+          Curve samples unavailable
+        </text>
+      ) : null}
     </svg>
   );
 }
@@ -4143,6 +4164,9 @@ function TrackView({
   onStartCurveTrackResize,
   resizingTrackId,
   trackBodyHeightPx,
+  managedSamplesByCurveId,
+  managedSampleErrorsByCurveId,
+  curveCatalogItems,
 }: {
   track: WellLogTrack;
   sharedHeaderHeightPx: number;
@@ -4161,11 +4185,14 @@ function TrackView({
   onStartCurveTrackResize: (trackId: string, startX: number, startWidth: number) => void;
   resizingTrackId: string | null;
   trackBodyHeightPx: number;
+  managedSamplesByCurveId: ManagedCurveSamplesByCurveId;
+  managedSampleErrorsByCurveId: Record<string, string>;
+  curveCatalogItems: CurveCatalogItem[];
 }) {
   const widthPx = track.trackType === 'curve' ? clampCurveTrackWidth(track.widthPx) : track.widthPx;
   const width = `${widthPx}px`;
   const isCurveTrack = track.trackType === 'curve';
-  const lattice = isCurveTrack ? resolveTrackLattice(track, curveCatalog) : null;
+  const lattice = isCurveTrack ? resolveTrackLattice(track, curveCatalogItems) : null;
   return (
     <section
       className={`wlv-track ${track.trackType} ${selected ? 'selected' : ''} ${resizingTrackId === track.trackId ? 'resizing' : ''}`}
@@ -4199,7 +4226,7 @@ function TrackView({
         style={{ height: `${sharedHeaderHeightPx}px`, minHeight: `${sharedHeaderHeightPx}px`, flexBasis: `${sharedHeaderHeightPx}px` }}
       >
         <div className="wlv-track-title-row">
-          <strong>{displayTitleForTrack(track, curveCatalog)}</strong>
+          <strong>{displayTitleForTrack(track, curveCatalogItems)}</strong>
           <span>T{track.trackIndex + 1}</span>
         </div>
         {track.trackType === 'depth' && (
@@ -4230,7 +4257,17 @@ function TrackView({
       <div className="wlv-track-body" style={{ height: `${trackBodyHeightPx}px`, minHeight: `${trackBodyHeightPx}px`, flexBasis: `${trackBodyHeightPx}px` }}>
         {track.trackType === 'depth' ? <DepthTrackView track={track} depthTicks={depthTicks} viewDepthRange={viewDepthRange} trackBodyHeightPx={trackBodyHeightPx} /> : null}
         {track.trackType === 'lithology' ? <LithologyTrackView track={track} viewDepthRange={viewDepthRange} trackBodyHeightPx={trackBodyHeightPx} /> : null}
-        {track.trackType === 'curve' ? <CurveTrackView track={track} depthTicks={depthTicks} viewDepthRange={viewDepthRange} trackBodyHeightPx={trackBodyHeightPx} /> : null}
+        {track.trackType === 'curve' ? (
+          <CurveTrackView
+            track={track}
+            depthTicks={depthTicks}
+            viewDepthRange={viewDepthRange}
+            trackBodyHeightPx={trackBodyHeightPx}
+            managedSamplesByCurveId={managedSamplesByCurveId}
+            managedSampleErrorsByCurveId={managedSampleErrorsByCurveId}
+            curveCatalogItems={curveCatalogItems}
+          />
+        ) : null}
       </div>
     </section>
   );
@@ -4262,6 +4299,9 @@ function TrackCanvas({
   onEndDragPan,
   onStartCurveTrackResize,
   resizingTrackId,
+  managedSamplesByCurveId,
+  managedSampleErrorsByCurveId,
+  curveCatalogItems,
 }: {
   tracks: WellLogTrack[];
   selection: SelectionRef;
@@ -4288,6 +4328,9 @@ function TrackCanvas({
   onEndDragPan: () => void;
   onStartCurveTrackResize: (trackId: string, startX: number, startWidth: number) => void;
   resizingTrackId: string | null;
+  managedSamplesByCurveId: ManagedCurveSamplesByCurveId;
+  managedSampleErrorsByCurveId: Record<string, string>;
+  curveCatalogItems: CurveCatalogItem[];
 }) {
   const canvasRef = useRef<HTMLElement | null>(null);
   const orderedTracks = sortTracks(tracks);
@@ -4485,6 +4528,9 @@ function TrackCanvas({
             onStartCurveTrackResize={onStartCurveTrackResize}
             resizingTrackId={resizingTrackId}
             trackBodyHeightPx={trackBodyHeightPx}
+            managedSamplesByCurveId={managedSamplesByCurveId}
+            managedSampleErrorsByCurveId={managedSampleErrorsByCurveId}
+            curveCatalogItems={curveCatalogItems}
           />
         ))}
       </div>
@@ -4701,6 +4747,8 @@ export function TrackLayoutPrototype() {
   const [wdvWorkspaceError, setWdvWorkspaceError] = useState<string | null>(null);
   const [, setViewerPackageLoad] = useState<BackendViewerPackageLoadResult | null>(null);
   const [wdvPackageState, setWdvPackageState] = useState<WdvPackageState>(() => emptyWdvPackageState());
+  const [managedSamplesByCurveId, setManagedSamplesByCurveId] = useState<ManagedCurveSamplesByCurveId>({});
+  const [managedSampleErrorsByCurveId, setManagedSampleErrorsByCurveId] = useState<Record<string, string>>({});
 
   // WLV-WDV-REBUILD-1: WMDP load creates WDV availability only.
   // It must not auto-populate visible well-log tracks.
@@ -4738,6 +4786,45 @@ export function TrackLayoutPrototype() {
       cancelled = true;
     };
   }, [activeView, managedViewerWellId]);
+
+  useEffect(() => {
+    if (activeView !== 'log-viewer' || !managedViewerWellId || wdvPackageState.loadedCurveItems.length === 0) {
+      setManagedSamplesByCurveId({});
+      setManagedSampleErrorsByCurveId({});
+      return undefined;
+    }
+
+    let cancelled = false;
+    setManagedSamplesByCurveId({});
+    setManagedSampleErrorsByCurveId({});
+
+    const requests = wdvPackageState.loadedCurveItems
+      .filter((item) => Boolean(item.productId && item.samplesUrl))
+      .map((item) => ({
+        managedWellId: managedViewerWellId,
+        curveId: item.curveId,
+        curveUid: item.curveUid,
+        managedCurveUid: item.managedCurveUid,
+        productId: item.productId,
+        samplesUrl: item.samplesUrl as string,
+        sampleRevision: item.sampleRevision,
+      }));
+
+    void Promise.all(requests.map((request) => loadManagedCurveSamples(
+      request,
+      (url) => fetchWlvJson<ManagedCurveSamplesPayload>(url),
+    ))).then((results) => {
+      if (cancelled) return;
+      const indexed = indexManagedCurveSamples(results);
+      setManagedSamplesByCurveId(indexed.samplesByCurveId);
+      setManagedSampleErrorsByCurveId(indexed.errorsByCurveId);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeView, managedViewerWellId, wdvPackageState.loadedCurveItems]);
+
   const [tracks, setTracks] = useState<WellLogTrack[]>([]);
   const [selection, setSelection] = useState<SelectionRef>({ kind: 'track', trackId: 'track-gr-sp' });
   const [selectedInventoryCurveIds, setSelectedInventoryCurveIds] = useState<string[]>([]);
@@ -4892,20 +4979,14 @@ export function TrackLayoutPrototype() {
     return metadata;
   }, [wdvPackageState.loadedCurveItems]);
   const activeCurveCatalog = useMemo(() => {
-    // WLV-WDV-CURVE-ASSIGNMENT-IDENTITY-1:
-    // Loaded backend curve products must be registered in the same catalog
-    // used by track rendering/properties code before any assignment is made.
-    // This preserves duplicate mnemonics as distinct product-backed curveIds.
-    const mutableCatalog = curveCatalog as CurveCatalogItem[];
-    const existingCurveIds = new Set(mutableCatalog.map((curve) => curve.curveId));
-
+    const merged = [...curveCatalog];
+    const existingCurveIds = new Set(merged.map((curve) => curve.curveId));
     activeViewerCurves.forEach((curve) => {
       if (!curve.curveId || existingCurveIds.has(curve.curveId)) return;
-      mutableCatalog.push(curve);
+      merged.push(curve);
       existingCurveIds.add(curve.curveId);
     });
-
-    return [...mutableCatalog];
+    return merged;
   }, [activeViewerCurves]);
   const wdvSessionKey = useMemo(() => {
     if (!managedViewerWellId) return null;
@@ -5758,6 +5839,9 @@ export function TrackLayoutPrototype() {
             onEndDragPan={endDragPan}
             onStartCurveTrackResize={startCurveTrackResize}
             resizingTrackId={trackResizeState?.trackId ?? null}
+            managedSamplesByCurveId={managedSamplesByCurveId}
+            managedSampleErrorsByCurveId={managedSampleErrorsByCurveId}
+            curveCatalogItems={activeCurveCatalog}
           />
         )}
         {tracks.length === 0 ? (

@@ -22,6 +22,7 @@ type BackendViewerCurve = {
   normalized_name?: string | null;
   display_name?: string | null;
   curve_family?: string | null;
+  track_family?: string | null;
   unit?: string | null;
   is_renderable?: boolean;
   support_status?: string;
@@ -69,15 +70,16 @@ export async function loadBackendViewerPackageWithFallback(
   }
 }
 
-function backendCurveClass(value: string | null | undefined): CurveCatalogItem['curveClass'] {
-  const key = String(value || '').toLowerCase();
-  if (key.includes('gamma')) return 'gamma';
+function backendCurveClass(curve: BackendViewerCurve): CurveCatalogItem['curveClass'] {
+  const mnemonic = String(curve.mnemonic || curve.original_mnemonic || curve.display_curve_id || curve.curve_id || '').toLowerCase();
+  const key = `${String(curve.curve_family || '')} ${String(curve.track_family || '')} ${mnemonic}`.toLowerCase();
+  if (key.includes('gamma') || key.includes('spontaneous') || mnemonic === 'sp') return 'gamma';
   if (key.includes('caliper') || key.includes('borehole')) return 'borehole';
-  if (key.includes('resistivity')) return 'resistivity';
-  if (key.includes('density')) return 'density';
-  if (key.includes('neutron')) return 'neutron';
-  if (key.includes('sonic')) return 'sonic';
-  if (key.includes('porosity')) return 'porosity';
+  if (key.includes('resistivity') || /^(res|rt|ild|ilm|ll|rxo)/.test(mnemonic)) return 'resistivity';
+  if (key.includes('density') || /^(rhob|rho|den)/.test(mnemonic)) return 'density';
+  if (key.includes('neutron') || /^(nphi|tnph|np)/.test(mnemonic)) return 'neutron';
+  if (key.includes('sonic') || /^(dt|ac|dts)/.test(mnemonic)) return 'sonic';
+  if (key.includes('porosity') || key.includes('phi')) return 'porosity';
   return 'depth';
 }
 
@@ -113,7 +115,7 @@ function curveCatalogItemFromBackendCurve(curve: BackendViewerCurve, index: numb
     mnemonic,
     description: String(curve.display_name || curve.normalized_name || mnemonic),
     unit: String(curve.unit || ''),
-    curveClass: backendCurveClass(curve.curve_family),
+    curveClass: backendCurveClass(curve),
     defaultLattice: scaleType as CurveLattice,
     defaultMin: typeof curve.scale?.min === 'number' ? curve.scale.min : 0,
     defaultMax: typeof curve.scale?.max === 'number' ? curve.scale.max : 150,

@@ -63,6 +63,18 @@ type BackendViewerCurveLike = {
   robust_observed_numeric_max?: number | null;
   scale_warnings?: string[] | null;
   visual_span_ratio?: number | null;
+  samples_url?: string | null;
+  sample_revision?: string | null;
+  sample_access?: {
+    endpoint?: string | null;
+    status?: string | null;
+    sample_count?: number | null;
+    depth_min?: number | null;
+    depth_max?: number | null;
+    depth_unit?: string | null;
+    value_unit?: string | null;
+    revision?: string | null;
+  } | null;
 };
 
 type BackendViewerTrackLike = {
@@ -115,6 +127,9 @@ export type WdvLoadedCurveItem = {
   sourceId?: string | null;
   sourceDisplayName?: string | null;
   sourceIntakeCandidateId?: string | null;
+  samplesUrl?: string | null;
+  sampleRevision?: string | null;
+  sampleCount?: number | null;
   catalogItem: CurveCatalogItem;
 };
 
@@ -148,15 +163,16 @@ function depthRangeFromBackend(viewerPackage: BackendViewerPackageLike): { min: 
   return { min, max };
 }
 
-function backendCurveClass(value: string | null | undefined): CurveCatalogItem['curveClass'] {
-  const key = String(value || '').toLowerCase();
-  if (key.includes('gamma')) return 'gamma';
+function backendCurveClass(curve: BackendViewerCurveLike): CurveCatalogItem['curveClass'] {
+  const mnemonic = String(curve.mnemonic || curve.original_mnemonic || curve.display_curve_id || curve.curve_id || '').toLowerCase();
+  const key = `${String(curve.curve_family || '')} ${String(curve.track_family || '')} ${mnemonic}`.toLowerCase();
+  if (key.includes('gamma') || key.includes('spontaneous') || mnemonic === 'sp') return 'gamma';
   if (key.includes('caliper') || key.includes('borehole')) return 'borehole';
-  if (key.includes('resistivity')) return 'resistivity';
-  if (key.includes('density')) return 'density';
-  if (key.includes('neutron')) return 'neutron';
-  if (key.includes('sonic')) return 'sonic';
-  if (key.includes('porosity')) return 'porosity';
+  if (key.includes('resistivity') || /^(res|rt|ild|ilm|ll|rxo)/.test(mnemonic)) return 'resistivity';
+  if (key.includes('density') || /^(rhob|rho|den)/.test(mnemonic)) return 'density';
+  if (key.includes('neutron') || /^(nphi|tnph|np)/.test(mnemonic)) return 'neutron';
+  if (key.includes('sonic') || /^(dt|ac|dts)/.test(mnemonic)) return 'sonic';
+  if (key.includes('porosity') || key.includes('phi')) return 'porosity';
   return 'depth';
 }
 
@@ -212,7 +228,10 @@ function loadedCurveFromBackend(curve: BackendViewerCurveLike, index: number): W
   if (runInterval) descriptionParts.push(String(runInterval));
   if (runNumber && runNumber !== '—') descriptionParts.push(`Run ${runNumber}`);
   const displayDescription = descriptionParts.join(' · ');
-  const curveFamily = backendCurveClass(curve.curve_family || curve.track_family);
+  const curveFamily = backendCurveClass(curve);
+  const samplesUrl = curve.sample_access?.endpoint ?? curve.samples_url ?? null;
+  const sampleRevision = curve.sample_access?.revision ?? curve.sample_revision ?? null;
+  const sampleCount = finiteNumber(curve.sample_access?.sample_count);
   const lattice = scaleMode(curve);
   const catalogItem: CurveCatalogItem = {
     curveId: uniqueCurveId,
@@ -273,6 +292,9 @@ function loadedCurveFromBackend(curve: BackendViewerCurveLike, index: number): W
     sourceId: curve.source_id ?? null,
     sourceDisplayName,
     sourceIntakeCandidateId: curve.source_intake_candidate_id ?? null,
+    samplesUrl,
+    sampleRevision,
+    sampleCount,
     catalogItem,
   };
 }
