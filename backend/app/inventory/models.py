@@ -9,13 +9,24 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Annotated, Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, Field
+
+from app.identity import IdentityAssignmentMetadata, LegacyIdentityAlias, parse_uuid7
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _canonical_uuid7(value: str) -> str:
+    """Validate and normalize a persisted canonical UUIDv7 string."""
+
+    return str(parse_uuid7(value))
+
+
+CanonicalUuid7 = Annotated[str, AfterValidator(_canonical_uuid7)]
 
 
 class ManagedInventoryHealth(BaseModel):
@@ -67,6 +78,10 @@ class ManagedSourceKind(str, Enum):
 
 class ManagedSourceReference(BaseModel):
     source_id: str
+    managed_source_uid: Optional[CanonicalUuid7] = None
+    source_occurrence_uid: Optional[CanonicalUuid7] = None
+    identity_assignment: Optional[IdentityAssignmentMetadata] = None
+    legacy_ids: list[LegacyIdentityAlias] = Field(default_factory=list)
     source_kind: ManagedSourceKind
     display_name: str
     original_path: Optional[str] = None
@@ -78,6 +93,10 @@ class ManagedSourceReference(BaseModel):
 
 class ViewerPackageReference(BaseModel):
     viewer_package_id: str
+    viewer_package_uid: Optional[CanonicalUuid7] = None
+    representation_uid: Optional[CanonicalUuid7] = None
+    identity_assignment: Optional[IdentityAssignmentMetadata] = None
+    legacy_ids: list[LegacyIdentityAlias] = Field(default_factory=list)
     viewer_package_version: str
     dataset_id: str
     representation_id: str
@@ -89,6 +108,12 @@ class ViewerPackageReference(BaseModel):
 
 class ManagedProductGroupItem(BaseModel):
     product_id: str
+    managed_product_uid: Optional[CanonicalUuid7] = None
+    managed_curve_uid: Optional[CanonicalUuid7] = None
+    managed_wellbore_uid: Optional[CanonicalUuid7] = None
+    managed_source_uid: Optional[CanonicalUuid7] = None
+    identity_assignment: Optional[IdentityAssignmentMetadata] = None
+    legacy_ids: list[LegacyIdentityAlias] = Field(default_factory=list)
     curve_uid: Optional[str] = None
     well_uid: Optional[str] = None
     source_uid: Optional[str] = None
@@ -131,6 +156,10 @@ class ManagedProductGroup(BaseModel):
 
 class ManagedWellRecord(BaseModel):
     managed_well_id: str
+    managed_well_uid: Optional[CanonicalUuid7] = None
+    managed_wellbore_uid: Optional[CanonicalUuid7] = None
+    identity_assignment: Optional[IdentityAssignmentMetadata] = None
+    legacy_ids: list[LegacyIdentityAlias] = Field(default_factory=list)
     well_id: str
     well_name: str
     wellbore_id: Optional[str] = None
