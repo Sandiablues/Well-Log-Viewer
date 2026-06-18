@@ -25,6 +25,28 @@ from .models import (
 from .repository import ManagedWellInventoryRepository, ManagedWellNotFoundError
 
 
+def wdv_curve_counts(record: ManagedWellRecord) -> tuple[int, int, int]:
+    loaded_ids = [
+        item.product_id
+        for group in record.product_groups
+        for item in group.items
+        if item.wdv_state == ManagedWdvState.LOADED_TO_WDV
+    ]
+    loaded_set = set(loaded_ids)
+    session = record.metadata.get("wdv_load_session_contract") if isinstance(record.metadata, dict) else None
+    raw_items = session.get("loaded_curve_items", []) if isinstance(session, dict) else []
+    viewer_items = [
+        item for item in raw_items
+        if isinstance(item, dict) and str(item.get("product_id") or "") in loaded_set
+    ]
+    viewer_count = len(viewer_items)
+    displayable_count = sum(1 for item in viewer_items if item.get("is_renderable") is True)
+    if not viewer_items and loaded_ids:
+        viewer_count = len(loaded_ids)
+        displayable_count = len(loaded_ids)
+    return len(loaded_ids), viewer_count, displayable_count
+
+
 class WdvWorkspaceService:
     _lock = RLock()
 
@@ -105,6 +127,7 @@ class WdvWorkspaceService:
 
     def _summary(self, record: ManagedWellRecord) -> WdvWorkspaceLoadedWellSummary:
         product_ids = self._loaded_product_ids(record)
+        loaded_product_count, viewer_curve_count, displayable_curve_count = wdv_curve_counts(record)
         endpoint = (
             f"/api/wlv/inventory/wells/{record.managed_well_id}/viewer-package"
             if product_ids
@@ -115,7 +138,10 @@ class WdvWorkspaceService:
             managed_well_uid=record.managed_well_uid,
             well_name=record.well_name,
             loaded_product_ids=product_ids,
-            loaded_curve_count=len(product_ids),
+            loaded_product_count=loaded_product_count,
+            viewer_curve_count=viewer_curve_count,
+            displayable_curve_count=displayable_curve_count,
+            loaded_curve_count=displayable_curve_count,
             viewer_package_endpoint=endpoint,
         )
 

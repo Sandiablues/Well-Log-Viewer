@@ -153,6 +153,9 @@ type ManagedInventoryWellRecord = {
   source_references?: ManagedInventorySourceReference[];
   viewer_packages?: ManagedInventoryViewerPackageReference[];
   product_groups?: ManagedProductGroup[];
+  loaded_product_count?: number;
+  viewer_curve_count?: number;
+  displayable_curve_count?: number;
   metadata?: {
     wbv_trajectory_records?: WmdpTrajectoryRecord[];
     active_trajectory_id?: string | null;
@@ -1014,12 +1017,8 @@ function wmdpProductGroupsForWell(well: ManagedInventoryWellRecord): ManagedProd
   return groups;
 }
 
-function wellProductCount(well: ManagedInventoryWellRecord): number {
-  const productGroups = wmdpProductGroupsForWell(well);
-  if (productGroups.length > 0) {
-    return productGroups.reduce((total, group) => total + (group.items ?? []).length, 0);
-  }
-  return (well.viewer_packages ?? []).length;
+function wellDisplayableCurveCount(well: ManagedInventoryWellRecord): number {
+  return Number.isFinite(well.displayable_curve_count) ? Number(well.displayable_curve_count) : 0;
 }
 
 type WmdpSortKey = 'wellName' | 'wellId' | 'field' | 'operator' | 'status' | 'updated';
@@ -1528,7 +1527,6 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
   const applyBulkAction = async () => {
     if (!canApplyBulkAction) return;
 
-    const productIds = [...selectedProductItemIds];
     const productOwnerIds = [...selectedProductWellIds];
 
     if (bulkAction === 'remove') {
@@ -1613,34 +1611,39 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
       return;
     }
 
-    const managedWellId = productIds.length > 0
-      ? productOwnerIds[0] ?? null
-      : [...selectedWellIds][0] ?? selectedWellId;
+    const unloadWellIds = Array.from(new Set([
+      ...selectedWellIds,
+      ...productOwnerIds,
+      ...(selectedWellId ? [selectedWellId] : []),
+    ])).filter(Boolean);
 
-    if (!managedWellId) {
-      setError('Select one managed well or product row to unload from the Well Data Viewer.');
+    if (unloadWellIds.length === 0) {
+      setError('Select one or more managed wells or product rows to unload from the Well Data Viewer.');
       return;
     }
 
-    if (productOwnerIds.length > 1 || selectedWellIds.size > 1) {
-      setError('Unload from WDV currently requires one managed well at a time.');
-      return;
-    }
+    const selections = unloadWellIds.map((managedWellId) => ({
+      managed_well_id: managedWellId,
+      product_ids: selectedProductItems
+        .filter((item) => productOwnerById.get(item.product_id) === managedWellId)
+        .map((item) => item.product_id),
+    }));
 
     setBulkApplying(true);
     setError(null);
     try {
-      await fetchWlvJson('/api/wlv/inventory/unload-from-wdv', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildInventoryActionPayload(
-          wells.find((well) => well.managed_well_id === managedWellId)
-            ?? { managed_well_id: managedWellId },
-          selectedProductItems,
-        )),
-      });
+      const response = await fetchWlvJson<{ workspace?: { active_managed_well_id?: string | null } }>(
+        '/api/wlv/inventory/wdv-workspace/wells/unload',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ selections }),
+        },
+      );
       await loadInventory();
-      if (managedWellId === activeManagedWellId) onClearLogViewer();
+      const nextActive = response.workspace?.active_managed_well_id ?? null;
+      if (!nextActive) onClearLogViewer();
+      else if (activeManagedWellId && unloadWellIds.includes(activeManagedWellId)) onOpenLogViewer(nextActive);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to unload selected managed data from the Well Data Viewer');
     } finally {
@@ -1769,7 +1772,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                 <th>Field</th>
                 <th>Block</th>
                 <th>Operator</th>
-                <th>Products</th>
+                <th>WDV Curves</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -1819,7 +1822,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                       <td>{safeText(well.field)}</td>
                       <td>{safeText(well.block)}</td>
                       <td>{safeText(well.operator)}</td>
-                      <td>{wellProductCount(well)}</td>
+                      <td>{wellDisplayableCurveCount(well)}</td>
                       <td>
                         <div className="wlv-wmdp-row-actions">
                           <button type="button" onClick={() => { setSelectedWellIds(new Set([well.managed_well_id])); void fetchWlvJson('/api/wlv/inventory/load-to-wdv', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildInventoryActionPayload(well, [])) }).then(() => loadInventory()).then(() => onOpenLogViewer(well.managed_well_id)).catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load managed well to WDV')); }}>Load</button>
@@ -2587,6 +2590,9 @@ type WdvWorkspaceLoadedWell = {
   managed_well_uid?: string | null;
   well_name: string;
   loaded_product_ids: string[];
+  loaded_product_count: number;
+  viewer_curve_count: number;
+  displayable_curve_count: number;
   loaded_curve_count: number;
   viewer_package_endpoint?: string | null;
 };
@@ -2830,7 +2836,7 @@ function CurveInventory({
               <option value="">No wells loaded</option>
             ) : loadedWells.map((well) => (
               <option key={well.managed_well_id} value={well.managed_well_id}>
-                {well.well_name} · {well.loaded_curve_count}
+                {well.well_name} · {well.displayable_curve_count}
               </option>
             ))}
           </select>
@@ -4945,7 +4951,7 @@ export function TrackLayoutPrototype() {
     const workspace = await fetchWlvJson<WdvWorkspaceState>('/api/wlv/inventory/wdv-workspace/active-well', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ well_reference: managedWellId }),
+      body: JSON.stringify({ managed_well_id: managedWellId }),
     });
     setWdvWorkspace(workspace);
     setWdvWorkspaceError(null);
@@ -5706,7 +5712,7 @@ export function TrackLayoutPrototype() {
                   {activeInventoryWell ? ` Active well: ${activeInventoryWell.wellName}.` : ''}
                 </p>
                 <p>
-                  {activeViewerCurves.length} displayable curve{activeViewerCurves.length === 1 ? '' : 's'} available for the active well.
+                  {activeWorkspaceWell?.displayable_curve_count ?? 0} displayable curve{(activeWorkspaceWell?.displayable_curve_count ?? 0) === 1 ? '' : 's'} available for the active well.
                 </p>
                 <p className="wlv-empty-viewer-note">
                   Select loaded curves and use Add Track, or drag curves into a manually created curve track.

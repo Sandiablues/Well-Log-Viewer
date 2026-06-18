@@ -185,6 +185,9 @@ class ManagedWellRecord(BaseModel):
     wmdp_available: bool = True
     created_at: str = Field(default_factory=utc_now_iso)
     updated_at: str = Field(default_factory=utc_now_iso)
+    loaded_product_count: int = 0
+    viewer_curve_count: int = 0
+    displayable_curve_count: int = 0
 
 
 class ManagedInventorySnapshot(BaseModel):
@@ -289,6 +292,9 @@ class WdvWorkspaceLoadedWellSummary(BaseModel):
     managed_well_uid: CanonicalUuid7 | None = None
     well_name: str
     loaded_product_ids: list[str] = Field(default_factory=list)
+    loaded_product_count: int = 0
+    viewer_curve_count: int = 0
+    displayable_curve_count: int = 0
     loaded_curve_count: int = 0
     viewer_package_endpoint: str | None = None
 
@@ -311,6 +317,30 @@ class BulkLoadWdvWorkspaceResponse(BaseModel):
     already_loaded_count: int
     failed_count: int = 0
     results: list[BulkLoadWdvWellResult] = Field(default_factory=list)
+    workspace: WdvWorkspaceStateResponse
+
+
+class BulkUnloadWdvWorkspaceRequest(BaseModel):
+    selections: list[BulkLoadWdvWellSelection] = Field(min_length=1)
+
+
+class BulkUnloadWdvWellResult(BaseModel):
+    managed_well_id: str
+    managed_well_uid: CanonicalUuid7 | None = None
+    well_name: str
+    status: str
+    unloaded_product_ids: list[str] = Field(default_factory=list)
+    remaining_loaded_product_ids: list[str] = Field(default_factory=list)
+
+
+class BulkUnloadWdvWorkspaceResponse(BaseModel):
+    ok: bool = True
+    action: str = "bulk_unloaded_from_wdv"
+    requested_count: int
+    unloaded_count: int
+    already_unloaded_count: int
+    failed_count: int = 0
+    results: list[BulkUnloadWdvWellResult] = Field(default_factory=list)
     workspace: WdvWorkspaceStateResponse
 
 

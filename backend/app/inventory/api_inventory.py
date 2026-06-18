@@ -18,6 +18,8 @@ from .models import (
     LoadManagedWellToWdvResponse,
     BulkLoadWdvWorkspaceRequest,
     BulkLoadWdvWorkspaceResponse,
+    BulkUnloadWdvWorkspaceRequest,
+    BulkUnloadWdvWorkspaceResponse,
     UnloadManagedWellFromWdvRequest,
     UnloadManagedWellFromWdvResponse,
     RemoveManagedDataFromMdpRequest,
@@ -125,6 +127,22 @@ def bulk_load_wdv_workspace(
     except ManagedInventoryStoreError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
+
+
+@router.post(
+    "/wdv-workspace/wells/unload",
+    response_model=BulkUnloadWdvWorkspaceResponse,
+    summary="Atomically unload multiple managed wells from the WDV workspace",
+)
+def bulk_unload_wdv_workspace(request: BulkUnloadWdvWorkspaceRequest) -> BulkUnloadWdvWorkspaceResponse:
+    try:
+        return _service.bulk_unload_wdv_workspace(request.selections)
+    except ManagedWellNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Managed well not found: {exc.args[0]}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 @router.post(
     "/load-to-wdv",

@@ -30,6 +30,8 @@ from .models import (
     BulkLoadWdvWorkspaceResponse,
     BulkLoadWdvWellResult,
     BulkLoadWdvWellSelection,
+    BulkUnloadWdvWorkspaceResponse,
+    BulkUnloadWdvWellResult,
     UnloadManagedWellFromWdvResponse,
     UnloadManagedWellFromWdvResult,
     RemoveManagedDataFromMdpResponse,
@@ -51,7 +53,7 @@ from .models import (
 from .repository import ManagedWellInventoryRepository, ManagedWellNotFoundError
 from .curve_sample_service import CurveSampleService, CurveSampleServiceError
 from .identity_reconciliation import reconcile_managed_record_identity
-from .wdv_workspace import WdvWorkspaceService
+from .wdv_workspace import WdvWorkspaceService, wdv_curve_counts
 
 
 class ManagedWellInventoryService:
@@ -508,6 +510,69 @@ class ManagedWellInventoryService:
             requested_count=len(selections),
             loaded_count=loaded_count,
             already_loaded_count=already_loaded_count,
+            results=results,
+            workspace=workspace,
+        )
+
+    def bulk_unload_wdv_workspace(
+        self,
+        selections: list[BulkLoadWdvWellSelection],
+    ) -> BulkUnloadWdvWorkspaceResponse:
+        snapshot = self.repository.snapshot()
+        records = snapshot.records
+        prepared: list[tuple[ManagedWellRecord, list[str], bool]] = []
+        seen: set[str] = set()
+
+        for selection in selections:
+            target = self._resolve_managed_well_reference(selection.well_reference, records)
+            if target.managed_well_id in seen:
+                raise ValueError(f"Duplicate managed well selection: {target.managed_well_id}")
+            seen.add(target.managed_well_id)
+            selected_ids = self._resolve_product_references(target, selection.product_references)
+            loaded_items = self._loaded_wdv_product_items(target)
+            target_items = [item for item in loaded_items if item.product_id in selected_ids] if selected_ids else loaded_items
+            unload_ids = [item.product_id for item in target_items]
+            prepared.append((target, unload_ids, not unload_ids))
+
+        previous = self.workspace_service.get_workspace()
+        now = utc_now_iso()
+        prepared_by_id = {record.managed_well_id: (record, ids, already) for record, ids, already in prepared}
+        updated_records: list[ManagedWellRecord] = []
+        results: list[BulkUnloadWdvWellResult] = []
+
+        for record in records:
+            prepared_item = prepared_by_id.get(record.managed_well_id)
+            if prepared_item is None:
+                updated_records.append(record)
+                continue
+            target, unload_ids, already_unloaded = prepared_item
+            unload_set = set(unload_ids)
+            for group in target.product_groups:
+                for item in group.items:
+                    if item.product_id in unload_set:
+                        item.wdv_state = ManagedWdvState.NOT_LOADED
+            remaining = [item.product_id for item in self._loaded_wdv_product_items(target)]
+            target.wdv_state = ManagedWdvState.LOADED_TO_WDV if remaining else ManagedWdvState.NOT_LOADED
+            self._sync_wdv_load_session_for_record(target)
+            target.updated_at = now
+            updated_records.append(target)
+            results.append(BulkUnloadWdvWellResult(
+                managed_well_id=target.managed_well_id,
+                managed_well_uid=target.managed_well_uid,
+                well_name=target.well_name,
+                status="already_unloaded" if already_unloaded else "unloaded",
+                unloaded_product_ids=unload_ids,
+                remaining_loaded_product_ids=remaining,
+            ))
+
+        self.repository.write_snapshot(snapshot.model_copy(update={"records": updated_records, "updated_at": now}))
+        remaining_ids = {record.managed_well_id for record in updated_records if self._loaded_wdv_product_items(record)}
+        preferred_active = previous.active_managed_well_id if previous.active_managed_well_id in remaining_ids else None
+        workspace = self.workspace_service.reconcile(updated_records, preferred_active=preferred_active)
+        return BulkUnloadWdvWorkspaceResponse(
+            requested_count=len(selections),
+            unloaded_count=sum(1 for item in results if item.status == "unloaded"),
+            already_unloaded_count=sum(1 for item in results if item.status == "already_unloaded"),
             results=results,
             workspace=workspace,
         )
@@ -1660,9 +1725,16 @@ class ManagedWellInventoryService:
             else:
                 normalized_groups.append(group)
 
-        if not changed:
-            return record
-        return record.model_copy(update={"product_groups": normalized_groups, "updated_at": utc_now_iso()})
+        normalized_record = record.model_copy(update={"product_groups": normalized_groups}) if changed else record
+        loaded_product_count, viewer_curve_count, displayable_curve_count = wdv_curve_counts(normalized_record)
+        updates: dict[str, Any] = {
+            "loaded_product_count": loaded_product_count,
+            "viewer_curve_count": viewer_curve_count,
+            "displayable_curve_count": displayable_curve_count,
+        }
+        if changed:
+            updates["updated_at"] = utc_now_iso()
+        return normalized_record.model_copy(update=updates)
 
     def _with_product_groups(self, record: ManagedWellRecord) -> ManagedWellRecord:
         """Return a record with backend-owned product_groups populated."""

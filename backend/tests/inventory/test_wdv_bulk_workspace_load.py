@@ -97,3 +97,73 @@ def test_bulk_load_rejects_duplicate_well_selections(tmp_path: Path) -> None:
             BulkLoadWdvWellSelection(managed_well_id="managed-well:a"),
             BulkLoadWdvWellSelection(managed_well_id="managed-well:a"),
         ])
+
+
+def test_bulk_unload_is_atomic_and_replaces_active_well(tmp_path: Path) -> None:
+    repository = ManagedWellInventoryRepository(tmp_path / "inventory.json")
+    service = ManagedWellInventoryService(repository=repository)
+    for name in ["a", "b", "c"]:
+        repository.upsert_record(_record(f"managed-well:{name}", [f"{name}:gr", f"{name}:dt"]))
+
+    service.bulk_load_wdv_workspace([
+        BulkLoadWdvWellSelection(managed_well_id=f"managed-well:{name}")
+        for name in ["a", "b", "c"]
+    ])
+    service.set_active_wdv_well("managed-well:b")
+
+    result = service.bulk_unload_wdv_workspace([
+        BulkLoadWdvWellSelection(managed_well_id="managed-well:a"),
+        BulkLoadWdvWellSelection(managed_well_id="managed-well:b"),
+    ])
+
+    assert result.requested_count == 2
+    assert result.unloaded_count == 2
+    assert result.already_unloaded_count == 0
+    assert [item.managed_well_id for item in result.workspace.loaded_wells] == ["managed-well:c"]
+    assert result.workspace.active_managed_well_id == "managed-well:c"
+    assert repository.get_record("managed-well:a").wdv_state == ManagedWdvState.NOT_LOADED
+    assert repository.get_record("managed-well:b").wdv_state == ManagedWdvState.NOT_LOADED
+    assert repository.get_record("managed-well:c").wdv_state == ManagedWdvState.LOADED_TO_WDV
+
+
+def test_bulk_unload_validates_every_reference_before_write(tmp_path: Path) -> None:
+    repository = ManagedWellInventoryRepository(tmp_path / "inventory.json")
+    service = ManagedWellInventoryService(repository=repository)
+    repository.upsert_record(_record("managed-well:a", ["a:gr"]))
+    service.load_managed_well_to_wdv("managed-well:a")
+
+    with pytest.raises(KeyError):
+        service.bulk_unload_wdv_workspace([
+            BulkLoadWdvWellSelection(managed_well_id="managed-well:a"),
+            BulkLoadWdvWellSelection(managed_well_id="managed-well:missing"),
+        ])
+
+    assert repository.get_record("managed-well:a").wdv_state == ManagedWdvState.LOADED_TO_WDV
+
+
+def test_workspace_counts_distinguish_loaded_products_and_displayable_curves(tmp_path: Path) -> None:
+    repository = ManagedWellInventoryRepository(tmp_path / "inventory.json")
+    service = ManagedWellInventoryService(repository=repository)
+    repository.upsert_record(_record("managed-well:a", ["a:gr", "a:dt", "a:sp", "a:resd"]))
+    service.load_managed_well_to_wdv("managed-well:a")
+
+    record = repository.get_record("managed-well:a")
+    session = dict(record.metadata["wdv_load_session_contract"])
+    items = [dict(item) for item in session["loaded_curve_items"]]
+    for index, item in enumerate(items):
+        item["is_renderable"] = index < 2
+    session["loaded_curve_items"] = items
+    record.metadata["wdv_load_session_contract"] = session
+    repository.upsert_record(record)
+
+    workspace = service.get_wdv_workspace()
+    summary = workspace.loaded_wells[0]
+    assert summary.loaded_product_count == 4
+    assert summary.viewer_curve_count == 4
+    assert summary.displayable_curve_count == 2
+    assert summary.loaded_curve_count == 2
+
+    listed = service.list_wells()[0]
+    assert listed.loaded_product_count == 4
+    assert listed.viewer_curve_count == 4
+    assert listed.displayable_curve_count == 2
