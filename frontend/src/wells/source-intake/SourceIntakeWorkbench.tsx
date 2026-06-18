@@ -33,6 +33,12 @@ type QaqcStatus = {
   failure_count?: number;
   review_required?: boolean;
   messages?: string[];
+  checks?: Array<{
+    check_id: string;
+    status?: string;
+    finding_class?: string;
+    review_required?: boolean;
+  }>;
 };
 
 type SourceIntakeCurrentDecision = {
@@ -192,6 +198,9 @@ type ManagedWellSummary = {
 
 type HumanActionChoice =
   | ''
+  | 'accept_current'
+  | 'accept_with_warning'
+  | 'correct_metadata'
   | 'assign_existing'
   | 'create_new'
   | 'leave_unresolved'
@@ -328,6 +337,14 @@ function candidateIsRegisterable(candidate: SourceFileCandidate): boolean {
   return candidate.readiness_state === 'ready';
 }
 
+function candidateAcceptedFindingCodes(candidate: SourceFileCandidate): string[] {
+  return (candidate.qaqc_status?.checks ?? [])
+    .filter((check) => (
+      check.finding_class !== 'hard_failure'
+      && (check.review_required || check.status === 'warning' || check.status === 'review_required')
+    ))
+    .map((check) => check.check_id);
+}
 
 function geometryPreviewLabel(candidate: SourceFileCandidate): string {
   const preview = candidate.geometry_preview;
@@ -391,6 +408,11 @@ export function SourceIntakeWorkbench() {
   const [newWellOperator, setNewWellOperator] = useState('');
   const [newWellField, setNewWellField] = useState('');
   const [newWellBlock, setNewWellBlock] = useState('');
+  const [correctedWellName, setCorrectedWellName] = useState('');
+  const [correctedWellUwi, setCorrectedWellUwi] = useState('');
+  const [correctedWellOperator, setCorrectedWellOperator] = useState('');
+  const [correctedWellField, setCorrectedWellField] = useState('');
+  const [correctedWellBlock, setCorrectedWellBlock] = useState('');
 
   const repositories = workbench?.repositories ?? [];
   const candidates = workbench?.candidates ?? [];
@@ -465,6 +487,10 @@ export function SourceIntakeWorkbench() {
     () => candidates.filter((candidate) => selectedCandidateIds.has(candidate.source_file_id)),
     [candidates, selectedCandidateIds],
   );
+  const selectedCanAccept = selectedCandidates.length > 0
+    && selectedCandidates.every((candidate) => candidate.available_human_actions.includes('accept'));
+  const selectedCanCorrect = selectedCandidates.length === 1
+    && selectedCandidates.every((candidate) => candidate.available_human_actions.includes('correct'));
   const selectedCanAssign = selectedCandidates.length > 0
     && selectedCandidates.every((candidate) => candidate.available_human_actions.includes('assign'));
   const selectedCanExclude = selectedCandidates.length > 0
@@ -618,6 +644,11 @@ export function SourceIntakeWorkbench() {
     setNewWellOperator('');
     setNewWellField('');
     setNewWellBlock('');
+    setCorrectedWellName('');
+    setCorrectedWellUwi('');
+    setCorrectedWellOperator('');
+    setCorrectedWellField('');
+    setCorrectedWellBlock('');
   };
 
   const handleApplyHumanAction = () => runAction('human-action', async () => {
@@ -626,6 +657,15 @@ export function SourceIntakeWorkbench() {
     }
     if (!humanAction) {
       throw new Error('Select a human action before applying.');
+    }
+    if (
+      (humanAction === 'accept_current' || humanAction === 'accept_with_warning')
+      && !selectedCanAccept
+    ) {
+      throw new Error('The backend does not allow acceptance for every selected candidate.');
+    }
+    if (humanAction === 'correct_metadata' && !selectedCanCorrect) {
+      throw new Error('Metadata correction requires exactly one selected candidate that permits correction.');
     }
     if (
       (humanAction === 'assign_existing' || humanAction === 'create_new')
@@ -645,11 +685,55 @@ export function SourceIntakeWorkbench() {
     if (humanAction === 'create_new' && !newWellName.trim()) {
       throw new Error('Enter the confirmed new well name.');
     }
+    if (humanAction === 'accept_with_warning' && !decisionReason.trim()) {
+      throw new Error('Enter a reason for accepting the current warning state.');
+    }
+    if (humanAction === 'correct_metadata' && ![
+      correctedWellName,
+      correctedWellUwi,
+      correctedWellOperator,
+      correctedWellField,
+      correctedWellBlock,
+    ].some((value) => value.trim())) {
+      throw new Error('Enter at least one corrected metadata value.');
+    }
     if (humanAction === 'exclude' && !decisionReason.trim()) {
       throw new Error('Enter a reason for exclusion.');
     }
 
     const decisions = selectedCandidates.map((candidate) => {
+      if (humanAction === 'accept_current') {
+        return {
+          occurrence_id: candidate.occurrence_id,
+          action: 'confirm_suggestion',
+          actor: 'user',
+          reason: decisionReason.trim() || 'Accepted current Source Intake metadata.',
+        };
+      }
+      if (humanAction === 'accept_with_warning') {
+        return {
+          occurrence_id: candidate.occurrence_id,
+          action: 'warning_accepted',
+          actor: 'user',
+          reason: decisionReason.trim(),
+          accepted_warning_codes: candidateAcceptedFindingCodes(candidate),
+        };
+      }
+      if (humanAction === 'correct_metadata') {
+        return {
+          occurrence_id: candidate.occurrence_id,
+          action: 'manual_correction',
+          actor: 'user',
+          reason: decisionReason.trim() || 'Corrected Source Intake metadata.',
+          resolved_values: {
+            ...(correctedWellName.trim() ? { well_name: correctedWellName.trim() } : {}),
+            ...(correctedWellUwi.trim() ? { uwi: correctedWellUwi.trim() } : {}),
+            ...(correctedWellOperator.trim() ? { operator: correctedWellOperator.trim() } : {}),
+            ...(correctedWellField.trim() ? { field: correctedWellField.trim() } : {}),
+            ...(correctedWellBlock.trim() ? { block: correctedWellBlock.trim() } : {}),
+          },
+        };
+      }
       if (humanAction === 'assign_existing') {
         return {
           occurrence_id: candidate.occurrence_id,
@@ -1021,32 +1105,73 @@ export function SourceIntakeWorkbench() {
               </div>
             </div>
 
-            <div className="wlv-si-button-row wlv-si-candidate-controls" aria-label="Selected candidate human action">
-              <label className="wlv-si-sift-sort-control">
-                <span>Selected Action</span>
-                <select
-                  value={humanAction}
-                  onChange={(event) => setHumanAction(event.currentTarget.value as HumanActionChoice)}
-                  disabled={selectedCandidateCount === 0 || Boolean(busyAction)}
-                >
-                  <option value="">Choose action</option>
-                  <option value="assign_existing" disabled={!selectedCanAssign}>
-                    Assign selected to existing well
-                  </option>
-                  <option value="create_new" disabled={!selectedCanAssign}>
-                    Create new well from selected
-                  </option>
-                  <option value="leave_unresolved" disabled={!selectedCanClearDecision}>
-                    Clear current decision / leave unresolved
-                  </option>
-                  <option value="exclude" disabled={!selectedCanExclude}>
-                    Exclude selected from intake
-                  </option>
-                </select>
-              </label>
+            <section className="wlv-si-candidate-action-panel" aria-label="Selected candidate human action">
+              <div className="wlv-si-candidate-action-panel__summary">
+                <span className="wlv-si-candidate-action-panel__eyebrow">Selected candidates</span>
+                <strong>{selectedCandidateCount}</strong>
+                <span>Resolve non-fatal findings, assign a well, or exclude from intake.</span>
+              </div>
+
+              <div className="wlv-si-candidate-action-panel__controls">
+                <label className="wlv-si-action-field wlv-si-action-field--wide">
+                  <span>Action</span>
+                  <select
+                    value={humanAction}
+                    onChange={(event) => setHumanAction(event.currentTarget.value as HumanActionChoice)}
+                    disabled={selectedCandidateCount === 0 || Boolean(busyAction)}
+                  >
+                    <option value="">Choose an action</option>
+                    <option value="accept_current" disabled={!selectedCanAccept}>
+                      Accept current metadata
+                    </option>
+                    <option value="accept_with_warning" disabled={!selectedCanAccept}>
+                      Accept current metadata with warning
+                    </option>
+                    <option value="correct_metadata" disabled={!selectedCanCorrect}>
+                      Correct metadata for selected candidate
+                    </option>
+                    <option value="assign_existing" disabled={!selectedCanAssign}>
+                      Assign selected to existing well
+                    </option>
+                    <option value="create_new" disabled={!selectedCanAssign}>
+                      Create new well from selected
+                    </option>
+                    <option value="leave_unresolved" disabled={!selectedCanClearDecision}>
+                      Clear current decision / leave unresolved
+                    </option>
+                    <option value="exclude" disabled={!selectedCanExclude}>
+                      Exclude selected from intake
+                    </option>
+                  </select>
+                </label>
+
+              {humanAction === 'correct_metadata' && (
+                <div className="wlv-si-action-fields-grid">
+                  <label className="wlv-si-action-field">
+                    <span>Well Name</span>
+                    <input value={correctedWellName} onChange={(event) => setCorrectedWellName(event.currentTarget.value)} />
+                  </label>
+                  <label className="wlv-si-action-field">
+                    <span>UWI / API</span>
+                    <input value={correctedWellUwi} onChange={(event) => setCorrectedWellUwi(event.currentTarget.value)} />
+                  </label>
+                  <label className="wlv-si-action-field">
+                    <span>Operator</span>
+                    <input value={correctedWellOperator} onChange={(event) => setCorrectedWellOperator(event.currentTarget.value)} />
+                  </label>
+                  <label className="wlv-si-action-field">
+                    <span>Field</span>
+                    <input value={correctedWellField} onChange={(event) => setCorrectedWellField(event.currentTarget.value)} />
+                  </label>
+                  <label className="wlv-si-action-field">
+                    <span>Block</span>
+                    <input value={correctedWellBlock} onChange={(event) => setCorrectedWellBlock(event.currentTarget.value)} />
+                  </label>
+                </div>
+              )}
 
               {humanAction === 'assign_existing' && (
-                <label className="wlv-si-sift-sort-control">
+                <label className="wlv-si-action-field">
                   <span>Existing Well</span>
                   <select
                     value={assignmentTargetId}
@@ -1064,23 +1189,23 @@ export function SourceIntakeWorkbench() {
 
               {humanAction === 'create_new' && (
                 <>
-                  <label className="wlv-si-sift-sort-control">
+                  <label className="wlv-si-action-field">
                     <span>New Well Name</span>
                     <input value={newWellName} onChange={(event) => setNewWellName(event.currentTarget.value)} />
                   </label>
-                  <label className="wlv-si-sift-sort-control">
+                  <label className="wlv-si-action-field">
                     <span>UWI / API</span>
                     <input value={newWellUwi} onChange={(event) => setNewWellUwi(event.currentTarget.value)} />
                   </label>
-                  <label className="wlv-si-sift-sort-control">
+                  <label className="wlv-si-action-field">
                     <span>Operator</span>
                     <input value={newWellOperator} onChange={(event) => setNewWellOperator(event.currentTarget.value)} />
                   </label>
-                  <label className="wlv-si-sift-sort-control">
+                  <label className="wlv-si-action-field">
                     <span>Field</span>
                     <input value={newWellField} onChange={(event) => setNewWellField(event.currentTarget.value)} />
                   </label>
-                  <label className="wlv-si-sift-sort-control">
+                  <label className="wlv-si-action-field">
                     <span>Block</span>
                     <input value={newWellBlock} onChange={(event) => setNewWellBlock(event.currentTarget.value)} />
                   </label>
@@ -1088,8 +1213,8 @@ export function SourceIntakeWorkbench() {
               )}
 
               {humanAction && (
-                <label className="wlv-si-sift-sort-control">
-                  <span>{humanAction === 'exclude' ? 'Reason (required)' : 'Reason / Note'}</span>
+                <label className="wlv-si-action-field wlv-si-action-field--reason">
+                  <span>{humanAction === 'exclude' || humanAction === 'accept_with_warning' ? 'Reason (required)' : 'Reason / Note'}</span>
                   <input
                     value={decisionReason}
                     onChange={(event) => setDecisionReason(event.currentTarget.value)}
@@ -1097,15 +1222,16 @@ export function SourceIntakeWorkbench() {
                 </label>
               )}
 
-              <button
-                type="button"
-                className="wlv-si-button wlv-si-button--primary"
-                onClick={handleApplyHumanAction}
-                disabled={Boolean(busyAction || selectedCandidateCount === 0 || !humanAction)}
-              >
-                Apply to Selected ({selectedCandidateCount})
-              </button>
-            </div>
+                <button
+                  type="button"
+                  className="wlv-si-button wlv-si-button--primary wlv-si-candidate-action-panel__apply"
+                  onClick={handleApplyHumanAction}
+                  disabled={Boolean(busyAction || selectedCandidateCount === 0 || !humanAction)}
+                >
+                  Apply to Selected ({selectedCandidateCount})
+                </button>
+              </div>
+            </section>
 
             <div className="wlv-si-table-wrap">
               <table className="wlv-si-table wlv-si-candidate-table" key={candidateTableRenderKey} data-candidate-count={visibleCandidates.length}>
