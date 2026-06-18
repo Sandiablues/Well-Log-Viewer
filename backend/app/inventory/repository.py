@@ -69,7 +69,14 @@ class ManagedWellInventoryRepository:
                 records.append(existing)
         if not replaced:
             records.append(record)
-        self._write_snapshot(ManagedInventorySnapshot(records=records, updated_at=utc_now_iso()))
+        self._write_snapshot(
+            snapshot.model_copy(
+                update={
+                    "records": records,
+                    "updated_at": utc_now_iso(),
+                }
+            )
+        )
         return action, record
 
     def write_snapshot(self, snapshot: ManagedInventorySnapshot) -> None:

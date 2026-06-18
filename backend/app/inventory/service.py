@@ -43,6 +43,7 @@ from .models import (
 )
 from .repository import ManagedWellInventoryRepository, ManagedWellNotFoundError
 from .curve_sample_service import CurveSampleService, CurveSampleServiceError
+from .identity_reconciliation import reconcile_managed_record_identity
 
 
 class ManagedWellInventoryService:
@@ -234,7 +235,16 @@ class ManagedWellInventoryService:
         This preserves the inventory service as the write boundary while keeping
         ingestion/import logic outside the API route layer.
         """
+        try:
+            existing_record = self.repository.get_record(record.managed_well_id)
+        except ManagedWellNotFoundError:
+            existing_record = None
+
         normalized_record = self._with_inventory_identity_contract(record)
+        normalized_record = reconcile_managed_record_identity(
+            normalized_record,
+            existing=existing_record,
+        )
         normalized_record.updated_at = utc_now_iso()
         return self.repository.upsert_record(normalized_record)
 
