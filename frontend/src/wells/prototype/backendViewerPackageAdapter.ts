@@ -58,13 +58,18 @@ export type BackendViewerPackageLoadResult = {
 
 export async function loadBackendViewerPackageWithFallback(
   managedWellId: string,
+  init?: RequestInit,
 ): Promise<BackendViewerPackageLoadResult> {
   try {
     const managedPackage = await fetchWlvJson<BackendViewerPackage>(
       `/api/wlv/inventory/wells/${encodeURIComponent(managedWellId)}/viewer-package`,
+      init,
     );
     return { source: 'managed_inventory', package: managedPackage };
   } catch (managedError) {
+    if (managedError instanceof DOMException && managedError.name === 'AbortError') {
+      throw managedError;
+    }
     const warning = managedError instanceof Error ? managedError.message : 'Managed viewer package unavailable';
     return { source: 'prototype_fallback', package: null, warning };
   }

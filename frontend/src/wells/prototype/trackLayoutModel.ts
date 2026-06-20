@@ -27,6 +27,7 @@ export type CurveDisplayPriority = 'back' | 'normal' | 'front';
 export interface CurveCatalogItem {
   curveId: string;
   curveUid?: string | null;
+  identityAliases?: string[];
   krCurveTypeId?: string | null;
   wellUid?: string | null;
   managedWellUid?: string | null;

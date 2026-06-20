@@ -79,21 +79,29 @@ class WdvWorkspaceService:
         summaries = [self._summary(record) for record in records if self._loaded_product_ids(record)]
         summaries.sort(key=lambda item: (item.well_name.lower(), item.managed_well_id))
         loaded_ids = [item.managed_well_id for item in summaries]
+        loaded_uids = [str(item.managed_well_uid) for item in summaries]
+        by_id = {item.managed_well_id: item for item in summaries}
+        by_uid = {str(item.managed_well_uid): item for item in summaries}
 
         with self._lock:
             stored = self._read_store()
-            previous_active = stored.get("active_managed_well_id")
-            if preferred_active in loaded_ids:
-                active = preferred_active
-            elif previous_active in loaded_ids:
-                active = previous_active
-            else:
-                active = loaded_ids[0] if loaded_ids else None
+            previous_active_uid = str(stored.get("active_managed_well_uid") or "") or None
+            previous_active_id = str(stored.get("active_managed_well_id") or "") or None
+
+            preferred_summary = by_uid.get(str(preferred_active or "")) or by_id.get(str(preferred_active or ""))
+            previous_summary = by_uid.get(str(previous_active_uid or "")) or by_id.get(str(previous_active_id or ""))
+            active_summary = preferred_summary or previous_summary or (summaries[0] if summaries else None)
+            active_id = active_summary.managed_well_id if active_summary else None
+            active_uid = active_summary.managed_well_uid if active_summary else None
 
             previous_loaded_ids = stored.get("loaded_managed_well_ids", [])
+            previous_loaded_uids = stored.get("loaded_managed_well_uids", [])
             changed = (
-                active != previous_active
+                active_id != previous_active_id
+                or str(active_uid or "") != str(previous_active_uid or "")
                 or loaded_ids != previous_loaded_ids
+                or loaded_uids != previous_loaded_uids
+                or stored.get("schema_version") != WDV_WORKSPACE_CONTRACT_VERSION
             )
             revision = int(stored.get("revision", 0) or 0) + (1 if changed else 0)
             updated_at = utc_now_iso() if changed else str(stored.get("updated_at") or utc_now_iso())
@@ -102,8 +110,10 @@ class WdvWorkspaceService:
                 "schema_version": WDV_WORKSPACE_CONTRACT_VERSION,
                 "workspace_id": "default",
                 "revision": revision,
-                "active_managed_well_id": active,
+                "active_managed_well_id": active_id,
+                "active_managed_well_uid": str(active_uid) if active_uid else None,
                 "loaded_managed_well_ids": loaded_ids,
+                "loaded_managed_well_uids": loaded_uids,
                 "updated_at": updated_at,
             }
             self._write_store(data)
@@ -111,7 +121,8 @@ class WdvWorkspaceService:
         return WdvWorkspaceStateResponse(
             workspace_id="default",
             revision=revision,
-            active_managed_well_id=active,
+            active_managed_well_id=active_id,
+            active_managed_well_uid=active_uid,
             loaded_wells=summaries,
             updated_at=updated_at,
         )
@@ -126,6 +137,10 @@ class WdvWorkspaceService:
         ]
 
     def _summary(self, record: ManagedWellRecord) -> WdvWorkspaceLoadedWellSummary:
+        if record.managed_well_uid is None:
+            raise ValueError(
+                f"Loaded WDV well is missing canonical managed_well_uid: {record.managed_well_id}"
+            )
         product_ids = self._loaded_product_ids(record)
         loaded_product_count, viewer_curve_count, displayable_curve_count = wdv_curve_counts(record)
         endpoint = (
@@ -166,7 +181,9 @@ class WdvWorkspaceService:
                 "workspace_id": "default",
                 "revision": 0,
                 "active_managed_well_id": None,
+                "active_managed_well_uid": None,
                 "loaded_managed_well_ids": [],
+                "loaded_managed_well_uids": [],
                 "updated_at": utc_now_iso(),
             }
         try:
@@ -177,7 +194,9 @@ class WdvWorkspaceService:
                 "workspace_id": "default",
                 "revision": 0,
                 "active_managed_well_id": None,
+                "active_managed_well_uid": None,
                 "loaded_managed_well_ids": [],
+                "loaded_managed_well_uids": [],
                 "updated_at": utc_now_iso(),
             }
         return raw if isinstance(raw, dict) else {}

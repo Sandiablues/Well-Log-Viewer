@@ -236,6 +236,17 @@ function loadedCurveFromBackend(curve: BackendViewerCurveLike, index: number): W
   const catalogItem: CurveCatalogItem = {
     curveId: uniqueCurveId,
     curveUid,
+    identityAliases: Array.from(new Set([
+      uniqueCurveId,
+      curveUid,
+      managedCurveUid,
+      productId,
+      managedProductUid,
+      backendCurveId,
+      curve.display_curve_id,
+      curve.curve_id,
+      curve.canonical_curve_id,
+    ].map((value) => String(value || '').trim()).filter(Boolean))),
     krCurveTypeId,
     wellUid,
     managedWellUid,

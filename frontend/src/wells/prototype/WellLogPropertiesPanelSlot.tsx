@@ -1,12 +1,12 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 import {
-  curveCatalog,
   fullDepthRange,
   realCurveSamplesByCurveId,
   wellHeader,
 } from './realLasTrackLayoutData';
 import type {
   CurveAssignment,
+  CurveCatalogItem,
   CurveTrack,
   DepthBasis,
   FillSide,
@@ -16,7 +16,6 @@ import type {
   WellLogTrack,
 } from './trackLayoutModel';
 import {
-  curveById,
   resolveTrackLattice,
 } from './trackLayoutModel';
 import type {
@@ -26,6 +25,10 @@ import type {
 import {
   resolvePrototypePropertiesPanelContract,
 } from './wellLogPropertiesPanelContract';
+import {
+  findCurveForAssignment,
+  normalizePropertiesSelection,
+} from './propertiesSelectionModel';
 
 const CURVE_TRACK_MIN_WIDTH = 120;
 const CURVE_TRACK_MAX_WIDTH = 420;
@@ -92,9 +95,11 @@ function PropertiesContractTable({
 
 function TrackDesignControls({
   track,
+  curveCatalogItems,
   updateTrack,
 }: {
   track: WellLogTrack;
+  curveCatalogItems: CurveCatalogItem[];
   updateTrack: (trackId: string, patch: Partial<WellLogTrack>) => void;
 }) {
   if (track.trackType === 'depth') {
@@ -124,7 +129,7 @@ function TrackDesignControls({
   }
 
   if (track.trackType === 'curve') {
-    const lattice = resolveTrackLattice(track, curveCatalog);
+    const lattice = resolveTrackLattice(track, curveCatalogItems);
     return (
       <div className="wlv-property-section wlv-properties-dark-section">
         <h3>Track Controls</h3>
@@ -192,13 +197,25 @@ function TrackDesignControls({
 function CurveDesignControls({
   track,
   assignment,
+  curveCatalogItems,
   updateCurveAssignment,
 }: {
   track: CurveTrack;
   assignment: CurveAssignment;
+  curveCatalogItems: CurveCatalogItem[];
   updateCurveAssignment: (trackId: string, assignmentId: string, patch: Partial<CurveAssignment>) => void;
 }) {
-  const curve = curveById(curveCatalog, assignment.curveId);
+  const curve = findCurveForAssignment(curveCatalogItems, assignment);
+  if (!curve) {
+    return (
+      <div className="wlv-property-section wlv-properties-dark-section">
+        <h3>Curve Controls</h3>
+        <div className="wlv-property-note">
+          The selected curve is no longer available in the active well catalog.
+        </div>
+      </div>
+    );
+  }
   const scaleType = assignment.scaleType ?? (curve.defaultLattice === 'logarithmic' ? 'log' : 'linear');
   const rangeMode = assignment.rangeMode ?? 'fixed';
   const lineVisible = assignment.lineVisible ?? true;
@@ -402,8 +419,10 @@ function CurveDesignControls({
                   {track.curves
                     .filter((candidate) => candidate.assignmentId !== assignment.assignmentId)
                     .map((candidate) => {
-                      const pairedCurve = curveById(curveCatalog, candidate.curveId);
-                      return <option key={candidate.assignmentId} value={candidate.assignmentId}>{pairedCurve.mnemonic}</option>;
+                      const pairedCurve = findCurveForAssignment(curveCatalogItems, candidate);
+                      return pairedCurve
+                        ? <option key={candidate.assignmentId} value={candidate.assignmentId}>{pairedCurve.mnemonic}</option>
+                        : null;
                     })}
                 </select>
               </label>
@@ -506,12 +525,14 @@ function CurveDesignControls({
 export function WellLogPropertiesPanelSlot({
   tracks,
   selection,
+  curveCatalogItems,
   updateTrack,
   updateCurveAssignment,
   legacyPanel: _legacyPanel,
 }: {
   tracks: WellLogTrack[];
   selection: SelectionRef;
+  curveCatalogItems: CurveCatalogItem[];
   updateTrack: (trackId: string, patch: Partial<WellLogTrack>) => void;
   updateCurveAssignment: (trackId: string, assignmentId: string, patch: Partial<CurveAssignment>) => void;
   legacyPanel?: ReactElement;
@@ -535,12 +556,17 @@ export function WellLogPropertiesPanelSlot({
     });
   };
 
-  const selectedTrack = tracks.find((track) => track.trackId === selection.trackId) ?? tracks[0];
+  const normalizedSelection = normalizePropertiesSelection(
+    tracks,
+    selection,
+    curveCatalogItems,
+  );
+  const selectedTrack = tracks.find((track) => track.trackId === normalizedSelection.trackId) ?? tracks[0];
 
   const contract = resolvePrototypePropertiesPanelContract({
     tracks,
-    selection,
-    curveCatalog,
+    selection: normalizedSelection,
+    curveCatalog: curveCatalogItems,
     wellHeader,
     curveSamplesByCurveId: realCurveSamplesByCurveId,
     fullDepthRange,
@@ -558,7 +584,11 @@ export function WellLogPropertiesPanelSlot({
   }, [contract.tabs.info.sections]);
 
 
-  const selectedCurve = selectedTrack?.trackType === 'curve' ? contract.selectedCurveAssignment : null;
+  const selectedCurve = selectedTrack?.trackType === 'curve' && normalizedSelection.kind === 'curve'
+    ? selectedTrack.curves.find(
+      (assignment) => assignment.assignmentId === normalizedSelection.assignmentId,
+    ) ?? null
+    : null;
 
   return (
     <aside className="wlv-right-panel wlv-properties-panel-v2">
@@ -605,10 +635,15 @@ export function WellLogPropertiesPanelSlot({
             <CurveDesignControls
               track={selectedTrack}
               assignment={selectedCurve}
+              curveCatalogItems={curveCatalogItems}
               updateCurveAssignment={updateCurveAssignment}
             />
           ) : selectedTrack ? (
-            <TrackDesignControls track={selectedTrack} updateTrack={updateTrack} />
+            <TrackDesignControls
+              track={selectedTrack}
+              curveCatalogItems={curveCatalogItems}
+              updateTrack={updateTrack}
+            />
           ) : null}
         </div>
       ) : (

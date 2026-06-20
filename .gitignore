@@ -30,3 +30,6 @@ backend/well_log_viewer_backend.egg-info/
 wlv_*_validation.log
 wlv_*.log
 backend/data/
+
+# WLV local launchd runtime
+.wlv_runtime/

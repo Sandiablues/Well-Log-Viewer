@@ -33,11 +33,17 @@ from .models import (
 )
 from .repository import ManagedInventoryStoreError, ManagedWellNotFoundError
 from .service import ManagedWellInventoryService
+from .managed_well_purge import (
+    ManagedWellPurgeRequest,
+    ManagedWellPurgeResponse,
+    ManagedWellPurgeService,
+)
 from .curve_sample_service import CurveSampleService, CurveSampleServiceError
 
 router = APIRouter(prefix="/api/wlv/inventory", tags=["wlv-inventory"])
 _service = ManagedWellInventoryService()
 _curve_sample_service = CurveSampleService(repository=_service.repository)
+_purge_service = ManagedWellPurgeService(repository=_service.repository)
 
 
 @router.get("/health", response_model=ManagedInventoryHealth, summary="Managed Well Inventory health")
@@ -291,3 +297,34 @@ def list_viewer_packages() -> list[ViewerPackageReference]:
         return _service.list_viewer_packages()
     except ManagedInventoryStoreError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+@router.post(
+    "/managed-wells/{well_reference}/purge-reset",
+    response_model=ManagedWellPurgeResponse,
+    summary="Atomically purge one managed well and reset its linked WSI candidates",
+)
+def purge_managed_well(
+    well_reference: str,
+    request: ManagedWellPurgeRequest,
+) -> ManagedWellPurgeResponse:
+    try:
+        return _purge_service.purge_and_reset(
+            well_reference=well_reference,
+            request=request,
+        )
+    except ManagedWellNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Managed well not found: {exc.args[0]}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+

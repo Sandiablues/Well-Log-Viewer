@@ -1,0 +1,391 @@
+.wlv-canonical-view {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  gap: 8px;
+  padding: 0 10px 10px;
+  box-sizing: border-box;
+}
+
+.wlv-canonical-view button,
+.wlv-canonical-view input,
+.wlv-canonical-view select {
+  font: inherit;
+}
+
+.wlv-canonical-view-header,
+.wlv-canonical-workbench-toolbar,
+.wlv-canonical-panel-header,
+.wlv-canonical-action-error,
+.wlv-canonical-sample-errors,
+.wlv-canonical-empty-state,
+.wlv-canonical-status {
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.wlv-canonical-view-header {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 10px;
+}
+
+.wlv-canonical-well-heading {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.wlv-canonical-well-heading strong {
+  font-size: 16px;
+}
+
+.wlv-canonical-well-heading span,
+.wlv-canonical-panel-header span,
+.wlv-canonical-properties-summary span,
+.wlv-canonical-toolbar-selection {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+}
+
+.wlv-canonical-template-controls,
+.wlv-canonical-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.wlv-canonical-template-controls input,
+.wlv-canonical-workbench-toolbar input,
+.wlv-canonical-workbench-toolbar select,
+.wlv-canonical-properties input,
+.wlv-canonical-panel-header input {
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: #131313;
+  color: inherit;
+  padding: 4px 7px;
+  box-sizing: border-box;
+}
+
+.wlv-canonical-view button {
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: transparent;
+  color: inherit;
+  padding: 4px 9px;
+}
+
+.wlv-canonical-view button:not(:disabled):hover {
+  border-color: currentColor;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.wlv-canonical-view button:disabled {
+  opacity: 0.42;
+}
+
+.wlv-canonical-workbench-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  padding: 7px 10px;
+}
+
+.wlv-canonical-toolbar-group label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wlv-canonical-toolbar-group select {
+  min-width: 150px;
+}
+
+.wlv-canonical-action-error,
+.wlv-canonical-sample-errors {
+  padding: 8px 10px;
+}
+
+.wlv-canonical-component-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr) minmax(250px, 300px);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  gap: 8px;
+}
+
+.wlv-canonical-inventory,
+.wlv-canonical-properties,
+.wlv-canonical-canvas-shell {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  background: #121212;
+}
+
+.wlv-canonical-inventory {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.wlv-canonical-properties,
+.wlv-canonical-canvas-shell {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.wlv-canonical-panel-header {
+  border-width: 0 0 1px;
+  display: flex;
+  min-height: 43px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+}
+
+.wlv-canonical-panel-header > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.wlv-canonical-panel-header input {
+  width: 118px;
+}
+
+.wlv-canonical-inventory-column-headings,
+.wlv-canonical-inventory-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 70px;
+  align-items: center;
+  gap: 8px;
+}
+
+.wlv-canonical-inventory-column-headings {
+  min-height: 27px;
+  padding: 0 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wlv-canonical-inventory-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.wlv-canonical-inventory-row {
+  width: 100%;
+  min-height: 46px;
+  border-width: 0 0 1px;
+  border-color: rgba(255, 255, 255, 0.12);
+  text-align: left;
+}
+
+.wlv-canonical-inventory-row.is-selected {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.wlv-canonical-inventory-curve {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.wlv-canonical-inventory-curve strong,
+.wlv-canonical-inventory-curve small,
+.wlv-canonical-inventory-unit {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-canonical-inventory-curve small {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.wlv-canonical-inventory-unit {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+}
+
+.wlv-canonical-state-pill {
+  justify-self: end;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  padding: 2px 6px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.wlv-canonical-state-pill.is-assigned {
+  border-color: currentColor;
+}
+
+.wlv-canonical-inventory-empty,
+.wlv-canonical-properties-empty,
+.wlv-canonical-canvas-empty {
+  display: grid;
+  place-content: center;
+  gap: 5px;
+  min-height: 120px;
+  padding: 18px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.wlv-canonical-canvas {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 67px,
+      rgba(255, 255, 255, 0.045) 68px
+    );
+}
+
+.wlv-canonical-track {
+  flex: 0 0 auto;
+  min-width: 80px;
+  border-right: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.wlv-canonical-track.is-selected {
+  box-shadow: inset 0 0 0 2px currentColor;
+}
+
+.wlv-canonical-track-header {
+  width: 100%;
+  min-height: 39px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-width: 0 0 1px !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+  text-align: left;
+}
+
+.wlv-canonical-track-header span {
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 11px;
+}
+
+.wlv-canonical-track-curve-tabs {
+  display: flex;
+  min-height: 31px;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.wlv-canonical-track-curve-tabs button {
+  min-height: 30px;
+  border-width: 0 1px 0 0;
+  border-color: rgba(255, 255, 255, 0.16);
+  white-space: nowrap;
+}
+
+.wlv-canonical-track-curve-tabs button.is-selected {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.wlv-canonical-curve-color {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 50%;
+}
+
+.wlv-canonical-empty-track {
+  width: 100%;
+  height: 680px;
+  display: grid;
+  place-content: center;
+  border-width: 0 !important;
+  color: rgba(255, 255, 255, 0.55) !important;
+  padding: 18px !important;
+}
+
+.wlv-canonical-depth-values {
+  height: 680px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.wlv-canonical-properties {
+  overflow-y: auto;
+}
+
+.wlv-canonical-properties-form,
+.wlv-canonical-properties-summary {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+
+.wlv-canonical-properties-summary {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+  gap: 2px;
+}
+
+.wlv-canonical-properties-form label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.wlv-canonical-properties-form input:not([type="checkbox"]) {
+  width: 100%;
+}
+
+.wlv-canonical-checkbox-label {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+.wlv-canonical-empty-state,
+.wlv-canonical-status {
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  min-height: 180px;
+  margin: 10px;
+  padding: 20px;
+  text-align: center;
+}
+
+@media (max-width: 1050px) {
+  .wlv-canonical-component-grid {
+    grid-template-columns: minmax(230px, 280px) minmax(0, 1fr);
+  }
+
+  .wlv-canonical-properties {
+    display: none;
+  }
+}

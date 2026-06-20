@@ -284,12 +284,12 @@ class BulkLoadWdvWellResult(BaseModel):
     loaded_product_ids: list[str] = Field(default_factory=list)
 
 
-WDV_WORKSPACE_CONTRACT_VERSION = "wdv_workspace_v1"
+WDV_WORKSPACE_CONTRACT_VERSION = "wdv_workspace_v2"
 
 
 class WdvWorkspaceLoadedWellSummary(BaseModel):
     managed_well_id: str
-    managed_well_uid: CanonicalUuid7 | None = None
+    managed_well_uid: CanonicalUuid7
     well_name: str
     loaded_product_ids: list[str] = Field(default_factory=list)
     loaded_product_count: int = 0
@@ -305,6 +305,7 @@ class WdvWorkspaceStateResponse(BaseModel):
     workspace_id: str = "default"
     revision: int = 0
     active_managed_well_id: str | None = None
+    active_managed_well_uid: CanonicalUuid7 | None = None
     loaded_wells: list[WdvWorkspaceLoadedWellSummary] = Field(default_factory=list)
     updated_at: str = Field(default_factory=utc_now_iso)
 

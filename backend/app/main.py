@@ -19,6 +19,12 @@ from .ingestion.api_ingestion import router as ingestion_router
 from .source_intake.router import router as source_intake_router
 from .wdv_templates.router import router as wdv_template_router
 from .wdv_session.router import router as wdv_session_router
+from .inventory.canonical_curve_sample_router import router as canonical_curve_sample_router
+from .wdv_session.canonical_router import router as canonical_wdv_session_router
+from .wdv_session.canonical_command_router import router as canonical_wdv_command_router
+from .wells.canonical_viewer_package_router import router as canonical_viewer_package_router
+from .wdv_workspace.router import router as canonical_wdv_workspace_router
+from .wdv_templates.canonical_apply_router import router as canonical_template_command_router
 from .knowledge.api_knowledge import router as knowledge_router
 from .knowledge.api_managed_knowledge import router as managed_knowledge_router
 from .knowledge.api_managed_knowledge import resolve_router as resolve_knowledge_router
@@ -57,5 +63,11 @@ app.include_router(wbv_router)
 app.include_router(ingestion_router)
 app.include_router(source_intake_router)
 app.include_router(wdv_session_router)
+app.include_router(canonical_wdv_session_router)
+app.include_router(canonical_wdv_command_router)
+app.include_router(canonical_curve_sample_router)
+app.include_router(canonical_viewer_package_router)
+app.include_router(canonical_wdv_workspace_router)
+app.include_router(canonical_template_command_router)
 app.include_router(wdv_template_router)
 app.include_router(wlv_router)
