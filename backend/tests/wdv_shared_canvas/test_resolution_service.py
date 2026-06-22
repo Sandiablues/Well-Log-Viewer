@@ -47,7 +47,7 @@ from app.wdv_shared_canvas.binding_repository import (
     WellCanvasBindingRepository,
     WellCanvasBindingRevisionConflict,
 )
-from app.wdv_shared_canvas.binding_service import CrossWellCurveError, CurveInventoryLookup
+from app.wdv_shared_canvas.binding_service import CrossWellCurveError, CurveInventoryLookup, WellDepthRange
 from app.wdv_shared_canvas.models import (
     ProfileStatus,
     SharedCanvasActivation,
@@ -63,6 +63,7 @@ from app.wdv_shared_canvas.resolution_service import (
     CanvasResolutionService,
     MissingActiveProfileError,
     MissingBindingError,
+    MissingWellDepthRangeError,
     StaleBindingError,
 )
 from app.wdv_shared_canvas.session_models import ResolvedWdvCanvasSession
@@ -208,15 +209,35 @@ class InMemoryWellCanvasBindingRepository(WellCanvasBindingRepository):
 # Inventory stub
 # ---------------------------------------------------------------------------
 
+_DEFAULT_DEPTH_RANGE = WellDepthRange(0.0, 5000.0, "ft")
+
+
 class StubInventory(CurveInventoryLookup):
-    def __init__(self, records: list[CurveInventoryRecord]) -> None:
+    """In-process inventory stub.
+
+    depth_ranges: per-well overrides.  Pass ``{well_uid: None}`` to simulate
+    a missing depth range for that well.  Any well not in the dict gets the
+    default valid range ``(0.0, 5000.0, "ft")``.
+    """
+
+    def __init__(
+        self,
+        records: list[CurveInventoryRecord],
+        depth_ranges: dict[str, WellDepthRange | None] | None = None,
+    ) -> None:
         self._by_uid = {r.managed_curve_uid: r for r in records}
+        self._depth_ranges: dict[str, WellDepthRange | None] = depth_ranges or {}
 
     def get_curve(self, managed_curve_uid: str) -> CurveInventoryRecord | None:
         return self._by_uid.get(managed_curve_uid)
 
     def list_curves_for_well(self, managed_well_uid: str) -> list[CurveInventoryRecord]:
         return [r for r in self._by_uid.values() if r.managed_well_uid == managed_well_uid]
+
+    def get_well_depth_range(self, managed_well_uid: str) -> WellDepthRange | None:
+        if managed_well_uid in self._depth_ranges:
+            return self._depth_ranges[managed_well_uid]
+        return _DEFAULT_DEPTH_RANGE
 
 
 # ---------------------------------------------------------------------------
@@ -935,3 +956,126 @@ def test_binding_summary_counts():
     assert summary.excluded == 1
     assert summary.user_unbound == 0
     assert summary.incompatible == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests 26–30 — depth-range amendment
+# ---------------------------------------------------------------------------
+
+def test_depth_range_present_in_resolved_session():
+    """Test 26 — valid depth range appears verbatim in the resolved session."""
+    svc, _, _, w, _, _ = _make_basic_scene()
+    session = svc.resolve(managed_well_uid=w, scope_type=_SCOPE_TYPE, scope_uid=_SCOPE_UID)
+
+    assert session.depth_min == 0.0
+    assert session.depth_max == 5000.0
+    assert session.depth_unit == "ft"
+
+
+def test_custom_depth_range_in_resolved_session():
+    """Test 27 — custom per-well depth range propagates correctly."""
+    well_uid = new_uuid7_str()
+    custom_range = WellDepthRange(100.5, 3200.0, "m")
+
+    p_uid = new_uuid7_str()
+    r_uid = new_uuid7_str()
+    prof = _profile(uid=p_uid)
+    rev = _revision(p_uid, rev_uid=r_uid)
+    act = _activation(p_uid, r_uid)
+    bind = _binding(well_uid, p_uid, r_uid)
+
+    profile_repo = InMemorySharedCanvasRepository()
+    binding_repo = InMemoryWellCanvasBindingRepository()
+    profile_repo.seed(prof, rev, act)
+    binding_repo.seed(well_uid, r_uid, bind)
+
+    inv = StubInventory([], depth_ranges={well_uid: custom_range})
+    svc = CanvasResolutionService(
+        profile_repository=profile_repo,
+        binding_repository=binding_repo,
+        inventory=inv,
+    )
+    session = svc.resolve(managed_well_uid=well_uid, scope_type=_SCOPE_TYPE, scope_uid=_SCOPE_UID)
+
+    assert session.depth_min == 100.5
+    assert session.depth_max == 3200.0
+    assert session.depth_unit == "m"
+
+
+def test_missing_depth_range_raises():
+    """Test 28 — inventory returning None raises MissingWellDepthRangeError."""
+    well_uid = new_uuid7_str()
+    p_uid = new_uuid7_str()
+    r_uid = new_uuid7_str()
+    prof = _profile(uid=p_uid)
+    rev = _revision(p_uid, rev_uid=r_uid)
+    act = _activation(p_uid, r_uid)
+    bind = _binding(well_uid, p_uid, r_uid)
+
+    profile_repo = InMemorySharedCanvasRepository()
+    binding_repo = InMemoryWellCanvasBindingRepository()
+    profile_repo.seed(prof, rev, act)
+    binding_repo.seed(well_uid, r_uid, bind)
+
+    inv = StubInventory([], depth_ranges={well_uid: None})
+    svc = CanvasResolutionService(
+        profile_repository=profile_repo,
+        binding_repository=binding_repo,
+        inventory=inv,
+    )
+    with pytest.raises(MissingWellDepthRangeError):
+        svc.resolve(managed_well_uid=well_uid, scope_type=_SCOPE_TYPE, scope_uid=_SCOPE_UID)
+
+
+def test_reversed_depth_range_raises():
+    """Test 29 — depth_max <= depth_min raises MissingWellDepthRangeError."""
+    well_uid = new_uuid7_str()
+    reversed_range = WellDepthRange(5000.0, 0.0, "ft")  # max < min
+
+    p_uid = new_uuid7_str()
+    r_uid = new_uuid7_str()
+    prof = _profile(uid=p_uid)
+    rev = _revision(p_uid, rev_uid=r_uid)
+    act = _activation(p_uid, r_uid)
+    bind = _binding(well_uid, p_uid, r_uid)
+
+    profile_repo = InMemorySharedCanvasRepository()
+    binding_repo = InMemoryWellCanvasBindingRepository()
+    profile_repo.seed(prof, rev, act)
+    binding_repo.seed(well_uid, r_uid, bind)
+
+    inv = StubInventory([], depth_ranges={well_uid: reversed_range})
+    svc = CanvasResolutionService(
+        profile_repository=profile_repo,
+        binding_repository=binding_repo,
+        inventory=inv,
+    )
+    with pytest.raises(MissingWellDepthRangeError):
+        svc.resolve(managed_well_uid=well_uid, scope_type=_SCOPE_TYPE, scope_uid=_SCOPE_UID)
+
+
+def test_blank_depth_unit_raises():
+    """Test 30 — blank depth_unit raises MissingWellDepthRangeError."""
+    well_uid = new_uuid7_str()
+    blank_unit_range = WellDepthRange(0.0, 5000.0, "   ")  # whitespace-only unit
+
+    p_uid = new_uuid7_str()
+    r_uid = new_uuid7_str()
+    prof = _profile(uid=p_uid)
+    rev = _revision(p_uid, rev_uid=r_uid)
+    act = _activation(p_uid, r_uid)
+    bind = _binding(well_uid, p_uid, r_uid)
+
+    profile_repo = InMemorySharedCanvasRepository()
+    binding_repo = InMemoryWellCanvasBindingRepository()
+    profile_repo.seed(prof, rev, act)
+    binding_repo.seed(well_uid, r_uid, bind)
+
+    inv = StubInventory([], depth_ranges={well_uid: blank_unit_range})
+    svc = CanvasResolutionService(
+        profile_repository=profile_repo,
+        binding_repository=binding_repo,
+        inventory=inv,
+    )
+    with pytest.raises(MissingWellDepthRangeError):
+        svc.resolve(managed_well_uid=well_uid, scope_type=_SCOPE_TYPE, scope_uid=_SCOPE_UID)

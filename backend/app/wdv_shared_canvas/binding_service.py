@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from app.identity import new_uuid7_str
 
@@ -35,8 +35,20 @@ from .models import SharedCanvasSlot
 # Inventory abstraction — injected; never coupled to JSON files directly
 # ---------------------------------------------------------------------------
 
+class WellDepthRange(NamedTuple):
+    """Depth extent for a single well: (depth_min, depth_max, depth_unit).
+
+    Both bounds are measured in *depth_unit*.  depth_max must be strictly
+    greater than depth_min; both must be finite.  depth_unit must be nonblank.
+    """
+
+    depth_min: float
+    depth_max: float
+    depth_unit: str
+
+
 class CurveInventoryLookup(ABC):
-    """Narrow inventory interface consumed by the binding service.
+    """Narrow inventory interface consumed by the binding and resolution services.
 
     Concrete implementations may read from the managed inventory, a cache,
     or a test stub.  The service never accesses inventory storage directly.
@@ -51,6 +63,12 @@ class CurveInventoryLookup(ABC):
         self, managed_well_uid: str
     ) -> list[CurveInventoryRecord]:
         """Return all available curves for a well."""
+
+    @abstractmethod
+    def get_well_depth_range(
+        self, managed_well_uid: str
+    ) -> WellDepthRange | None:
+        """Return the depth range for a well, or None if unavailable."""
 
 
 # ---------------------------------------------------------------------------

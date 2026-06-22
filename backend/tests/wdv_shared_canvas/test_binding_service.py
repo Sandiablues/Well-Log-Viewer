@@ -140,6 +140,9 @@ class StubInventory(CurveInventoryLookup):
     ) -> list[CurveInventoryRecord]:
         return self._by_well.get(managed_well_uid, [])
 
+    def get_well_depth_range(self, managed_well_uid: str):  # type: ignore[override]
+        return None  # never called by WellBindingService; required by ABC
+
 
 # ---------------------------------------------------------------------------
 # Fixtures

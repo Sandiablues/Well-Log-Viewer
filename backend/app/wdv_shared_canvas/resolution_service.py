@@ -33,7 +33,7 @@ from .binding_repository import (
     LocalJsonWellCanvasBindingRepository,
     WellCanvasBindingRepository,
 )
-from .binding_service import CrossWellCurveError, CurveInventoryLookup
+from .binding_service import CrossWellCurveError, CurveInventoryLookup, WellDepthRange
 from .models import ProfileStatus, SharedCanvasSlot
 from .repository import LocalJsonSharedCanvasRepository, SharedCanvasProfileRepository
 from .session_models import (
@@ -68,12 +68,21 @@ class ArchivedProfileResolutionError(ValueError):
     """The activated profile is archived; archived profiles cannot be resolved."""
 
 
+class MissingWellDepthRangeError(ValueError):
+    """Raised when a valid depth range cannot be obtained for the requested well.
+
+    This includes: inventory not available, inventory returned None, non-finite
+    bounds, depth_max <= depth_min, or blank depth_unit.
+    """
+
+
 __all__ = [
     "CanvasResolutionService",
     "StaleBindingError",
     "MissingBindingError",
     "MissingActiveProfileError",
     "ArchivedProfileResolutionError",
+    "MissingWellDepthRangeError",
     "CrossWellCurveError",
 ]
 
@@ -173,7 +182,10 @@ class CanvasResolutionService:
                 f"active_revision={activation.profile_revision_uid!r})"
             )
 
-        # ── Step 6: resolve tracks in profile order ─────────────────────────
+        # ── Step 6: depth range ─────────────────────────────────────────────
+        depth_min, depth_max, depth_unit = self._resolve_depth_range(managed_well_uid)
+
+        # ── Step 7: resolve tracks in profile order ─────────────────────────
         slot_binding_map: dict[str, WellCanvasSlotBinding] = {
             sb.slot_uid: sb for sb in binding.slot_bindings
         }
@@ -222,9 +234,43 @@ class CanvasResolutionService:
             binding_summary=self._build_summary(all_statuses),
             warnings=tuple(session_warnings),
             updated_at=now,
+            depth_min=depth_min,
+            depth_max=depth_max,
+            depth_unit=depth_unit,
         )
 
     # ---------------------------------------------------------------- helpers
+
+    def _resolve_depth_range(self, managed_well_uid: str) -> tuple[float, float, str]:
+        """Fetch and validate depth range from inventory.
+
+        Raises MissingWellDepthRangeError if the range is absent or invalid.
+        """
+        if self._inventory is None:
+            raise MissingWellDepthRangeError(
+                f"No inventory available to supply depth range for well {managed_well_uid!r}"
+            )
+        depth_range: WellDepthRange | None = self._inventory.get_well_depth_range(managed_well_uid)
+        if depth_range is None:
+            raise MissingWellDepthRangeError(
+                f"Inventory returned no depth range for well {managed_well_uid!r}"
+            )
+        depth_min, depth_max, depth_unit = depth_range
+        if not math.isfinite(depth_min) or not math.isfinite(depth_max):
+            raise MissingWellDepthRangeError(
+                f"Depth range for well {managed_well_uid!r} contains non-finite bounds: "
+                f"({depth_min}, {depth_max})"
+            )
+        if depth_max <= depth_min:
+            raise MissingWellDepthRangeError(
+                f"depth_max ({depth_max}) must be strictly greater than "
+                f"depth_min ({depth_min}) for well {managed_well_uid!r}"
+            )
+        if not depth_unit or not depth_unit.strip():
+            raise MissingWellDepthRangeError(
+                f"depth_unit must be nonblank for well {managed_well_uid!r}"
+            )
+        return depth_min, depth_max, depth_unit
 
     def _resolve_slot(
         self,

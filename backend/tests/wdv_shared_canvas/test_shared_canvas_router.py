@@ -43,7 +43,7 @@ from app.wdv_shared_canvas.binding_repository import (
     WellCanvasBindingRepository,
     WellCanvasBindingRevisionConflict,
 )
-from app.wdv_shared_canvas.binding_service import CrossWellCurveError, CurveInventoryLookup
+from app.wdv_shared_canvas.binding_service import CrossWellCurveError, CurveInventoryLookup, WellDepthRange
 from app.wdv_shared_canvas.models import (
     SharedCanvasActivation,
     SharedCanvasAuditRecord,
@@ -53,7 +53,7 @@ from app.wdv_shared_canvas.models import (
     SharedCanvasTrack,
 )
 from app.wdv_shared_canvas.repository import SharedCanvasProfileRepository
-from app.wdv_shared_canvas.resolution_service import CanvasResolutionService
+from app.wdv_shared_canvas.resolution_service import CanvasResolutionService, MissingWellDepthRangeError
 from app.wdv_shared_canvas.service import SharedCanvasProfileService
 from app.wdv_shared_canvas.binding_service import WellBindingService
 
@@ -153,15 +153,28 @@ class InMemoryWellCanvasBindingRepository(WellCanvasBindingRepository):
         self._bindings[binding.binding_uid] = binding
 
 
+_DEFAULT_DEPTH_RANGE = WellDepthRange(0.0, 5000.0, "ft")
+
+
 class StubInventory(CurveInventoryLookup):
-    def __init__(self, records: list[CurveInventoryRecord]) -> None:
+    def __init__(
+        self,
+        records: list[CurveInventoryRecord],
+        depth_ranges: dict[str, WellDepthRange | None] | None = None,
+    ) -> None:
         self._by_uid = {r.managed_curve_uid: r for r in records}
+        self._depth_ranges: dict[str, WellDepthRange | None] = depth_ranges or {}
 
     def get_curve(self, managed_curve_uid):
         return self._by_uid.get(managed_curve_uid)
 
     def list_curves_for_well(self, managed_well_uid):
         return [r for r in self._by_uid.values() if r.managed_well_uid == managed_well_uid]
+
+    def get_well_depth_range(self, managed_well_uid) -> WellDepthRange | None:
+        if managed_well_uid in self._depth_ranges:
+            return self._depth_ranges[managed_well_uid]
+        return _DEFAULT_DEPTH_RANGE
 
 
 # ---------------------------------------------------------------------------
@@ -830,3 +843,120 @@ def test_no_writes_to_existing_wdv_session_stores(client, tmp_path):
     # files outside tmp_path, but the in-memory repos' write_count captures all changes)
     assert isinstance(profile_repo, InMemorySharedCanvasRepository)
     assert isinstance(binding_repo, InMemoryWellCanvasBindingRepository)
+
+
+# ---------------------------------------------------------------------------
+# Test 16 — missing depth range returns 404
+# ---------------------------------------------------------------------------
+
+def _setup_resolved_session_scene(well_uid: str, inventory_records=None):
+    """Helper: create profile, revision, activation, and binding for one well."""
+    profile_repo, binding_repo = _install_services(inventory_records=inventory_records)
+    svc_profile = shared_canvas_router._profile_svc
+    svc_binding = shared_canvas_router._binding_svc
+
+    slot = _make_slot()
+    track = _make_track(slots=(slot,))
+    _, revision = svc_profile.create_profile(
+        profile_name="Depth Range Test", tracks=(track,), created_by="test"
+    )
+    svc_profile.activate_revision(
+        revision.profile_revision_uid, scope_type=_SCOPE_TYPE, scope_uid=_SCOPE_UID
+    )
+    svc_binding.create_binding(
+        managed_well_uid=well_uid,
+        profile_uid=revision.profile_uid,
+        profile_revision_uid=revision.profile_revision_uid,
+        profile_revision_number=0,
+    )
+    return profile_repo, binding_repo
+
+
+def test_missing_depth_range_returns_404(client):
+    """Test 16 — MissingWellDepthRangeError maps to HTTP 404."""
+    well_uid = new_uuid7_str()
+
+    profile_repo, binding_repo = _install_services()
+    svc_profile = shared_canvas_router._profile_svc
+    svc_binding = shared_canvas_router._binding_svc
+
+    slot = _make_slot()
+    track = _make_track(slots=(slot,))
+    _, revision = svc_profile.create_profile(
+        profile_name="Depth Range Missing", tracks=(track,), created_by="test"
+    )
+    svc_profile.activate_revision(
+        revision.profile_revision_uid, scope_type=_SCOPE_TYPE, scope_uid=_SCOPE_UID
+    )
+    svc_binding.create_binding(
+        managed_well_uid=well_uid,
+        profile_uid=revision.profile_uid,
+        profile_revision_uid=revision.profile_revision_uid,
+        profile_revision_number=0,
+    )
+
+    # Replace the resolution service with one that has a stub returning None for this well
+    inv_no_range = StubInventory([], depth_ranges={well_uid: None})
+    shared_canvas_router._resolution_svc = CanvasResolutionService(
+        profile_repository=profile_repo,
+        binding_repository=binding_repo,
+        inventory=inv_no_range,
+    )
+
+    resp = client.get(
+        f"/api/wlv/v2/wdv/shared-canvas/workspaces/{well_uid}",
+        params={"scope_type": _SCOPE_TYPE, "scope_uid": _SCOPE_UID},
+    )
+    assert resp.status_code == 404
+
+
+def test_depth_range_fields_in_resolved_session_response(client):
+    """Test 17 — depth_min, depth_max, depth_unit appear in the JSON response."""
+    slot_uid = new_uuid7_str()
+    curve_uid = new_uuid7_str()
+    well_uid = new_uuid7_str()
+
+    profile_repo, binding_repo = _install_services(
+        inventory_records=[
+            CurveInventoryRecord(managed_curve_uid=curve_uid, managed_well_uid=well_uid)
+        ]
+    )
+    svc_profile = shared_canvas_router._profile_svc
+    svc_binding = shared_canvas_router._binding_svc
+
+    slot = _make_slot(uid=slot_uid)
+    track = _make_track(slots=(slot,))
+    _, revision = svc_profile.create_profile(
+        profile_name="Depth Fields Test", tracks=(track,), created_by="test"
+    )
+    svc_profile.activate_revision(
+        revision.profile_revision_uid, scope_type=_SCOPE_TYPE, scope_uid=_SCOPE_UID
+    )
+    binding = svc_binding.create_binding(
+        managed_well_uid=well_uid,
+        profile_uid=revision.profile_uid,
+        profile_revision_uid=revision.profile_revision_uid,
+        profile_revision_number=0,
+    )
+    svc_binding.update_slot_binding(
+        binding_uid=binding.binding_uid,
+        expected_revision=0,
+        slot_uid=slot_uid,
+        binding_status=BindingStatus.BOUND,
+        managed_curve_uid=curve_uid,
+        updated_by="test",
+    )
+
+    resp = client.get(
+        f"/api/wlv/v2/wdv/shared-canvas/workspaces/{well_uid}",
+        params={"scope_type": _SCOPE_TYPE, "scope_uid": _SCOPE_UID},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "depth_min" in body
+    assert "depth_max" in body
+    assert "depth_unit" in body
+    # StubInventory defaults to (0.0, 5000.0, "ft")
+    assert body["depth_min"] == 0.0
+    assert body["depth_max"] == 5000.0
+    assert body["depth_unit"] == "ft"

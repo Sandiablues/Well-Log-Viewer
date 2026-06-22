@@ -128,3 +128,8 @@ class ResolvedWdvCanvasSession(BaseModel):
     binding_summary: BindingSummary
     warnings: tuple[str, ...] = ()
     updated_at: str
+
+    # Depth extent — sourced from the inventory at resolve time; never persisted
+    depth_min: float
+    depth_max: float
+    depth_unit: str
