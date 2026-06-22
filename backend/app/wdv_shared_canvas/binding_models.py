@@ -150,6 +150,10 @@ class CurveInventoryRecord(BaseModel):
     curve_family: str | None = None
     kr_curve_type_id: str | None = None
     unit_family: str | None = None
+    unit: str | None = None               # specific display unit (e.g. "GAPI")
+    display_name: str | None = None       # human-readable label for the curve
+    scale_min: float | None = None        # numeric lower scale bound for plotting
+    scale_max: float | None = None        # numeric upper scale bound for plotting
     normalized_mnemonic: str | None = None
     observed_mnemonic: str | None = None
     run: str | None = None
