@@ -2,11 +2,218 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import re
+import threading
 from typing import Any
 
 from app.inventory.models import ManagedProductGroupItem
+from app.wdv_display.kr_family_policy_resolver import ManagedKrFamilyDisplayPolicyResolver
+
+# ---------------------------------------------------------------------------
+# Display-policy cache identity constants
+# ---------------------------------------------------------------------------
+
+# Schema version of the display-policy fields written into wdv_load_session_contract.
+# Increment when the structure of those fields changes (new required keys, etc.).
+WDV_DISPLAY_POLICY_CONTRACT_VERSION: str = "wdv_display_policy_contract_v1"
+
+# Algorithm version of the display-policy resolver (policy_service + kr_family_policy_resolver).
+# Bump when resolver logic changes independently of KR content — i.e. when a new
+# block modifies resolution paths, fallback order, or guard conditions in a way
+# that changes resolved output for existing KR records.
+WDV_DISPLAY_POLICY_RESOLVER_VERSION: str = "wdv_display_policy_resolver_v1"
+
+# Unit-normalization contract version.  Included in the revision hash so that
+# future unit-handling changes affecting display policy automatically invalidate
+# cached contracts.  Increment when unit normalization rules change.
+WDV_DISPLAY_POLICY_UNIT_CONTRACT_VERSION: str = "wdv_display_units_v1"
+
+
+# ---------------------------------------------------------------------------
+# Display-policy revision — content-based, deterministic
+# ---------------------------------------------------------------------------
+
+_revision_cache_lock: threading.RLock = threading.RLock()
+# (path_str, mtime_ns, file_size_bytes) → sha256_hex
+# mtime and size are used ONLY as fast-path cache invalidation hints.
+# They do not enter the revision hash itself.
+_revision_cache: dict[tuple[str, int, int], str] = {}
+
+
+def _stable_float(v: Any) -> "str | None":
+    """Canonical string for a numeric policy field.
+
+    Uses :.15g — up to 15 significant digits, no trailing zeros.
+    Deterministic across Python versions and platforms for all finite
+    IEEE 754 double-precision values.  Returns None for absent, non-numeric,
+    or non-finite inputs.
+    """
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(f):
+        return None
+    return f"{f:.15g}"
+
+
+def _display_policy_canonical_payload(records: list) -> dict:
+    """Build the canonical policy payload dict from a list of managed records.
+
+    Filters to approved, runtime-eligible records that influence display-policy
+    resolution.  Excludes volatile metadata (timestamps, audit history, notes,
+    evidence refs, actor fields) that does not affect resolution output.
+
+    Record types included:
+      template_scale_default — family-level governed scale defaults
+      display_rule           — exact curve-level rendering rules
+      alias                  — mnemonic → canonical curve ID mappings
+      curve_definition       — canonical curve ID → family/subgroup mappings
+    """
+    from app.knowledge.governance import GovernanceStatus
+
+    template_scale_defaults: list[dict] = []
+    display_rules: list[dict] = []
+    aliases: list[dict] = []
+    curve_definitions: list[dict] = []
+
+    for record in records:
+        if getattr(record, "status", None) is not GovernanceStatus.APPROVED:
+            continue
+        if getattr(record, "runtime_eligible", True) is False:
+            continue
+
+        rt = getattr(record, "record_type", None)
+        record_id = str(getattr(record, "record_id", "") or "")
+
+        if rt == "template_scale_default":
+            # GenericManagedRecord: schema-driven fields live in extra_fields,
+            # accessed via __getattr__.
+            template_scale_defaults.append({
+                "record_id":         record_id,
+                "curve_family":      str(getattr(record, "curve_family", "") or ""),
+                "scale_type":        str(getattr(record, "scale_type", "") or ""),
+                "scale_min":         _stable_float(getattr(record, "scale_min", None)),
+                "scale_max":         _stable_float(getattr(record, "scale_max", None)),
+                "display_direction": str(getattr(record, "display_direction", "") or ""),
+            })
+
+        elif rt == "display_rule":
+            # DisplayRuleRecord uses display_min/display_max and reverse_scale (bool),
+            # not scale_min/scale_max or display_direction.
+            display_rules.append({
+                "record_id":          record_id,
+                "canonical_curve_id": str(getattr(record, "canonical_curve_id", "") or ""),
+                "scale_type":         str(getattr(record, "scale_type", "") or ""),
+                "display_min":        _stable_float(getattr(record, "display_min", None)),
+                "display_max":        _stable_float(getattr(record, "display_max", None)),
+                "reverse_scale":      bool(getattr(record, "reverse_scale", False)),
+            })
+
+        elif rt == "alias":
+            # AliasRecord: alias → canonical_curve_id mapping used for mnemonic lookup.
+            # context_hint excluded — resolver uses normalized alias only, not context.
+            aliases.append({
+                "record_id":          record_id,
+                "alias":              str(getattr(record, "alias", "") or ""),
+                "canonical_curve_id": str(getattr(record, "canonical_curve_id", "") or ""),
+            })
+
+        elif rt == "curve_definition":
+            # CurveDefinitionRecord: canonical ID → family/subgroup used to resolve
+            # curve family from KR curve type ID or alias lookup.
+            curve_definitions.append({
+                "record_id":          record_id,
+                "canonical_curve_id": str(getattr(record, "canonical_curve_id", "") or ""),
+                "family":             str(getattr(record, "family", "") or ""),
+                "product_subgroup":   str(getattr(record, "product_subgroup", "") or ""),
+                "default_unit":       str(getattr(record, "default_unit", "") or ""),
+            })
+
+    # Sort each section by record_id for stable ordering independent of KR file order.
+    for lst in (template_scale_defaults, display_rules, aliases, curve_definitions):
+        lst.sort(key=lambda r: r["record_id"])
+
+    return {
+        "display_policy_resolver_version":      WDV_DISPLAY_POLICY_RESOLVER_VERSION,
+        "display_policy_unit_contract_version": WDV_DISPLAY_POLICY_UNIT_CONTRACT_VERSION,
+        "template_scale_defaults":              template_scale_defaults,
+        "display_rules":                        display_rules,
+        "aliases":                              aliases,
+        "curve_definitions":                    curve_definitions,
+    }
+
+
+def compute_display_policy_revision(
+    storage: "ManagedStorage | None" = None,
+) -> str:
+    """Return the content-based display-policy revision for the current KR state.
+
+    The revision is a SHA-256 of the canonical governed-record payload:
+    approved, runtime-eligible template_scale_default, display_rule, alias,
+    and curve_definition records, plus the resolver and unit contract versions.
+
+    File mtime and size are used only to determine whether the process-local
+    cache needs recomputation — they do not enter the revision hash.
+
+    Contract:
+    - Deterministic: same governed content → same revision, regardless of
+      file timestamps, deployment instance, or process lifetime.
+    - Stable: second call with unchanged KR returns the cached revision
+      without re-reading the file.
+    - Content-sensitive: any change to a policy-semantic field in an approved,
+      runtime-eligible record changes the revision.
+    - Timestamp-insensitive: timestamp-only changes (file mtime, updated_at,
+      approved_at, etc.) with identical governed content do not change the revision.
+    - Bump-sensitive: incrementing WDV_DISPLAY_POLICY_RESOLVER_VERSION or
+      WDV_DISPLAY_POLICY_UNIT_CONTRACT_VERSION changes the revision for all KR states.
+    """
+    from pathlib import Path
+    from app.knowledge.managed_storage import ManagedStorage as _ManagedStorage
+
+    storage = storage or _ManagedStorage()
+    path = Path(storage.path)
+
+    try:
+        stat = path.stat()
+        cache_key: tuple[str, int, int] = (str(path), stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        # KR file absent (first run, test isolation, missing data directory).
+        cache_key = (str(path), 0, 0)
+
+    with _revision_cache_lock:
+        cached = _revision_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    # Slow path: load records and compute content-based hash.
+    records, _ = storage.load()
+    payload = _display_policy_canonical_payload(records)
+    canonical_json = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
+    revision = hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+    with _revision_cache_lock:
+        # Replace the entire cache: only one active KR path per process in practice.
+        _revision_cache.clear()
+        _revision_cache[cache_key] = revision
+
+    return revision
+
+
+def _clear_display_policy_revision_cache_for_tests() -> None:
+    """Clear the in-process revision cache.
+
+    For test isolation only.  Mirrors ManagedKrFamilyDisplayPolicyResolver.clear_cache_for_tests().
+    """
+    with _revision_cache_lock:
+        _revision_cache.clear()
 
 
 class WdvCurveDisplayPolicyService:
@@ -69,6 +276,19 @@ class WdvCurveDisplayPolicyService:
             )
             return enriched
 
+        try:
+            managed_kr_policy = ManagedKrFamilyDisplayPolicyResolver.resolve(item)
+        except (OSError, ValueError, TypeError):
+            managed_kr_policy = None
+            warnings.append("managed_knowledge_policy_unavailable")
+
+        if managed_kr_policy is not None:
+            managed_kr_policy["warnings"] = [
+                *warnings,
+                *list(managed_kr_policy.get("warnings") or []),
+            ]
+            return finalize(managed_kr_policy)
+
         if "resist" in key or "ohmm" in key or "ohm" in key:
             if has_stats and observed_min is not None and observed_min <= 0:
                 warnings.append("non_positive_values_for_log_scale")
@@ -77,7 +297,7 @@ class WdvCurveDisplayPolicyService:
                 "min": 0.2,
                 "max": 2000.0,
                 "direction": "normal",
-                "source": "template_default",
+                "source": "internal_fallback",
                 "warnings": warnings,
             })
 
@@ -87,7 +307,7 @@ class WdvCurveDisplayPolicyService:
                 "min": 0.0,
                 "max": 200.0,
                 "direction": "normal",
-                "source": "template_default",
+                "source": "internal_fallback",
                 "warnings": warnings,
             })
 
@@ -125,7 +345,7 @@ class WdvCurveDisplayPolicyService:
                 "min": 1.95,
                 "max": 2.95,
                 "direction": "normal",
-                "source": "template_default",
+                "source": "internal_fallback",
                 "warnings": warnings,
             })
 
@@ -168,7 +388,7 @@ class WdvCurveDisplayPolicyService:
                 "min": 0.45,
                 "max": -0.15,
                 "direction": "reversed",
-                "source": "template_default",
+                "source": "internal_fallback",
                 "warnings": warnings,
             })
 
@@ -178,7 +398,7 @@ class WdvCurveDisplayPolicyService:
                 "min": 140.0,
                 "max": 40.0,
                 "direction": "reversed",
-                "source": "template_default",
+                "source": "internal_fallback",
                 "warnings": warnings,
             })
 
@@ -188,7 +408,7 @@ class WdvCurveDisplayPolicyService:
                 "min": 6.0,
                 "max": 16.0,
                 "direction": "normal",
-                "source": "template_default",
+                "source": "internal_fallback",
                 "warnings": warnings,
             })
 
@@ -198,7 +418,7 @@ class WdvCurveDisplayPolicyService:
                 "min": 0.0,
                 "max": 10000.0,
                 "direction": "normal",
-                "source": "template_default",
+                "source": "internal_fallback",
                 "warnings": warnings,
             })
 
@@ -208,7 +428,7 @@ class WdvCurveDisplayPolicyService:
                 "min": 0.0,
                 "max": 500.0,
                 "direction": "normal",
-                "source": "template_default",
+                "source": "internal_fallback",
                 "warnings": warnings,
             })
 
@@ -230,7 +450,7 @@ class WdvCurveDisplayPolicyService:
             "min": 0.0,
             "max": 150.0,
             "direction": "normal",
-            "source": "template_default",
+            "source": "internal_fallback",
             "warnings": warnings,
         })
 
@@ -414,7 +634,12 @@ class WdvCurveDisplayPolicyService:
         if (
             ratio is not None
             and ratio < 0.08
-            and scale.get("source") == "template_default"
+            and scale.get("source") == "managed_knowledge_curve_rule"
+            # Log-scale governed ranges (e.g. resistivity 0.2–2000) must never be
+            # replaced by observed statistics.  The linear visual_span_ratio is
+            # semantically invalid for log data, and any override risks producing a
+            # non-positive scale_min that breaks logarithmic rendering entirely.
+            and scale.get("type") != "log"
         ):
             warnings = list(scale.get("warnings") or [])
             if "low_visual_variation_on_standard_scale" not in warnings:

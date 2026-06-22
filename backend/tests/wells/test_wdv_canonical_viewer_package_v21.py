@@ -83,7 +83,8 @@ def test_viewer_package_uses_only_canonical_curve_identity(tmp_path: Path) -> No
     assert curve.display_policy.curve_class == "gamma"
     assert curve.display_policy.lattice == "linear"
     assert curve.display_policy.display_min == 0.0
-    assert curve.display_policy.display_max == 200.0
+    assert curve.display_policy.display_max == 150.0
+    assert curve.display_policy.source == "managed_knowledge_family_default"
     assert package.session.session_uid == service.generate(well_uid).session.session_uid
 
     payload = package.model_dump()

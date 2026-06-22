@@ -7,6 +7,10 @@ import pytest
 from app.inventory.models import ManagedProductGroupItem, ManagedWellRecord
 from app.inventory.service import ManagedWellInventoryService
 from app.wbv.models import WbvSetActiveTrajectoryRequest
+from app.wdv_display.policy_service import (
+    WDV_DISPLAY_POLICY_CONTRACT_VERSION,
+    compute_display_policy_revision,
+)
 
 
 def _uuid7(value: str) -> str:
@@ -91,6 +95,11 @@ def test_wdv_identity_contract_accepts_complete_canonical_session() -> None:
                 "revision": "sample-revision-1",
             },
         }],
+        # C1: display-policy cache identity stamps.  A contract is only reusable
+        # when it carries both the current schema version and the current semantic
+        # revision derived from the approved governed policy records.
+        "display_policy_contract_version": WDV_DISPLAY_POLICY_CONTRACT_VERSION,
+        "display_policy_revision": compute_display_policy_revision(),
     }
     assert ManagedWellInventoryService._wdv_session_identity_contract_is_current(current, record, [item])
 

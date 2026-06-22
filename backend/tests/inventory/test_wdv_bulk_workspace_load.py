@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from app.identity import new_uuid7_str
 from app.inventory.models import (
     BulkLoadWdvWellSelection,
     ManagedProductGroup,
@@ -18,6 +19,8 @@ from app.inventory.service import ManagedWellInventoryService
 def _record(well_id: str, products: list[str]) -> ManagedWellRecord:
     return ManagedWellRecord(
         managed_well_id=well_id,
+        managed_well_uid=new_uuid7_str(),
+        managed_wellbore_uid=new_uuid7_str(),
         well_id=well_id,
         well_name=well_id,
         source_references=[

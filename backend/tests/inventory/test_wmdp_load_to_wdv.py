@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from app.identity import new_uuid7_str
 from app.inventory.models import (
     ManagedProductGroup,
     ManagedProductGroupItem,
@@ -15,6 +16,8 @@ from app.inventory.service import ManagedWellInventoryService
 def _record(managed_well_id: str, product_ids: list[str]) -> ManagedWellRecord:
     return ManagedWellRecord(
         managed_well_id=managed_well_id,
+        managed_well_uid=new_uuid7_str(),
+        managed_wellbore_uid=new_uuid7_str(),
         well_id=managed_well_id.replace("managed-well:", ""),
         well_name=managed_well_id,
         source_references=[

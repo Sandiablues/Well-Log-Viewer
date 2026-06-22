@@ -1001,6 +1001,12 @@ class ManagedWellInventoryService:
         record: ManagedWellRecord,
         loaded_items: list[ManagedProductGroupItem],
     ) -> dict[str, Any]:
+        # Deferred import: avoids circular dependency at module load time.
+        # policy_service imports inventory.models, not inventory.service.
+        from app.wdv_display.policy_service import (
+            WDV_DISPLAY_POLICY_CONTRACT_VERSION as _DPCV,
+            compute_display_policy_revision as _compute_dpr,
+        )
         product_ids = [item.product_id for item in loaded_items]
         loaded_curve_items = [self._wdv_curve_contract_from_product_item(record, item) for item in loaded_items]
         loaded_curve_names = [
@@ -1075,6 +1081,13 @@ class ManagedWellInventoryService:
             "messages": [],
             "created_by": "ManagedWellInventoryService._build_wdv_load_session_contract",
             "updated_at": utc_now_iso(),
+            # Display-policy cache identity stamps.  The contract_version identifies
+            # the schema of these fields; the revision is a content-based SHA-256 of
+            # the approved governed records that influence policy resolution.  Both
+            # must match in _wdv_session_identity_contract_is_current() for the
+            # cached contract to be reused without a rebuild.
+            "display_policy_contract_version": _DPCV,
+            "display_policy_revision": _compute_dpr(),
         }
 
     @staticmethod
@@ -1082,6 +1095,8 @@ class ManagedWellInventoryService:
         session: dict[str, Any],
         record: ManagedWellRecord,
         loaded_items: list[ManagedProductGroupItem],
+        *,
+        storage: "ManagedStorage | None" = None,
     ) -> bool:
         if not record.managed_well_uid or session.get("managed_well_uid") != str(record.managed_well_uid):
             return False
@@ -1113,6 +1128,21 @@ class ManagedWellInventoryService:
                 return False
             if not isinstance(sample_access, dict) or sample_access.get("contract_version") != "wdv_curve_samples_v1":
                 return False
+
+        # Display-policy cache identity: schema version + content-based revision.
+        # Both must be present and match the current backend state.  Missing stamps
+        # indicate a pre-C1 contract; mismatched revision means KR content or the
+        # resolver algorithm has changed since the contract was built.  Either
+        # condition forces a rebuild via the current WdvCurveDisplayPolicyService.
+        from app.wdv_display.policy_service import (
+            WDV_DISPLAY_POLICY_CONTRACT_VERSION,
+            compute_display_policy_revision,
+        )
+        if session.get("display_policy_contract_version") != WDV_DISPLAY_POLICY_CONTRACT_VERSION:
+            return False
+        if session.get("display_policy_revision") != compute_display_policy_revision(storage=storage):
+            return False
+
         return True
 
     def _wdv_session_depth_domain_is_current(
