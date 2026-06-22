@@ -51,6 +51,8 @@ export type WdvSessionLayoutCurveState = {
     scaleMin?: number | null;
     scale_max?: number | null;
     scaleMax?: number | null;
+    scale_min_label?: string | null;
+    scale_max_label?: string | null;
     scale_type?: string | null;
     scaleType?: string | null;
     scale_direction?: string | null;
@@ -1575,7 +1577,7 @@ export function CurveHeaderStack({ track, curveCatalogItems, selectedAssignmentI
                 }}>
             <span className="wlv-curve-color" style={{ background: assignment.color }}/>
             <strong>{curve.mnemonic}</strong>
-            <span>{assignment.scaleMin}—{assignment.scaleMax}</span>
+            <span>{assignment.scaleMinLabel ?? String(assignment.scaleMin)}—{assignment.scaleMaxLabel ?? String(assignment.scaleMax)}</span>
             <em>{curve.unit}</em>
             {openMenuAssignmentId === assignment.assignmentId && (<CurveHeaderActionMenuPortal trackId={track.trackId} assignmentId={assignment.assignmentId} assignmentIndex={index} assignmentCount={ordered.length} onSelectCurve={onSelectCurve} onReorderCurve={onReorderCurve} onCloseCurveMenu={onCloseCurveMenu} onRemoveCurveFromTrack={onRemoveCurveFromTrack}/>)}
           </div>);

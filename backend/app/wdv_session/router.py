@@ -8,6 +8,7 @@ from .models import (
     WdvSessionLayoutClearRequest,
     WdvSessionLayoutPutRequest,
     WdvSessionLayoutStateResponse,
+    WdvSessionLayoutStateView,
 )
 from .service import WdvSessionLayoutStateService
 
@@ -18,21 +19,21 @@ def get_wdv_session_layout_service() -> WdvSessionLayoutStateService:
     return WdvSessionLayoutStateService()
 
 
-@router.get("/{managed_well_id}/layout", response_model=WdvSessionLayoutStateResponse)
+@router.get("/{managed_well_id}/layout", response_model=WdvSessionLayoutStateView)
 def get_wdv_session_layout(
     managed_well_id: str,
     service: WdvSessionLayoutStateService = Depends(get_wdv_session_layout_service),
-) -> WdvSessionLayoutStateResponse:
+) -> WdvSessionLayoutStateView:
     """Return the backend-owned active WDV layout/session for one managed well."""
     return service.get_layout(managed_well_id)
 
 
-@router.put("/{managed_well_id}/layout", response_model=WdvSessionLayoutStateResponse)
+@router.put("/{managed_well_id}/layout", response_model=WdvSessionLayoutStateView)
 def put_wdv_session_layout(
     managed_well_id: str,
     request: WdvSessionLayoutPutRequest,
     service: WdvSessionLayoutStateService = Depends(get_wdv_session_layout_service),
-) -> WdvSessionLayoutStateResponse:
+) -> WdvSessionLayoutStateView:
     """Replace the backend-owned active WDV layout/session for one managed well."""
     try:
         return service.put_layout(managed_well_id, request)
@@ -40,12 +41,12 @@ def put_wdv_session_layout(
         raise HTTPException(status_code=422, detail={"error": "invalid_wdv_layout_state", "message": str(exc)}) from exc
 
 
-@router.post("/{managed_well_id}/layout/clear", response_model=WdvSessionLayoutStateResponse)
+@router.post("/{managed_well_id}/layout/clear", response_model=WdvSessionLayoutStateView)
 def clear_wdv_session_layout(
     managed_well_id: str,
     request: WdvSessionLayoutClearRequest | None = None,
     service: WdvSessionLayoutStateService = Depends(get_wdv_session_layout_service),
-) -> WdvSessionLayoutStateResponse:
+) -> WdvSessionLayoutStateView:
     """Clear the backend-owned active WDV layout/session for one managed well."""
     reason = request.reason if request else "user_requested_clear"
     return service.clear_layout(managed_well_id, reason=reason)

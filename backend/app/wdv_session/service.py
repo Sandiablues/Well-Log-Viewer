@@ -12,9 +12,43 @@ from typing import Any
 
 from .models import (
     WDV_SESSION_LAYOUT_CONTRACT_VERSION,
+    WdvSessionCurveAssignmentState,
+    WdvSessionCurveAssignmentView,
     WdvSessionLayoutPutRequest,
     WdvSessionLayoutStateResponse,
+    WdvSessionLayoutStateView,
+    WdvSessionTrackLayoutView,
 )
+
+
+def _to_assignment_view(
+    a: "WdvSessionCurveAssignmentState",
+) -> "WdvSessionCurveAssignmentView":
+    from app.wdv_display.number_format import format_scale_value
+    return WdvSessionCurveAssignmentView(
+        **a.model_dump(),
+        scale_min_label=(
+            format_scale_value(float(a.scale_min)) if a.scale_min is not None else None
+        ),
+        scale_max_label=(
+            format_scale_value(float(a.scale_max)) if a.scale_max is not None else None
+        ),
+    )
+
+
+def _to_layout_view(
+    session: "WdvSessionLayoutStateResponse",
+) -> "WdvSessionLayoutStateView":
+    return WdvSessionLayoutStateView(
+        **session.model_dump(exclude={"tracks"}),
+        tracks=[
+            WdvSessionTrackLayoutView(
+                **track.model_dump(exclude={"curves"}),
+                curves=[_to_assignment_view(a) for a in track.curves],
+            )
+            for track in session.tracks
+        ],
+    )
 
 
 class WdvSessionLayoutStateService:
@@ -37,18 +71,18 @@ class WdvSessionLayoutStateService:
             return Path(override).expanduser().resolve()
         return Path(__file__).resolve().parents[3] / "data" / "wdv" / "session_layouts.json"
 
-    def get_layout(self, managed_well_id: str) -> WdvSessionLayoutStateResponse:
+    def get_layout(self, managed_well_id: str) -> WdvSessionLayoutStateView:
         data = self._read_store()
         session = data.get("sessions", {}).get(managed_well_id)
         if not session:
-            return self._empty_session(managed_well_id)
-        return WdvSessionLayoutStateResponse.model_validate(session)
+            return _to_layout_view(self._empty_session(managed_well_id))
+        return _to_layout_view(WdvSessionLayoutStateResponse.model_validate(session))
 
     def put_layout(
         self,
         managed_well_id: str,
         request: WdvSessionLayoutPutRequest,
-    ) -> WdvSessionLayoutStateResponse:
+    ) -> WdvSessionLayoutStateView:
         self._validate_layout_request(request)
         with self._lock:
             data = self._read_store()
@@ -71,9 +105,9 @@ class WdvSessionLayoutStateService:
             )
             sessions[managed_well_id] = session.model_dump(mode="json")
             self._write_store(data)
-            return session
+            return _to_layout_view(session)
 
-    def clear_layout(self, managed_well_id: str, reason: str = "user_requested_clear") -> WdvSessionLayoutStateResponse:
+    def clear_layout(self, managed_well_id: str, reason: str = "user_requested_clear") -> WdvSessionLayoutStateView:
         with self._lock:
             data = self._read_store()
             sessions = data.setdefault("sessions", {})
@@ -93,7 +127,7 @@ class WdvSessionLayoutStateService:
             )
             sessions[managed_well_id] = session.model_dump(mode="json")
             self._write_store(data)
-            return session
+            return _to_layout_view(session)
 
     def _empty_session(self, managed_well_id: str) -> WdvSessionLayoutStateResponse:
         return WdvSessionLayoutStateResponse(

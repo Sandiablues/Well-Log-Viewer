@@ -106,3 +106,28 @@ class WdvSessionLayoutClearRequest(BaseModel):
     """Clear the active backend-owned WDV layout for one managed well."""
 
     reason: str = "user_requested_clear"
+
+
+# ---------------------------------------------------------------------------
+# Response-only DTOs — add display labels after persistence.  These types are
+# NEVER written to session_layouts.json.  model_dump() of the durable models
+# above will never contain scale_min_label or scale_max_label.
+# ---------------------------------------------------------------------------
+
+class WdvSessionCurveAssignmentView(WdvSessionCurveAssignmentState):
+    """Outbound response DTO — extends durable with display labels. Never persisted."""
+
+    scale_min_label: str | None = None
+    scale_max_label: str | None = None
+
+
+class WdvSessionTrackLayoutView(WdvSessionTrackLayoutState):
+    """Outbound response DTO — overrides curves with View type. Never persisted."""
+
+    curves: list[WdvSessionCurveAssignmentView] = Field(default_factory=list)
+
+
+class WdvSessionLayoutStateView(WdvSessionLayoutStateResponse):
+    """Outbound response DTO — overrides tracks with View type. Never persisted."""
+
+    tracks: list[WdvSessionTrackLayoutView] = Field(default_factory=list)

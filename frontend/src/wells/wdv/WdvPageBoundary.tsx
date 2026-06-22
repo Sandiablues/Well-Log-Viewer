@@ -259,6 +259,8 @@ function frontendTracksFromSession(session: WdvSessionLayoutResponse, catalog: C
                 visible: rawAssignment.visible ?? fallback.visible,
                 scaleMin: finiteNumberOr(rawAssignment.scale_min ?? rawAssignment.scaleMin, fallback.scaleMin),
                 scaleMax: finiteNumberOr(rawAssignment.scale_max ?? rawAssignment.scaleMax, fallback.scaleMax),
+                scaleMinLabel: typeof rawAssignment.scale_min_label === 'string' ? rawAssignment.scale_min_label : null,
+                scaleMaxLabel: typeof rawAssignment.scale_max_label === 'string' ? rawAssignment.scale_max_label : null,
                 scaleType: scaleType === 'log' || scaleType === 'linear' ? scaleType : fallback.scaleType,
                 scaleDirection: scaleDirection === 'reverse' || scaleDirection === 'reversed' ? 'reverse' : 'normal',
                 color: rawAssignment.color ?? fallback.color,

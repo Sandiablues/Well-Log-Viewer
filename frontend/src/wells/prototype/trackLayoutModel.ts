@@ -71,6 +71,8 @@ export interface CurveAssignment {
   visible: boolean;
   scaleMin: number;
   scaleMax: number;
+  scaleMinLabel?: string | null;
+  scaleMaxLabel?: string | null;
   scaleDirection: 'normal' | 'reverse';
   scaleType?: CurveScaleType;
   rangeMode?: CurveRangeMode;
