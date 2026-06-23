@@ -1,4 +1,8 @@
-"""Focused tests for the backend-owned WDV policy-unit contract."""
+"""Focused tests for the backend-owned WDV policy-unit contract.
+
+UNIT-3A extension: adds tests for the dormant PolicyUnitResolutionResult and
+ResolvedDisplayPolicy types defined in policy_unit_resolution.py.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +13,11 @@ import pytest
 from app.wdv_display.policy_unit_contract import (
     UnitConversionStatus,
     WdvPolicyUnitContract,
+)
+from app.wdv_display.policy_unit_resolution import (
+    PolicyUnitResolutionResult,
+    PolicyUnitResolutionStatus,
+    ResolvedDisplayPolicy,
 )
 
 
@@ -125,3 +134,196 @@ def test_bounds_conversion_preserves_reversed_order() -> None:
     assert result.status is UnitConversionStatus.RESOLVED
     assert result.minimum == pytest.approx(0.45)
     assert result.maximum == pytest.approx(-0.15)
+
+
+# ---------------------------------------------------------------------------
+# UNIT-3A: PolicyUnitResolutionResult and ResolvedDisplayPolicy contract tests
+# ---------------------------------------------------------------------------
+
+
+_RESOLVER_VERSION = "wdv_display_units_v3_foundation_dormant"
+
+
+def _make_result(
+    *,
+    status: PolicyUnitResolutionStatus,
+    resolved_bounds_usable: bool,
+    resolved_min: float | None = None,
+    resolved_max: float | None = None,
+    conversion_applied: bool = False,
+    canonical_policy_unit: str | None = None,
+    canonical_curve_unit: str | None = None,
+    unresolved_reason: str | None = None,
+    policy_source: str | None = None,
+) -> PolicyUnitResolutionResult:
+    return PolicyUnitResolutionResult(
+        status=status,
+        resolved_bounds_usable=resolved_bounds_usable,
+        policy_record_id="test_record_id",
+        policy_record_version=2,
+        policy_source=policy_source,  # type: ignore[arg-type]
+        original_policy_min=0.0,
+        original_policy_max=150.0,
+        canonical_policy_unit=canonical_policy_unit,
+        canonical_curve_unit=canonical_curve_unit,
+        resolved_min=resolved_min,
+        resolved_max=resolved_max,
+        conversion_applied=conversion_applied,
+        unresolved_reason=unresolved_reason,
+        resolver_version=_RESOLVER_VERSION,
+        policy_revision="abc123",
+    )
+
+
+def test_resolution_status_identity_marks_bounds_usable() -> None:
+    """IDENTITY status must set resolved_bounds_usable=True."""
+    result = _make_result(
+        status=PolicyUnitResolutionStatus.IDENTITY,
+        resolved_bounds_usable=True,
+        resolved_min=0.0,
+        resolved_max=150.0,
+        canonical_policy_unit="gapi",
+        canonical_curve_unit="gapi",
+    )
+    assert result.resolved_bounds_usable is True
+    assert result.conversion_applied is False
+    assert result.resolved_min == 0.0
+    assert result.resolved_max == 150.0
+
+
+def test_resolution_status_converted_marks_bounds_usable() -> None:
+    """CONVERTED status must set resolved_bounds_usable=True and carry converted bounds."""
+    result = _make_result(
+        status=PolicyUnitResolutionStatus.CONVERTED,
+        resolved_bounds_usable=True,
+        resolved_min=0.45,
+        resolved_max=-0.15,
+        conversion_applied=True,
+        canonical_policy_unit="%",
+        canonical_curve_unit="v/v",
+    )
+    assert result.resolved_bounds_usable is True
+    assert result.conversion_applied is True
+    assert result.resolved_min == pytest.approx(0.45)
+    assert result.resolved_max == pytest.approx(-0.15)
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        PolicyUnitResolutionStatus.MISSING_POLICY_UNIT,
+        PolicyUnitResolutionStatus.UNKNOWN_POLICY_UNIT,
+        PolicyUnitResolutionStatus.MISSING_CURVE_UNIT,
+        PolicyUnitResolutionStatus.UNKNOWN_CURVE_UNIT,
+        PolicyUnitResolutionStatus.INCOMPATIBLE,
+        PolicyUnitResolutionStatus.UNRESOLVED,
+    ],
+)
+def test_non_usable_statuses_mark_bounds_not_usable(
+    status: PolicyUnitResolutionStatus,
+) -> None:
+    """All non-usable statuses must set resolved_bounds_usable=False."""
+    result = _make_result(
+        status=status,
+        resolved_bounds_usable=False,
+        unresolved_reason=status.value,
+    )
+    assert result.resolved_bounds_usable is False
+    assert result.resolved_min is None
+    assert result.resolved_max is None
+
+
+def test_resolved_bounds_usable_inconsistent_with_status_raises() -> None:
+    """resolved_bounds_usable=True with a non-usable status must raise ValueError."""
+    with pytest.raises(ValueError, match="inconsistent with status"):
+        PolicyUnitResolutionResult(
+            status=PolicyUnitResolutionStatus.MISSING_POLICY_UNIT,
+            resolved_bounds_usable=True,  # wrong
+            policy_record_id="x",
+            policy_record_version=1,
+            policy_source=None,
+            original_policy_min=0.0,
+            original_policy_max=150.0,
+            canonical_policy_unit=None,
+            canonical_curve_unit=None,
+            resolved_min=None,
+            resolved_max=None,
+            conversion_applied=False,
+            unresolved_reason="missing",
+            resolver_version=_RESOLVER_VERSION,
+            policy_revision=None,
+        )
+
+
+def test_non_none_resolved_bounds_when_not_usable_raises() -> None:
+    """resolved_min or resolved_max must be None when resolved_bounds_usable is False."""
+    with pytest.raises(ValueError, match="resolved_min and resolved_max must be None"):
+        PolicyUnitResolutionResult(
+            status=PolicyUnitResolutionStatus.MISSING_POLICY_UNIT,
+            resolved_bounds_usable=False,
+            policy_record_id="x",
+            policy_record_version=1,
+            policy_source=None,
+            original_policy_min=0.0,
+            original_policy_max=150.0,
+            canonical_policy_unit=None,
+            canonical_curve_unit=None,
+            resolved_min=0.0,  # must be None
+            resolved_max=150.0,  # must be None
+            conversion_applied=False,
+            unresolved_reason="missing",
+            resolver_version=_RESOLVER_VERSION,
+            policy_revision=None,
+        )
+
+
+def test_policy_source_literal_values() -> None:
+    """policy_source must accept exact, family, and fallback literals."""
+    for source in ("exact", "family", "fallback"):
+        result = _make_result(
+            status=PolicyUnitResolutionStatus.IDENTITY,
+            resolved_bounds_usable=True,
+            resolved_min=0.0,
+            resolved_max=150.0,
+            canonical_policy_unit="gapi",
+            canonical_curve_unit="gapi",
+            policy_source=source,
+        )
+        assert result.policy_source == source
+
+
+def test_resolved_display_policy_dormant_unit_resolution_is_none() -> None:
+    """ResolvedDisplayPolicy with unit_resolution=None represents dormant mode."""
+    rdp = ResolvedDisplayPolicy(
+        policy={"display_min": 0.0, "display_max": 150.0},
+        unit_resolution=None,
+    )
+    assert rdp.policy is not None
+    assert rdp.unit_resolution is None
+
+
+def test_resolved_display_policy_no_kr_match() -> None:
+    """ResolvedDisplayPolicy with policy=None represents no KR match."""
+    rdp = ResolvedDisplayPolicy(policy=None, unit_resolution=None)
+    assert rdp.policy is None
+    assert rdp.unit_resolution is None
+
+
+def test_resolved_display_policy_with_usable_resolution() -> None:
+    """ResolvedDisplayPolicy carries a fully resolved result when wired."""
+    resolution = _make_result(
+        status=PolicyUnitResolutionStatus.CONVERTED,
+        resolved_bounds_usable=True,
+        resolved_min=0.0,
+        resolved_max=0.45,
+        conversion_applied=True,
+        canonical_policy_unit="%",
+        canonical_curve_unit="v/v",
+    )
+    rdp = ResolvedDisplayPolicy(
+        policy={"display_min": 0.0, "display_max": 45.0},
+        unit_resolution=resolution,
+    )
+    assert rdp.unit_resolution is not None
+    assert rdp.unit_resolution.resolved_bounds_usable is True
+    assert rdp.unit_resolution.status is PolicyUnitResolutionStatus.CONVERTED

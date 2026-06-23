@@ -181,6 +181,7 @@ class DisplayRuleRecord:
     display_min: float = 0.0
     display_max: float = 150.0
     default_unit: Optional[str] = None
+    policy_value_unit: Optional[str] = None
     reverse_scale: bool = False
     overlay_group: Optional[str] = None
     line_style_hint: Optional[str] = None
