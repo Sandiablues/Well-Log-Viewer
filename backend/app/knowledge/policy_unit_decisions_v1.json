@@ -1,0 +1,117 @@
+{
+  "schema_version": "wlv-policy-unit-decisions-v1",
+  "source_kr_sha256": "05432bfc2114dae22160bce573354e196f52ff4029f30735d24456901f0233ab",
+  "decision_set_id": "wlv-policy-unit-decisions-20260623",
+  "decision_status": "reviewed_candidate",
+  "decisions": [
+    {
+      "record_id": "wlv_approved_kr_refs_1_scale_default_bit_size",
+      "expected_record_type": "template_scale_default",
+      "expected_curve_family": "bit_size",
+      "expected_scale_type": "linear",
+      "expected_scale_min": 6.0,
+      "expected_scale_max": 16.0,
+      "expected_policy_value_unit": null,
+      "policy_value_unit": "in",
+      "decision_basis": "Existing governed 6-16 bit-size display bounds are inch-based; using any metric unit would change the physical scale rather than merely annotate it.",
+      "decision_status": "approved_for_migration"
+    },
+    {
+      "record_id": "wlv_approved_kr_refs_1_scale_default_caliper",
+      "expected_record_type": "template_scale_default",
+      "expected_curve_family": "caliper",
+      "expected_scale_type": "linear",
+      "expected_scale_min": 6.0,
+      "expected_scale_max": 16.0,
+      "expected_policy_value_unit": null,
+      "policy_value_unit": "in",
+      "decision_basis": "Existing governed 6-16 caliper display bounds are inch-based; using any metric unit would change the physical scale rather than merely annotate it.",
+      "decision_status": "approved_for_migration"
+    },
+    {
+      "record_id": "wlv_approved_kr_refs_1_scale_default_neutron_porosity",
+      "expected_record_type": "template_scale_default",
+      "expected_curve_family": "neutron_porosity",
+      "expected_scale_type": "linear",
+      "expected_scale_min": 45.0,
+      "expected_scale_max": -15.0,
+      "expected_policy_value_unit": null,
+      "policy_value_unit": "%",
+      "decision_basis": "The governed reversed 45 to -15 neutron-porosity scale is expressed in porosity percent units, not fractional v/v values.",
+      "decision_status": "approved_for_migration"
+    },
+    {
+      "record_id": "wlv_approved_kr_refs_1_scale_default_porosity",
+      "expected_record_type": "template_scale_default",
+      "expected_curve_family": "porosity",
+      "expected_scale_type": "linear",
+      "expected_scale_min": 0.0,
+      "expected_scale_max": 0.45,
+      "expected_policy_value_unit": null,
+      "policy_value_unit": "v/v",
+      "decision_basis": "The governed 0.00-0.45 porosity scale is fractional volume per volume; percent annotation would misstate the stored bounds by a factor of 100.",
+      "decision_status": "approved_for_migration"
+    },
+    {
+      "record_id": "wlv_approved_kr_refs_1_scale_default_pressure",
+      "expected_record_type": "template_scale_default",
+      "expected_curve_family": "pressure",
+      "expected_scale_type": "linear",
+      "expected_scale_min": 0.0,
+      "expected_scale_max": 10000.0,
+      "expected_policy_value_unit": null,
+      "policy_value_unit": "psi",
+      "decision_basis": "The governed 0-10000 pressure scale is the existing oilfield psi scale; kPa or bar would require transformed numeric bounds.",
+      "decision_status": "approved_for_migration"
+    },
+    {
+      "record_id": "wlv_approved_kr_refs_1_scale_default_shale_volume",
+      "expected_record_type": "template_scale_default",
+      "expected_curve_family": "shale_volume",
+      "expected_scale_type": "linear",
+      "expected_scale_min": 0.0,
+      "expected_scale_max": 1.0,
+      "expected_policy_value_unit": null,
+      "policy_value_unit": "v/v",
+      "decision_basis": "The governed 0.0-1.0 shale-volume scale is fractional volume per volume; percent would require 0-100 bounds.",
+      "decision_status": "approved_for_migration"
+    },
+    {
+      "record_id": "wlv_approved_kr_refs_1_scale_default_temperature",
+      "expected_record_type": "template_scale_default",
+      "expected_curve_family": "temperature",
+      "expected_scale_type": "linear",
+      "expected_scale_min": 0.0,
+      "expected_scale_max": 400.0,
+      "expected_policy_value_unit": null,
+      "policy_value_unit": "degf",
+      "decision_basis": "The governed 0-400 borehole-temperature scale is Fahrenheit; Celsius would require transformed bounds.",
+      "decision_status": "approved_for_migration"
+    },
+    {
+      "record_id": "wlv_approved_kr_refs_1_scale_default_water_saturation",
+      "expected_record_type": "template_scale_default",
+      "expected_curve_family": "water_saturation",
+      "expected_scale_type": "linear",
+      "expected_scale_min": 0.0,
+      "expected_scale_max": 1.0,
+      "expected_policy_value_unit": null,
+      "policy_value_unit": "v/v",
+      "decision_basis": "The governed 0.0-1.0 water-saturation scale is fractional volume per volume; percent would require 0-100 bounds.",
+      "decision_status": "approved_for_migration"
+    }
+  ],
+  "unresolved": [
+    {
+      "record_id": "wlv_approved_kr_refs_1_scale_default_spinner_flow",
+      "expected_record_type": "template_scale_default",
+      "expected_curve_family": "spinner_flow",
+      "expected_scale_type": "linear",
+      "expected_scale_min": -100.0,
+      "expected_scale_max": 100.0,
+      "expected_policy_value_unit": null,
+      "reason": "Spinner flow may represent rotational speed, velocity, flow rate, or a signed normalized response. No governed field identifies the physical quantity, so no unit is approved.",
+      "decision_status": "requires_domain_review"
+    }
+  ]
+}
