@@ -17,13 +17,16 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from unittest import mock
 from uuid import UUID
 
 import pytest
 
+import app.knowledge.managed_storage as _ms_module
 from app.inventory.models import ManagedProductGroupItem, ManagedWellRecord
 from app.inventory.service import ManagedWellInventoryService
 from app.knowledge.managed_storage import ManagedStorage
+from app.wdv_display.kr_family_policy_resolver import ManagedKrFamilyDisplayPolicyResolver
 from app.wdv_display.policy_service import (
     WDV_DISPLAY_POLICY_CONTRACT_VERSION,
     WDV_DISPLAY_POLICY_RESOLVER_VERSION,
@@ -55,9 +58,14 @@ def _write_kr(path: Path, records: list[dict]) -> Path:
     return path
 
 
-def _resistivity_tsd(*, scale_min: str = "0.2", scale_max: str = "2000") -> dict:
+def _resistivity_tsd(
+    *,
+    scale_min: str = "0.2",
+    scale_max: str = "2000",
+    policy_value_unit: str | None = None,
+) -> dict:
     """Approved template_scale_default for resistivity — minimal valid shape."""
-    return {
+    record: dict = {
         "record_id": "tsd-resistivity-c1-test",
         "record_type": "template_scale_default",
         "status": "approved",
@@ -69,6 +77,9 @@ def _resistivity_tsd(*, scale_min: str = "0.2", scale_max: str = "2000") -> dict
         "display_direction": "normal",
         # Volatile fields absent intentionally — proves they don't affect revision.
     }
+    if policy_value_unit is not None:
+        record["policy_value_unit"] = policy_value_unit
+    return record
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +335,7 @@ def test_resolver_version_change_changes_revision(
     assert len(r1) == 64
 
     # Simulate bumping the resolver version constant.
-    monkeypatch.setattr(ps, "WDV_DISPLAY_POLICY_RESOLVER_VERSION", "wdv_display_policy_resolver_v2")
+    monkeypatch.setattr(ps, "WDV_DISPLAY_POLICY_RESOLVER_VERSION", "wdv_display_policy_resolver_v3")
     _clear_display_policy_revision_cache_for_tests()
 
     r2 = compute_display_policy_revision(storage=storage)
@@ -340,10 +351,21 @@ def test_resolver_version_change_changes_revision(
 # Test 7 — AT30 rebuild resolves to 0.2–2000, logarithmic
 # ---------------------------------------------------------------------------
 
-def test_at30_resolves_to_governed_log_scale() -> None:
+def test_at30_resolves_to_governed_log_scale(tmp_path: Path) -> None:
     """After stale-contract detection forces a rebuild, AT30 must resolve to the
-    governed resistivity family default: 0.2–2000, log, via the KR family resolver."""
+    governed resistivity family default: 0.2–2000, log, via the KR family resolver.
+
+    Uses isolated temporary storage so the test is independent of live KR
+    migration state.  The resistivity TSD is annotated with
+    policy_value_unit='ohmm' (matches AT30's curve_unit; factor=1.0 passthrough).
+    """
     from app.wdv_display.policy_service import WdvCurveDisplayPolicyService
+
+    kr_path = _write_kr(
+        tmp_path / "kr.json",
+        [_resistivity_tsd(policy_value_unit="ohmm")],
+    )
+    ManagedKrFamilyDisplayPolicyResolver.clear_cache_for_tests()
 
     item = ManagedProductGroupItem(
         product_id="AT30",
@@ -355,7 +377,10 @@ def test_at30_resolves_to_governed_log_scale() -> None:
         selectable=True,
     )
     # No sample stats → pure governed range; no observed-stats override possible.
-    result = WdvCurveDisplayPolicyService.resolve(item, {})
+    with mock.patch.object(_ms_module, "DEFAULT_STORAGE_PATH", kr_path):
+        result = WdvCurveDisplayPolicyService.resolve(item, {})
+
+    ManagedKrFamilyDisplayPolicyResolver.clear_cache_for_tests()
 
     assert result["type"] == "log", f"Expected log, got {result['type']!r}"
     assert abs(result["min"] - 0.2) < 1e-9, f"Expected min 0.2, got {result['min']}"

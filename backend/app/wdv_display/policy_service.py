@@ -24,12 +24,12 @@ WDV_DISPLAY_POLICY_CONTRACT_VERSION: str = "wdv_display_policy_contract_v1"
 # Bump when resolver logic changes independently of KR content — i.e. when a new
 # block modifies resolution paths, fallback order, or guard conditions in a way
 # that changes resolved output for existing KR records.
-WDV_DISPLAY_POLICY_RESOLVER_VERSION: str = "wdv_display_policy_resolver_v1"
+WDV_DISPLAY_POLICY_RESOLVER_VERSION: str = "wdv_display_policy_resolver_v3_foundation"
 
 # Unit-normalization contract version.  Included in the revision hash so that
 # future unit-handling changes affecting display policy automatically invalidate
 # cached contracts.  Increment when unit normalization rules change.
-WDV_DISPLAY_POLICY_UNIT_CONTRACT_VERSION: str = "wdv_display_units_v1"
+WDV_DISPLAY_POLICY_UNIT_CONTRACT_VERSION: str = "wdv_display_units_v3_foundation_dormant"
 
 
 # ---------------------------------------------------------------------------
@@ -95,12 +95,15 @@ def _display_policy_canonical_payload(records: list) -> dict:
             # GenericManagedRecord: schema-driven fields live in extra_fields,
             # accessed via __getattr__.
             template_scale_defaults.append({
-                "record_id":         record_id,
-                "curve_family":      str(getattr(record, "curve_family", "") or ""),
-                "scale_type":        str(getattr(record, "scale_type", "") or ""),
-                "scale_min":         _stable_float(getattr(record, "scale_min", None)),
-                "scale_max":         _stable_float(getattr(record, "scale_max", None)),
-                "display_direction": str(getattr(record, "display_direction", "") or ""),
+                "record_id":          record_id,
+                "curve_family":       str(getattr(record, "curve_family", "") or ""),
+                "scale_type":         str(getattr(record, "scale_type", "") or ""),
+                "scale_min":          _stable_float(getattr(record, "scale_min", None)),
+                "scale_max":          _stable_float(getattr(record, "scale_max", None)),
+                "display_direction":  str(getattr(record, "display_direction", "") or ""),
+                # Unit annotation — absent records emit empty string so the hash
+                # is still stable before and after the migration is applied.
+                "policy_value_unit":  str(getattr(record, "policy_value_unit", "") or ""),
             })
 
         elif rt == "display_rule":
@@ -283,11 +286,12 @@ class WdvCurveDisplayPolicyService:
             warnings.append("managed_knowledge_policy_unavailable")
 
         if managed_kr_policy is not None:
-            managed_kr_policy["warnings"] = [
+            kr_policy = dict(managed_kr_policy)
+            kr_policy["warnings"] = [
                 *warnings,
-                *list(managed_kr_policy.get("warnings") or []),
+                *list(kr_policy.get("warnings") or []),
             ]
-            return finalize(managed_kr_policy)
+            return finalize(kr_policy)
 
         if "resist" in key or "ohmm" in key or "ohm" in key:
             if has_stats and observed_min is not None and observed_min <= 0:
