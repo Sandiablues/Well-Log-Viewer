@@ -179,6 +179,11 @@ class UpdateCurveAssignmentCommand(RevisionGuardedCommand):
     infill_interval_column: str | None = None
     paired_managed_curve_uid: CanonicalUuid7 | None = None
     clear_paired_managed_curve_uid: bool = False
+    # When True, clears scale_min, scale_max, scale_type, and scale_direction
+    # on the assignment, restoring the governed KR/fallback display policy.
+    # Must not be combined with explicit scale_min/max/type/direction values.
+    # The frontend must send only this flag — never recalculate and resend KR values.
+    reset_scale_to_governed_default: bool = False
     display_priority: Literal["background", "normal", "foreground"] | None = None
     show_qaqc_warnings: bool | None = None
     show_null_gaps: bool | None = None
@@ -188,6 +193,16 @@ class UpdateCurveAssignmentCommand(RevisionGuardedCommand):
     def validate_patch(self) -> "UpdateCurveAssignmentCommand":
         if (self.scale_min is None) != (self.scale_max is None):
             raise ValueError("scale_min and scale_max must be supplied together")
+        if self.reset_scale_to_governed_default and (
+            self.scale_min is not None
+            or self.scale_max is not None
+            or self.scale_type is not None
+            or self.scale_direction is not None
+        ):
+            raise ValueError(
+                "reset_scale_to_governed_default may not be combined with "
+                "explicit scale fields"
+            )
         fields = (
             self.visible,
             self.scale_min,
@@ -214,7 +229,11 @@ class UpdateCurveAssignmentCommand(RevisionGuardedCommand):
             self.show_null_gaps,
             self.show_out_of_range,
         )
-        if all(value is None for value in fields) and not self.clear_paired_managed_curve_uid:
+        if (
+            all(value is None for value in fields)
+            and not self.clear_paired_managed_curve_uid
+            and not self.reset_scale_to_governed_default
+        ):
             raise ValueError(
                 "UpdateCurveAssignmentCommand requires at least one field"
             )

@@ -203,6 +203,7 @@ class WdvCanonicalSession(BaseModel):
     session_uid: CanonicalUuid7
     managed_well_uid: CanonicalUuid7
     revision: int = Field(default=0, ge=0)
+    display_policy_revision: str | None = None
     state_status: Literal["empty", "active", "cleared"] = "empty"
     source: NonBlankString = "backend_owned_session_state"
     selected_track_uid: CanonicalUuid7 | None = None

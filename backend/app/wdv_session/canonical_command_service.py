@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from app.identity import new_uuid7_str
 from app.identity.wdv_contract_v2 import (
     WdvCanonicalAssignment,
@@ -9,6 +11,7 @@ from app.identity.wdv_contract_v2 import (
     WdvCanonicalTrack,
 )
 from app.inventory.canonical_identity_resolver import CanonicalInventoryIdentityResolver
+from app.wdv_display.policy_service import compute_display_policy_revision
 from app.wdv_session.canonical_commands import (
     AddCurveAssignmentCommand,
     CreateConfiguredTrackCommand,
@@ -41,9 +44,16 @@ class CanonicalWdvCommandService:
         session_service: CanonicalWdvSessionService | None = None,
         resolver: CanonicalInventoryIdentityResolver | None = None,
         transaction_service: CanonicalWdvWorkspaceTransactionService | None = None,
+        *,
+        policy_revision_fn: Callable[[], str] | None = None,
     ) -> None:
         self.session_service = session_service or CanonicalWdvSessionService()
         self.resolver = resolver or CanonicalInventoryIdentityResolver()
+        self._policy_revision_fn: Callable[[], str] = (
+            policy_revision_fn
+            if policy_revision_fn is not None
+            else compute_display_policy_revision
+        )
         if transaction_service is None:
             workspace_service = None
             if isinstance(self.resolver, CanonicalInventoryIdentityResolver):
@@ -344,6 +354,7 @@ class CanonicalWdvCommandService:
                     "tracks": tracks,
                     "state_status": "active",
                     "selected_track_uid": target.track_uid,
+                    "display_policy_revision": self._policy_revision_fn(),
                 }
             )
 
@@ -530,11 +541,21 @@ class CanonicalWdvCommandService:
                     "expected_revision",
                     "assignment_uid",
                     "clear_paired_managed_curve_uid",
+                    "reset_scale_to_governed_default",
                 },
                 exclude_none=True,
             )
             if command.clear_paired_managed_curve_uid:
                 patch["paired_managed_curve_uid"] = None
+            if command.reset_scale_to_governed_default:
+                # Explicitly clear all four scale fields to None so the
+                # effective display falls back to the governed KR/fallback policy.
+                # exclude_none=True above would never set these to None, so we
+                # apply the clear explicitly after model_dump.
+                patch["scale_min"] = None
+                patch["scale_max"] = None
+                patch["scale_type"] = None
+                patch["scale_direction"] = None
 
             for track in session.tracks:
                 assignments: list[WdvCanonicalAssignment] = []
@@ -555,7 +576,12 @@ class CanonicalWdvCommandService:
                 raise CanonicalWdvCommandError(
                     f"Unknown assignment_uid: {command.assignment_uid}"
                 )
-            return session.model_copy(update={"tracks": tuple(tracks)})
+            return session.model_copy(
+                update={
+                    "tracks": tuple(tracks),
+                    "display_policy_revision": self._policy_revision_fn(),
+                }
+            )
 
         return self._execute(managed_well_uid, command, mutate)
 

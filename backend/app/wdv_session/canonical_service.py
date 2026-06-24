@@ -14,8 +14,10 @@ from typing import Any
 from app.identity import new_uuid7_str, parse_uuid7
 from app.identity.wdv_contract_v2 import (
     WDV_SESSION_CONTRACT_VERSION,
+    WdvCanonicalAssignment,
     WdvCanonicalSession,
 )
+from app.wdv_display.policy_service import compute_display_policy_revision
 
 
 class CanonicalSessionRevisionConflict(ValueError):
@@ -26,11 +28,88 @@ class CanonicalSessionCommandReplayConflict(ValueError):
     pass
 
 
+# ---------------------------------------------------------------------------
+# UNIT-3B: stale-override helpers (module-level, no class state)
+# ---------------------------------------------------------------------------
+
+def _assignment_has_scale_override(assignment: WdvCanonicalAssignment) -> bool:
+    """Return True if any scale field on the assignment is overridden (non-None)."""
+    return any(
+        f is not None
+        for f in (
+            assignment.scale_min,
+            assignment.scale_max,
+            assignment.scale_type,
+            assignment.scale_direction,
+        )
+    )
+
+
+def _session_has_scale_overrides(session: WdvCanonicalSession) -> bool:
+    """Return True if any assignment in the session carries a scale override."""
+    return any(
+        _assignment_has_scale_override(a)
+        for track in session.tracks
+        for a in track.assignments
+    )
+
+
+def _clear_overrides_and_stamp(
+    session: WdvCanonicalSession,
+    display_policy_revision: str,
+) -> WdvCanonicalSession:
+    """Return a copy of session with all scale overrides cleared and revision stamped.
+
+    Only assignments that actually carry an override are copied; unchanged
+    assignments are reused as-is (frozen models are safe to share).
+    """
+    new_tracks = tuple(
+        track.model_copy(
+            update={
+                "assignments": tuple(
+                    a.model_copy(
+                        update={
+                            "scale_min": None,
+                            "scale_max": None,
+                            "scale_type": None,
+                            "scale_direction": None,
+                        }
+                    )
+                    if _assignment_has_scale_override(a)
+                    else a
+                    for a in track.assignments
+                )
+            }
+        )
+        for track in session.tracks
+    )
+    return session.model_copy(
+        update={
+            "tracks": new_tracks,
+            "display_policy_revision": display_policy_revision,
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+
 class CanonicalWdvSessionService:
     _lock = RLock()
 
-    def __init__(self, storage_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        storage_path: Path | None = None,
+        *,
+        policy_revision_fn: Callable[[], str] | None = None,
+    ) -> None:
         self.storage_path = storage_path or self.default_storage_path()
+        self._policy_revision_fn: Callable[[], str] = (
+            policy_revision_fn
+            if policy_revision_fn is not None
+            else compute_display_policy_revision
+        )
 
     @staticmethod
     def default_storage_path() -> Path:
@@ -40,17 +119,46 @@ class CanonicalWdvSessionService:
         return Path(__file__).resolve().parents[3] / "data" / "wdv" / "canonical_sessions_v2_1.json"
 
     def get_session(self, managed_well_uid: str) -> WdvCanonicalSession:
+        """Return the canonical session for a well, creating an empty one if absent.
+
+        If the session has scale overrides and the stored ``display_policy_revision``
+        does not match the current revision returned by the injected
+        ``policy_revision_fn``, the overrides are cleared atomically and the new
+        revision is stamped before the session is returned.  The mutation goes
+        through ``mutate_session_transactionally`` so it is revision-guarded and
+        persisted atomically.
+
+        Idempotency rules:
+        - Matching revision → no mutation regardless of override state.
+        - No overrides present → ``policy_revision_fn`` is not invoked; no mutation.
+        - Empty session (no tracks) → no mutation.
+        """
         well_uid = str(parse_uuid7(managed_well_uid))
         with self._lock:
             store = self._read_store()
             raw = store["sessions"].get(well_uid)
             if raw is not None:
-                return WdvCanonicalSession.model_validate(raw)
+                session = WdvCanonicalSession.model_validate(raw)
+            else:
+                empty = self._empty_session(well_uid)
+                store["sessions"][well_uid] = empty.model_dump(mode="json")
+                self._write_store(store)
+                session = empty
 
-            empty = self._empty_session(well_uid)
-            store["sessions"][well_uid] = empty.model_dump(mode="json")
-            self._write_store(store)
-            return empty
+            if _session_has_scale_overrides(session):
+                current_revision = self._policy_revision_fn()
+                if session.display_policy_revision != current_revision:
+                    # _lock is an RLock — reentrant acquisition from within get_session
+                    # is safe.  mutate_session_transactionally reads the store again
+                    # under the same lock, which is fine: we hold the lock exclusively.
+                    session = self.mutate_session_transactionally(
+                        managed_well_uid,
+                        expected_revision=session.revision,
+                        mutation=lambda current: _clear_overrides_and_stamp(
+                            current, current_revision
+                        ),
+                    )
+            return session
 
 
     def mutate_session(
