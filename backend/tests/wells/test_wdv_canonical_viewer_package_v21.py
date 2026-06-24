@@ -28,6 +28,8 @@ def test_viewer_package_uses_only_canonical_curve_identity(tmp_path: Path) -> No
     source_uid = new_uuid7_str()
     product_uid = new_uuid7_str()
     curve_uid = new_uuid7_str()
+    sp_product_uid = new_uuid7_str()
+    sp_curve_uid = new_uuid7_str()
 
     source = ManagedSourceReference(
         source_id="legacy-source",
@@ -48,6 +50,19 @@ def test_viewer_package_uses_only_canonical_curve_identity(tmp_path: Path) -> No
         curve_family="gamma_ray",
         selectable=True,
     )
+    sp_product = ManagedProductGroupItem(
+        product_id="legacy-sp-product",
+        managed_product_uid=sp_product_uid,
+        managed_curve_uid=sp_curve_uid,
+        managed_wellbore_uid=wellbore_uid,
+        managed_source_uid=source_uid,
+        display_name="Spontaneous Potential",
+        curve_name="SP",
+        curve_type="curve",
+        curve_unit="mV",
+        curve_family="spontaneous_potential",
+        selectable=True,
+    )
     well = ManagedWellRecord(
         managed_well_id="legacy-well",
         managed_well_uid=well_uid,
@@ -62,7 +77,7 @@ def test_viewer_package_uses_only_canonical_curve_identity(tmp_path: Path) -> No
             ManagedProductGroup(
                 group_key="open_hole",
                 group_label="Open Hole",
-                items=[product],
+                items=[product, sp_product],
             )
         ],
     )
@@ -73,7 +88,8 @@ def test_viewer_package_uses_only_canonical_curve_identity(tmp_path: Path) -> No
     )
 
     package = service.generate(well_uid)
-    curve = package.curves[0]
+    curve = next(curve for curve in package.curves if curve.observed_mnemonic == "GR")
+    sp_curve = next(curve for curve in package.curves if curve.observed_mnemonic == "SP")
 
     assert package.managed_well_uid == well_uid
     assert curve.managed_curve_uid == curve_uid
@@ -89,6 +105,13 @@ def test_viewer_package_uses_only_canonical_curve_identity(tmp_path: Path) -> No
     assert curve.display_policy.display_max == 150.0
     assert curve.display_policy.source == "managed_knowledge_family_default"
     assert curve.display_policy.review_required is False
+    assert sp_curve.display_policy.display_min == -100.0
+    assert sp_curve.display_policy.display_max == 100.0
+    assert sp_curve.display_policy.scale_direction == "normal"
+    assert (
+        "policy_direction_normalized:reversible->normal"
+        in sp_curve.display_policy.warnings
+    )
     assert package.session.session_uid == service.generate(well_uid).session.session_uid
 
     payload = package.model_dump()

@@ -106,6 +106,7 @@ def _template_scale_default(
     scale_min: float = 0.0,
     scale_max: float = 150.0,
     policy_value_unit: str | None = None,
+    display_direction: str = "normal",
     version: int = 1,
 ) -> dict[str, Any]:
     rec: dict[str, Any] = _approved({
@@ -115,7 +116,7 @@ def _template_scale_default(
         "scale_type": scale_type,
         "scale_min": scale_min,
         "scale_max": scale_max,
-        "display_direction": "normal",
+        "display_direction": display_direction,
     })
     rec["version"] = version
     if policy_value_unit is not None:
@@ -638,4 +639,48 @@ def test_d15_engine_version_constant_reflects_unit3d_activation() -> None:
     """
     import app.wdv_display.kr_family_policy_resolver as _mod
     assert _mod._UNIT_RESOLUTION_ENGINE_VERSION == "wdv_unit_resolution_v3d"
+
+# ---------------------------------------------------------------------------
+# D16 — non-canonical family direction is normalized at the resolver boundary
+# ---------------------------------------------------------------------------
+
+def test_d16_family_reversible_direction_normalized_to_canonical_normal(
+    tmp_path: Path,
+) -> None:
+    kr_path = tmp_path / "kr.json"
+    _write_kr(kr_path, [
+        _template_scale_default(
+            "tsd_sp",
+            "spontaneous_potential",
+            scale_min=-100.0,
+            scale_max=100.0,
+            policy_value_unit="mv",
+            display_direction="reversible",
+        ),
+    ])
+    storage = ManagedStorage(path=kr_path)
+    item = ManagedProductGroupItem(
+        product_id="SP",
+        display_name="SP",
+        curve_name="SP",
+        curve_type="curve",
+        curve_unit="mV",
+        curve_family="spontaneous_potential",
+    )
+
+    runtime = ManagedKrFamilyDisplayPolicyResolver.resolve(item, storage=storage)
+    typed = ManagedKrFamilyDisplayPolicyResolver.resolve_with_unit_resolution(
+        item, storage=storage, policy_revision="test-revision"
+    )
+
+    assert runtime is not None
+    assert runtime["direction"] == "normal"
+    assert runtime["warnings"] == [
+        "policy_direction_normalized:reversible->normal"
+    ]
+    assert typed.policy is not None
+    assert typed.policy["direction"] == "normal"
+    assert typed.policy["warnings"] == [
+        "policy_direction_normalized:reversible->normal"
+    ]
 

@@ -134,9 +134,9 @@ class ManagedKrFamilyDisplayPolicyResolver:
         scale_type = str(getattr(record, "scale_type", "") or "").strip()
         scale_min = getattr(record, "scale_min", None)
         scale_max = getattr(record, "scale_max", None)
-        direction = str(
-            getattr(record, "display_direction", "normal") or "normal"
-        ).strip()
+        direction, direction_warnings = cls._normalize_display_direction(
+            getattr(record, "display_direction", "normal")
+        )
 
         if scale_type in {"event_track", "waveform_track", "image_track", "tadpole_track"}:
             return None
@@ -156,7 +156,7 @@ class ManagedKrFamilyDisplayPolicyResolver:
             "policy_record_id": record.record_id,
             "policy_record_version": record.version,
             "curve_family": family,
-            "warnings": [],
+            "warnings": direction_warnings,
         }
 
     @classmethod
@@ -396,6 +396,14 @@ class ManagedKrFamilyDisplayPolicyResolver:
     def _normalize_alias(value: str) -> str:
         return re.sub(r"[^A-Z0-9]+", "", value.upper())
 
+    @staticmethod
+    def _normalize_display_direction(value: object) -> tuple[str, list[str]]:
+        """Map governed capability tokens into the canonical render vocabulary."""
+        raw = str(value or "normal").strip().lower()
+        if raw in {"normal", "reversed"}:
+            return raw, []
+        return "normal", [f"policy_direction_normalized:{raw}->normal"]
+
     @classmethod
     def resolve_with_unit_resolution(
         cls,
@@ -462,9 +470,9 @@ class ManagedKrFamilyDisplayPolicyResolver:
         scale_type = str(getattr(record, "scale_type", "") or "").strip()
         scale_min = getattr(record, "scale_min", None)
         scale_max = getattr(record, "scale_max", None)
-        direction = str(
-            getattr(record, "display_direction", "normal") or "normal"
-        ).strip()
+        direction, direction_warnings = cls._normalize_display_direction(
+            getattr(record, "display_direction", "normal")
+        )
 
         # Build the raw policy dict using the same validation logic as
         # resolve() so the dict contract is identical.
@@ -491,7 +499,7 @@ class ManagedKrFamilyDisplayPolicyResolver:
                 "policy_record_id": record.record_id,
                 "policy_record_version": record.version,
                 "curve_family": family_key,
-                "warnings": [],
+                "warnings": direction_warnings,
             }
 
         policy_value_unit_raw = getattr(record, "policy_value_unit", None)
