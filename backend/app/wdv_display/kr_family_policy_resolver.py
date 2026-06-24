@@ -12,12 +12,35 @@ import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Optional
 
 from app.inventory.models import ManagedProductGroupItem
 from app.knowledge.governance import GovernanceStatus
 from app.knowledge.managed_models import DisplayRuleRecord, GenericManagedRecord
 from app.knowledge.managed_storage import ManagedStorage
+from app.wdv_display.policy_unit_contract import UnitConversionStatus, WdvPolicyUnitContract
+from app.wdv_display.policy_unit_resolution import (
+    PolicyUnitResolutionResult,
+    PolicyUnitResolutionStatus,
+    ResolvedDisplayPolicy,
+)
+
+# Version token embedded in PolicyUnitResolutionResult.resolver_version for
+# results produced by resolve_with_unit_resolution().  Distinct from
+# WDV_DISPLAY_POLICY_RESOLVER_VERSION (which governs the dict-returning
+# resolve() path and the canonical payload hash).  This constant must NOT be
+# bumped until UNIT-3D activation.
+_UNIT_RESOLUTION_ENGINE_VERSION = "wdv_unit_resolution_v3c_dormant"
+
+# Mapping from WdvPolicyUnitContract conversion-failure codes to typed
+# resolution statuses.  UNKNOWN_SOURCE_UNIT maps to UNKNOWN_POLICY_UNIT
+# because the source unit is the policy unit; UNKNOWN_TARGET_UNIT maps to
+# UNKNOWN_CURVE_UNIT because the target unit is the curve unit.
+_CONVERSION_FAILURE_MAP: dict[UnitConversionStatus, PolicyUnitResolutionStatus] = {
+    UnitConversionStatus.UNKNOWN_SOURCE_UNIT: PolicyUnitResolutionStatus.UNKNOWN_POLICY_UNIT,
+    UnitConversionStatus.UNKNOWN_TARGET_UNIT: PolicyUnitResolutionStatus.UNKNOWN_CURVE_UNIT,
+    UnitConversionStatus.INCOMPATIBLE_DIMENSIONS: PolicyUnitResolutionStatus.INCOMPATIBLE,
+}
 
 
 @dataclass(frozen=True)
@@ -372,6 +395,282 @@ class ManagedKrFamilyDisplayPolicyResolver:
     @staticmethod
     def _normalize_alias(value: str) -> str:
         return re.sub(r"[^A-Z0-9]+", "", value.upper())
+
+    # ------------------------------------------------------------------
+    # DORMANT — UNIT-3C
+    # resolve_with_unit_resolution() implements the typed policy-unit
+    # conversion engine.  It is NOT called from resolve() and has zero
+    # observable runtime effect.  Activation is gated on UNIT-3D.
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def resolve_with_unit_resolution(
+        cls,
+        item: ManagedProductGroupItem,
+        *,
+        storage: ManagedStorage | None = None,
+        policy_revision: str | None = None,
+    ) -> ResolvedDisplayPolicy:
+        """Dormant typed resolver.  Returns a ResolvedDisplayPolicy carrying
+        both the raw policy dict and a typed unit-resolution trace.
+
+        Exact-match semantics are terminal: if a display_rule record exists
+        for the canonical curve ID, family policy is never consulted, even
+        when unit resolution fails.
+
+        This method MUST NOT be called from resolve() or from any active
+        runtime path.  Only tests and the future UNIT-3D activation commit
+        may call it.
+        """
+        storage = storage or ManagedStorage()
+        index = cls._index(storage)
+
+        # Step 1 — probe for an exact curve-level display_rule.  Use the
+        # same primitive as _resolve_exact_curve_rule() rather than calling
+        # that method, because _resolve_exact_curve_rule() conflates two
+        # distinct None reasons (no rule vs. rule-with-bad-bounds) into a
+        # single None return.  Here we need to distinguish them to preserve
+        # the terminal-exact guarantee.
+        canonical_id = cls._resolve_canonical_curve_id(item, index)
+        rule: DisplayRuleRecord | None = (
+            index.curve_display_rules.get(canonical_id) if canonical_id else None
+        )
+
+        if rule is not None:
+            # Exact match is terminal — never fall through to family policy.
+            display_min = getattr(rule, "display_min", None)
+            display_max = getattr(rule, "display_max", None)
+            policy_value_unit_raw = getattr(rule, "policy_value_unit", None)
+
+            unit_result = cls._build_unit_resolution(
+                policy_unit_raw=policy_value_unit_raw,
+                curve_unit_raw=item.curve_unit,
+                original_min=display_min,
+                original_max=display_max,
+                policy_record_id=rule.record_id,
+                policy_record_version=rule.version,
+                policy_source="exact",
+                policy_revision=policy_revision,
+            )
+            # Reuse _resolve_exact_curve_rule() for the standard dict so the
+            # exact format stays canonical.  It may return None when bounds
+            # are absent or log-invalid; that is acceptable — policy=None
+            # simply means no renderable bounds, while unit_resolution still
+            # carries the full provenance trace.
+            policy_dict = cls._resolve_exact_curve_rule(item, index)
+            return ResolvedDisplayPolicy(policy=policy_dict, unit_resolution=unit_result)
+
+        # Step 2 — no exact rule: try family policy.
+        family_key = cls._resolve_family(item, index)
+        if family_key is None:
+            return ResolvedDisplayPolicy(policy=None, unit_resolution=None)
+
+        record = index.family_defaults.get(family_key)
+        if record is None:
+            return ResolvedDisplayPolicy(policy=None, unit_resolution=None)
+
+        scale_type = str(getattr(record, "scale_type", "") or "").strip()
+        scale_min = getattr(record, "scale_min", None)
+        scale_max = getattr(record, "scale_max", None)
+        direction = str(
+            getattr(record, "display_direction", "normal") or "normal"
+        ).strip()
+
+        # Build the raw policy dict using the same validation logic as
+        # resolve() so the dict contract is identical.
+        policy_dict = None
+        if (
+            scale_type
+            not in {"event_track", "waveform_track", "image_track", "tadpole_track"}
+            and scale_min is not None
+            and scale_max is not None
+            and not (
+                scale_type == "log"
+                and (
+                    float(scale_min) <= 0
+                    or float(scale_max) <= float(scale_min)
+                )
+            )
+        ):
+            policy_dict = {
+                "type": scale_type,
+                "min": float(scale_min),
+                "max": float(scale_max),
+                "direction": direction,
+                "source": "managed_knowledge_family_default",
+                "policy_record_id": record.record_id,
+                "policy_record_version": record.version,
+                "curve_family": family_key,
+                "warnings": [],
+            }
+
+        policy_value_unit_raw = getattr(record, "policy_value_unit", None)
+        unit_result = cls._build_unit_resolution(
+            policy_unit_raw=policy_value_unit_raw,
+            curve_unit_raw=item.curve_unit,
+            original_min=scale_min,
+            original_max=scale_max,
+            policy_record_id=record.record_id,
+            policy_record_version=record.version,
+            policy_source="family",
+            policy_revision=policy_revision,
+        )
+        return ResolvedDisplayPolicy(policy=policy_dict, unit_resolution=unit_result)
+
+    @classmethod
+    def _build_unit_resolution(
+        cls,
+        *,
+        policy_unit_raw: object,
+        curve_unit_raw: object,
+        original_min: object,
+        original_max: object,
+        policy_record_id: object,
+        policy_record_version: object,
+        policy_source: Literal["exact", "family", "fallback"],
+        policy_revision: Optional[str],
+    ) -> PolicyUnitResolutionResult:
+        """Build a PolicyUnitResolutionResult for a single KR record match.
+
+        Handles all eight status paths:
+          IDENTITY, CONVERTED — resolved_bounds_usable = True
+          MISSING_POLICY_UNIT, UNKNOWN_POLICY_UNIT, MISSING_CURVE_UNIT,
+          UNKNOWN_CURVE_UNIT, INCOMPATIBLE, UNRESOLVED — resolved_bounds_usable = False
+        """
+        # Safe coercion to float (None stays None; non-numeric → None).
+        def _to_float(v: object) -> Optional[float]:
+            if v is None:
+                return None
+            try:
+                return float(v)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return None
+
+        original_min_f = _to_float(original_min)
+        original_max_f = _to_float(original_max)
+
+        record_id_str: Optional[str] = (
+            str(policy_record_id) if policy_record_id is not None else None
+        )
+        record_version_int: Optional[int] = (
+            int(policy_record_version)  # type: ignore[arg-type]
+            if policy_record_version is not None
+            else None
+        )
+
+        # Canonical unit tokens (None when raw value is absent or unrecognized).
+        canonical_policy_unit = WdvPolicyUnitContract.normalize_unit(policy_unit_raw)
+        canonical_curve_unit = WdvPolicyUnitContract.normalize_unit(curve_unit_raw)
+
+        # Common kwargs shared across all return paths.
+        common: dict[str, Any] = dict(
+            policy_record_id=record_id_str,
+            policy_record_version=record_version_int,
+            policy_source=policy_source,
+            original_policy_min=original_min_f,
+            original_policy_max=original_max_f,
+            canonical_policy_unit=canonical_policy_unit,
+            canonical_curve_unit=canonical_curve_unit,
+            resolver_version=_UNIT_RESOLUTION_ENGINE_VERSION,
+            policy_revision=policy_revision,
+        )
+
+        # --- Absence checks (must precede normalization results) ----------
+
+        policy_raw_str = str(policy_unit_raw or "").strip()
+        if not policy_raw_str:
+            return PolicyUnitResolutionResult(
+                status=PolicyUnitResolutionStatus.MISSING_POLICY_UNIT,
+                resolved_bounds_usable=False,
+                resolved_min=None,
+                resolved_max=None,
+                conversion_applied=False,
+                unresolved_reason="policy_value_unit is absent or empty",
+                **common,
+            )
+
+        curve_raw_str = str(curve_unit_raw or "").strip()
+        if not curve_raw_str:
+            return PolicyUnitResolutionResult(
+                status=PolicyUnitResolutionStatus.MISSING_CURVE_UNIT,
+                resolved_bounds_usable=False,
+                resolved_min=None,
+                resolved_max=None,
+                conversion_applied=False,
+                unresolved_reason="curve_unit is absent or empty",
+                **common,
+            )
+
+        # --- Unrecognized unit checks ------------------------------------
+
+        if canonical_policy_unit is None:
+            return PolicyUnitResolutionResult(
+                status=PolicyUnitResolutionStatus.UNKNOWN_POLICY_UNIT,
+                resolved_bounds_usable=False,
+                resolved_min=None,
+                resolved_max=None,
+                conversion_applied=False,
+                unresolved_reason=f"policy_value_unit {policy_raw_str!r} not recognized",
+                **common,
+            )
+
+        if canonical_curve_unit is None:
+            return PolicyUnitResolutionResult(
+                status=PolicyUnitResolutionStatus.UNKNOWN_CURVE_UNIT,
+                resolved_bounds_usable=False,
+                resolved_min=None,
+                resolved_max=None,
+                conversion_applied=False,
+                unresolved_reason=f"curve_unit {curve_raw_str!r} not recognized",
+                **common,
+            )
+
+        # --- Identity check (same canonical token — no conversion needed) -
+
+        if canonical_policy_unit == canonical_curve_unit:
+            return PolicyUnitResolutionResult(
+                status=PolicyUnitResolutionStatus.IDENTITY,
+                resolved_bounds_usable=True,
+                resolved_min=original_min_f,
+                resolved_max=original_max_f,
+                conversion_applied=False,
+                unresolved_reason=None,
+                **common,
+            )
+
+        # --- Numeric conversion ------------------------------------------
+
+        bounds = WdvPolicyUnitContract.convert_bounds(
+            original_min_f,
+            original_max_f,
+            source_unit=canonical_policy_unit,
+            target_unit=canonical_curve_unit,
+        )
+
+        if bounds.status is UnitConversionStatus.RESOLVED:
+            return PolicyUnitResolutionResult(
+                status=PolicyUnitResolutionStatus.CONVERTED,
+                resolved_bounds_usable=True,
+                resolved_min=bounds.minimum,
+                resolved_max=bounds.maximum,
+                conversion_applied=True,
+                unresolved_reason=None,
+                **common,
+            )
+
+        # Map conversion failure to the appropriate typed status.
+        mapped_status = _CONVERSION_FAILURE_MAP.get(
+            bounds.status, PolicyUnitResolutionStatus.UNRESOLVED
+        )
+        return PolicyUnitResolutionResult(
+            status=mapped_status,
+            resolved_bounds_usable=False,
+            resolved_min=None,
+            resolved_max=None,
+            conversion_applied=False,
+            unresolved_reason=bounds.reason,
+            **common,
+        )
 
     @classmethod
     def clear_cache_for_tests(cls) -> None:
