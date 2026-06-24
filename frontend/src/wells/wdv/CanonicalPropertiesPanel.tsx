@@ -121,30 +121,38 @@ export function CanonicalPropertiesPanel({
           <span>Scale minimum</span>
           <input
             type="number"
-            value={assignment.scaleMin}
-            onChange={(event) => onCommand(updateAssignmentCommand(
-              session.revision,
-              assignment.assignmentUid,
-              {
-                scaleMin: Number(event.target.value),
-                scaleMax: assignment.scaleMax,
-              },
-            ))}
+            value={assignment.scaleMin ?? ''}
+            onChange={(event) => {
+              const raw = event.target.value;
+              if (raw === '') return;
+              const newMin = Number(raw);
+              if (!isFinite(newMin)) return;
+              if (assignment.scaleMax === null) return;
+              onCommand(updateAssignmentCommand(
+                session.revision,
+                assignment.assignmentUid,
+                { scaleMin: newMin, scaleMax: assignment.scaleMax },
+              ));
+            }}
           />
         </label>
         <label>
           <span>Scale maximum</span>
           <input
             type="number"
-            value={assignment.scaleMax}
-            onChange={(event) => onCommand(updateAssignmentCommand(
-              session.revision,
-              assignment.assignmentUid,
-              {
-                scaleMin: assignment.scaleMin,
-                scaleMax: Number(event.target.value),
-              },
-            ))}
+            value={assignment.scaleMax ?? ''}
+            onChange={(event) => {
+              const raw = event.target.value;
+              if (raw === '') return;
+              const newMax = Number(raw);
+              if (!isFinite(newMax)) return;
+              if (assignment.scaleMin === null) return;
+              onCommand(updateAssignmentCommand(
+                session.revision,
+                assignment.assignmentUid,
+                { scaleMin: assignment.scaleMin, scaleMax: newMax },
+              ));
+            }}
           />
         </label>
         <label>

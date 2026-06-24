@@ -135,10 +135,11 @@ function viewerPackage(): CanonicalViewerPackageV21 {
     defaultScaleDirection: 'normal' as const,
     defaultColor: '#000000',
     recognised: true,
+    reviewRequired: false,
   });
 
   return {
-    contractVersion: 'wdv_viewer_package_v2_1',
+    contractVersion: 'wdv_viewer_package_v2_2',
     managedWellUid: WELL,
     managedWellboreUid: null,
     wellName: 'Test Well',

@@ -14,7 +14,7 @@ from app.identity.wdv_contract_v2 import (
     WdvCanonicalSession,
 )
 
-WDV_VIEWER_PACKAGE_CONTRACT_VERSION = "wdv_viewer_package_v2_1"
+WDV_VIEWER_PACKAGE_CONTRACT_VERSION = "wdv_viewer_package_v2_2"
 
 
 class WdvCanonicalDepthRange(BaseModel):
@@ -42,12 +42,40 @@ class WdvCanonicalCurveDisplayPolicy(BaseModel):
     curve_class: NonBlankString
     lattice: Literal["linear", "logarithmic"]
     scale_type: Literal["linear", "log"]
-    display_min: FiniteNumber
-    display_max: FiniteNumber
+    display_min: FiniteNumber | None = None
+    display_max: FiniteNumber | None = None
+    review_required: bool = False
     scale_direction: Literal["normal", "reversed"]
     default_color: NonBlankString
     source: NonBlankString
     warnings: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_display_bounds(self) -> "WdvCanonicalCurveDisplayPolicy":
+        has_min = self.display_min is not None
+        has_max = self.display_max is not None
+        if has_min != has_max:
+            raise ValueError(
+                "display_min and display_max must be supplied together or both absent"
+            )
+        if has_min and has_max:
+            if self.display_min == self.display_max:
+                raise ValueError("display_min and display_max must be unequal when present")
+            if self.scale_type == "log":
+                if self.display_min <= 0 or self.display_max <= 0:  # type: ignore[operator]
+                    raise ValueError(
+                        "log scale requires display_min and display_max to both be positive"
+                    )
+            if self.review_required:
+                raise ValueError(
+                    "review_required must be False when display bounds are present"
+                )
+        else:
+            if not self.review_required:
+                raise ValueError(
+                    "review_required must be True when display bounds are absent"
+                )
+        return self
 
 
 class WdvCanonicalViewerCurve(WdvCanonicalCurveReference):
@@ -58,7 +86,7 @@ class WdvCanonicalViewerPackage(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    contract_version: Literal["wdv_viewer_package_v2_1"] = (
+    contract_version: Literal["wdv_viewer_package_v2_2"] = (
         WDV_VIEWER_PACKAGE_CONTRACT_VERSION
     )
     managed_well_uid: CanonicalUuid7

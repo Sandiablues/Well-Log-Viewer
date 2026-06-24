@@ -32,7 +32,7 @@ import type {
 import { validateTrackGraphV21 } from './trackLayoutModelV21';
 
 export interface CanonicalViewerPackageV21 {
-  contractVersion: 'wdv_viewer_package_v2_1';
+  contractVersion: 'wdv_viewer_package_v2_2';
   managedWellUid: ManagedWellUid;
   managedWellboreUid: ManagedWellboreUid | null;
   wellName: string;
@@ -170,6 +170,7 @@ function parseDisplayPolicy(
   | 'defaultScaleDirection'
   | 'defaultColor'
   | 'recognised'
+  | 'reviewRequired'
 > {
   const record = requireRecord(value, 'display_policy');
   const lattice = requireString(record.lattice, 'display_policy.lattice');
@@ -191,8 +192,9 @@ function parseDisplayPolicy(
   return {
     curveClass: requireString(record.curve_class, 'display_policy.curve_class'),
     defaultLattice: lattice as CurveLatticeV21,
-    defaultMin: finiteNumber(record.display_min, 'display_policy.display_min'),
-    defaultMax: finiteNumber(record.display_max, 'display_policy.display_max'),
+    defaultMin: optionalFiniteNumber(record.display_min, 'display_policy.display_min'),
+    defaultMax: optionalFiniteNumber(record.display_max, 'display_policy.display_max'),
+    reviewRequired: optionalBoolean(record.review_required, 'display_policy.review_required', false),
     defaultScaleDirection: direction === 'reversed' ? 'reverse' : 'normal',
     defaultColor: requireString(record.default_color, 'display_policy.default_color'),
     recognised: true,
@@ -498,9 +500,9 @@ export function parseCanonicalViewerPackageV21(
   value: unknown,
 ): CanonicalViewerPackageV21 {
   const record = requireRecord(value, 'viewer package');
-  if (record.contract_version !== 'wdv_viewer_package_v2_1') {
+  if (record.contract_version !== 'wdv_viewer_package_v2_2') {
     throw new WdvIdentityContractError(
-      'Viewer package contract_version must be wdv_viewer_package_v2_1',
+      'Viewer package contract_version must be wdv_viewer_package_v2_2',
     );
   }
   if (!Array.isArray(record.curves)) {
@@ -519,7 +521,7 @@ export function parseCanonicalViewerPackageV21(
   const depthRange = requireRecord(record.depth_range, 'depth_range');
 
   return {
-    contractVersion: 'wdv_viewer_package_v2_1',
+    contractVersion: 'wdv_viewer_package_v2_2',
     managedWellUid,
     managedWellboreUid:
       record.managed_wellbore_uid === null

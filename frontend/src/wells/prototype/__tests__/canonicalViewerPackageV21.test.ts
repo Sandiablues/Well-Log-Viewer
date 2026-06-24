@@ -15,7 +15,7 @@ const ASSIGNMENT = '019ede00-0000-7000-8000-000000000008';
 
 function packagePayload() {
   return {
-    contract_version: 'wdv_viewer_package_v2_1',
+    contract_version: 'wdv_viewer_package_v2_2',
     managed_well_uid: WELL,
     managed_wellbore_uid: WELLBORE,
     well_name: 'Test Well',
@@ -43,6 +43,7 @@ function packagePayload() {
           scale_type: 'linear',
           display_min: 0,
           display_max: 200,
+          review_required: false,
           scale_direction: 'normal',
           default_color: '#2f80ed',
           source: 'template_default',
@@ -116,6 +117,7 @@ describe('canonical viewer package v2.1 adapter', () => {
     expect(parsed.curves[0].managedCurveUid).toBe(CURVE);
     expect(parsed.curves[0].defaultMin).toBe(0);
     expect(parsed.curves[0].defaultMax).toBe(200);
+    expect(parsed.curves[0].reviewRequired).toBe(false);
     expect(parsed.curves[0].defaultColor).toBe('#2f80ed');
     expect(parsed.session.tracks[0].trackUid).toBe(TRACK);
     expect(parsed.session.tracks[0].trackType).toBe('curve');
@@ -123,6 +125,21 @@ describe('canonical viewer package v2.1 adapter', () => {
       expect(parsed.session.tracks[0].curves[0].assignmentUid).toBe(ASSIGNMENT);
       expect(parsed.session.tracks[0].curves[0].managedCurveUid).toBe(CURVE);
     }
+  });
+
+  it('parses null display bounds with review_required=true (Tier-3 no-bounds contract)', () => {
+    const payload = packagePayload();
+    const curve = payload.curves[0] as Record<string, unknown>;
+    curve.display_policy = {
+      ...(curve.display_policy as object),
+      display_min: null,
+      display_max: null,
+      review_required: true,
+    };
+    const parsed = parseCanonicalViewerPackageV21(payload);
+    expect(parsed.curves[0].defaultMin).toBeNull();
+    expect(parsed.curves[0].defaultMax).toBeNull();
+    expect(parsed.curves[0].reviewRequired).toBe(true);
   });
 
   it('rejects legacy identity fields in assignments', () => {

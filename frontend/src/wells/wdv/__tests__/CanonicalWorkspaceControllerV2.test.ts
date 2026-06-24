@@ -23,7 +23,7 @@ function workspace(revision = 0): CanonicalWorkspaceV1 {
       updatedAt: '2026-06-19T00:00:00+00:00',
     },
     viewerPackage: {
-      contractVersion: 'wdv_viewer_package_v2_1',
+      contractVersion: 'wdv_viewer_package_v2_2',
       managedWellUid: wellUid,
       managedWellboreUid: null,
       wellName: 'Well A',

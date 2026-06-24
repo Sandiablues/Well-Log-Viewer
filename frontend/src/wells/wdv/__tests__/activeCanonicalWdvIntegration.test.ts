@@ -55,6 +55,7 @@ function workspace(
     defaultScaleDirection: 'normal' as const,
     defaultColor: '#2f80ed',
     recognised: true,
+    reviewRequired: false,
   };
 
   const session = {
@@ -75,7 +76,7 @@ function workspace(
     curves: [curve],
     session,
     viewerPackage: {
-      contractVersion: 'wdv_viewer_package_v2_1',
+      contractVersion: 'wdv_viewer_package_v2_2',
       managedWellUid,
       managedWellboreUid: null,
       wellName: managedWellUid === wellA ? 'Well A' : 'Well B',

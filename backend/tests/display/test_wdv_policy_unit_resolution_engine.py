@@ -1,8 +1,7 @@
-"""UNIT-3C tests — dormant policy-unit conversion engine.
+"""UNIT-3C tests — policy-unit conversion engine.
 
-Tests the new ManagedKrFamilyDisplayPolicyResolver.resolve_with_unit_resolution()
-classmethod introduced in UNIT-3C.  This method is dormant: it is never called
-from the active resolve() path and has no observable runtime effect.
+Tests ManagedKrFamilyDisplayPolicyResolver.resolve_with_unit_resolution()
+introduced in UNIT-3C and activated in UNIT-3D.
 
 Coverage:
   D1  — exact identity (same canonical unit token)
@@ -19,7 +18,7 @@ Coverage:
   D12 — policy record ID and version provenance from exact rule
   D13 — policy record ID and version provenance from family record
   D14 — runtime resolve() behavior unchanged after UNIT-3C
-  D15 — WdvCurveDisplayPolicyService.resolve() never calls dormant method
+  D15 — engine version constant reflects UNIT-3D activation
 """
 from __future__ import annotations
 
@@ -629,33 +628,14 @@ def test_d14_runtime_resolve_unchanged(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# D15 — WdvCurveDisplayPolicyService.resolve() never calls the dormant method
+# D15 — engine version constant reflects UNIT-3D activation
 # ---------------------------------------------------------------------------
 
-def test_d15_policy_service_does_not_call_dormant_method(tmp_path: Path) -> None:
-    """WdvCurveDisplayPolicyService.resolve() must not invoke resolve_with_unit_resolution."""
-    kr_path = tmp_path / "kr.json"
-    _write_kr(kr_path, [
-        _display_rule(
-            "dr_res", "resistivity_at90",
-            scale_type="log", display_min=0.2, display_max=2000.0,
-            policy_value_unit="ohmm",
-        ),
-    ])
-    storage = ManagedStorage(path=kr_path)
-    item = _item(curve_unit="ohmm")
+def test_d15_engine_version_constant_reflects_unit3d_activation() -> None:
+    """D15: _UNIT_RESOLUTION_ENGINE_VERSION must be the UNIT-3D active token.
+    In UNIT-3C the constant was 'wdv_unit_resolution_v3c_dormant'.
+    UNIT-3D must set it to 'wdv_unit_resolution_v3d'.
+    """
+    import app.wdv_display.kr_family_policy_resolver as _mod
+    assert _mod._UNIT_RESOLUTION_ENGINE_VERSION == "wdv_unit_resolution_v3d"
 
-    target = (
-        "app.wdv_display.kr_family_policy_resolver"
-        ".ManagedKrFamilyDisplayPolicyResolver"
-        ".resolve_with_unit_resolution"
-    )
-    with patch(target) as mock_dormant:
-        result = WdvCurveDisplayPolicyService.resolve(item, {})
-
-    mock_dormant.assert_not_called()
-    # Active path still returns a usable dict.
-    assert result is not None
-    assert "type" in result
-    assert "min" in result
-    assert "max" in result

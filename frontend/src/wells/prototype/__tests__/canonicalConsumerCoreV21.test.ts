@@ -50,6 +50,7 @@ const curve: CurveCatalogItemV21 = {
   defaultScaleDirection: 'normal',
   defaultColor: '#111111',
   recognised: true,
+  reviewRequired: false,
 };
 
 describe('WDV canonical consumer core v2.1', () => {

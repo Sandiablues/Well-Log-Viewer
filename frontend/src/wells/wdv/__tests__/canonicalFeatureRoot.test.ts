@@ -109,7 +109,7 @@ function session(revision = 1): CanonicalViewerSessionV21 {
 
 function viewerPackage(): CanonicalViewerPackageV21 {
   return {
-    contractVersion: 'wdv_viewer_package_v2_1',
+    contractVersion: 'wdv_viewer_package_v2_2',
     managedWellUid: WELL,
     managedWellboreUid: null,
     wellName: 'Test Well',
@@ -139,6 +139,7 @@ function viewerPackage(): CanonicalViewerPackageV21 {
       defaultScaleDirection: 'normal',
       defaultColor: '#000000',
       recognised: true,
+      reviewRequired: false,
     }],
     session: session(),
     warnings: [],

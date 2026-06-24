@@ -86,7 +86,12 @@ function presentationCurveId(curve: CurveCatalogItemV21): string {
   return curve.managedCurveUid;
 }
 
-function toLegacyCurve(curve: CurveCatalogItemV21): CurveCatalogItem {
+// Returns null for Tier-3 curves (null default bounds): the legacy CurveCatalogItem type
+// requires concrete number bounds and cannot represent the no-safe-bounds contract.
+// Tier-3 curves are absent from the legacy catalog but remain renderable when the
+// assignment carries user-set non-null scaleMin/scaleMax (see toLegacyAssignment guard).
+function toLegacyCurve(curve: CurveCatalogItemV21): CurveCatalogItem | null {
+  if (curve.defaultMin === null || curve.defaultMax === null) return null;
   return {
     curveId: presentationCurveId(curve),
     curveUid: curve.managedCurveUid,
@@ -113,8 +118,13 @@ function toLegacyCurve(curve: CurveCatalogItemV21): CurveCatalogItem {
   };
 }
 
+// scaleMin and scaleMax are passed as explicit number parameters because TypeScript
+// cannot propagate the null-narrowing from the call site through the CurveAssignmentV21
+// object type into an intersection. Caller must guard for null before calling.
 function toLegacyAssignment(
   assignment: CurveAssignmentV21,
+  scaleMin: number,
+  scaleMax: number,
 ): CurveAssignment {
   return {
     assignmentId: assignment.assignmentUid,
@@ -129,8 +139,8 @@ function toLegacyAssignment(
     normalizedMnemonic: null,
     stackIndex: assignment.stackIndex,
     visible: assignment.visible,
-    scaleMin: assignment.scaleMin,
-    scaleMax: assignment.scaleMax,
+    scaleMin,
+    scaleMax,
     scaleDirection: assignment.scaleDirection,
     scaleType: assignment.scaleType,
     rangeMode: assignment.rangeMode,
@@ -194,7 +204,11 @@ function toLegacyCurveTrack(
         });
         return [];
       }
-      return [toLegacyAssignment(assignment)];
+      // Tier-3 null bounds: not representable in legacy rendering path; skip silently.
+      if (assignment.scaleMin === null || assignment.scaleMax === null) return [];
+      // Pass narrowed scaleMin/scaleMax as explicit number arguments (TypeScript narrows
+      // after the null guard above but cannot propagate through the object type).
+      return [toLegacyAssignment(assignment, assignment.scaleMin, assignment.scaleMax)];
     });
 
   return {
@@ -378,7 +392,10 @@ export function buildOriginalWdvPresentationModel(
   const curveIndex = new Map(
     workspace.curves.map((curve) => [curve.managedCurveUid, curve]),
   );
-  const curveCatalog = workspace.curves.map(toLegacyCurve);
+  const curveCatalog = workspace.curves.flatMap((curve) => {
+    const item = toLegacyCurve(curve);
+    return item === null ? [] : [item];
+  });
   const tracks = [...workspace.session.tracks]
     .sort((left, right) => left.trackIndex - right.trackIndex)
     .map((track) => toLegacyTrack(track, curveIndex, issues));

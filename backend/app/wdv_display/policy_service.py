@@ -11,6 +11,8 @@ from typing import Any
 
 from app.inventory.models import ManagedProductGroupItem
 from app.wdv_display.kr_family_policy_resolver import ManagedKrFamilyDisplayPolicyResolver
+from app.wdv_display.policy_unit_contract import UnitConversionStatus, WdvPolicyUnitContract
+from app.wdv_display.policy_unit_resolution import PolicyUnitResolutionResult, ResolvedDisplayPolicy
 
 # ---------------------------------------------------------------------------
 # Display-policy cache identity constants
@@ -24,12 +26,12 @@ WDV_DISPLAY_POLICY_CONTRACT_VERSION: str = "wdv_display_policy_contract_v1"
 # Bump when resolver logic changes independently of KR content — i.e. when a new
 # block modifies resolution paths, fallback order, or guard conditions in a way
 # that changes resolved output for existing KR records.
-WDV_DISPLAY_POLICY_RESOLVER_VERSION: str = "wdv_display_policy_resolver_v3_foundation"
+WDV_DISPLAY_POLICY_RESOLVER_VERSION: str = "wdv_display_policy_resolver_v3d_active"
 
 # Unit-normalization contract version.  Included in the revision hash so that
 # future unit-handling changes affecting display policy automatically invalidate
 # cached contracts.  Increment when unit normalization rules change.
-WDV_DISPLAY_POLICY_UNIT_CONTRACT_VERSION: str = "wdv_display_units_v3_foundation_dormant"
+WDV_DISPLAY_POLICY_UNIT_CONTRACT_VERSION: str = "wdv_display_units_v3d_active"
 
 
 # ---------------------------------------------------------------------------
@@ -116,6 +118,9 @@ def _display_policy_canonical_payload(records: list) -> dict:
                 "display_min":        _stable_float(getattr(record, "display_min", None)),
                 "display_max":        _stable_float(getattr(record, "display_max", None)),
                 "reverse_scale":      bool(getattr(record, "reverse_scale", False)),
+                # Absent-safe; absent records emit empty string so the hash is stable
+                # before and after the policy_value_unit migration is applied.
+                "policy_value_unit":  str(getattr(record, "policy_value_unit", "") or ""),
             })
 
         elif rt == "alias":
@@ -219,6 +224,39 @@ def _clear_display_policy_revision_cache_for_tests() -> None:
         _revision_cache.clear()
 
 
+# ---------------------------------------------------------------------------
+# Tier-2 fallback heuristic bounds — explicit authored units required
+# ---------------------------------------------------------------------------
+#
+# Every entry below declares the authored unit alongside the bounds.  They are
+# used ONLY via WdvPolicyUnitContract.convert_bounds() in the unit-resolution
+# fallback hierarchy (Tier 2).  Conversion to the actual curve unit is
+# mandatory; a heuristic is silently skipped when conversion fails.
+#
+# Temperature is absent: "deg" is ambiguous (degF vs degC) so no single
+# authored unit can be declared without risk of a silent unit-frame error.
+# Generic 0–150 is absent: no authored unit exists for this range.
+
+_H_RESISTIVITY_MIN, _H_RESISTIVITY_MAX, _H_RESISTIVITY_UNIT = 0.2, 2000.0, "ohmm"
+_H_GAMMA_MIN,       _H_GAMMA_MAX,       _H_GAMMA_UNIT       = 0.0, 200.0,  "gapi"
+_H_DENSITY_MIN,     _H_DENSITY_MAX,     _H_DENSITY_UNIT     = 1.95, 2.95,  "g/cc"
+_H_NEUTRON_MIN,     _H_NEUTRON_MAX,     _H_NEUTRON_UNIT     = 0.45, -0.15, "v/v"
+_H_SONIC_MIN,       _H_SONIC_MAX,       _H_SONIC_UNIT       = 140.0, 40.0, "us/ft"
+_H_CALIPER_MIN,     _H_CALIPER_MAX,     _H_CALIPER_UNIT     = 6.0, 16.0,   "in"
+_H_PRESSURE_MIN,    _H_PRESSURE_MAX,    _H_PRESSURE_UNIT    = 0.0, 10000.0, "psi"
+
+# curve_class → (display_min, display_max, authored_unit)
+_TIER2_HEURISTICS: dict[str, tuple[float, float, str]] = {
+    "resistivity": (_H_RESISTIVITY_MIN, _H_RESISTIVITY_MAX, _H_RESISTIVITY_UNIT),
+    "gamma":       (_H_GAMMA_MIN,       _H_GAMMA_MAX,       _H_GAMMA_UNIT),
+    "density":     (_H_DENSITY_MIN,     _H_DENSITY_MAX,     _H_DENSITY_UNIT),
+    "neutron":     (_H_NEUTRON_MIN,     _H_NEUTRON_MAX,     _H_NEUTRON_UNIT),
+    "sonic":       (_H_SONIC_MIN,       _H_SONIC_MAX,       _H_SONIC_UNIT),
+    "borehole":    (_H_CALIPER_MIN,     _H_CALIPER_MAX,     _H_CALIPER_UNIT),
+    "pressure":    (_H_PRESSURE_MIN,    _H_PRESSURE_MAX,    _H_PRESSURE_UNIT),
+}
+
+
 class WdvCurveDisplayPolicyService:
     """Single backend authority for default curve display behaviour."""
 
@@ -279,20 +317,44 @@ class WdvCurveDisplayPolicyService:
             )
             return enriched
 
+        # UNIT-3D: activate typed unit-resolution engine
         try:
-            managed_kr_policy = ManagedKrFamilyDisplayPolicyResolver.resolve(item)
+            policy_revision = compute_display_policy_revision()
         except (OSError, ValueError, TypeError):
-            managed_kr_policy = None
+            policy_revision = None
+
+        resolved: ResolvedDisplayPolicy | None = None
+        try:
+            resolved = ManagedKrFamilyDisplayPolicyResolver.resolve_with_unit_resolution(
+                item, policy_revision=policy_revision
+            )
+        except (OSError, ValueError, TypeError):
             warnings.append("managed_knowledge_policy_unavailable")
 
-        if managed_kr_policy is not None:
-            kr_policy = dict(managed_kr_policy)
-            kr_policy["warnings"] = [
-                *warnings,
-                *list(kr_policy.get("warnings") or []),
-            ]
-            return finalize(kr_policy)
+        if resolved is not None and resolved.policy is not None:
+            ur: PolicyUnitResolutionResult | None = resolved.unit_resolution
+            if ur is not None and ur.resolved_bounds_usable:
+                # IDENTITY or CONVERTED: bounds are in the curve-unit frame
+                kr_dict = dict(resolved.policy)
+                kr_dict["min"] = ur.resolved_min
+                kr_dict["max"] = ur.resolved_max
+                kr_dict["warnings"] = list(dict.fromkeys([
+                    *warnings, *list(kr_dict.get("warnings") or [])
+                ]))
+                return finalize(kr_dict)
+            # Non-usable unit resolution: three-tier fallback + KR field overlay
+            return cls._resolve_with_fallback_hierarchy(
+                resolved=resolved,
+                ur=ur,
+                has_stats=has_stats,
+                observed_min=observed_min,
+                observed_max=observed_max,
+                curve_class=curve_class,
+                warnings=warnings,
+                finalize=finalize,
+            )
 
+        # No KR match (policy=None) or exception — existing no-KR fallback chain
         if "resist" in key or "ohmm" in key or "ohm" in key:
             if has_stats and observed_min is not None and observed_min <= 0:
                 warnings.append("non_positive_values_for_log_scale")
@@ -672,3 +734,124 @@ class WdvCurveDisplayPolicyService:
 
         set_render_semantics("", scale.get("min"), scale.get("max"), direction)
         return scale
+
+    # ------------------------------------------------------------------
+    # UNIT-3D: unit-resolution fallback hierarchy
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _resolve_with_fallback_hierarchy(
+        cls,
+        *,
+        resolved: "ResolvedDisplayPolicy",
+        ur: "PolicyUnitResolutionResult | None",
+        has_stats: bool,
+        observed_min: "float | None",
+        observed_max: "float | None",
+        curve_class: str,
+        warnings: "list[str]",
+        finalize: Any,
+    ) -> "dict[str, Any]":
+        """Non-usable unit resolution: three-tier fallback + KR field overlay.
+
+        Tier 1  — sanitized observed stats (always in sample-value frame).
+        Tier 2  — family heuristics with explicit authored units, converted via
+                  WdvPolicyUnitContract.convert_bounds(); excluded when
+                  canonical_curve_unit is None (MISSING/UNKNOWN_CURVE_UNIT).
+        Tier 3  — no bounds, review_required=True.
+
+        KR overlays non-bounds fields: scale_type, direction, policy_record_id,
+        policy_record_version, canonical_curve_id, curve_family.
+        Fallback owns: min, max, review_required, source (and curve_class,
+        default_color, lattice via finalize).
+        """
+        kr_dict = dict(resolved.policy)
+        status = ur.status if ur is not None else None
+
+        # Build deduplicated warning list with unit-resolution failure token.
+        all_warnings: list[str] = [*warnings, *list(kr_dict.get("warnings") or [])]
+        if status is not None:
+            failure_token = f"policy_unit_resolution_failed:{status.value}"
+            if failure_token not in all_warnings:
+                all_warnings.append(failure_token)
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for w in all_warnings:
+            if w not in seen:
+                seen.add(w)
+                deduped.append(w)
+
+        scale_type: str = kr_dict.get("type", "linear") or "linear"
+
+        # --- Tier 1: sanitized observed stats ----------------------------
+        fallback_min: float | None = None
+        fallback_max: float | None = None
+        fallback_source: str = "unit_resolution_tier3_no_bounds"
+
+        if has_stats and observed_min is not None and observed_max is not None:
+            low, high = cls._padded_observed_domain(observed_min, observed_max)
+            valid_for_scale = not (scale_type == "log" and (low <= 0 or high <= 0))
+            if valid_for_scale and low != high:
+                fallback_min = low
+                fallback_max = high
+                fallback_source = "observed_statistics"
+
+        # --- Tier 2: heuristic bounds with explicit authored unit ----------
+        # Excluded when canonical_curve_unit is absent (cannot convert).
+        canonical_curve_unit = ur.canonical_curve_unit if ur is not None else None
+        if fallback_min is None and canonical_curve_unit is not None:
+            tier2 = cls._tier2_heuristic_bounds(curve_class, canonical_curve_unit)
+            if tier2 is not None:
+                fallback_min, fallback_max = tier2
+                fallback_source = "unit_resolution_tier2_heuristic"
+
+        # --- Tier 3: no bounds, review required --------------------------
+        review_required = fallback_min is None or fallback_max is None
+
+        # Build overlay: KR contributes non-bounds fields.
+        overlay: dict[str, Any] = {
+            "type":          scale_type,
+            "direction":     kr_dict.get("direction", "normal") or "normal",
+            "min":           fallback_min,
+            "max":           fallback_max,
+            "source":        fallback_source,
+            "review_required": review_required,
+            "warnings":      deduped,
+        }
+        for field in (
+            "policy_record_id",
+            "policy_record_version",
+            "canonical_curve_id",
+            "curve_family",
+        ):
+            if field in kr_dict:
+                overlay[field] = kr_dict[field]
+
+        return finalize(overlay)
+
+    @classmethod
+    def _tier2_heuristic_bounds(
+        cls,
+        curve_class: str,
+        canonical_curve_unit: str,
+    ) -> "tuple[float, float] | None":
+        """Convert a Tier-2 heuristic to the given canonical curve unit.
+
+        Returns (display_min, display_max) in the curve-unit frame preserving
+        the original display order (min=left, max=right), or None when no
+        heuristic exists for this curve class or conversion fails.
+        """
+        heuristic = _TIER2_HEURISTICS.get(curve_class)
+        if heuristic is None:
+            return None
+        h_min, h_max, h_unit = heuristic
+        result = WdvPolicyUnitContract.convert_bounds(
+            h_min, h_max, source_unit=h_unit, target_unit=canonical_curve_unit
+        )
+        if (
+            result.status is not UnitConversionStatus.RESOLVED
+            or result.minimum is None
+            or result.maximum is None
+        ):
+            return None
+        return result.minimum, result.maximum

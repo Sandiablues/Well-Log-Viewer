@@ -52,7 +52,11 @@ function mapSamples(
   depthRange: { minimum: number; maximum: number },
   viewport: { width: number; height: number },
 ): CanonicalRenderPoint[] {
-  const scaleSpan = assignment.scaleMax - assignment.scaleMin;
+  // Null bounds (Tier-3 no-bounds fallback) cannot produce render points.
+  if (assignment.scaleMin === null || assignment.scaleMax === null) return [];
+  // Capture as const so TypeScript tracks the narrowed number type through the .map() closure.
+  const scaleMin = assignment.scaleMin;
+  const scaleSpan = assignment.scaleMax - scaleMin;
   const depthSpan = depthRange.maximum - depthRange.minimum;
   if (!(scaleSpan !== 0) || !(depthSpan > 0)) return [];
 
@@ -63,7 +67,7 @@ function mapSamples(
       && Number.isFinite(sample.value)
     ))
     .map((sample) => {
-      let normalized = (sample.value - assignment.scaleMin) / scaleSpan;
+      let normalized = (sample.value - scaleMin) / scaleSpan;
       if (assignment.scaleDirection === 'reverse') normalized = 1 - normalized;
       if (assignment.clipToTrack) normalized = Math.min(1, Math.max(0, normalized));
       normalized += assignment.horizontalOffsetPct / 100;

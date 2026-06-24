@@ -30,7 +30,7 @@ from app.wdv_display.policy_unit_resolution import (
 # WDV_DISPLAY_POLICY_RESOLVER_VERSION (which governs the dict-returning
 # resolve() path and the canonical payload hash).  This constant must NOT be
 # bumped until UNIT-3D activation.
-_UNIT_RESOLUTION_ENGINE_VERSION = "wdv_unit_resolution_v3c_dormant"
+_UNIT_RESOLUTION_ENGINE_VERSION = "wdv_unit_resolution_v3d"
 
 # Mapping from WdvPolicyUnitContract conversion-failure codes to typed
 # resolution statuses.  UNKNOWN_SOURCE_UNIT maps to UNKNOWN_POLICY_UNIT
@@ -396,13 +396,6 @@ class ManagedKrFamilyDisplayPolicyResolver:
     def _normalize_alias(value: str) -> str:
         return re.sub(r"[^A-Z0-9]+", "", value.upper())
 
-    # ------------------------------------------------------------------
-    # DORMANT — UNIT-3C
-    # resolve_with_unit_resolution() implements the typed policy-unit
-    # conversion engine.  It is NOT called from resolve() and has zero
-    # observable runtime effect.  Activation is gated on UNIT-3D.
-    # ------------------------------------------------------------------
-
     @classmethod
     def resolve_with_unit_resolution(
         cls,
@@ -411,16 +404,13 @@ class ManagedKrFamilyDisplayPolicyResolver:
         storage: ManagedStorage | None = None,
         policy_revision: str | None = None,
     ) -> ResolvedDisplayPolicy:
-        """Dormant typed resolver.  Returns a ResolvedDisplayPolicy carrying
-        both the raw policy dict and a typed unit-resolution trace.
+        """Typed resolver returning a ResolvedDisplayPolicy with full unit-resolution trace.
 
         Exact-match semantics are terminal: if a display_rule record exists
         for the canonical curve ID, family policy is never consulted, even
         when unit resolution fails.
 
-        This method MUST NOT be called from resolve() or from any active
-        runtime path.  Only tests and the future UNIT-3D activation commit
-        may call it.
+        This is the authoritative runtime path as of UNIT-3D.
         """
         storage = storage or ManagedStorage()
         index = cls._index(storage)

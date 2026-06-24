@@ -48,6 +48,7 @@ function workspace(): CanonicalWorkspaceV1 {
     defaultScaleDirection: 'normal' as const,
     defaultColor: '#2f80ed',
     recognised: true,
+    reviewRequired: false,
   };
 
   const assignment = {
@@ -116,7 +117,7 @@ function workspace(): CanonicalWorkspaceV1 {
   };
 
   const viewerPackage = {
-    contractVersion: 'wdv_viewer_package_v2_1' as const,
+    contractVersion: 'wdv_viewer_package_v2_2' as const,
     managedWellUid: uid.well,
     managedWellboreUid: null,
     wellName: 'Well A',

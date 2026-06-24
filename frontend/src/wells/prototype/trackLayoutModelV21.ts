@@ -26,8 +26,9 @@ export type FillSideV21 = 'none' | 'left' | 'right' | 'between';
 export interface CurveCatalogItemV21 extends CanonicalCurveCatalogItemV21 {
   curveClass: string;
   defaultLattice: CurveLatticeV21;
-  defaultMin: number;
-  defaultMax: number;
+  defaultMin: number | null;
+  defaultMax: number | null;
+  reviewRequired: boolean;
   defaultScaleDirection: 'normal' | 'reverse';
   defaultColor: string;
   recognised: boolean;
@@ -43,8 +44,8 @@ export interface CurveAssignmentV21 {
   managedSourceUid: ManagedSourceUid;
   stackIndex: number;
   visible: boolean;
-  scaleMin: number;
-  scaleMax: number;
+  scaleMin: number | null;
+  scaleMax: number | null;
   scaleDirection: 'normal' | 'reverse';
   scaleType: CurveScaleTypeV21;
   rangeMode: CurveRangeModeV21;
