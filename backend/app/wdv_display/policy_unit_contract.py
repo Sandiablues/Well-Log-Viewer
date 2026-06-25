@@ -109,10 +109,12 @@ class WdvPolicyUnitContract:
         "g/cm3": "g/cc",
         "g/cm^3": "g/cc",
         "gcc": "g/cc",
+        "g/c3": "g/cc",
         "kg/m3": "kg/m3",
         "kg/m^3": "kg/m3",
         # Sonic slowness.
         "us/ft": "us/ft",
+        "us/f": "us/ft",
         "µs/ft": "us/ft",
         "μs/ft": "us/ft",
         "usec/ft": "us/ft",

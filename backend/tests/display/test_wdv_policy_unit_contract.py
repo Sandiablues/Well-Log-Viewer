@@ -136,6 +136,261 @@ def test_bounds_conversion_preserves_reversed_order() -> None:
     assert result.maximum == pytest.approx(-0.15)
 
 
+
+
+# Block 3A — Focused test additions for test_wdv_policy_unit_contract.py
+# These tests are appended to the existing file by b3a_add_tests.command.
+# ---------------------------------------------------------------------------
+# BLOCK-3A: Identity alias completion — G/C3 and US/F
+# ---------------------------------------------------------------------------
+# Two alias entries were added to WdvPolicyUnitContract._ALIASES:
+#   "g/c3": "g/cc"   — LAS density abbreviation
+#   "us/f": "us/ft"  — LAS sonic abbreviation
+# These tests prove:
+#   Group 1 — New aliases normalize correctly
+#   Group 2 — Existing aliases are unaffected (regression)
+#   Group 3 — Near-miss tokens are still rejected
+#   Group 4 — Canonical _UNITS set is unchanged
+#   Group 5 — End-to-end identity resolution chain for RHOZ, DTCO, DTSM controls
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Group 1 — New alias normalization
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # Density: G/C3 LAS abbreviation
+        ("G/C3",   "g/cc"),
+        ("g/c3",   "g/cc"),
+        ("G/c3",   "g/cc"),  # mixed case
+        (" G/C3 ", "g/cc"),  # whitespace stripped
+        # Sonic: US/F LAS abbreviation
+        ("US/F",   "us/ft"),
+        ("us/f",   "us/ft"),
+        ("Us/F",   "us/ft"),  # mixed case
+        (" US/F ", "us/ft"),  # whitespace stripped
+    ],
+)
+def test_block3a_new_alias_normalization(raw: str, expected: str) -> None:
+    """New LAS abbreviation aliases must resolve to their canonical units."""
+    assert WdvPolicyUnitContract.normalize_unit(raw) == expected
+
+
+# ---------------------------------------------------------------------------
+# Group 2 — Existing aliases unaffected (regression)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # Density family — existing aliases
+        ("G/CC",    "g/cc"),
+        ("g/cm3",   "g/cc"),
+        ("g/cm^3",  "g/cc"),
+        ("GCC",     "g/cc"),
+        # Sonic family — existing aliases
+        ("US/FT",   "us/ft"),
+        ("µs/ft",   "us/ft"),
+        ("usec/ft", "us/ft"),
+    ],
+)
+def test_block3a_existing_aliases_unchanged(raw: str, expected: str) -> None:
+    """Existing aliases must still resolve correctly after adding the new entries."""
+    assert WdvPolicyUnitContract.normalize_unit(raw) == expected
+
+
+# ---------------------------------------------------------------------------
+# Group 3 — Near-miss rejection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "G/C4",          # near-miss density — must not match g/c3
+        "US/M",          # valid unit, but a different canonical (us/m), not us/ft
+        "mystery-unit",  # unknown
+        "",              # empty
+        None,            # None
+    ],
+)
+def test_block3a_near_miss_not_matched_as_new_aliases(raw: object) -> None:
+    """Near-miss and unknown tokens must not be pulled in by the new alias entries."""
+    result = WdvPolicyUnitContract.normalize_unit(raw)
+    # G/C4 must return None; US/M returns "us/m" (existing, not us/ft)
+    if raw == "US/M":
+        assert result == "us/m"  # existing alias unaffected
+    elif raw == "G/C4":
+        assert result is None
+    else:
+        assert result is None
+
+
+def test_block3a_g_c4_strictly_rejected() -> None:
+    """G/C4 is a near-miss for G/C3 and must return None."""
+    assert WdvPolicyUnitContract.normalize_unit("G/C4") is None
+
+
+def test_block3a_unknown_unit_returns_none() -> None:
+    """An unknown unit string must still return None."""
+    assert WdvPolicyUnitContract.normalize_unit("mystery-unit") is None
+
+
+# ---------------------------------------------------------------------------
+# Group 4 — Canonical _UNITS set protection
+# ---------------------------------------------------------------------------
+
+
+def test_block3a_g_cc_remains_in_units() -> None:
+    """g/cc must remain a canonical unit in _UNITS."""
+    assert "g/cc" in WdvPolicyUnitContract._UNITS
+
+
+def test_block3a_us_ft_remains_in_units() -> None:
+    """us/ft must remain a canonical unit in _UNITS."""
+    assert "us/ft" in WdvPolicyUnitContract._UNITS
+
+
+def test_block3a_g_c3_not_added_to_units() -> None:
+    """g/c3 is an alias key only — must NOT appear in _UNITS."""
+    assert "g/c3" not in WdvPolicyUnitContract._UNITS
+
+
+def test_block3a_us_f_not_added_to_units() -> None:
+    """us/f is an alias key only — must NOT appear in _UNITS."""
+    assert "us/f" not in WdvPolicyUnitContract._UNITS
+
+
+def test_block3a_aliases_count_increased_by_exactly_two() -> None:
+    """_ALIASES must contain exactly 2 more entries than before (64 → 66)."""
+    assert len(WdvPolicyUnitContract._ALIASES) == 66
+
+
+# ---------------------------------------------------------------------------
+# Group 5 — End-to-end identity resolution chain
+#
+# Proves that after the alias is added, curve_unit="G/C3" normalizes to the
+# same canonical value as policy_unit="g/cc" → IDENTITY resolution path.
+# Similarly for US/F and DTSM/DTCO → us/ft → sonic family.
+#
+# The resolver's IDENTITY branch fires when:
+#   canonical_policy_unit == canonical_curve_unit (both not None)
+# We prove this directly from the normalize_unit output.
+# ---------------------------------------------------------------------------
+
+
+def test_block3a_rhoz_g_c3_alias_reaches_identity_path() -> None:
+    """
+    RHOZ: curve_unit='G/C3', policy_unit='g/cc'.
+    After the alias edit, both normalize to 'g/cc' → IDENTITY branch.
+    """
+    canonical_curve = WdvPolicyUnitContract.normalize_unit("G/C3")
+    canonical_policy = WdvPolicyUnitContract.normalize_unit("g/cc")
+    # Neither must be None (which would trigger UNKNOWN_CURVE_UNIT)
+    assert canonical_curve is not None, "G/C3 must not produce UNKNOWN_CURVE_UNIT"
+    assert canonical_policy is not None
+    # Both must be the same value → IDENTITY branch
+    assert canonical_curve == canonical_policy, (
+        f"G/C3 canonical ({canonical_curve!r}) != g/cc canonical ({canonical_policy!r}); "
+        "IDENTITY path requires equal canonical units"
+    )
+    # Explicit: both must be g/cc
+    assert canonical_curve == "g/cc"
+
+
+def test_block3a_dtco_us_f_alias_reaches_identity_path() -> None:
+    """
+    DTCO: curve_unit='US/F', policy_unit='us/ft'.
+    After the alias edit, both normalize to 'us/ft' → IDENTITY branch.
+    """
+    canonical_curve = WdvPolicyUnitContract.normalize_unit("US/F")
+    canonical_policy = WdvPolicyUnitContract.normalize_unit("us/ft")
+    assert canonical_curve is not None, "US/F must not produce UNKNOWN_CURVE_UNIT"
+    assert canonical_policy is not None
+    assert canonical_curve == canonical_policy, (
+        f"US/F canonical ({canonical_curve!r}) != us/ft canonical ({canonical_policy!r}); "
+        "IDENTITY path requires equal canonical units"
+    )
+    assert canonical_curve == "us/ft"
+
+
+def test_block3a_dtsm_us_f_alias_reaches_identity_path() -> None:
+    """
+    DTSM: curve_unit='US/F', policy_unit='us/ft'.
+    Same alias as DTCO — both normalize to 'us/ft' → IDENTITY branch.
+    """
+    canonical_curve = WdvPolicyUnitContract.normalize_unit("US/F")
+    canonical_policy = WdvPolicyUnitContract.normalize_unit("us/ft")
+    assert canonical_curve is not None, "US/F must not produce UNKNOWN_CURVE_UNIT for DTSM"
+    assert canonical_curve == canonical_policy
+    assert canonical_curve == "us/ft"
+
+
+def test_block3a_gr_normalization_unchanged() -> None:
+    """GR uses GAPI — must normalize correctly and be unaffected by the edit."""
+    assert WdvPolicyUnitContract.normalize_unit("GAPI") == "gapi"
+    assert WdvPolicyUnitContract.normalize_unit("API") == "gapi"
+
+
+def test_block3a_nphi_normalization_unchanged() -> None:
+    """NPHI uses V/V — must normalize correctly and be unaffected by the edit."""
+    assert WdvPolicyUnitContract.normalize_unit("V/V") == "v/v"
+    assert WdvPolicyUnitContract.normalize_unit("fraction") == "v/v"
+
+
+def test_block3a_sp_normalization_unchanged() -> None:
+    """SP uses MV — must normalize correctly and be unaffected by the edit."""
+    assert WdvPolicyUnitContract.normalize_unit("MV") == "mv"
+    assert WdvPolicyUnitContract.normalize_unit("millivolt") == "mv"
+
+
+def test_block3a_identity_path_no_numeric_conversion_density() -> None:
+    """
+    IDENTITY resolution means no numeric conversion: factor=1, offset=0.
+    g/cc → g/cc: convert_value(x, source_unit='g/cc', target_unit='g/cc') == x.
+    """
+    for v in (1.0, 2.65, 0.5, 3.0):
+        result = WdvPolicyUnitContract.convert_value(
+            v, source_unit="g/cc", target_unit="g/cc"
+        )
+        assert result.status is UnitConversionStatus.RESOLVED
+        assert result.value == pytest.approx(v, rel=1e-12)
+
+
+def test_block3a_identity_path_no_numeric_conversion_sonic() -> None:
+    """
+    IDENTITY resolution means no numeric conversion: factor=1, offset=0.
+    us/ft → us/ft: convert_value(x, source_unit='us/ft', target_unit='us/ft') == x.
+    """
+    for v in (40.0, 80.0, 100.0, 140.0):
+        result = WdvPolicyUnitContract.convert_value(
+            v, source_unit="us/ft", target_unit="us/ft"
+        )
+        assert result.status is UnitConversionStatus.RESOLVED
+        assert result.value == pytest.approx(v, rel=1e-12)
+
+
+def test_block3a_g_c3_alias_key_format() -> None:
+    """
+    The alias key for G/C3 is produced by _alias_key: strip+lower+collapse whitespace.
+    Verify the key 'g/c3' is present in _ALIASES and maps to 'g/cc'.
+    """
+    assert WdvPolicyUnitContract._ALIASES.get("g/c3") == "g/cc"
+
+
+def test_block3a_us_f_alias_key_format() -> None:
+    """
+    The alias key for US/F is produced by _alias_key: strip+lower+collapse whitespace.
+    Verify the key 'us/f' is present in _ALIASES and maps to 'us/ft'.
+    """
+    assert WdvPolicyUnitContract._ALIASES.get("us/f") == "us/ft"
+
+
 # ---------------------------------------------------------------------------
 # UNIT-3A: PolicyUnitResolutionResult and ResolvedDisplayPolicy contract tests
 # ---------------------------------------------------------------------------
