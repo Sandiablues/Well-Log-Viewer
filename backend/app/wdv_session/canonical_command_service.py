@@ -11,9 +11,13 @@ from app.identity.wdv_contract_v2 import (
     WdvCanonicalTrack,
 )
 from app.inventory.canonical_identity_resolver import CanonicalInventoryIdentityResolver
-from app.wdv_display.policy_service import compute_display_policy_revision
+from app.wdv_display.policy_service import (
+    WdvCurveDisplayPolicyService,
+    compute_display_policy_revision,
+)
 from app.wdv_session.canonical_commands import (
     AddCurveAssignmentCommand,
+    BootstrapCurveAssignmentCommand,
     CreateConfiguredTrackCommand,
     CreateTrackCommand,
     RemoveCurveAssignmentCommand,
@@ -46,6 +50,7 @@ class CanonicalWdvCommandService:
         transaction_service: CanonicalWdvWorkspaceTransactionService | None = None,
         *,
         policy_revision_fn: Callable[[], str] | None = None,
+        display_policy_resolver: Callable[[object], dict] | None = None,
     ) -> None:
         self.session_service = session_service or CanonicalWdvSessionService()
         self.resolver = resolver or CanonicalInventoryIdentityResolver()
@@ -53,6 +58,11 @@ class CanonicalWdvCommandService:
             policy_revision_fn
             if policy_revision_fn is not None
             else compute_display_policy_revision
+        )
+        self._display_policy_resolver: Callable[[object], dict] = (
+            display_policy_resolver
+            if display_policy_resolver is not None
+            else WdvCurveDisplayPolicyService.resolve
         )
         if transaction_service is None:
             workspace_service = None
@@ -150,6 +160,21 @@ class CanonicalWdvCommandService:
             stack_index=stack_index,
             source=source,
         )
+
+    @staticmethod
+    def _canonical_scale_type(value) -> str:
+        key = str(value or "").strip().lower()
+        return "logarithmic" if key in {"log", "logarithmic"} else "linear"
+
+    @staticmethod
+    def _canonical_scale_direction(value) -> str:
+        key = str(value or "").strip().lower()
+        return "reversed" if key in {
+            "reverse",
+            "reversed",
+            "right_to_left",
+            "decreasing",
+        } else "normal"
 
     @staticmethod
     def _renumber_tracks(
@@ -269,6 +294,100 @@ class CanonicalWdvCommandService:
 
         return self._execute(managed_well_uid, command, mutate)
 
+    def bootstrap_assignment(
+        self,
+        managed_well_uid: str,
+        command: BootstrapCurveAssignmentCommand,
+    ) -> WdvCanonicalSession:
+        """Create the first curve track and assignment in one transaction.
+
+        The command is deliberately restricted to sessions with no tracks.
+        Existing sessions must use the normal track and assignment commands,
+        which prevents this bootstrap path from becoming a second layout
+        authority.
+        """
+        resolved = self.resolver.resolve_curve(
+            managed_well_uid,
+            command.managed_curve_uid,
+        )
+        display_policy = self._display_policy_resolver(resolved.product)
+        scale_min = display_policy.get("min")
+        scale_max = display_policy.get("max")
+        scale_type = self._canonical_scale_type(display_policy.get("type"))
+        scale_direction = self._canonical_scale_direction(
+            display_policy.get("direction")
+        )
+
+        def mutate(session: WdvCanonicalSession) -> WdvCanonicalSession:
+            if session.tracks:
+                raise CanonicalWdvCommandError(
+                    "Canonical empty-session bootstrap requires a session with no tracks"
+                )
+
+            track_uid = new_uuid7_str()
+            track_name = (
+                command.track_name
+                or resolved.product.display_name
+                or resolved.product.normalized_mnemonic
+                or resolved.product.observed_mnemonic
+                or "Curve Track"
+            )
+            assignment = WdvCanonicalAssignment(
+                assignment_uid=new_uuid7_str(),
+                managed_curve_uid=resolved.managed_curve_uid,
+                managed_product_uid=resolved.managed_product_uid,
+                managed_well_uid=resolved.managed_well_uid,
+                managed_wellbore_uid=resolved.managed_wellbore_uid,
+                managed_source_uid=resolved.managed_source_uid,
+                track_uid=track_uid,
+                kr_curve_type_id=resolved.product.kr_curve_type_id,
+                observed_mnemonic=(
+                    resolved.product.observed_mnemonic
+                    or resolved.product.curve_name
+                    or resolved.product.display_name
+                ),
+                normalized_mnemonic=resolved.product.normalized_mnemonic,
+                display_name=resolved.product.display_name,
+                curve_family=resolved.product.curve_family,
+                unit=resolved.product.curve_unit,
+                stack_index=0,
+                visible=command.visible,
+                scale_min=scale_min,
+                scale_max=scale_max,
+                scale_type=scale_type,
+                scale_direction=scale_direction,
+                color=command.color,
+                line_style=command.line_style,
+                line_width=command.line_width,
+                fill_mode=command.fill_mode,
+                source=command.source,
+            )
+            track = WdvCanonicalTrack(
+                track_uid=track_uid,
+                track_key="canonical-bootstrap-curve-track",
+                track_number=0,
+                track_name=track_name,
+                track_type="curve",
+                renderer_type="curve",
+                track_role="curve",
+                width_px=command.width_px,
+                lattice=scale_type,
+                lattice_source="backend_display_policy",
+                scale_mode="per_curve",
+                assignments=(assignment,),
+            )
+            return session.model_copy(
+                update={
+                    "state_status": "active",
+                    "tracks": (track,),
+                    "selected_track_uid": track_uid,
+                    "display_policy_revision": self._policy_revision_fn(),
+                }
+            )
+
+        return self._execute(managed_well_uid, command, mutate)
+
+
     def add_assignment(
         self,
         managed_well_uid: str,
@@ -277,6 +396,13 @@ class CanonicalWdvCommandService:
         resolved = self.resolver.resolve_curve(
             managed_well_uid,
             command.managed_curve_uid,
+        )
+        display_policy = self._display_policy_resolver(resolved.product)
+        scale_min = display_policy.get("min")
+        scale_max = display_policy.get("max")
+        scale_type = self._canonical_scale_type(display_policy.get("type"))
+        scale_direction = self._canonical_scale_direction(
+            display_policy.get("direction")
         )
 
         def mutate(session: WdvCanonicalSession) -> WdvCanonicalSession:
@@ -324,10 +450,10 @@ class CanonicalWdvCommandService:
                 unit=resolved.product.curve_unit,
                 stack_index=target_stack_index,
                 visible=command.visible,
-                scale_min=command.scale_min,
-                scale_max=command.scale_max,
-                scale_type=command.scale_type,
-                scale_direction=command.scale_direction,
+                scale_min=scale_min,
+                scale_max=scale_max,
+                scale_type=scale_type,
+                scale_direction=scale_direction,
                 color=command.color,
                 line_style=command.line_style,
                 line_width=command.line_width,

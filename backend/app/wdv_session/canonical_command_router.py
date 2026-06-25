@@ -13,6 +13,7 @@ from app.wdv_session.canonical_command_service import (
 )
 from app.wdv_session.canonical_commands import (
     AddCurveAssignmentCommand,
+    BootstrapCurveAssignmentCommand,
     CreateConfiguredTrackCommand,
     CreateTrackCommand,
     RemoveCurveAssignmentCommand,
@@ -104,6 +105,20 @@ def remove_track(
     service: CanonicalWdvCommandService = Depends(get_service),
 ) -> WdvCanonicalSession:
     return _translate(lambda: service.remove_track(managed_well_uid, command))
+
+
+@router.post(
+    "/{managed_well_uid}/assignments/bootstrap",
+    response_model=WdvCanonicalSession,
+)
+def bootstrap_assignment(
+    managed_well_uid: str,
+    command: BootstrapCurveAssignmentCommand,
+    service: CanonicalWdvCommandService = Depends(get_service),
+) -> WdvCanonicalSession:
+    return _translate(
+        lambda: service.bootstrap_assignment(managed_well_uid, command)
+    )
 
 
 @router.post("/{managed_well_uid}/assignments", response_model=WdvCanonicalSession)

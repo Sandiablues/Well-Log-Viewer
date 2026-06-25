@@ -348,19 +348,58 @@ export async function buildWdvTemplateApplicationPlan(templateKey: string, loade
         }),
     });
 }
-export async function applyWdvTemplateApplicationPlan(templateKey: string, loadedCurveItems: WdvLoadedCurveItem[], managedWellId: string, sourceApplicationPlanId?: string | null): Promise<WdvTemplateApplicationApplyEnvelope> {
-    const recommendationPayload = buildWdvTemplateRecommendationRequest(loadedCurveItems);
-    return fetchWlvJson<WdvTemplateApplicationApplyEnvelope>('/api/wlv/wdv/templates/application-plans/apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            managed_well_id: managedWellId,
-            template_key: templateKey,
-            workflow_context: recommendationPayload.workflow_context,
-            loaded_curve_items: recommendationPayload.loaded_curve_items,
-            source_application_plan_id: sourceApplicationPlanId ?? null,
-        }),
-    });
+export interface WdvCanonicalTemplateApplySession {
+    revision: number;
+    state_status: 'empty' | 'active' | 'cleared';
+    selected_track_uid: string | null;
+    tracks: Array<{
+        track_uid: string;
+        track_name: string;
+        track_type: string;
+        width_px?: number | null;
+        lattice?: string | null;
+        lattice_source?: string | null;
+        lattice_override?: boolean | null;
+        scale_mode?: string | null;
+        depth_basis?: string | null;
+        assignments: Array<{
+            assignment_uid: string;
+            managed_curve_uid: string;
+            stack_index: number;
+            visible: boolean;
+            scale_min: number | null;
+            scale_max: number | null;
+            scale_type: string | null;
+            scale_direction: string | null;
+            color: string | null;
+        }>;
+    }>;
+}
+
+export async function applyCanonicalWdvTemplate(
+    managedWellUid: string,
+    expectedRevision: number,
+    templateKey: string,
+    workflowContext = 'open_hole',
+): Promise<WdvCanonicalTemplateApplySession> {
+    if (!managedWellUid.trim()) {
+        throw new Error('Canonical template apply requires managed well UID.');
+    }
+    if (expectedRevision < 0) {
+        throw new Error('Canonical WDV session is not ready for template application.');
+    }
+    return fetchWlvJson<WdvCanonicalTemplateApplySession>(
+        `/api/wlv/v2/wdv/template-commands/${encodeURIComponent(managedWellUid)}/apply`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                expected_revision: expectedRevision,
+                template_key: templateKey,
+                workflow_context: workflowContext,
+            }),
+        },
+    );
 }
 export function compactFamilyList(values?: string[], fallback = 'None'): string {
     if (!values || values.length === 0)
@@ -530,7 +569,7 @@ export function logGridRangeForTrack(track: CurveTrack): {
     min: number;
     max: number;
 } | null {
-    const positiveAssignments = orderedCurves(track).filter((assignment) => assignment.scaleMin > 0 && assignment.scaleMax > 0 && assignment.scaleMin !== assignment.scaleMax);
+    const positiveAssignments = orderedCurves(track).filter((assignment) => assignment.scaleMin !== null && assignment.scaleMax !== null && assignment.scaleMin > 0 && assignment.scaleMax > 0 && assignment.scaleMin !== assignment.scaleMax);
     if (positiveAssignments.length === 0)
         return null;
     const min = Math.min(...positiveAssignments.map((assignment) => Math.min(assignment.scaleMin, assignment.scaleMax)));
@@ -932,12 +971,14 @@ export function CurveInventory({ availableCurves, curveUsageCounts, visibleTrack
       <div className="wlv-drop-help">Drag curves into curve tracks. Drag curve headers between tracks to move assignments.</div>
     </aside>);
 }
-export function WdvTemplateRecommendationModal({ recommendation, loadedCurveItems, managedWellId, onClose, onApplied, }: {
+export function WdvTemplateRecommendationModal({ recommendation, loadedCurveItems, managedWellId, managedWellUid, getCanonicalRevision, onClose, onApplied, }: {
     recommendation: WdvTemplateRecommendationItem;
     loadedCurveItems: WdvLoadedCurveItem[];
     managedWellId?: string | null;
+    managedWellUid?: string | null;
+    getCanonicalRevision: () => number;
     onClose: () => void;
-    onApplied: (session: WdvSessionLayoutResponse) => void;
+    onApplied: (session: WdvCanonicalTemplateApplySession) => void;
 }) {
     const [applicationPlanEnvelope, setApplicationPlanEnvelope] = useState<WdvTemplateApplicationPlanEnvelope | null>(null);
     const [applicationPlanLoading, setApplicationPlanLoading] = useState(false);
@@ -981,18 +1022,20 @@ export function WdvTemplateRecommendationModal({ recommendation, loadedCurveItem
     const planStatus = plan?.plan_status ?? (applicationPlanLoading ? 'building_plan' : 'recommendation_only');
     const applyEligible = plan?.apply_eligible ?? false;
     const mutationPerformed = applicationPlanEnvelope?.mutation_performed ?? false;
-    const canApply = Boolean(managedWellId && plan && applyEligible && !applicationPlanLoading && !applicationApplying);
+    const canApply = Boolean(managedWellId && managedWellUid && plan && applyEligible && !applicationPlanLoading && !applicationApplying);
     const handleApply = () => {
-        if (!managedWellId || !plan || !applyEligible)
+        if (!managedWellId || !managedWellUid || !plan || !applyEligible)
             return;
         setApplicationApplying(true);
         setApplicationApplyError(null);
-        void applyWdvTemplateApplicationPlan(recommendation.template_key, loadedCurveItems, managedWellId, plan.application_plan_id)
-            .then((result) => {
-            if (!result.mutation_performed || !result.layout) {
-                throw new Error('Backend did not return an applied WDV layout.');
-            }
-            onApplied(result.layout);
+        void applyCanonicalWdvTemplate(
+            managedWellUid,
+            getCanonicalRevision(),
+            recommendation.template_key,
+            'open_hole',
+        )
+            .then((session) => {
+            onApplied(session);
         })
             .catch((error) => {
             setApplicationApplyError(error instanceof Error ? error.message : 'Template apply service unavailable');
@@ -1577,7 +1620,7 @@ export function CurveHeaderStack({ track, curveCatalogItems, selectedAssignmentI
                 }}>
             <span className="wlv-curve-color" style={{ background: assignment.color }}/>
             <strong>{curve.mnemonic}</strong>
-            <span>{assignment.scaleMinLabel ?? String(assignment.scaleMin)}—{assignment.scaleMaxLabel ?? String(assignment.scaleMax)}</span>
+            <span>{assignment.scaleMinLabel ?? (assignment.scaleMin !== null ? String(assignment.scaleMin) : '?')}—{assignment.scaleMaxLabel ?? (assignment.scaleMax !== null ? String(assignment.scaleMax) : '?')}</span>
             <em>{curve.unit}</em>
             {openMenuAssignmentId === assignment.assignmentId && (<CurveHeaderActionMenuPortal trackId={track.trackId} assignmentId={assignment.assignmentId} assignmentIndex={index} assignmentCount={ordered.length} onSelectCurve={onSelectCurve} onReorderCurve={onReorderCurve} onCloseCurveMenu={onCloseCurveMenu} onRemoveCurveFromTrack={onRemoveCurveFromTrack}/>)}
           </div>);
@@ -2148,12 +2191,19 @@ export function CurveProperties({ track, assignment, curveCatalogItems, updateCu
       </div>
       <label>
         Range min
-        <input type="number" value={assignment.scaleMin} onChange={(event) => updateCurveAssignment(track.trackId, assignment.assignmentId, { scaleMin: Number(event.target.value) })}/>
+        <input type="number" value={assignment.scaleMin ?? ''} onChange={(event) => updateCurveAssignment(track.trackId, assignment.assignmentId, { scaleMin: Number(event.target.value) })}/>
       </label>
       <label>
         Range max
-        <input type="number" value={assignment.scaleMax} onChange={(event) => updateCurveAssignment(track.trackId, assignment.assignmentId, { scaleMax: Number(event.target.value) })}/>
+        <input type="number" value={assignment.scaleMax ?? ''} onChange={(event) => updateCurveAssignment(track.trackId, assignment.assignmentId, { scaleMax: Number(event.target.value) })}/>
       </label>
+      <button
+        type="button"
+        onClick={() => updateCurveAssignment(track.trackId, assignment.assignmentId, { resetScaleToGovernedDefault: true })}
+        title="Reset scale to governed KR default"
+      >
+        Reset to Default
+      </button>
       <label>
         Color
         <input type="color" value={assignment.color} onChange={(event) => updateCurveAssignment(track.trackId, assignment.assignmentId, { color: event.target.value })}/>

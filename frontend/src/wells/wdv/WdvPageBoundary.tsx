@@ -4,8 +4,8 @@ import { WellLogPropertiesPanelSlot } from '../prototype/WellLogPropertiesPanelS
 import { loadBackendViewerPackageWithFallback, type BackendViewerPackageLoadResult } from '../prototype/backendViewerPackageAdapter';
 import { buildWdvPackageState, emptyWdvPackageState, type WdvLoadedCurveItem, type WdvPackageState } from '../prototype/wdvPackageState';
 import { indexManagedCurveSamples, loadManagedCurveSamples, type ManagedCurveSamplesByCurveId, type ManagedCurveSamplesPayload } from '../prototype/managedCurveSamples';
-import type { ActiveTrackType, CurveAssignment, CurveCatalogItem, DragCurvePayload, SelectionRef, WellLogTrack } from '../prototype/trackLayoutModel';
-import { curveById, makeCurveAssignment, orderedCurves, renumberCurveStack } from '../prototype/trackLayoutModel';
+import type { CurveAssignment, CurveCatalogItem, DragCurvePayload, SelectionRef, WellLogTrack } from '../prototype/trackLayoutModel';
+import { makeCurveAssignment, orderedCurves } from '../prototype/trackLayoutModel';
 import { managedWellIdentityFromPayload, sameManagedWellIdentity, type ManagedWellIdentity } from '../identity/managedWellIdentity';
 import {
     buildCurveIdentityIndex,
@@ -13,8 +13,8 @@ import {
     canonicalizeCurveUsageCounts,
     resolveAssignmentCanonicalCurveKey,
 } from '../identity/curveIdentityIndex';
-import { AddTrackDraft, CURVE_TRACK_MAX_WIDTH, CURVE_TRACK_MIN_WIDTH, CurveInventory, CurveInventoryWellContext, DepthViewRange, IntervalSelectionState, RightPanel, Toolbar, TrackBackdropMode, TrackCanvas, WdvRecommendedCurve, WdvSessionLayoutCurveState, WdvSessionLayoutResponse, WdvSessionLayoutTrackState, WdvTemplateRecommendationItem, WdvTemplateRecommendationModal, WdvWorkspaceLoadedWell, buildWdvTemplateRecommendationRequest, clampCurveTrackWidth, clampValue, displayTitleForTrack, fetchWlvJson, sortTracks } from './WdvPresentationPrimitives';
-import { buildWdvWorkspaceScope, useWdvLayoutSource } from './useWdvLayoutSource';
+import { AddTrackDraft, CURVE_TRACK_MAX_WIDTH, CURVE_TRACK_MIN_WIDTH, CurveInventory, CurveInventoryWellContext, DepthViewRange, IntervalSelectionState, RightPanel, Toolbar, TrackBackdropMode, TrackCanvas, WdvCanonicalTemplateApplySession, WdvRecommendedCurve, WdvTemplateRecommendationItem, WdvTemplateRecommendationModal, WdvWorkspaceLoadedWell, buildWdvTemplateRecommendationRequest, clampCurveTrackWidth, clampValue, fetchWlvJson, sortTracks } from './WdvPresentationPrimitives';
+import { useWdvLayoutSource } from './useWdvLayoutSource';
 import type { CanonicalLayoutResult } from './useWdvLayoutSource';
 
 type WdvTemplateRecommendationEnvelope = {
@@ -98,187 +98,6 @@ async function mapWithConcurrency<TInput, TOutput>(items: TInput[], concurrency:
 }
 
 
-function finiteNumberOr(value: unknown, fallback: number): number {
-    const parsed = typeof value === 'number' ? value : Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function sessionCurveAssignmentFromFrontend(assignment: CurveAssignment, catalog: CurveCatalogItem[]): WdvSessionLayoutCurveState {
-    const curve = catalog.find((item) => item.curveId === assignment.curveId);
-    return {
-        assignment_id: assignment.assignmentId,
-        curve_uid: assignment.curveUid ?? curve?.curveUid ?? null,
-        well_uid: assignment.wellUid ?? curve?.wellUid ?? null,
-        source_uid: assignment.sourceUid ?? curve?.sourceUid ?? null,
-        kr_curve_type_id: assignment.krCurveTypeId ?? curve?.krCurveTypeId ?? null,
-        observed_mnemonic: assignment.observedMnemonic ?? curve?.observedMnemonic ?? curve?.mnemonic ?? assignment.curveId,
-        normalized_mnemonic: assignment.normalizedMnemonic ?? curve?.normalizedMnemonic ?? curve?.mnemonic ?? assignment.curveId,
-        curve_id: assignment.curveId,
-        product_id: curve?.curveId ?? assignment.curveId,
-        mnemonic: curve?.mnemonic ?? assignment.curveId,
-        display_name: curve?.description ?? curve?.mnemonic ?? assignment.curveId,
-        curve_family: curve?.curveClass ?? null,
-        unit: curve?.unit ?? null,
-        stack_index: assignment.stackIndex,
-        visible: assignment.visible,
-        scale_min: assignment.scaleMin,
-        scale_max: assignment.scaleMax,
-        scale_type: assignment.scaleType ?? (curve?.defaultLattice === 'logarithmic' ? 'log' : 'linear'),
-        scale_direction: assignment.scaleDirection,
-        color: assignment.color,
-    };
-}
-
-function sessionTracksFromFrontend(tracks: WellLogTrack[], catalog: CurveCatalogItem[]): WdvSessionLayoutTrackState[] {
-    return sortTracks(tracks).map((track) => {
-        if (track.trackType === 'depth') {
-            return {
-                track_id: track.trackId,
-                track_number: track.trackIndex,
-                track_name: track.title,
-                track_type: 'depth',
-                width_px: track.widthPx,
-                curves: [],
-            };
-        }
-        if (track.trackType === 'curve') {
-            return {
-                track_id: track.trackId,
-                track_number: track.trackIndex,
-                track_name: displayTitleForTrack(track, catalog),
-                track_type: 'curve',
-                width_px: track.widthPx,
-                lattice: track.lattice,
-                lattice_source: track.latticeSource,
-                curves: orderedCurves(track).map((assignment) => sessionCurveAssignmentFromFrontend(assignment, catalog)),
-            };
-        }
-        return {
-            track_id: track.trackId,
-            track_number: track.trackIndex,
-            track_name: track.title,
-            track_type: track.trackType,
-            width_px: track.widthPx,
-            curves: [],
-        };
-    });
-}
-
-function sessionAssignmentIdentityCandidates(rawAssignment: WdvSessionLayoutCurveState): string[] {
-    return [
-        rawAssignment.curve_uid,
-        rawAssignment.curveUid,
-        rawAssignment.curve_id,
-        rawAssignment.curveId,
-        rawAssignment.product_id,
-        rawAssignment.productId,
-        rawAssignment.display_curve_id,
-        rawAssignment.displayCurveId,
-    ]
-        .map((value) => String(value || '').trim())
-        .filter((value, index, values) => Boolean(value) && values.indexOf(value) === index);
-}
-
-function curveFromSessionAssignment(rawAssignment: WdvSessionLayoutCurveState, catalog: CurveCatalogItem[]): CurveCatalogItem | null {
-    const identityCandidates = sessionAssignmentIdentityCandidates(rawAssignment);
-    const uidMatch = catalog.find((item) => item.curveUid && identityCandidates.includes(item.curveUid));
-    if (uidMatch)
-        return uidMatch;
-    const directMatch = catalog.find((item) => identityCandidates.includes(item.curveId));
-    if (directMatch)
-        return directMatch;
-    const mnemonic = String(rawAssignment.mnemonic || '').trim().toLowerCase();
-    const unit = String(rawAssignment.unit || '').trim().toLowerCase();
-    if (!mnemonic)
-        return null;
-    return catalog.find((item) => (item.mnemonic.trim().toLowerCase() === mnemonic
-        && (!unit || item.unit.trim().toLowerCase() === unit))) ?? null;
-}
-
-function frontendTracksFromSession(session: WdvSessionLayoutResponse, catalog: CurveCatalogItem[]): WellLogTrack[] {
-    const restoredTracks: WellLogTrack[] = [];
-    (session.tracks ?? []).forEach((rawTrack, index) => {
-        const trackType = rawTrack.track_type ?? rawTrack.trackType ?? 'curve';
-        const trackId = rawTrack.track_id ?? rawTrack.trackId ?? `wdv-session-track-${index + 1}`;
-        const trackIndex = finiteNumberOr(rawTrack.track_number ?? rawTrack.trackNumber, index);
-        const title = rawTrack.track_name ?? rawTrack.trackName ?? `Track ${index + 1}`;
-        const widthPx = finiteNumberOr(rawTrack.width_px ?? rawTrack.widthPx, trackType === 'depth' ? 86 : CURVE_TRACK_RESET_WIDTH);
-        if (trackType === 'depth') {
-            restoredTracks.push({
-                trackId,
-                trackIndex,
-                trackType: 'depth',
-                title,
-                depthBasis: title === 'TVD' || title === 'TVDSS' ? title : 'MD',
-                unit: 'm',
-                widthPx,
-                visible: true,
-            });
-            return;
-        }
-        if (trackType !== 'curve')
-            return;
-        const assignments = (rawTrack.curves ?? [])
-            .map((rawAssignment, assignmentIndex) => {
-            const curve = curveFromSessionAssignment(rawAssignment, catalog);
-            if (!curve)
-                return null;
-            const fallback = makeCurveAssignment(curve, assignmentIndex);
-            const scaleDirection = rawAssignment.scale_direction ?? rawAssignment.scaleDirection;
-            const scaleType = rawAssignment.scale_type ?? rawAssignment.scaleType;
-            const restoredAssignment: CurveAssignment = {
-                ...fallback,
-                assignmentId: rawAssignment.assignment_id ?? rawAssignment.assignmentId ?? fallback.assignmentId,
-                curveUid: rawAssignment.curve_uid ?? rawAssignment.curveUid ?? fallback.curveUid ?? curve.curveUid ?? null,
-                krCurveTypeId: rawAssignment.kr_curve_type_id ?? rawAssignment.krCurveTypeId ?? fallback.krCurveTypeId ?? curve.krCurveTypeId ?? null,
-                wellUid: rawAssignment.well_uid ?? rawAssignment.wellUid ?? fallback.wellUid ?? curve.wellUid ?? null,
-                sourceUid: rawAssignment.source_uid ?? rawAssignment.sourceUid ?? fallback.sourceUid ?? curve.sourceUid ?? null,
-                observedMnemonic: rawAssignment.observed_mnemonic ?? rawAssignment.observedMnemonic ?? fallback.observedMnemonic ?? curve.observedMnemonic ?? curve.mnemonic,
-                normalizedMnemonic: rawAssignment.normalized_mnemonic ?? rawAssignment.normalizedMnemonic ?? fallback.normalizedMnemonic ?? curve.normalizedMnemonic ?? curve.mnemonic,
-                stackIndex: finiteNumberOr(rawAssignment.stack_index ?? rawAssignment.stackIndex, assignmentIndex),
-                visible: rawAssignment.visible ?? fallback.visible,
-                scaleMin: finiteNumberOr(rawAssignment.scale_min ?? rawAssignment.scaleMin, fallback.scaleMin),
-                scaleMax: finiteNumberOr(rawAssignment.scale_max ?? rawAssignment.scaleMax, fallback.scaleMax),
-                scaleMinLabel: typeof rawAssignment.scale_min_label === 'string' ? rawAssignment.scale_min_label : null,
-                scaleMaxLabel: typeof rawAssignment.scale_max_label === 'string' ? rawAssignment.scale_max_label : null,
-                scaleType: scaleType === 'log' || scaleType === 'linear' ? scaleType : fallback.scaleType,
-                scaleDirection: scaleDirection === 'reverse' || scaleDirection === 'reversed' ? 'reverse' : 'normal',
-                color: rawAssignment.color ?? fallback.color,
-            };
-            return restoredAssignment;
-        })
-            .filter((assignment): assignment is CurveAssignment => Boolean(assignment));
-        restoredTracks.push({
-            trackId,
-            trackIndex,
-            trackType: 'curve',
-            title: assignments.length
-                ? assignments.map((assignment) => curveById(catalog, assignment.curveId).mnemonic).join(' / ')
-                : title,
-            widthPx: clampCurveTrackWidth(widthPx),
-            visible: true,
-            lattice: rawTrack.lattice === 'logarithmic' ? 'logarithmic' : 'linear',
-            latticeSource: rawTrack.lattice_source === 'user_override' || rawTrack.latticeSource === 'user_override' ? 'user_override' : 'front_curve_default',
-            latticeOverride: rawTrack.lattice_source === 'user_override' || rawTrack.latticeSource === 'user_override',
-            scaleMode: 'per_curve',
-            curves: renumberCurveStack(assignments),
-        });
-    });
-    return reindexTracks(restoredTracks);
-}
-
-function hasRenderableWdvTrackContent(tracks: WellLogTrack[]): boolean {
-    return tracks.some((track) => track.trackType === 'curve' && track.curves.length > 0);
-}
-
-function sessionTracksForBackendPersistence(tracks: WellLogTrack[], catalog: CurveCatalogItem[]): WdvSessionLayoutTrackState[] {
-    return hasRenderableWdvTrackContent(tracks) ? sessionTracksFromFrontend(tracks, catalog) : [];
-}
-
-function selectedTrackIdFromSession(session: WdvSessionLayoutResponse): string | null {
-    return session.selected_track_id ?? session.selectedTrackId ?? null;
-}
-
 async function evaluateWdvTemplateRecommendations(loadedCurveItems: WdvLoadedCurveItem[], signal?: AbortSignal): Promise<WdvTemplateRecommendationEnvelope> {
     return fetchWlvJson<WdvTemplateRecommendationEnvelope>('/api/wlv/wdv/templates/recommendations/evaluate', {
         method: 'POST',
@@ -290,10 +109,6 @@ async function evaluateWdvTemplateRecommendations(loadedCurveItems: WdvLoadedCur
 
 function rangesEqual(a: DepthViewRange, b: DepthViewRange): boolean {
     return a.min === b.min && a.max === b.max;
-}
-
-function reindexTracks(tracks: WellLogTrack[]): WellLogTrack[] {
-    return sortTracks(tracks).map((track, index) => ({ ...track, trackIndex: index }));
 }
 
 function reindexTracksInCurrentOrder(tracks: WellLogTrack[]): WellLogTrack[] {
@@ -312,10 +127,6 @@ function moveTrackById(tracks: WellLogTrack[], trackId: string, direction: -1 | 
     const [movingTrack] = next.splice(fromIndex, 1);
     next.splice(toIndex, 0, movingTrack);
     return reindexTracksInCurrentOrder(next);
-}
-
-function nextTrackId(trackType: ActiveTrackType): string {
-    return `track-${trackType}-${Date.now()}-${Math.round(Math.random() * 100000)}`;
 }
 
 // WLV-WDV-CURVE-INVENTORY-RESIZE-1
@@ -669,8 +480,6 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
   const [curveInventoryWidthPx, setCurveInventoryWidthPx] = useState(CURVE_INVENTORY_DEFAULT_WIDTH_PX);
   const [curveInventoryCollapsed, setCurveInventoryCollapsed] = useState(false);
   const [curveInventoryResizeState, setCurveInventoryResizeState] = useState<CurveInventoryResizeState | null>(null);
-  const wdvSessionHydratedKeyRef = useRef<string | null>(null);
-  const wdvSessionSaveTimerRef = useRef<number | null>(null);
   // Tracks the current canonical session revision for revision-guarded commands.
   // -1 means the canonical session has not been initialised yet (canonical GET
   // returned empty or was unreachable).  ≥ 0 means the session is live and
@@ -800,93 +609,33 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
   }, [managedViewerWellId, wdvPackageState.loadedCurveItems]);
 
   // ---------------------------------------------------------------------------
-  // Shared canvas orchestration — single-ownership hook
+  // Canonical-only startup restore
   // ---------------------------------------------------------------------------
 
-  /**
-   * Loads the canonical per-well session layout. Called by the hook only after
-   * an eligible 404 from the shared-canvas probe. Returns null when
-   * prerequisites are not yet ready (curve items not loaded), which keeps the
-   * hook at `canonical_fallback` without a false `ready` transition.
-   *
-   * Swallows non-abort fetch errors (e.g. 404 on first launch) and returns a
-   * result with empty tracks, preserving the original behaviour of enabling
-   * saves even when no prior session exists.
-   */
   const loadCanonicalLayout = useCallback(
     async (signal: AbortSignal): Promise<CanonicalLayoutResult | null> => {
-      if (!managedViewerWellId || !wdvSessionKey || wdvPackageState.loadedCurveItems.length === 0) {
+      if (!managedViewerWellUid || !wdvSessionKey || wdvPackageState.loadedCurveItems.length === 0) {
         return null;
       }
-      // Capture at call time — wdvSessionKey is stable within this invocation
-      // because canonicalLoadKey (= wdvSessionKey) is in the hook's dep array.
-      const sessionKey = wdvSessionKey;
-      let session: WdvSessionLayoutResponse;
-      try {
-        session = await fetchWlvJson<WdvSessionLayoutResponse>(
-          `/api/wlv/wdv/sessions/${managedViewerWellId}/layout`,
-          { signal },
-        );
-      } catch (error) {
-        if (isAbortError(error)) throw error;
-        // 404 means "no saved session yet" — enable saves with empty tracks so
-        // the user can start fresh. All other errors (500, network failure, etc.)
-        // must propagate so orchestrateWdvLayout emits an error state and
-        // persistence is never incorrectly enabled after a genuine fetch failure.
-        const is404 = error instanceof Error && error.message.startsWith('404 ');
-        if (!is404) throw error;
-        return { tracks: [], selectedTrackId: null, hydratedSessionKey: sessionKey };
-      }
-      // Also fetch the canonical session to bootstrap canonicalRevisionRef and,
-      // when it is active, to prefer canonical UUID track IDs over legacy string IDs.
-      let canonicalSession: RawCanonicalSession | null = null;
-      if (managedViewerWellUid) {
-        canonicalSession = await fetchWlvJson<RawCanonicalSession>(
-          `/api/wlv/v2/wdv/sessions/${encodeURIComponent(managedViewerWellUid)}`,
-          { signal },
-        ).catch(() => null);
-      }
-
-      if (canonicalSession) {
-        canonicalRevisionRef.current = canonicalSession.revision;
-        // Prefer canonical tracks when the canonical session is active — they
-        // carry UUID track IDs that the command handlers require.
-        if (canonicalSession.state_status === 'active') {
-          const canonicalTracks = frontendTracksFromCanonicalSession(
-            canonicalSession,
-            activeCurveCatalog,
-          );
-          if (hasRenderableWdvTrackContent(canonicalTracks)) {
-            return {
-              tracks: canonicalTracks,
-              selectedTrackId: canonicalSession.selected_track_uid,
-              hydratedSessionKey: sessionKey,
-            };
-          }
-        }
-      } else {
-        // Canonical endpoint unreachable — commands requiring UUID IDs will be
-        // skipped until the session is established.
-        canonicalRevisionRef.current = -1;
-      }
-
-      const candidateTracks =
-        session.state_status === 'active'
-          ? frontendTracksFromSession(session, activeCurveCatalog)
-          : [];
-      const restoredTracks = hasRenderableWdvTrackContent(candidateTracks) ? candidateTracks : [];
-      const tracks = restoredTracks.length > 0 ? restoredTracks : [];
-      const selectedTrackId =
-        restoredTracks.length > 0 ? selectedTrackIdFromSession(session) : null;
-      return { tracks, selectedTrackId, hydratedSessionKey: sessionKey };
+      const canonicalSession = await fetchWlvJson<RawCanonicalSession>(
+        `/api/wlv/v2/wdv/sessions/${encodeURIComponent(managedViewerWellUid)}`,
+        { signal },
+      );
+      canonicalRevisionRef.current = canonicalSession.revision;
+      const canonicalTracks = canonicalSession.state_status === 'active'
+        ? frontendTracksFromCanonicalSession(canonicalSession, activeCurveCatalog)
+        : [];
+      return {
+        tracks: canonicalTracks,
+        selectedTrackId: canonicalSession.selected_track_uid,
+        hydratedSessionKey: wdvSessionKey,
+      };
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [activeCurveCatalog, managedViewerWellId, managedViewerWellUid, wdvPackageState.loadedCurveItems.length, wdvSessionKey],
+    [activeCurveCatalog, managedViewerWellUid, wdvPackageState.loadedCurveItems.length, wdvSessionKey],
   );
 
   const layoutSource = useWdvLayoutSource({
     managedWellUid: managedViewerWellUid,
-    scope: buildWdvWorkspaceScope(wdvWorkspace?.workspace_id),
     canonicalLoadKey: wdvSessionKey ?? '',
     loadCanonicalLayout,
   });
@@ -924,15 +673,13 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
 
   /**
    * Apply a raw canonical session response to component state.
-   * Updates tracks (using UUID IDs), canonicalRevisionRef, selection,
-   * and enables legacy session saves for this session key.
+   * Updates tracks, canonical revision, and selection from backend truth.
    */
   const applyCanonicalSession = useCallback(
     (rawSession: RawCanonicalSession): void => {
       const nextTracks = frontendTracksFromCanonicalSession(rawSession, activeCurveCatalog);
       canonicalRevisionRef.current = rawSession.revision;
       setTracks(nextTracks);
-      wdvSessionHydratedKeyRef.current = wdvSessionKey;
       if (nextTracks.length > 0) {
         const selectedUid = rawSession.selected_track_uid;
         const selectedExists =
@@ -1029,8 +776,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
               managed_well_id: workspace.active_managed_well_id,
               managed_well_uid: workspace.active_managed_well_uid,
           }));
-          wdvSessionHydratedKeyRef.current = null;
-          setTracks([]);
+                setTracks([]);
           setPendingAddTrackCurveIds([]);
           setAddTrackCurveSelectionMode(false);
       }
@@ -1056,80 +802,30 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
   }, [managedViewerWellId, managedViewerWellUid, wdvWorkspace?.active_managed_well_id, wdvWorkspace?.active_managed_well_uid]);
   // Clear stale display whenever a new probe starts. This ensures the WDV
   // never shows leftover tracks/samples from a prior well while the new probe
-  // is in flight. wdvSessionHydratedKeyRef is also cleared so saves cannot
-  // fire against a stale key.
+  // is in flight.
   useEffect(() => {
     if (layoutSource.mode !== 'probing') return;
     setTracks([]);
     setManagedSamplesByCurveId({});
     setManagedSampleErrorsByCurveId({});
-    wdvSessionHydratedKeyRef.current = null;
   }, [layoutSource.mode]);
 
-  // Apply the resolved layout when the hook reaches ready state.
-  // Guards on managedWellUid match to reject any state that arrived after a
-  // well switch (belt-and-suspenders on top of the hook's own generation guard).
+  // Apply canonical startup state only.
   useEffect(() => {
     if (layoutSource.mode !== 'ready') return;
     if (layoutSource.managedWellUid !== managedViewerWellUid) return;
-
     setTracks(layoutSource.tracks);
-
-    if (layoutSource.source === 'shared_canvas') {
-      setManagedSamplesByCurveId(layoutSource.samplesByCurveId);
-      setManagedSampleErrorsByCurveId({});
-      if (layoutSource.tracks.length > 0 && layoutSource.selectedTrackId !== null) {
-        setSelection({ kind: 'track', trackId: layoutSource.selectedTrackId });
-      }
-      // suppressSave: true — do NOT set wdvSessionHydratedKeyRef for shared canvas.
+    if (layoutSource.tracks.length > 0) {
+      const selectedExists = layoutSource.selectedTrackId !== null
+        && layoutSource.tracks.some((track) => track.trackId === layoutSource.selectedTrackId);
+      setSelection({
+        kind: 'track',
+        trackId: selectedExists ? layoutSource.selectedTrackId! : layoutSource.tracks[0].trackId,
+      });
     } else {
-      // source === 'canonical'
-      const { selectedTrackId, hydratedSessionKey } = layoutSource;
-      if (layoutSource.tracks.length > 0) {
-        const selectedExists =
-          selectedTrackId !== null &&
-          layoutSource.tracks.some((t) => t.trackId === selectedTrackId);
-        setSelection({
-          kind: 'track',
-          trackId: selectedExists ? selectedTrackId : layoutSource.tracks[0].trackId,
-        });
-      } else {
-        setSelection({ kind: 'track', trackId: '' });
-      }
-      // Enable canonical session saves for this well + curve set.
-      wdvSessionHydratedKeyRef.current = hydratedSessionKey;
+      setSelection({ kind: 'track', trackId: '' });
     }
   }, [layoutSource, managedViewerWellUid]);
-  useEffect(() => {
-      if (!managedViewerWellId || !wdvSessionKey || wdvSessionHydratedKeyRef.current !== wdvSessionKey)
-          return undefined;
-      if (wdvSessionSaveTimerRef.current !== null) {
-          window.clearTimeout(wdvSessionSaveTimerRef.current);
-      }
-      wdvSessionSaveTimerRef.current = window.setTimeout(() => {
-          const persistedTracks = sessionTracksForBackendPersistence(tracks, activeCurveCatalog);
-          const selectedTrackId = persistedTracks.length > 0 && (selection.kind === 'track' || selection.kind === 'curve')
-              ? selection.trackId
-              : null;
-          void fetchWlvJson<WdvSessionLayoutResponse>(`/api/wlv/wdv/sessions/${managedViewerWellId}/layout`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  selected_track_id: selectedTrackId,
-                  tracks: persistedTracks,
-                  source: 'frontend_user_layout_update',
-              }),
-          }).catch(() => {
-              // Keep rendering responsive; backend-owned restore will use the last successful session save.
-          });
-      }, 400);
-      return () => {
-          if (wdvSessionSaveTimerRef.current !== null) {
-              window.clearTimeout(wdvSessionSaveTimerRef.current);
-              wdvSessionSaveTimerRef.current = null;
-          }
-      };
-  }, [activeCurveCatalog, managedViewerWellId, selection, tracks, wdvSessionKey]);
   useEffect(() => {
       recommendationAbortRef.current?.abort();
       const controller = new AbortController();
@@ -1181,15 +877,8 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
   const refreshWdvTemplateRecommendations = () => {
       setRecommendationRefreshRevision((revision) => revision + 1);
   };
-  const handleWdvTemplateApplied = (session: WdvSessionLayoutResponse) => {
-      const restoredTracks = frontendTracksFromSession(session, activeCurveCatalog);
-      setTracks(restoredTracks);
-      const selectedTrackId = selectedTrackIdFromSession(session);
-      const selectedTrackExists = selectedTrackId && restoredTracks.some((track) => track.trackId === selectedTrackId);
-      if (restoredTracks.length > 0) {
-          setSelection({ kind: 'track', trackId: selectedTrackExists ? selectedTrackId : restoredTracks[0].trackId });
-      }
-      wdvSessionHydratedKeyRef.current = wdvSessionKey;
+  const handleWdvTemplateApplied = (session: WdvCanonicalTemplateApplySession) => {
+      applyCanonicalSession(session as RawCanonicalSession);
       setWdvTemplateModalOpen(false);
   };
   const curveUsageCounts = useMemo(
@@ -1238,99 +927,52 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
       }));
   };
   const addTrack = (draft: AddTrackDraft) => {
-      setTracks((current) => {
-          const ordered = sortTracks(current);
-          const selected = ordered.find((track) => track.trackId === selection.trackId) ?? null;
-          const insertionIndex = draft.insertMode === 'before_selected' && selected
-              ? selected.trackIndex
-              : draft.insertMode === 'after_selected' && selected
-                  ? selected.trackIndex + 1
-                  : ordered.length;
-          const shifted = current.map((track) => (track.trackIndex >= insertionIndex ? { ...track, trackIndex: track.trackIndex + 1 } : track));
-          const selectedCurves = pendingAddTrackCurveIds
-              .map((curveId) => activeCurveCatalog.find((curve) => curve.curveId === curveId))
-              .filter((curve): curve is CurveCatalogItem => Boolean(curve));
-          const curveAssignments = draft.trackType === 'curve' && draft.curveSource === 'selected'
-              ? selectedCurves.map((curve, index) => makeCurveAssignment(curve, index))
-              : [];
-          const frontCurve = curveAssignments[0]
-              ? curveById(activeCurveCatalog, curveAssignments[0].curveId)
-              : null;
-          const latticeOverride = draft.trackType === 'curve' && draft.latticeMode !== 'auto';
-          const lattice = draft.trackType === 'curve'
-              ? draft.latticeMode === 'auto'
-                  ? frontCurve?.defaultLattice ?? 'linear'
-                  : draft.latticeMode
-              : 'linear';
-          const newTrack: WellLogTrack = draft.trackType === 'depth'
-              ? {
-                  trackId: nextTrackId('depth'),
-                  trackIndex: insertionIndex,
-                  trackType: 'depth',
-                  title: draft.depthBasis,
-                  depthBasis: draft.depthBasis,
-                  unit: 'm',
-                  widthPx: 86,
-                  visible: true,
-              }
-              : {
-                  trackId: nextTrackId('curve'),
-                  trackIndex: insertionIndex,
-                  trackType: 'curve',
-                  title: curveAssignments.length > 0
-                      ? curveAssignments.map((assignment) => curveById(activeCurveCatalog, assignment.curveId).mnemonic).join(' / ')
-                      : 'NEW CURVE TRACK',
-                  widthPx: 220,
-                  visible: true,
-                  lattice,
-                  latticeSource: latticeOverride ? 'user_override' : 'front_curve_default',
-                  latticeOverride,
-                  scaleMode: draft.scaleMode,
-                  curves: curveAssignments,
-              };
-          setSelection({ kind: 'track', trackId: newTrack.trackId });
-          if (draft.trackType === 'curve' && draft.curveSource === 'selected') {
+      if (!managedViewerWellUid || canonicalRevisionRef.current < 0) return;
+      const selected = orderedTracks.find((track) => track.trackId === selection.trackId) ?? null;
+      const initialCurveUids = draft.trackType === 'curve' && draft.curveSource === 'selected'
+          ? pendingAddTrackCurveIds
+              .map((curveId) => activeCurveCatalog.find((curve) => curve.curveId === curveId || curve.curveUid === curveId)?.curveUid)
+              .filter((curveUid): curveUid is string => Boolean(curveUid && looksLikeUuid(curveUid)))
+          : [];
+      const referenceTrackUid = selected && looksLikeUuid(selected.trackId) ? selected.trackId : null;
+      const insertPosition = draft.insertMode === 'before_selected' && referenceTrackUid
+          ? { mode: 'before_track', reference_track_uid: referenceTrackUid }
+          : draft.insertMode === 'after_selected' && referenceTrackUid
+              ? { mode: 'after_track', reference_track_uid: referenceTrackUid }
+              : { mode: 'far_right' };
+      void (async () => {
+          try {
+              const rawSession = await executeWdvCanonicalCommand('tracks/configured', {
+                  track_name: draft.trackType === 'depth' ? draft.depthBasis : 'NEW CURVE TRACK',
+                  track_type: draft.trackType,
+                  width_px: draft.trackType === 'depth' ? 86 : 220,
+                  lattice: draft.trackType === 'curve' && draft.latticeMode !== 'auto' ? draft.latticeMode : undefined,
+                  lattice_source: draft.trackType === 'curve' && draft.latticeMode !== 'auto' ? 'user_override' : 'front_curve_default',
+                  lattice_override: draft.trackType === 'curve' && draft.latticeMode !== 'auto',
+                  scale_mode: draft.scaleMode,
+                  depth_basis: draft.trackType === 'depth' ? draft.depthBasis : undefined,
+                  insert_position: insertPosition,
+                  initial_managed_curve_uids: initialCurveUids,
+              });
+              applyCanonicalSession(rawSession);
               setPendingAddTrackCurveIds([]);
               setAddTrackCurveSelectionMode(false);
+          } catch (error) {
+              if (error instanceof Error && error.message.startsWith('409 ')) await refreshCanonicalSession();
+              else console.error('[WdvPageBoundary] addTrack failed:', error);
           }
-          return reindexTracks([...shifted, newTrack]);
-      });
+      })();
   };
   const deleteSelectedTrack = () => {
-      if (!selectedTrack) return;
-      const trackUid = selectedTrack.trackId;
-
-      // When the selected track carries a canonical UUID and the canonical
-      // session is initialised, persist the deletion via the backend command.
-      // Otherwise fall back to local-only removal (legacy behaviour, no regression).
-      if (canonicalRevisionRef.current >= 0 && looksLikeUuid(trackUid)) {
-          void (async () => {
-              try {
-                  const rawSession = await executeWdvCanonicalCommand('tracks/remove', {
-                      track_uid: trackUid,
-                  });
-                  applyCanonicalSession(rawSession);
-              } catch (error) {
-                  const is409 =
-                      error instanceof Error && error.message.startsWith('409 ');
-                  if (is409) {
-                      // Revision conflict — reload canonical session to re-sync.
-                      await refreshCanonicalSession();
-                  } else {
-                      console.error('[WdvPageBoundary] deleteSelectedTrack failed:', error);
-                  }
-              }
-          })();
-          return;
-      }
-
-      // Legacy path: local-only removal.
-      setTracks((current) => {
-          const remaining = reindexTracks(current.filter((track) => track.trackId !== trackUid));
-          const fallback = remaining[Math.min(selectedTrack.trackIndex, Math.max(remaining.length - 1, 0))];
-          if (fallback) setSelection({ kind: 'track', trackId: fallback.trackId });
-          return remaining;
-      });
+      if (!selectedTrack || canonicalRevisionRef.current < 0 || !looksLikeUuid(selectedTrack.trackId)) return;
+      void (async () => {
+          try {
+              applyCanonicalSession(await executeWdvCanonicalCommand('tracks/remove', { track_uid: selectedTrack.trackId }));
+          } catch (error) {
+              if (error instanceof Error && error.message.startsWith('409 ')) await refreshCanonicalSession();
+              else console.error('[WdvPageBoundary] deleteSelectedTrack failed:', error);
+          }
+      })();
   };
   const moveSelectedTrack = (direction: -1 | 1) => {
       const trackId = selection.trackId;
@@ -1487,175 +1129,84 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
       setIntervalSelection(null);
   };
   const toggleCurveForSelectedTrack = (curveId: string, checked: boolean) => {
-      if (!selectedTrack || selectedTrack.trackType !== 'curve')
-          return;
-      const trackId = selectedTrack.trackId;
+      if (!selectedTrack || selectedTrack.trackType !== 'curve') return;
+      if (canonicalRevisionRef.current < 0 || !looksLikeUuid(selectedTrack.trackId)) return;
+      const curve = activeCurveCatalog.find((item) => item.curveId === curveId || item.curveUid === curveId);
+      const managedCurveUid = curve?.curveUid ?? null;
+      if (!managedCurveUid || !looksLikeUuid(managedCurveUid)) return;
       setOpenCurveMenu(null);
-
-      // When the selected track carries a canonical UUID and the canonical
-      // session is initialised, use backend commands so changes persist.
-      // curveId in the canonical context equals managed_curve_uid.
-      const useCanonical =
-          canonicalRevisionRef.current >= 0 &&
-          looksLikeUuid(trackId) &&
-          looksLikeUuid(curveId);
-
-      if (checked) {
-          if (useCanonical) {
-              void (async () => {
-                  try {
-                      const rawSession = await executeWdvCanonicalCommand('assignments', {
-                          track_uid: trackId,
-                          managed_curve_uid: curveId,
-                      });
-                      applyCanonicalSession(rawSession);
-                  } catch (error) {
-                      const is409 =
-                          error instanceof Error && error.message.startsWith('409 ');
-                      if (is409) {
-                          await refreshCanonicalSession();
-                      } else {
-                          console.error('[WdvPageBoundary] toggleCurveForSelectedTrack (add) failed:', error);
-                      }
-                  }
-              })();
-              return;
-          }
-          // Legacy path: add assignment locally.
-          const curve = activeCurveCatalog.find((item) => item.curveId === curveId);
-          if (!curve) {
-              console.warn('Blocked curve assignment for unknown curve id', curveId);
-              return;
-          }
-          const newAssignment = makeCurveAssignment(curve, selectedTrack.curves.length);
-          setTracks((current) => current.map((track) => {
-              if (track.trackId !== trackId || track.trackType !== 'curve')
-                  return track;
-              if (track.curves.some((assignment) => assignment.curveId === curveId))
-                  return track;
-              const nextCurves = renumberCurveStack([...orderedCurves(track), newAssignment]);
-              return {
-                  ...track,
-                  curves: nextCurves,
-                  latticeSource: track.latticeOverride ? track.latticeSource : 'front_curve_default',
-              };
-          }));
-          setSelection({ kind: 'curve', trackId, assignmentId: newAssignment.assignmentId });
-          return;
-      }
-
-      // Unchecking: remove the curve.
-      if (useCanonical) {
-          // Collect all assignments of this curve on the selected track so we can
-          // remove them sequentially (duplicate assignments are allowed in the
-          // canonical session, so we must not assume only one exists).
-          const matchingAssignments = selectedTrack.trackType === 'curve'
-              ? selectedTrack.curves.filter(
-                  (a) => a.curveId === curveId && looksLikeUuid(a.assignmentId),
-                )
-              : [];
-
-          if (matchingAssignments.length === 0) {
-              // No canonical assignment found for this curve — safe fallback.
-              console.warn('[WdvPageBoundary] toggleCurveForSelectedTrack (remove): no canonical assignments found for curveId', curveId);
-              return;
-          }
-
-          void (async () => {
-              try {
-                  for (const assignment of matchingAssignments) {
-                      // Sequential — each removal returns a new revision.
-                      const rawSession = await executeWdvCanonicalCommand('assignments/remove', {
-                          assignment_uid: assignment.assignmentId,
-                      });
-                      applyCanonicalSession(rawSession);
-                  }
-              } catch (error) {
-                  const is409 =
-                      error instanceof Error && error.message.startsWith('409 ');
-                  if (is409) {
-                      await refreshCanonicalSession();
-                  } else {
-                      console.error('[WdvPageBoundary] toggleCurveForSelectedTrack (remove) failed:', error);
-                  }
+      void (async () => {
+          try {
+              if (checked) {
+                  applyCanonicalSession(await executeWdvCanonicalCommand('assignments', {
+                      track_uid: selectedTrack.trackId,
+                      managed_curve_uid: managedCurveUid,
+                  }));
+                  return;
               }
-          })();
-          return;
-      }
-
-      // Legacy path: remove assignment locally.
-      setTracks((current) => current.map((track) => {
-          if (track.trackId !== trackId || track.trackType !== 'curve')
-              return track;
-          return {
-              ...track,
-              curves: renumberCurveStack(track.curves.filter((assignment) => assignment.curveId !== curveId)),
-              latticeSource: track.latticeOverride ? track.latticeSource : 'front_curve_default',
-          };
-      }));
-      setSelection({ kind: 'track', trackId });
+              const matching = selectedTrack.curves.filter((assignment) =>
+                  assignment.curveUid === managedCurveUid && looksLikeUuid(assignment.assignmentId));
+              for (const assignment of matching) {
+                  applyCanonicalSession(await executeWdvCanonicalCommand('assignments/remove', {
+                      assignment_uid: assignment.assignmentId,
+                  }));
+              }
+          } catch (error) {
+              if (error instanceof Error && error.message.startsWith('409 ')) await refreshCanonicalSession();
+              else console.error('[WdvPageBoundary] toggleCurveForSelectedTrack failed:', error);
+          }
+      })();
   };
   const moveCurveToTrack = (payload: DragCurvePayload, toTrackId: string, toIndex?: number) => {
-      setTracks((current) => {
-          let movingAssignment: CurveAssignment | null = null;
-          let working = current.map((track) => {
-              if (track.trackType !== 'curve')
-                  return track;
-              if (payload.fromTrackId === track.trackId && payload.assignmentId) {
-                  const match = track.curves.find((assignment) => assignment.assignmentId === payload.assignmentId);
-                  if (match)
-                      movingAssignment = match;
-                  return { ...track, curves: renumberCurveStack(track.curves.filter((assignment) => assignment.assignmentId !== payload.assignmentId)) };
-              }
-              return track;
-          });
-          const curve = activeCurveCatalog.find((item) => item.curveId === payload.curveId);
-          if (!curve) {
-              console.warn('Blocked curve assignment for unknown curve id', payload.curveId);
-              return reindexTracks(working);
+      if (!payload.assignmentId || !looksLikeUuid(payload.assignmentId) || !looksLikeUuid(toTrackId)) return;
+      void (async () => {
+          try {
+              applyCanonicalSession(await executeWdvCanonicalCommand('assignments/move', {
+                  assignment_uid: payload.assignmentId,
+                  target_track_uid: toTrackId,
+                  target_stack_index: typeof toIndex === 'number' ? toIndex : 0,
+              }));
+          } catch (error) {
+              if (error instanceof Error && error.message.startsWith('409 ')) await refreshCanonicalSession();
+              else console.error('[WdvPageBoundary] moveCurveToTrack failed:', error);
           }
-          const assignment = movingAssignment ?? makeCurveAssignment(curve, 0);
-          working = working.map((track) => {
-              if (track.trackId !== toTrackId || track.trackType !== 'curve')
-                  return track;
-              const existing = track.curves.some((item) => item.assignmentId === assignment.assignmentId || item.curveId === assignment.curveId);
-              if (existing)
-                  return track;
-              const next = [...orderedCurves(track)];
-              const targetIndex = typeof toIndex === 'number' ? toIndex : next.length;
-              next.splice(targetIndex, 0, { ...assignment, stackIndex: targetIndex });
-              return { ...track, curves: renumberCurveStack(next), latticeSource: track.latticeOverride ? track.latticeSource : 'front_curve_default' };
-          });
-          setSelection({ kind: 'curve', trackId: toTrackId, assignmentId: assignment.assignmentId });
-          return reindexTracks(working);
-      });
+      })();
   };
   const reorderCurve = (trackId: string, assignmentId: string, toIndex: number) => {
-      setTracks((current) => current.map((track) => {
-          if (track.trackId !== trackId || track.trackType !== 'curve')
-              return track;
-          const ordered = orderedCurves(track);
-          const fromIndex = ordered.findIndex((assignment) => assignment.assignmentId === assignmentId);
-          if (fromIndex < 0)
-              return track;
-          const [item] = ordered.splice(fromIndex, 1);
-          ordered.splice(toIndex, 0, item);
-          return { ...track, curves: renumberCurveStack(ordered), latticeSource: track.latticeOverride ? track.latticeSource : 'front_curve_default' };
-      }));
-      setSelection({ kind: 'curve', trackId, assignmentId });
+      const track = tracks.find((item) => item.trackId === trackId && item.trackType === 'curve');
+      if (!track || track.trackType !== 'curve' || !looksLikeUuid(trackId)) return;
+      const ordered = orderedCurves(track);
+      const fromIndex = ordered.findIndex((assignment) => assignment.assignmentId === assignmentId);
+      if (fromIndex < 0) return;
+      const [moving] = ordered.splice(fromIndex, 1);
+      ordered.splice(toIndex, 0, moving);
+      const assignmentUids = ordered.map((assignment) => assignment.assignmentId);
+      if (!assignmentUids.every(looksLikeUuid)) return;
+      void (async () => {
+          try {
+              applyCanonicalSession(await executeWdvCanonicalCommand('assignments/reorder', {
+                  track_uid: trackId,
+                  assignment_uids: assignmentUids,
+              }));
+          } catch (error) {
+              if (error instanceof Error && error.message.startsWith('409 ')) await refreshCanonicalSession();
+              else console.error('[WdvPageBoundary] reorderCurve failed:', error);
+          }
+      })();
   };
-  const removeCurveFromTrack = (trackId: string, assignmentId: string) => {
-      setTracks((current) => current.map((track) => {
-          if (track.trackId !== trackId || track.trackType !== 'curve')
-              return track;
-          return {
-              ...track,
-              curves: renumberCurveStack(track.curves.filter((assignment) => assignment.assignmentId !== assignmentId)),
-              latticeSource: track.latticeOverride ? track.latticeSource : 'front_curve_default',
-          };
-      }));
+  const removeCurveFromTrack = (_trackId: string, assignmentId: string) => {
+      if (!looksLikeUuid(assignmentId)) return;
       setOpenCurveMenu(null);
-      setSelection({ kind: 'track', trackId });
+      void (async () => {
+          try {
+              applyCanonicalSession(await executeWdvCanonicalCommand('assignments/remove', {
+                  assignment_uid: assignmentId,
+              }));
+          } catch (error) {
+              if (error instanceof Error && error.message.startsWith('409 ')) await refreshCanonicalSession();
+              else console.error('[WdvPageBoundary] removeCurveFromTrack failed:', error);
+          }
+      })();
   };
   return <div className="wlv-prototype-root">
       <header className="wlv-app-header">
@@ -1692,7 +1243,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
         }
     }} layoutRecommendations={wdvTemplateRecommendations} layoutRecommendationsLoading={wdvTemplateRecommendationsLoading} layoutRecommendationsError={wdvTemplateRecommendationsError} selectedLayoutRecommendationKey={selectedWdvTemplateKey} onLayoutRecommendationChange={handleLayoutRecommendationChange} onRefreshLayoutRecommendations={refreshWdvTemplateRecommendations}/>
 
-      {wdvTemplateModalOpen && selectedWdvTemplateRecommendation ? (<WdvTemplateRecommendationModal recommendation={selectedWdvTemplateRecommendation} loadedCurveItems={wdvPackageState.loadedCurveItems} managedWellId={managedViewerWellId} onClose={() => setWdvTemplateModalOpen(false)} onApplied={handleWdvTemplateApplied}/>) : null}
+      {wdvTemplateModalOpen && selectedWdvTemplateRecommendation ? (<WdvTemplateRecommendationModal recommendation={selectedWdvTemplateRecommendation} loadedCurveItems={wdvPackageState.loadedCurveItems} managedWellId={managedViewerWellId} managedWellUid={managedViewerWellUid} getCanonicalRevision={() => canonicalRevisionRef.current} onClose={() => setWdvTemplateModalOpen(false)} onApplied={handleWdvTemplateApplied}/>) : null}
 
       <div className={`wlv-prototype-workspace wlv-track-backdrop-${trackBackdropMode} ${curveInventoryResizeState ? 'curve-inventory-resize-active' : ''} ${curveInventoryCollapsed ? 'curve-inventory-collapsed' : ''}`} style={{ gridTemplateColumns: `${curveInventoryCollapsed ? 38 : curveInventoryWidthPx}px minmax(0, 1fr) 330px` }}>
         <div className={`wlv-curve-inventory-shell ${curveInventoryCollapsed ? 'collapsed' : ''}`} style={{ width: curveInventoryCollapsed ? 38 : curveInventoryWidthPx }}>

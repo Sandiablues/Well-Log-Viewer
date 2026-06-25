@@ -94,6 +94,24 @@ class RemoveTrackCommand(RevisionGuardedCommand):
     track_uid: CanonicalUuid7
 
 
+class BootstrapCurveAssignmentCommand(RevisionGuardedCommand):
+    """Atomically create the first canonical curve track and assignment.
+
+    This command is valid only when the canonical session contains no tracks.
+    The backend issues both UUIDs and applies governed display policy.
+    """
+
+    managed_curve_uid: CanonicalUuid7
+    track_name: NonBlankString | None = None
+    width_px: int | None = Field(default=None, ge=1)
+    color: str | None = None
+    line_style: str | None = None
+    line_width: FiniteNumber | None = Field(default=None, gt=0)
+    fill_mode: str | None = None
+    visible: bool = True
+    source: NonBlankString = "canonical_empty_session_bootstrap"
+
+
 class AddCurveAssignmentCommand(RevisionGuardedCommand):
     track_uid: CanonicalUuid7
     managed_curve_uid: CanonicalUuid7
