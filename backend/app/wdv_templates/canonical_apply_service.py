@@ -407,13 +407,23 @@ class CanonicalWdvTemplateApplyService:
         return defaults[0] if defaults else {}
 
     @staticmethod
-    def _number(value, *, default: float) -> float:
+    def _number(value, *, default: "float | None") -> "float | None":
         if value is None or value == "":
-            return float(default)
+            if default is None:
+                return None
+            try:
+                return float(default)
+            except (TypeError, ValueError):
+                return None
         try:
             return float(value)
         except (TypeError, ValueError):
-            return float(default)
+            if default is None:
+                return None
+            try:
+                return float(default)
+            except (TypeError, ValueError):
+                return None
 
     @staticmethod
     def _scale_type(value, *, default: str) -> str:
