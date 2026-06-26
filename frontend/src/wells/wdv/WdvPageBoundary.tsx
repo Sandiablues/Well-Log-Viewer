@@ -181,6 +181,16 @@ export interface RawCanonicalAssignment {
   scale_type: string | null;
   scale_direction: string | null;
   color: string | null;
+  unit: string | null;
+  display_policy_source:
+    | 'curve'
+    | 'family'
+    | 'system_default'
+    | 'user_override'
+    | null;
+  display_review_required: boolean;
+  display_warning_code: string | null;
+  display_warning_message: string | null;
 }
 
 /** @internal exported for unit tests */
@@ -294,24 +304,72 @@ export function frontendTracksFromCanonicalSession(
         const fallback = makeCurveAssignment(curve, assignIndex);
         const sd = raw.scale_direction;
         const st = raw.scale_type;
+
+        if (
+          typeof raw.scale_min !== 'number'
+          || !Number.isFinite(raw.scale_min)
+          || typeof raw.scale_max !== 'number'
+          || !Number.isFinite(raw.scale_max)
+          || raw.scale_min === raw.scale_max
+        ) {
+          throw new Error(
+            `Canonical WDV assignment ${raw.assignment_uid} for curve `
+            + `${raw.managed_curve_uid} is missing a valid backend scale range.`,
+          );
+        }
+
+        const scaleType =
+          st === 'log' || st === 'logarithmic'
+            ? 'log'
+            : st === 'linear'
+              ? 'linear'
+              : null;
+        if (scaleType === null) {
+          throw new Error(
+            `Canonical WDV assignment ${raw.assignment_uid} for curve `
+            + `${raw.managed_curve_uid} has invalid backend scale type: ${String(st)}.`,
+          );
+        }
+
+        const scaleDirection =
+          sd === 'reverse' || sd === 'reversed'
+            ? 'reverse'
+            : sd === 'normal'
+              ? 'normal'
+              : null;
+        if (scaleDirection === null) {
+          throw new Error(
+            `Canonical WDV assignment ${raw.assignment_uid} for curve `
+            + `${raw.managed_curve_uid} has invalid backend scale direction: ${String(sd)}.`,
+          );
+        }
+
+        if (
+          scaleType === 'log'
+          && (raw.scale_min <= 0 || raw.scale_max <= 0)
+        ) {
+          throw new Error(
+            `Canonical WDV assignment ${raw.assignment_uid} for curve `
+            + `${raw.managed_curve_uid} has a non-positive logarithmic backend scale.`,
+          );
+        }
+
         const assignment: CurveAssignment = {
           ...fallback,
           assignmentId: raw.assignment_uid,
           curveUid: raw.managed_curve_uid,
           stackIndex: raw.stack_index,
           visible: raw.visible,
-          scaleMin:
-            typeof raw.scale_min === 'number'
-              ? raw.scale_min
-              : fallback.scaleMin,
-          scaleMax:
-            typeof raw.scale_max === 'number'
-              ? raw.scale_max
-              : fallback.scaleMax,
-          scaleType: st === 'log' || st === 'linear' ? st : fallback.scaleType,
-          scaleDirection:
-            sd === 'reverse' || sd === 'reversed' ? 'reverse' : 'normal',
+          scaleMin: raw.scale_min,
+          scaleMax: raw.scale_max,
+          scaleType,
+          scaleDirection,
           color: raw.color ?? fallback.color,
+          unit: raw.unit,
+          displayPolicySource: raw.display_policy_source,
+          displayReviewRequired: raw.display_review_required,
+          displayWarningCode: raw.display_warning_code,
+          displayWarningMessage: raw.display_warning_message,
         };
         return [assignment];
       });

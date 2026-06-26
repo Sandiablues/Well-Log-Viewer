@@ -1,0 +1,143 @@
+{
+  "schema_version": "wlv-kr-family-defaults-v1",
+  "expected_record_type": "template_scale_default",
+  "expected_family_count": 22,
+  "families": {
+    "gamma_ray": {
+      "scale_min": 0,
+      "scale_max": 150,
+      "scale_type": "linear",
+      "display_direction": "normal"
+    },
+    "spectral_gamma_ray": {
+      "scale_min": null,
+      "scale_max": null,
+      "scale_type": "linear",
+      "display_direction": "normal",
+      "allow_null_range": true
+    },
+    "spontaneous_potential": {
+      "scale_min": -100,
+      "scale_max": 100,
+      "scale_type": "linear",
+      "display_direction": "reversible"
+    },
+    "caliper": {
+      "scale_min": 6,
+      "scale_max": 16,
+      "scale_type": "linear",
+      "display_direction": "normal"
+    },
+    "bit_size": {
+      "scale_min": 6,
+      "scale_max": 16,
+      "scale_type": "linear",
+      "display_direction": "normal"
+    },
+    "resistivity": {
+      "scale_min": 0.2,
+      "scale_max": 2000,
+      "scale_type": "log",
+      "display_direction": "normal"
+    },
+    "density": {
+      "scale_min": 1.95,
+      "scale_max": 2.95,
+      "scale_type": "linear",
+      "display_direction": "normal"
+    },
+    "density_correction": {
+      "scale_min": -0.25,
+      "scale_max": 0.25,
+      "scale_type": "linear",
+      "display_direction": "normal"
+    },
+    "neutron_porosity": {
+      "scale_min": 45,
+      "scale_max": -15,
+      "scale_type": "linear",
+      "display_direction": "reversed"
+    },
+    "sonic_slowness": {
+      "scale_min": 40,
+      "scale_max": 140,
+      "scale_type": "linear",
+      "display_direction": "reversed"
+    },
+    "photoelectric_factor": {
+      "scale_min": 0,
+      "scale_max": 10,
+      "scale_type": "linear",
+      "display_direction": "normal"
+    },
+    "porosity": {
+      "scale_min": 0,
+      "scale_max": 0.45,
+      "scale_type": "linear",
+      "display_direction": "normal"
+    },
+    "water_saturation": {
+      "scale_min": 0,
+      "scale_max": 1,
+      "scale_type": "linear",
+      "display_direction": "normal"
+    },
+    "shale_volume": {
+      "scale_min": 0,
+      "scale_max": 1,
+      "scale_type": "linear",
+      "display_direction": "normal"
+    },
+    "permeability": {
+      "scale_min": 0.01,
+      "scale_max": 10000,
+      "scale_type": "log",
+      "display_direction": "normal"
+    },
+    "pressure": {
+      "scale_min": 0,
+      "scale_max": 10000,
+      "scale_type": "linear",
+      "display_direction": "normal"
+    },
+    "temperature": {
+      "scale_min": 0,
+      "scale_max": 400,
+      "scale_type": "linear",
+      "display_direction": "normal"
+    },
+    "spinner_flow": {
+      "scale_min": -100,
+      "scale_max": 100,
+      "scale_type": "linear",
+      "display_direction": "centered_optional"
+    },
+    "collar_locator": {
+      "scale_min": null,
+      "scale_max": null,
+      "scale_type": "event_track",
+      "display_direction": "normal",
+      "allow_null_range": true
+    },
+    "variable_density_log": {
+      "scale_min": null,
+      "scale_max": null,
+      "scale_type": "waveform_track",
+      "display_direction": "normal",
+      "allow_null_range": true
+    },
+    "borehole_image": {
+      "scale_min": 0,
+      "scale_max": 360,
+      "scale_type": "image_track",
+      "display_direction": "normal"
+    },
+    "dip_azimuth": {
+      "scale_min": null,
+      "scale_max": null,
+      "scale_type": "tadpole_track",
+      "display_direction": "normal",
+      "allow_null_range": true
+    }
+  }
+}

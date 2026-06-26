@@ -17,6 +17,22 @@ export interface SharedCanvasSessionRequest {
   scopeUid: string;
 }
 
+/**
+ * Thrown exclusively for HTTP 404 responses from the shared canvas session API.
+ *
+ * A 404 indicates no active profile for the given scope, or no binding for this
+ * well against the active profile — either case is an eligible fallback to the
+ * canonical per-well session layout.
+ *
+ * All other non-OK responses throw a plain Error (non-eligible; no fallback).
+ */
+export class SharedCanvasNoActivationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SharedCanvasNoActivationError';
+  }
+}
+
 export async function loadSharedCanvasSession(
   request: SharedCanvasSessionRequest,
   fetchImpl: typeof fetch = fetch,
@@ -46,6 +62,9 @@ export async function loadSharedCanvasSession(
       typeof record.detail === 'string'
         ? record.detail
         : `Shared canvas session request failed (${response.status})`;
+    if (response.status === 404) {
+      throw new SharedCanvasNoActivationError(detail);
+    }
     throw new Error(detail);
   }
 

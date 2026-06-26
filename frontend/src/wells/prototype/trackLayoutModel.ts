@@ -67,6 +67,16 @@ export interface CurveAssignment {
   managedSourceUid?: string | null;
   observedMnemonic?: string | null;
   normalizedMnemonic?: string | null;
+  /** Canonical backend assignment unit. This is projection data, not a catalog fallback. */
+  unit?: string | null;
+  /** Backend-owned display-policy provenance for this canonical assignment. */
+  displayPolicySource?: 'curve' | 'family' | 'system_default' | 'user_override' | null;
+  /** True only when the backend requires human review of the display policy. */
+  displayReviewRequired?: boolean;
+  /** Backend-owned machine-readable display warning. */
+  displayWarningCode?: string | null;
+  /** Backend-owned human-readable display warning. */
+  displayWarningMessage?: string | null;
   stackIndex: number;
   visible: boolean;
   scaleMin: number;
@@ -95,6 +105,8 @@ export interface CurveAssignment {
   showQaqcWarnings?: boolean;
   showNullGaps?: boolean;
   showOutOfRange?: boolean;
+  /** When true, clears the WDV scale override and restores the governed KR default. */
+  resetScaleToGovernedDefault?: boolean;
 }
 
 interface BaseTrack {

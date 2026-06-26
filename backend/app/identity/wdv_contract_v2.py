@@ -134,6 +134,16 @@ class WdvCanonicalAssignment(BaseModel):
     show_out_of_range: bool = True
     source: NonBlankString = "manual_or_backend_owned"
 
+    # Display-policy provenance is deliberately separate from assignment source.
+    # None preserves compatibility for assignments created before this contract
+    # extension; later bounded work will populate these fields on every path.
+    display_policy_source: Literal[
+        "curve", "family", "system_default", "user_override"
+    ] | None = None
+    display_review_required: bool = False
+    display_warning_code: str | None = None
+    display_warning_message: str | None = None
+
     @model_validator(mode="after")
     def validate_scale(self) -> "WdvCanonicalAssignment":
         if (self.scale_min is None) != (self.scale_max is None):
@@ -145,6 +155,23 @@ class WdvCanonicalAssignment(BaseModel):
                 self.scale_min <= 0 or self.scale_max <= 0
             ):
                 raise ValueError("logarithmic scales require positive limits")
+        if self.display_policy_source == "system_default":
+            if not self.display_review_required:
+                raise ValueError(
+                    "system-default display policy requires manual review"
+                )
+            if not self.display_warning_code or not self.display_warning_message:
+                raise ValueError(
+                    "system-default display policy requires warning details"
+                )
+        elif self.display_review_required:
+            raise ValueError(
+                "display_review_required is valid only for system-default policy"
+            )
+        elif self.display_warning_code is not None or self.display_warning_message is not None:
+            raise ValueError(
+                "display warning details are valid only for system-default policy"
+            )
         return self
 
 

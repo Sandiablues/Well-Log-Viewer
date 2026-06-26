@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from app.identity.wdv_contract_v2 import WdvCanonicalSession
+from .canonical_command_service import CanonicalWdvCommandService
 from .canonical_service import CanonicalWdvSessionService
 
 router = APIRouter(prefix="/api/wlv/v2/wdv/sessions", tags=["wlv-wdv-canonical-session"])
@@ -17,7 +18,7 @@ class CanonicalSessionClearRequest(BaseModel):
 
 
 def get_service() -> CanonicalWdvSessionService:
-    return CanonicalWdvSessionService()
+    return CanonicalWdvCommandService().session_service
 
 
 @router.get("/{managed_well_uid}", response_model=WdvCanonicalSession)

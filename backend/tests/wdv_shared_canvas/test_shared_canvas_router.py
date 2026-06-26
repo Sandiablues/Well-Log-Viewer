@@ -846,7 +846,7 @@ def test_no_writes_to_existing_wdv_session_stores(client, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Test 16 — missing depth range returns 404
+# Test 16 — missing depth range returns 422
 # ---------------------------------------------------------------------------
 
 def _setup_resolved_session_scene(well_uid: str, inventory_records=None):
@@ -872,8 +872,8 @@ def _setup_resolved_session_scene(well_uid: str, inventory_records=None):
     return profile_repo, binding_repo
 
 
-def test_missing_depth_range_returns_404(client):
-    """Test 16 — MissingWellDepthRangeError maps to HTTP 404."""
+def test_missing_depth_range_returns_422(client):
+    """Test 16 — MissingWellDepthRangeError maps to HTTP 422."""
     well_uid = new_uuid7_str()
 
     profile_repo, binding_repo = _install_services()
@@ -907,7 +907,7 @@ def test_missing_depth_range_returns_404(client):
         f"/api/wlv/v2/wdv/shared-canvas/workspaces/{well_uid}",
         params={"scope_type": _SCOPE_TYPE, "scope_uid": _SCOPE_UID},
     )
-    assert resp.status_code == 404
+    assert resp.status_code == 422
 
 
 def test_depth_range_fields_in_resolved_session_response(client):

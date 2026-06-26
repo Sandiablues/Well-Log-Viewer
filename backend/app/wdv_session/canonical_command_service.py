@@ -30,6 +30,9 @@ from app.wdv_session.canonical_commands import (
     UpdateCurveAssignmentCommand,
     UpdateTrackCommand,
 )
+from app.wdv_session.assignment_policy_service import (
+    CanonicalWdvAssignmentPolicyService,
+)
 from app.wdv_session.canonical_service import CanonicalWdvSessionService
 from app.wdv_workspace.service import CanonicalWdvWorkspaceService
 from app.wdv_workspace.transaction_service import (
@@ -52,7 +55,6 @@ class CanonicalWdvCommandService:
         policy_revision_fn: Callable[[], str] | None = None,
         display_policy_resolver: Callable[[object], dict] | None = None,
     ) -> None:
-        self.session_service = session_service or CanonicalWdvSessionService()
         self.resolver = resolver or CanonicalInventoryIdentityResolver()
         self._policy_revision_fn: Callable[[], str] = (
             policy_revision_fn
@@ -63,6 +65,17 @@ class CanonicalWdvCommandService:
             display_policy_resolver
             if display_policy_resolver is not None
             else WdvCurveDisplayPolicyService.resolve
+        )
+        self.assignment_policy_service = CanonicalWdvAssignmentPolicyService(
+            resolver=self.resolver,
+            display_policy_resolver=self._display_policy_resolver,
+        )
+        self.session_service = session_service or CanonicalWdvSessionService()
+        self.session_service.configure_policy_refresh(
+            policy_revision_fn=self._policy_revision_fn,
+            assignment_policy_refresh_fn=(
+                self.assignment_policy_service.refresh_assignment
+            ),
         )
         if transaction_service is None:
             workspace_service = None
@@ -86,13 +99,25 @@ class CanonicalWdvCommandService:
             mode="json",
             exclude={"expected_revision", "command_id"},
         )
+        current_policy_revision = self._policy_revision_fn()
+
+        def mutation_with_policy_revision(
+            session: WdvCanonicalSession,
+        ) -> WdvCanonicalSession:
+            mutated = mutation(session)
+            return mutated.model_copy(
+                update={
+                    "display_policy_revision": current_policy_revision,
+                }
+            )
+
         return self.transaction_service.execute(
             managed_well_uid,
             expected_revision=command.expected_revision,
             command_name=command.__class__.__name__,
             command_payload=payload,
             command_id=command.command_id,
-            mutation=mutation,
+            mutation=mutation_with_policy_revision,
         )
 
     def create_track(
@@ -130,36 +155,6 @@ class CanonicalWdvCommandService:
             )
 
         return self._execute(managed_well_uid, command, mutate)
-
-    @staticmethod
-    def _assignment_from_resolved_curve(
-        *,
-        resolved,
-        track_uid: str,
-        stack_index: int,
-        source: str,
-    ) -> WdvCanonicalAssignment:
-        return WdvCanonicalAssignment(
-            assignment_uid=new_uuid7_str(),
-            managed_curve_uid=resolved.managed_curve_uid,
-            managed_product_uid=resolved.managed_product_uid,
-            managed_well_uid=resolved.managed_well_uid,
-            managed_wellbore_uid=resolved.managed_wellbore_uid,
-            managed_source_uid=resolved.managed_source_uid,
-            track_uid=track_uid,
-            kr_curve_type_id=resolved.product.kr_curve_type_id,
-            observed_mnemonic=(
-                resolved.product.observed_mnemonic
-                or resolved.product.curve_name
-                or resolved.product.display_name
-            ),
-            normalized_mnemonic=resolved.product.normalized_mnemonic,
-            display_name=resolved.product.display_name,
-            curve_family=resolved.product.curve_family,
-            unit=resolved.product.curve_unit,
-            stack_index=stack_index,
-            source=source,
-        )
 
     @staticmethod
     def _canonical_scale_type(value) -> str:
@@ -216,14 +211,12 @@ class CanonicalWdvCommandService:
 
             track_uid = new_uuid7_str()
             assignments = tuple(
-                self._assignment_from_resolved_curve(
-                    resolved=self.resolver.resolve_curve(
-                        managed_well_uid,
-                        managed_curve_uid,
-                    ),
+                self.assignment_policy_service.create_assignment(
+                    managed_well_uid=managed_well_uid,
+                    managed_curve_uid=managed_curve_uid,
                     track_uid=track_uid,
                     stack_index=index,
-                    source="configured_track_backend_command",
+                    assignment_source="configured_track_backend_command",
                 )
                 for index, managed_curve_uid in enumerate(
                     command.initial_managed_curve_uids
@@ -310,14 +303,6 @@ class CanonicalWdvCommandService:
             managed_well_uid,
             command.managed_curve_uid,
         )
-        display_policy = self._display_policy_resolver(resolved.product)
-        scale_min = display_policy.get("min")
-        scale_max = display_policy.get("max")
-        scale_type = self._canonical_scale_type(display_policy.get("type"))
-        scale_direction = self._canonical_scale_direction(
-            display_policy.get("direction")
-        )
-
         def mutate(session: WdvCanonicalSession) -> WdvCanonicalSession:
             if session.tracks:
                 raise CanonicalWdvCommandError(
@@ -332,35 +317,16 @@ class CanonicalWdvCommandService:
                 or resolved.product.observed_mnemonic
                 or "Curve Track"
             )
-            assignment = WdvCanonicalAssignment(
-                assignment_uid=new_uuid7_str(),
-                managed_curve_uid=resolved.managed_curve_uid,
-                managed_product_uid=resolved.managed_product_uid,
-                managed_well_uid=resolved.managed_well_uid,
-                managed_wellbore_uid=resolved.managed_wellbore_uid,
-                managed_source_uid=resolved.managed_source_uid,
+            assignment = self.assignment_policy_service.create_assignment_from_resolved(
+                resolved=resolved,
                 track_uid=track_uid,
-                kr_curve_type_id=resolved.product.kr_curve_type_id,
-                observed_mnemonic=(
-                    resolved.product.observed_mnemonic
-                    or resolved.product.curve_name
-                    or resolved.product.display_name
-                ),
-                normalized_mnemonic=resolved.product.normalized_mnemonic,
-                display_name=resolved.product.display_name,
-                curve_family=resolved.product.curve_family,
-                unit=resolved.product.curve_unit,
                 stack_index=0,
+                assignment_source=command.source,
                 visible=command.visible,
-                scale_min=scale_min,
-                scale_max=scale_max,
-                scale_type=scale_type,
-                scale_direction=scale_direction,
                 color=command.color,
                 line_style=command.line_style,
                 line_width=command.line_width,
                 fill_mode=command.fill_mode,
-                source=command.source,
             )
             track = WdvCanonicalTrack(
                 track_uid=track_uid,
@@ -371,7 +337,7 @@ class CanonicalWdvCommandService:
                 renderer_type="curve",
                 track_role="curve",
                 width_px=command.width_px,
-                lattice=scale_type,
+                lattice=assignment.scale_type,
                 lattice_source="backend_display_policy",
                 scale_mode="per_curve",
                 assignments=(assignment,),
@@ -397,14 +363,6 @@ class CanonicalWdvCommandService:
             managed_well_uid,
             command.managed_curve_uid,
         )
-        display_policy = self._display_policy_resolver(resolved.product)
-        scale_min = display_policy.get("min")
-        scale_max = display_policy.get("max")
-        scale_type = self._canonical_scale_type(display_policy.get("type"))
-        scale_direction = self._canonical_scale_direction(
-            display_policy.get("direction")
-        )
-
         def mutate(session: WdvCanonicalSession) -> WdvCanonicalSession:
             target = next(
                 (track for track in session.tracks if track.track_uid == command.track_uid),
@@ -430,35 +388,16 @@ class CanonicalWdvCommandService:
                     "assignment count"
                 )
 
-            assignment = WdvCanonicalAssignment(
-                assignment_uid=new_uuid7_str(),
-                managed_curve_uid=resolved.managed_curve_uid,
-                managed_product_uid=resolved.managed_product_uid,
-                managed_well_uid=resolved.managed_well_uid,
-                managed_wellbore_uid=resolved.managed_wellbore_uid,
-                managed_source_uid=resolved.managed_source_uid,
+            assignment = self.assignment_policy_service.create_assignment_from_resolved(
+                resolved=resolved,
                 track_uid=target.track_uid,
-                kr_curve_type_id=resolved.product.kr_curve_type_id,
-                observed_mnemonic=(
-                    resolved.product.observed_mnemonic
-                    or resolved.product.curve_name
-                    or resolved.product.display_name
-                ),
-                normalized_mnemonic=resolved.product.normalized_mnemonic,
-                display_name=resolved.product.display_name,
-                curve_family=resolved.product.curve_family,
-                unit=resolved.product.curve_unit,
                 stack_index=target_stack_index,
+                assignment_source=command.source,
                 visible=command.visible,
-                scale_min=scale_min,
-                scale_max=scale_max,
-                scale_type=scale_type,
-                scale_direction=scale_direction,
                 color=command.color,
                 line_style=command.line_style,
                 line_width=command.line_width,
                 fill_mode=command.fill_mode,
-                source=command.source,
             )
 
             assignments = list(target.assignments)

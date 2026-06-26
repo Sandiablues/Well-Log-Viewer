@@ -18,7 +18,13 @@ from app.inventory.canonical_identity_resolver import (
     CanonicalIdentityResolutionError,
     CanonicalInventoryIdentityResolver,
 )
-from app.wdv_display.policy_service import WdvCurveDisplayPolicyService
+from app.wdv_display.policy_service import (
+    WdvCurveDisplayPolicyService,
+    compute_display_policy_revision,
+)
+from app.wdv_session.assignment_policy_service import (
+    CanonicalWdvAssignmentPolicyService,
+)
 from app.wdv_session.canonical_service import CanonicalWdvSessionService
 from app.wdv_workspace.service import CanonicalWdvWorkspaceService
 from app.wdv_workspace.transaction_service import CanonicalWdvWorkspaceTransactionService
@@ -73,6 +79,10 @@ class CanonicalWdvTemplateApplyService:
     ) -> None:
         self.plan_service = plan_service
         self.resolver = resolver or CanonicalInventoryIdentityResolver()
+        self.assignment_policy_service = CanonicalWdvAssignmentPolicyService(
+            resolver=self.resolver,
+            display_policy_resolver=WdvCurveDisplayPolicyService.resolve,
+        )
         self.session_service = session_service or CanonicalWdvSessionService()
         if transaction_service is None:
             workspace_service = None
@@ -135,6 +145,7 @@ class CanonicalWdvTemplateApplyService:
                     "tracks": tracks,
                     "selected_track_uid": tracks[0].track_uid if tracks else None,
                     "warnings": warnings,
+                    "display_policy_revision": compute_display_policy_revision(),
                 }
             )
 
@@ -298,53 +309,44 @@ class CanonicalWdvTemplateApplyService:
                 default=display["direction"],
             )
 
-            assignments.append(
-                WdvCanonicalAssignment(
-                    assignment_uid=new_uuid7_str(),
-                    managed_curve_uid=resolved.managed_curve_uid,
-                    managed_product_uid=resolved.managed_product_uid,
-                    managed_well_uid=resolved.managed_well_uid,
-                    managed_wellbore_uid=resolved.managed_wellbore_uid,
-                    managed_source_uid=resolved.managed_source_uid,
+            base_assignment = (
+                self.assignment_policy_service.create_assignment_from_resolved(
+                    resolved=resolved,
                     track_uid=track_uid,
-                    kr_curve_type_id=resolved.product.kr_curve_type_id,
-                    observed_mnemonic=(
-                        resolved.product.observed_mnemonic
-                        or resolved.product.curve_name
-                        or resolved.product.display_name
-                    ),
-                    normalized_mnemonic=resolved.product.normalized_mnemonic,
-                    display_name=resolved.product.display_name,
-                    curve_family=resolved.product.curve_family,
-                    unit=resolved.product.curve_unit,
                     stack_index=stack_index,
+                    assignment_source="canonical_governed_template_apply",
                     visible=True,
-                    scale_min=scale_min,
-                    scale_max=scale_max,
-                    scale_type=scale_type,
-                    scale_direction=scale_direction,
                     color=display["default_color"],
                     line_style="solid",
                     line_width=1.8,
-                    line_visible=True,
-                    line_opacity=100,
-                    range_mode="fixed",
-                    position_anchor="center",
-                    horizontal_offset_pct=0.0,
-                    clip_to_track=True,
                     fill_mode=None,
-                    fill_side="none",
-                    fill_color=display["default_color"],
-                    fill_opacity=55,
-                    infill_source="solid",
-                    infill_pattern="solid",
-                    infill_interval_column="lithology",
-                    paired_managed_curve_uid=None,
-                    display_priority="normal",
-                    show_qaqc_warnings=True,
-                    show_null_gaps=True,
-                    show_out_of_range=True,
-                    source="canonical_governed_template_apply",
+                )
+            )
+            assignments.append(
+                base_assignment.model_copy(
+                    update={
+                        "scale_min": scale_min,
+                        "scale_max": scale_max,
+                        "scale_type": scale_type,
+                        "scale_direction": scale_direction,
+                        "line_visible": True,
+                        "line_opacity": 100,
+                        "range_mode": "fixed",
+                        "position_anchor": "center",
+                        "horizontal_offset_pct": 0.0,
+                        "clip_to_track": True,
+                        "fill_side": "none",
+                        "fill_color": display["default_color"],
+                        "fill_opacity": 55,
+                        "infill_source": "solid",
+                        "infill_pattern": "solid",
+                        "infill_interval_column": "lithology",
+                        "paired_managed_curve_uid": None,
+                        "display_priority": "normal",
+                        "show_qaqc_warnings": True,
+                        "show_null_gaps": True,
+                        "show_out_of_range": True,
+                    }
                 )
             )
         return tuple(assignments)

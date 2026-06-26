@@ -25,15 +25,61 @@ def _to_assignment_view(
     a: "WdvSessionCurveAssignmentState",
 ) -> "WdvSessionCurveAssignmentView":
     from app.wdv_display.number_format import format_scale_value
-    return WdvSessionCurveAssignmentView(
-        **a.model_dump(),
-        scale_min_label=(
-            format_scale_value(float(a.scale_min)) if a.scale_min is not None else None
-        ),
-        scale_max_label=(
-            format_scale_value(float(a.scale_max)) if a.scale_max is not None else None
-        ),
+
+    scale_min = a.scale_min
+    scale_max = a.scale_max
+
+    # Read-time repair for stored log assignments with a non-positive scale_min.
+    #
+    # Background: the _add_visual_variation_diagnostics heuristic previously
+    # overrode log-type governed ranges (e.g. resistivity 0.2–2000) with
+    # padded observed statistics when the linear visual_span_ratio < 0.08.
+    # This could produce a negative scale_min (e.g. -3.76 for Forge AT30),
+    # which is persisted in session_layouts.json and is invalid for log
+    # rendering.  That heuristic is now guarded against log-type scales, but
+    # existing stored sessions still carry the bad values.
+    #
+    # Contract:
+    #   - Triggered only when scale_type == "log" and scale_min <= 0.
+    #   - Re-resolves the governed display policy from stored curve metadata
+    #     (curve_family, unit, mnemonic) with no observed-stats override.
+    #   - Returns the governed numeric bounds and backend-formatted labels.
+    #   - Does NOT mutate session_layouts.json; the repaired values exist only
+    #     in the outbound response DTO.  Persistence follows the normal explicit
+    #     PUT /layout save path.
+    if (
+        a.scale_type == "log"
+        and scale_min is not None
+        and float(scale_min) <= 0
+    ):
+        from app.inventory.models import ManagedProductGroupItem
+        from app.wdv_display.policy_service import WdvCurveDisplayPolicyService
+
+        item = ManagedProductGroupItem(
+            product_id=a.curve_id,
+            display_name=a.display_name or a.mnemonic or a.curve_id,
+            curve_name=a.mnemonic or a.curve_id,
+            curve_type="curve",
+            curve_unit=a.unit or "",
+            curve_family=a.curve_family or "Unclassified",
+            selectable=True,
+        )
+        # No sample stats: policy returns the pure governed range (e.g. 0.2–2000
+        # for resistivity) without any low_visual_variation override.
+        governed = WdvCurveDisplayPolicyService.resolve(item, {})
+        scale_min = float(governed["min"])
+        scale_max = float(governed["max"])
+
+    dump = a.model_dump()
+    dump["scale_min"] = scale_min
+    dump["scale_max"] = scale_max
+    dump["scale_min_label"] = (
+        format_scale_value(float(scale_min)) if scale_min is not None else None
     )
+    dump["scale_max_label"] = (
+        format_scale_value(float(scale_max)) if scale_max is not None else None
+    )
+    return WdvSessionCurveAssignmentView(**dump)
 
 
 def _to_layout_view(

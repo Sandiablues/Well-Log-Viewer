@@ -18,6 +18,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from .managed_storage import ManagedStorage
+
 CONTRACT_VERSION = "kr_managed_instructions_v1"
 TRUTH_RECORD_TYPES = {
     "managed_instruction",
@@ -164,7 +166,17 @@ class TemplateDecisionResponse(BaseModel):
 
 
 def _knowledge_path() -> Path:
-    return Path(os.environ.get("WLV_KR_MANAGED_KNOWLEDGE_PATH", "backend/data/knowledge/managed_knowledge.json"))
+    """Return the canonical Managed-KR storage path.
+
+    Path ownership belongs to ``ManagedStorage``.  The environment override is
+    retained for isolated tests and controlled deployments, but the default is
+    no longer dependent on the backend process working directory.
+    """
+    override = os.environ.get("WLV_KR_MANAGED_KNOWLEDGE_PATH")
+    storage = ManagedStorage(
+        path=Path(override).expanduser() if override else None,
+    )
+    return storage.path
 
 
 def _load_document() -> dict[str, Any]:

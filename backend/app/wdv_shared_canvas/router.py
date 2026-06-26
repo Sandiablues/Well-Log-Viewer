@@ -310,7 +310,7 @@ def get_resolved_session(
     except MissingBindingError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except MissingWellDepthRangeError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except StaleBindingError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ArchivedProfileResolutionError as exc:

@@ -23,6 +23,16 @@ from app.wdv_session.canonical_service import (
 )
 
 
+
+def resolve_test_display_policy(_product):
+    return {
+        "min": 0.0,
+        "max": 200.0,
+        "type": "linear",
+        "direction": "normal",
+        "source": "test_policy",
+    }
+
 class MultiCurveResolver:
     def __init__(self, well_uid: str, curve_uids: tuple[str, ...]) -> None:
         self.well_uid = well_uid
@@ -56,6 +66,7 @@ def _service(tmp_path: Path, well_uid: str, curve_uids: tuple[str, ...]):
     service = CanonicalWdvCommandService(
         session_service=sessions,
         resolver=MultiCurveResolver(well_uid, curve_uids),
+        display_policy_resolver=resolve_test_display_policy,
     )
     return sessions, service
 

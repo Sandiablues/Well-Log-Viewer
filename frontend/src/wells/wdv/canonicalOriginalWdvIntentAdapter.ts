@@ -92,6 +92,8 @@ export interface AssignmentPatchInput {
   showQaqcWarnings?: boolean;
   showNullGaps?: boolean;
   showOutOfRange?: boolean;
+  /** When true, clears scale_min/max/type/direction on the assignment, restoring the governed KR default. */
+  resetScaleToGovernedDefault?: boolean;
 }
 
 export interface CanonicalOriginalWdvMutationAdapterDependencies {
@@ -282,6 +284,18 @@ export class CanonicalOriginalWdvMutationAdapter {
   ): ReturnType<ActiveCanonicalWdvActions['execute']> {
     const presentation = requirePresentation(this.dependencies);
     const { assignment } = findAssignment(presentation, assignmentUid);
+
+    // When resetting to the governed default, send only the reset flag.
+    // Do not merge or resend KR-derived scale values from the frontend.
+    if (patch.resetScaleToGovernedDefault) {
+      return this.dependencies.actions.execute({
+        kind: 'update_assignment',
+        body: compactBody({
+          assignment_uid: assignmentUid,
+          reset_scale_to_governed_default: true,
+        }),
+      });
+    }
 
     const scaleChanged =
       patch.scaleMin !== undefined || patch.scaleMax !== undefined;

@@ -505,6 +505,7 @@ export function composeOriginalWdvPresentationProps({
           showQaqcWarnings: patch.showQaqcWarnings,
           showNullGaps: patch.showNullGaps,
           showOutOfRange: patch.showOutOfRange,
+          resetScaleToGovernedDefault: patch.resetScaleToGovernedDefault,
         },
       );
     };

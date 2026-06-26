@@ -1,8 +1,28 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.knowledge.managed_storage import DEFAULT_STORAGE_PATH
+
+_PRODUCTION_KR_PATH = Path(DEFAULT_STORAGE_PATH)
+
+
+@pytest.fixture(autouse=True)
+def _use_repository_kr_for_read_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exercise the instruction API against the repository's governed KR.
+
+    The knowledge-suite autouse fixture redirects ManagedStorage defaults to a
+    temporary path to protect the live file from write tests.  This module is
+    read-only and intentionally validates the checked-in governed KR contract.
+    """
+    monkeypatch.setenv(
+        "WLV_KR_MANAGED_KNOWLEDGE_PATH",
+        str(_PRODUCTION_KR_PATH),
+    )
 
 client = TestClient(app)
 

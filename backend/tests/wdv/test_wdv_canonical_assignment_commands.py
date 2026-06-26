@@ -23,6 +23,16 @@ from app.wdv_session.canonical_service import (
 )
 
 
+
+def resolve_test_display_policy(_product):
+    return {
+        "min": 0.0,
+        "max": 200.0,
+        "type": "linear",
+        "direction": "normal",
+        "source": "test_policy",
+    }
+
 class FakeResolver:
     def __init__(self, well_uid: str, curve_uid: str) -> None:
         self.well_uid = well_uid
@@ -58,6 +68,7 @@ def test_backend_issues_track_and_assignment_uids_atomically(tmp_path: Path) -> 
     service = CanonicalWdvCommandService(
         session_service=sessions,
         resolver=FakeResolver(well_uid, curve_uid),
+        display_policy_resolver=resolve_test_display_policy,
     )
 
     initial = sessions.get_session(well_uid)
@@ -96,6 +107,7 @@ def test_stale_revision_is_rejected(tmp_path: Path) -> None:
     service = CanonicalWdvCommandService(
         session_service=sessions,
         resolver=FakeResolver(well_uid, new_uuid7_str()),
+        display_policy_resolver=resolve_test_display_policy,
     )
     initial = sessions.get_session(well_uid)
     service.create_track(
@@ -123,6 +135,7 @@ def test_track_update_reorder_and_assignment_display_edits(tmp_path: Path) -> No
     service = CanonicalWdvCommandService(
         session_service=sessions,
         resolver=FakeResolver(well_uid, curve_uid),
+        display_policy_resolver=resolve_test_display_policy,
     )
 
     initial = sessions.get_session(well_uid)
@@ -248,6 +261,7 @@ def test_assignment_move_preserves_uid_and_normalizes_stacks(tmp_path: Path) -> 
     service = CanonicalWdvCommandService(
         session_service=sessions,
         resolver=FakeResolver(well_uid, curve_uid),
+        display_policy_resolver=resolve_test_display_policy,
     )
 
     initial = sessions.get_session(well_uid)
@@ -308,6 +322,7 @@ def test_persistent_edit_commands_reject_invalid_graph_requests(tmp_path: Path) 
     service = CanonicalWdvCommandService(
         session_service=sessions,
         resolver=FakeResolver(well_uid, new_uuid7_str()),
+        display_policy_resolver=resolve_test_display_policy,
     )
     initial = sessions.get_session(well_uid)
     created = service.create_track(
