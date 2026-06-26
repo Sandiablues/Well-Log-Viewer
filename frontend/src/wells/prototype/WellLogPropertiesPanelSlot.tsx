@@ -194,6 +194,15 @@ function TrackDesignControls({
   );
 }
 
+export function resolvePropertiesEditorCurve(
+  selectedTrack: WellLogTrack | undefined,
+  selectedCurveAssignment: CurveAssignment | null,
+): CurveAssignment | null {
+  return selectedTrack?.trackType === 'curve'
+    ? selectedCurveAssignment
+    : null;
+}
+
 function CurveDesignControls({
   track,
   assignment,
@@ -584,11 +593,14 @@ export function WellLogPropertiesPanelSlot({
   }, [contract.tabs.info.sections]);
 
 
-  const selectedCurve = selectedTrack?.trackType === 'curve' && normalizedSelection.kind === 'curve'
-    ? selectedTrack.curves.find(
-      (assignment) => assignment.assignmentId === normalizedSelection.assignmentId,
-    ) ?? null
-    : null;
+  const selectedCurve = resolvePropertiesEditorCurve(
+    selectedTrack,
+    contract.selectedCurveAssignment,
+  );
+  const curveSelectionUnresolved =
+    normalizedSelection.kind === 'curve' &&
+    selectedTrack?.trackType === 'curve' &&
+    selectedCurve === null;
 
   return (
     <aside className="wlv-right-panel wlv-properties-panel-v2">
@@ -638,6 +650,14 @@ export function WellLogPropertiesPanelSlot({
               curveCatalogItems={curveCatalogItems}
               updateCurveAssignment={updateCurveAssignment}
             />
+          ) : curveSelectionUnresolved ? (
+            <div className="wlv-property-section wlv-properties-dark-section">
+              <h3>Curve Controls</h3>
+              <div className="wlv-property-note">
+                The selected curve identity could not be resolved. Track controls are not shown
+                because they would edit the wrong entity.
+              </div>
+            </div>
           ) : selectedTrack ? (
             <TrackDesignControls
               track={selectedTrack}
