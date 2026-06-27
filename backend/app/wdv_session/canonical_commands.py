@@ -176,10 +176,9 @@ class ReorderTracksCommand(RevisionGuardedCommand):
 class UpdateCurveAssignmentCommand(RevisionGuardedCommand):
     assignment_uid: CanonicalUuid7
     visible: bool | None = None
-    scale_min: FiniteNumber | None = None
-    scale_max: FiniteNumber | None = None
-    scale_type: Literal["linear", "logarithmic"] | None = None
-    scale_direction: Literal["normal", "reversed"] | None = None
+    range_override_mode: Literal["governed", "manual", "fit_to_curve", "fit_to_curve_p05_p95", "fit_to_curve_p01_p99"] | None = None
+    manual_scale_min: FiniteNumber | None = None
+    manual_scale_max: FiniteNumber | None = None
     range_mode: Literal["auto", "fixed"] | None = None
     color: str | None = None
     line_visible: bool | None = None
@@ -197,11 +196,6 @@ class UpdateCurveAssignmentCommand(RevisionGuardedCommand):
     infill_interval_column: str | None = None
     paired_managed_curve_uid: CanonicalUuid7 | None = None
     clear_paired_managed_curve_uid: bool = False
-    # When True, clears scale_min, scale_max, scale_type, and scale_direction
-    # on the assignment, restoring the governed KR/fallback display policy.
-    # Must not be combined with explicit scale_min/max/type/direction values.
-    # The frontend must send only this flag — never recalculate and resend KR values.
-    reset_scale_to_governed_default: bool = False
     display_priority: Literal["background", "normal", "foreground"] | None = None
     show_qaqc_warnings: bool | None = None
     show_null_gaps: bool | None = None
@@ -209,23 +203,23 @@ class UpdateCurveAssignmentCommand(RevisionGuardedCommand):
 
     @model_validator(mode="after")
     def validate_patch(self) -> "UpdateCurveAssignmentCommand":
-        if (self.scale_min is None) != (self.scale_max is None):
-            raise ValueError("scale_min and scale_max must be supplied together")
-        if self.reset_scale_to_governed_default and (
-            self.scale_min is not None
-            or self.scale_max is not None
-            or self.scale_type is not None
-            or self.scale_direction is not None
-        ):
+        if (self.manual_scale_min is None) != (self.manual_scale_max is None):
             raise ValueError(
-                "reset_scale_to_governed_default may not be combined with "
-                "explicit scale fields"
+                "manual_scale_min and manual_scale_max must be supplied together"
             )
+        if self.range_override_mode == "manual":
+            if self.manual_scale_min is None or self.manual_scale_max is None:
+                raise ValueError("manual mode requires manual scale limits")
+            if self.manual_scale_min == self.manual_scale_max:
+                raise ValueError("manual scale limits must differ")
+        elif self.manual_scale_min is not None or self.manual_scale_max is not None:
+            raise ValueError(
+                "manual scale limits require range_override_mode='manual'"
+            )
+
         fields = (
             self.visible,
-            self.scale_min,
-            self.scale_type,
-            self.scale_direction,
+            self.range_override_mode,
             self.range_mode,
             self.color,
             self.line_visible,
@@ -250,7 +244,6 @@ class UpdateCurveAssignmentCommand(RevisionGuardedCommand):
         if (
             all(value is None for value in fields)
             and not self.clear_paired_managed_curve_uid
-            and not self.reset_scale_to_governed_default
         ):
             raise ValueError(
                 "UpdateCurveAssignmentCommand requires at least one field"

@@ -195,7 +195,7 @@ def test_refresh_preserves_assignment_identity_source_and_style() -> None:
     assert refreshed.display_policy_source == "family"
 
 
-def test_refresh_does_not_replace_explicit_user_override() -> None:
+def test_refresh_preserves_explicit_manual_intent_and_recomputes_effective_values() -> None:
     resolver, service = build({
         "min": 1.95,
         "max": 2.95,
@@ -211,10 +211,21 @@ def test_refresh_does_not_replace_explicit_user_override() -> None:
         assignment_source="manual_backend_command",
     ).model_copy(
         update={
-            "scale_min": 2.1,
-            "scale_max": 2.8,
-            "display_policy_source": "user_override",
+            "range_override_mode": "manual",
+            "manual_scale_min": 2.1,
+            "manual_scale_max": 2.8,
+            "effective_range_source": "manual",
         }
     )
 
-    assert service.refresh_assignment(original) == original
+    refreshed = service.refresh_assignment(original)
+
+    assert refreshed.range_override_mode == "manual"
+    assert refreshed.effective_range_source == "manual"
+    assert refreshed.manual_scale_min == 2.1
+    assert refreshed.manual_scale_max == 2.8
+    assert refreshed.scale_min == 2.1
+    assert refreshed.scale_max == 2.8
+    assert refreshed.scale_type == "linear"
+    assert refreshed.scale_direction == "normal"
+    assert refreshed.display_policy_source == "family"

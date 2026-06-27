@@ -109,8 +109,19 @@ class WdvCanonicalAssignment(BaseModel):
     visible: bool = True
     scale_min: FiniteNumber | None = None
     scale_max: FiniteNumber | None = None
+    scale_min_label: str | None = None
+    scale_max_label: str | None = None
     scale_type: Literal["linear", "logarithmic"] | None = None
     scale_direction: Literal["normal", "reversed"] | None = None
+    # User intent is explicit. Effective scale_* fields are backend outputs.
+    range_override_mode: Literal["governed", "manual", "fit_to_curve", "fit_to_curve_p05_p95", "fit_to_curve_p01_p99"] = "governed"
+    manual_scale_min: FiniteNumber | None = None
+    manual_scale_max: FiniteNumber | None = None
+    effective_range_source: Literal["governed", "manual", "fit_to_curve", "fit_to_curve_p05_p95", "fit_to_curve_p01_p99"] = "governed"
+    override_warning_code: str | None = None
+    override_warning_message: str | None = None
+    range_edit_step: FiniteNumber = Field(default=1.0, gt=0)
+    range_edit_precision: int = Field(default=0, ge=0, le=12)
     color: str | None = None
     line_style: str | None = None
     line_width: FiniteNumber | None = Field(default=None, gt=0)
@@ -138,7 +149,7 @@ class WdvCanonicalAssignment(BaseModel):
     # None preserves compatibility for assignments created before this contract
     # extension; later bounded work will populate these fields on every path.
     display_policy_source: Literal[
-        "curve", "family", "system_default", "user_override"
+        "curve", "family", "system_default"
     ] | None = None
     display_review_required: bool = False
     display_warning_code: str | None = None
@@ -155,6 +166,21 @@ class WdvCanonicalAssignment(BaseModel):
                 self.scale_min <= 0 or self.scale_max <= 0
             ):
                 raise ValueError("logarithmic scales require positive limits")
+        if self.range_override_mode == "manual":
+            if self.manual_scale_min is None or self.manual_scale_max is None:
+                raise ValueError("manual mode requires manual_scale_min and manual_scale_max")
+            if self.manual_scale_min == self.manual_scale_max:
+                raise ValueError("manual scale limits must differ")
+            if self.scale_type == "logarithmic" and (
+                self.manual_scale_min <= 0 or self.manual_scale_max <= 0
+            ):
+                raise ValueError("manual logarithmic ranges require positive limits")
+        elif self.manual_scale_min is not None or self.manual_scale_max is not None:
+            raise ValueError("manual scale limits are valid only in manual mode")
+        if self.effective_range_source != self.range_override_mode:
+            raise ValueError("effective_range_source must match range_override_mode")
+        if (self.override_warning_code is None) != (self.override_warning_message is None):
+            raise ValueError("override warning code and message must be supplied together")
         if self.display_policy_source == "system_default":
             if not self.display_review_required:
                 raise ValueError(

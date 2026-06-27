@@ -226,7 +226,6 @@ function CurveDesignControls({
     );
   }
   const scaleType = assignment.scaleType ?? (curve.defaultLattice === 'logarithmic' ? 'log' : 'linear');
-  const rangeMode = assignment.rangeMode ?? 'fixed';
   const lineVisible = assignment.lineVisible ?? true;
   const lineOpacity = assignment.lineOpacity ?? 100;
   const positionAnchor = assignment.positionAnchor ?? 'center';
@@ -267,36 +266,76 @@ function CurveDesignControls({
           </select>
         </label>
         <label>
-          Range
+          Range mode
           <select
-            value={rangeMode}
+            value={assignment.rangeOverrideMode ?? 'governed'}
             onChange={(event) => {
-              const nextRangeMode = event.target.value as CurveAssignment['rangeMode'];
-              update(nextRangeMode === 'auto'
-                ? { rangeMode: nextRangeMode, scaleMin: curve.defaultMin, scaleMax: curve.defaultMax }
-                : { rangeMode: nextRangeMode });
+              const rangeOverrideMode =
+                event.target.value as NonNullable<CurveAssignment['rangeOverrideMode']>;
+              update(
+                rangeOverrideMode === 'manual'
+                  ? {
+                      rangeOverrideMode,
+                      manualScaleMin: assignment.manualScaleMin ?? assignment.scaleMin,
+                      manualScaleMax: assignment.manualScaleMax ?? assignment.scaleMax,
+                    }
+                  : {
+                      rangeOverrideMode,
+                      manualScaleMin: null,
+                      manualScaleMax: null,
+                    },
+              );
             }}
           >
-            <option value="auto">Auto</option>
-            <option value="fixed">Fixed</option>
+            <option value="governed">Governed</option>
+            <option value="manual">Manual</option>
+            <option value="fit_to_curve_p05_p95">Fit track to curve — P5–P95</option>
+            <option value="fit_to_curve_p01_p99">Fit track to curve — P1–P99</option>
           </select>
         </label>
         <label>
           Range min
           <input
             type="number"
-            value={assignment.scaleMin}
-            onChange={(event) => update({ scaleMin: Number(event.target.value), rangeMode: 'fixed' })}
+            value={
+              assignment.rangeOverrideMode === 'manual'
+                ? assignment.manualScaleMin ?? assignment.scaleMin
+                : assignment.scaleMin
+            }
+            disabled={assignment.rangeOverrideMode !== 'manual'}
+            step={assignment.rangeEditStep ?? 1}
+            onChange={(event) =>
+              update({
+                rangeOverrideMode: 'manual',
+                manualScaleMin: Number(event.target.value),
+              })
+            }
           />
         </label>
         <label>
           Range max
           <input
             type="number"
-            value={assignment.scaleMax}
-            onChange={(event) => update({ scaleMax: Number(event.target.value), rangeMode: 'fixed' })}
+            value={
+              assignment.rangeOverrideMode === 'manual'
+                ? assignment.manualScaleMax ?? assignment.scaleMax
+                : assignment.scaleMax
+            }
+            disabled={assignment.rangeOverrideMode !== 'manual'}
+            step={assignment.rangeEditStep ?? 1}
+            onChange={(event) =>
+              update({
+                rangeOverrideMode: 'manual',
+                manualScaleMax: Number(event.target.value),
+              })
+            }
           />
         </label>
+        {assignment.overrideWarningMessage ? (
+          <div className="wlv-property-note" role="status">
+            {assignment.overrideWarningMessage}
+          </div>
+        ) : null}
         <label className="wlv-checkbox-row">
           <input
             type="checkbox"

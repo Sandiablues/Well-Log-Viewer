@@ -606,21 +606,18 @@ class CanonicalWdvCommandService:
                     "expected_revision",
                     "assignment_uid",
                     "clear_paired_managed_curve_uid",
-                    "reset_scale_to_governed_default",
+                    "range_override_mode",
+                    "manual_scale_min",
+                    "manual_scale_max",
                 },
                 exclude_none=True,
             )
             if command.clear_paired_managed_curve_uid:
                 patch["paired_managed_curve_uid"] = None
-            if command.reset_scale_to_governed_default:
-                # Explicitly clear all four scale fields to None so the
-                # effective display falls back to the governed KR/fallback policy.
-                # exclude_none=True above would never set these to None, so we
-                # apply the clear explicitly after model_dump.
-                patch["scale_min"] = None
-                patch["scale_max"] = None
-                patch["scale_type"] = None
-                patch["scale_direction"] = None
+            if command.range_override_mode is not None:
+                patch["range_override_mode"] = command.range_override_mode
+                patch["manual_scale_min"] = command.manual_scale_min
+                patch["manual_scale_max"] = command.manual_scale_max
 
             for track in session.tracks:
                 assignments: list[WdvCanonicalAssignment] = []
@@ -630,6 +627,11 @@ class CanonicalWdvCommandService:
                         found = True
                         changed = True
                         assignment = assignment.model_copy(update=patch)
+                        assignment = (
+                            self.assignment_policy_service.refresh_assignment(
+                                assignment
+                            )
+                        )
                     assignments.append(assignment)
                 if changed:
                     track = track.model_copy(

@@ -154,7 +154,7 @@ def test_stale_backend_policy_is_reresolved_and_persisted(
     assert reread.tracks[0].assignments[0].scale_min == 1.95
 
 
-def test_stale_explicit_user_override_is_retained(
+def test_stale_explicit_manual_override_is_retained(
     tmp_path: Path,
 ) -> None:
     well_uid = new_uuid7_str()
@@ -165,16 +165,24 @@ def test_stale_explicit_user_override_is_retained(
         well_uid=well_uid,
         curve_uid=curve_uid,
     )
+    manual_assignment = assignment(
+        well_uid=well_uid,
+        curve_uid=curve_uid,
+        track_uid=track_uid,
+        policy_source="family",
+        scale_min=2.1,
+        scale_max=2.8,
+    ).model_copy(
+        update={
+            "range_override_mode": "manual",
+            "manual_scale_min": 2.1,
+            "manual_scale_max": 2.8,
+            "effective_range_source": "manual",
+        }
+    )
     service.put_session(
         session_with(
-            assignment(
-                well_uid=well_uid,
-                curve_uid=curve_uid,
-                track_uid=track_uid,
-                policy_source="user_override",
-                scale_min=2.1,
-                scale_max=2.8,
-            ),
+            manual_assignment,
             revision="old-policy",
         )
     )
@@ -182,13 +190,15 @@ def test_stale_explicit_user_override_is_retained(
     refreshed = service.get_session(well_uid)
     value = refreshed.tracks[0].assignments[0]
 
-    assert refreshed.display_policy_revision == "new-policy"
+    assert value.range_override_mode == "manual"
+    assert value.effective_range_source == "manual"
+    assert value.manual_scale_min == 2.1
+    assert value.manual_scale_max == 2.8
     assert value.scale_min == 2.1
     assert value.scale_max == 2.8
-    assert value.display_policy_source == "user_override"
+    assert value.display_policy_source == "family"
 
-
-def test_legacy_non_null_scale_keeps_compatibility_clear_behavior(
+def test_legacy_non_null_scale_without_explicit_override_migrates_to_governed(
     tmp_path: Path,
 ) -> None:
     well_uid = new_uuid7_str()
@@ -216,10 +226,13 @@ def test_legacy_non_null_scale_keeps_compatibility_clear_behavior(
     refreshed = service.get_session(well_uid)
     value = refreshed.tracks[0].assignments[0]
 
-    assert value.scale_min is None
-    assert value.scale_max is None
-    assert value.display_policy_source is None
-
+    assert value.range_override_mode == "governed"
+    assert value.effective_range_source == "governed"
+    assert value.manual_scale_min is None
+    assert value.manual_scale_max is None
+    assert value.scale_min == 1.95
+    assert value.scale_max == 2.95
+    assert value.display_policy_source == "family"
 
 def test_legacy_assignment_without_scale_is_migrated_to_backend_policy(
     tmp_path: Path,

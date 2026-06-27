@@ -178,6 +178,8 @@ export interface RawCanonicalAssignment {
   visible: boolean;
   scale_min: number | null;
   scale_max: number | null;
+  scale_min_label?: string | null;
+  scale_max_label?: string | null;
   scale_type: string | null;
   scale_direction: string | null;
   color: string | null;
@@ -191,6 +193,14 @@ export interface RawCanonicalAssignment {
   display_review_required: boolean;
   display_warning_code: string | null;
   display_warning_message: string | null;
+  range_override_mode?: 'governed' | 'manual' | 'fit_to_curve' | 'fit_to_curve_p05_p95' | 'fit_to_curve_p01_p99';
+  manual_scale_min?: number | null;
+  manual_scale_max?: number | null;
+  effective_range_source?: 'governed' | 'manual' | 'fit_to_curve' | 'fit_to_curve_p05_p95' | 'fit_to_curve_p01_p99';
+  override_warning_code?: string | null;
+  override_warning_message?: string | null;
+  range_edit_step?: number;
+  range_edit_precision?: number;
 }
 
 /** @internal exported for unit tests */
@@ -234,6 +244,55 @@ export function looksLikeUuid(value: string): boolean {
  * timestamp/random token was not a UUID and caused every canonical delete
  * and assignment toggle command to fail request validation.
  */
+export function canonicalRangeOverrideCommandBody(
+  assignment: CurveAssignment,
+  patch: Partial<CurveAssignment>,
+): Record<string, unknown> | null {
+  const hasRangeIntent =
+    patch.rangeOverrideMode !== undefined
+    || patch.manualScaleMin !== undefined
+    || patch.manualScaleMax !== undefined
+    || patch.scaleMin !== undefined
+    || patch.scaleMax !== undefined;
+
+  if (!hasRangeIntent) return null;
+
+  const scaleChanged =
+    patch.scaleMin !== undefined || patch.scaleMax !== undefined;
+  const rangeOverrideMode =
+    patch.rangeOverrideMode
+    ?? (scaleChanged ? 'manual' : assignment.rangeOverrideMode ?? 'governed');
+
+  if (rangeOverrideMode !== 'manual') {
+    return { range_override_mode: rangeOverrideMode };
+  }
+
+  const manualScaleMin =
+    patch.manualScaleMin
+    ?? patch.scaleMin
+    ?? assignment.manualScaleMin
+    ?? assignment.scaleMin;
+  const manualScaleMax =
+    patch.manualScaleMax
+    ?? patch.scaleMax
+    ?? assignment.manualScaleMax
+    ?? assignment.scaleMax;
+
+  if (
+    !Number.isFinite(manualScaleMin)
+    || !Number.isFinite(manualScaleMax)
+    || manualScaleMin === manualScaleMax
+  ) {
+    throw new Error('Manual curve range requires two distinct finite bounds.');
+  }
+
+  return {
+    range_override_mode: 'manual',
+    manual_scale_min: manualScaleMin,
+    manual_scale_max: manualScaleMax,
+  };
+}
+
 export function canonicalCommandRequestBody(
   expectedRevision: number,
   body: Record<string, unknown>,
@@ -362,14 +421,45 @@ export function frontendTracksFromCanonicalSession(
           visible: raw.visible,
           scaleMin: raw.scale_min,
           scaleMax: raw.scale_max,
+          scaleMinLabel: raw.scale_min_label ?? null,
+          scaleMaxLabel: raw.scale_max_label ?? null,
           scaleType,
           scaleDirection,
           color: raw.color ?? fallback.color,
           unit: raw.unit,
-          displayPolicySource: raw.display_policy_source,
+          displayPolicySource:
+            raw.display_policy_source === 'user_override'
+              ? null
+              : raw.display_policy_source,
           displayReviewRequired: raw.display_review_required,
           displayWarningCode: raw.display_warning_code,
           displayWarningMessage: raw.display_warning_message,
+          rangeOverrideMode:
+            raw.range_override_mode === 'manual'
+            || raw.range_override_mode === 'fit_to_curve'
+            || raw.range_override_mode === 'fit_to_curve_p05_p95'
+            || raw.range_override_mode === 'fit_to_curve_p01_p99'
+              ? raw.range_override_mode
+              : 'governed',
+          manualScaleMin: raw.manual_scale_min ?? null,
+          manualScaleMax: raw.manual_scale_max ?? null,
+          effectiveRangeSource:
+            raw.effective_range_source === 'manual'
+            || raw.effective_range_source === 'fit_to_curve'
+            || raw.effective_range_source === 'fit_to_curve_p05_p95'
+            || raw.effective_range_source === 'fit_to_curve_p01_p99'
+              ? raw.effective_range_source
+              : 'governed',
+          overrideWarningCode: raw.override_warning_code ?? null,
+          overrideWarningMessage: raw.override_warning_message ?? null,
+          rangeEditStep:
+            typeof raw.range_edit_step === 'number' && raw.range_edit_step > 0
+              ? raw.range_edit_step
+              : 1,
+          rangeEditPrecision:
+            typeof raw.range_edit_precision === 'number'
+              ? raw.range_edit_precision
+              : 0,
         };
         return [assignment];
       });
@@ -975,12 +1065,59 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
       setTracks((current) => current.map((track) => (track.trackId === trackId ? { ...track, ...patch } as WellLogTrack : track)));
   };
   const updateCurveAssignment = (trackId: string, assignmentId: string, patch: Partial<CurveAssignment>) => {
-      setTracks((current) => current.map((track) => {
-          if (track.trackId !== trackId || track.trackType !== 'curve')
-              return track;
+      const track = tracks.find((item) => item.trackId === trackId && item.trackType === 'curve');
+      const assignment =
+          track && track.trackType === 'curve'
+              ? track.curves.find((item) => item.assignmentId === assignmentId)
+              : undefined;
+      const rangeCommandBody = assignment
+          ? canonicalRangeOverrideCommandBody(assignment, patch)
+          : null;
+
+      if (rangeCommandBody !== null) {
+          if (
+              !managedViewerWellUid
+              || canonicalRevisionRef.current < 0
+              || !looksLikeUuid(trackId)
+              || !looksLikeUuid(assignmentId)
+          ) {
+              console.error(
+                  '[WdvPageBoundary] canonical range update blocked because canonical identity or revision is unavailable.',
+              );
+              return;
+          }
+
+          void (async () => {
+              try {
+                  const rawSession = await executeWdvCanonicalCommand(
+                      'assignments/update',
+                      {
+                          assignment_uid: assignmentId,
+                          ...rangeCommandBody,
+                      },
+                  );
+                  applyCanonicalSession(rawSession);
+              } catch (error) {
+                  if (error instanceof Error && error.message.startsWith('409 ')) {
+                      await refreshCanonicalSession();
+                  } else {
+                      console.error('[WdvPageBoundary] updateCurveAssignment range command failed:', error);
+                  }
+              }
+          })();
+          return;
+      }
+
+      setTracks((current) => current.map((item) => {
+          if (item.trackId !== trackId || item.trackType !== 'curve')
+              return item;
           return {
-              ...track,
-              curves: track.curves.map((assignment) => (assignment.assignmentId === assignmentId ? { ...assignment, ...patch } : assignment)),
+              ...item,
+              curves: item.curves.map((currentAssignment) => (
+                  currentAssignment.assignmentId === assignmentId
+                      ? { ...currentAssignment, ...patch }
+                      : currentAssignment
+              )),
           };
       }));
   };

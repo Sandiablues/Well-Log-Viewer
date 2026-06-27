@@ -31,7 +31,7 @@ def test_existing_assignment_contract_remains_backward_compatible() -> None:
     assert assignment.display_warning_message is None
 
 
-@pytest.mark.parametrize("policy_source", ["curve", "family", "user_override"])
+@pytest.mark.parametrize("policy_source", ["curve", "family"])
 def test_non_default_policy_sources_do_not_require_warning(
     policy_source: str,
 ) -> None:

@@ -70,7 +70,7 @@ export interface CurveAssignment {
   /** Canonical backend assignment unit. This is projection data, not a catalog fallback. */
   unit?: string | null;
   /** Backend-owned display-policy provenance for this canonical assignment. */
-  displayPolicySource?: 'curve' | 'family' | 'system_default' | 'user_override' | null;
+  displayPolicySource?: 'curve' | 'family' | 'system_default' | null;
   /** True only when the backend requires human review of the display policy. */
   displayReviewRequired?: boolean;
   /** Backend-owned machine-readable display warning. */
@@ -105,8 +105,18 @@ export interface CurveAssignment {
   showQaqcWarnings?: boolean;
   showNullGaps?: boolean;
   showOutOfRange?: boolean;
-  /** When true, clears the WDV scale override and restores the governed KR default. */
-  resetScaleToGovernedDefault?: boolean;
+  /** Backend-owned range override intent projected through the canonical assignment. */
+  rangeOverrideMode?: 'governed' | 'manual' | 'fit_to_curve' | 'fit_to_curve_p05_p95' | 'fit_to_curve_p01_p99';
+  /** Manual bounds are meaningful only when rangeOverrideMode is manual. */
+  manualScaleMin?: number | null;
+  manualScaleMax?: number | null;
+  /** Backend source used for the current effective range. */
+  effectiveRangeSource?: 'governed' | 'manual' | 'fit_to_curve' | 'fit_to_curve_p05_p95' | 'fit_to_curve_p01_p99';
+  /** Backend warning when the requested override could not be resolved. */
+  overrideWarningCode?: string | null;
+  overrideWarningMessage?: string | null;
+  rangeEditStep?: number;
+  rangeEditPrecision?: number;
 }
 
 interface BaseTrack {

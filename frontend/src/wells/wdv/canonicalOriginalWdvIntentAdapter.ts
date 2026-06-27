@@ -92,8 +92,9 @@ export interface AssignmentPatchInput {
   showQaqcWarnings?: boolean;
   showNullGaps?: boolean;
   showOutOfRange?: boolean;
-  /** When true, clears scale_min/max/type/direction on the assignment, restoring the governed KR default. */
-  resetScaleToGovernedDefault?: boolean;
+  rangeOverrideMode?: 'governed' | 'manual' | 'fit_to_curve' | 'fit_to_curve_p05_p95' | 'fit_to_curve_p01_p99';
+  manualScaleMin?: number;
+  manualScaleMax?: number;
 }
 
 export interface CanonicalOriginalWdvMutationAdapterDependencies {
@@ -278,44 +279,34 @@ export class CanonicalOriginalWdvMutationAdapter {
     });
   }
 
-  updateAssignment(
+  async updateAssignment(
     assignmentUid: AssignmentUid,
     patch: AssignmentPatchInput,
-  ): ReturnType<ActiveCanonicalWdvActions['execute']> {
+  ): Promise<void> {
     const presentation = requirePresentation(this.dependencies);
-    const { assignment } = findAssignment(presentation, assignmentUid);
-
-    // When resetting to the governed default, send only the reset flag.
-    // Do not merge or resend KR-derived scale values from the frontend.
-    if (patch.resetScaleToGovernedDefault) {
-      return this.dependencies.actions.execute({
-        kind: 'update_assignment',
-        body: compactBody({
-          assignment_uid: assignmentUid,
-          reset_scale_to_governed_default: true,
-        }),
-      });
-    }
+    const { track, assignment } = findAssignment(presentation, assignmentUid);
 
     const scaleChanged =
       patch.scaleMin !== undefined || patch.scaleMax !== undefined;
+    const rangeOverrideMode =
+      patch.rangeOverrideMode ?? (scaleChanged ? 'manual' : undefined);
+    const manualScaleMin =
+      rangeOverrideMode === 'manual'
+        ? patch.manualScaleMin ?? patch.scaleMin ?? assignment.scaleMin
+        : undefined;
+    const manualScaleMax =
+      rangeOverrideMode === 'manual'
+        ? patch.manualScaleMax ?? patch.scaleMax ?? assignment.scaleMax
+        : undefined;
 
-    const scaleMin = scaleChanged
-      ? patch.scaleMin ?? assignment.scaleMin
-      : undefined;
-    const scaleMax = scaleChanged
-      ? patch.scaleMax ?? assignment.scaleMax
-      : undefined;
-
-    return this.dependencies.actions.execute({
+    await this.dependencies.actions.execute({
       kind: 'update_assignment',
       body: compactBody({
         assignment_uid: assignmentUid,
         visible: patch.visible,
-        scale_min: scaleMin,
-        scale_max: scaleMax,
-        scale_type: patch.scaleType,
-        scale_direction: patch.scaleDirection,
+        range_override_mode: rangeOverrideMode,
+        manual_scale_min: manualScaleMin,
+        manual_scale_max: manualScaleMax,
         range_mode: patch.rangeMode,
         color: patch.color,
         line_visible: patch.lineVisible,
@@ -340,6 +331,13 @@ export class CanonicalOriginalWdvMutationAdapter {
         show_null_gaps: patch.showNullGaps,
         show_out_of_range: patch.showOutOfRange,
       }),
+    });
+
+    this.dependencies.actions.setPresentationSelection({
+      kind: 'assignment',
+      trackUid: track.trackId as TrackUid,
+      assignmentUid,
+      managedCurveUid: assignment.curveId as ManagedCurveUid,
     });
   }
 

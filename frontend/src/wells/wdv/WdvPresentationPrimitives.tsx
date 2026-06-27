@@ -2199,7 +2199,7 @@ export function CurveProperties({ track, assignment, curveCatalogItems, updateCu
       </label>
       <button
         type="button"
-        onClick={() => updateCurveAssignment(track.trackId, assignment.assignmentId, { resetScaleToGovernedDefault: true })}
+        onClick={() => updateCurveAssignment(track.trackId, assignment.assignmentId, { rangeOverrideMode: "governed" })}
         title="Reset scale to governed KR default"
       >
         Reset to Default

@@ -34,102 +34,17 @@ class CanonicalSessionCommandReplayConflict(ValueError):
     pass
 
 
-# ---------------------------------------------------------------------------
-# UNIT-3B: stale-override helpers (module-level, no class state)
-# ---------------------------------------------------------------------------
-
-def _assignment_has_scale_override(assignment: WdvCanonicalAssignment) -> bool:
-    """Return whether an assignment carries a user scale override.
-
-    New assignments use explicit display-policy provenance. Existing assignments
-    created before that contract extension have no provenance, so they retain
-    the previous non-null scale-field interpretation until they are migrated by
-    the later policy-refresh task.
-    """
-    if assignment.display_policy_source == "user_override":
-        return True
-    if assignment.display_policy_source in {
-        "curve",
-        "family",
-        "system_default",
-    }:
-        return False
-    return any(
-        value is not None
-        for value in (
-            assignment.scale_min,
-            assignment.scale_max,
-            assignment.scale_type,
-            assignment.scale_direction,
-        )
-    )
-
-
-def _session_has_scale_overrides(session: WdvCanonicalSession) -> bool:
-    """Return True if any assignment in the session carries a scale override."""
-    return any(
-        _assignment_has_scale_override(a)
-        for track in session.tracks
-        for a in track.assignments
-    )
-
-
 def _refresh_assignments_and_stamp(
     session: WdvCanonicalSession,
     display_policy_revision: str,
-    assignment_policy_refresh_fn: AssignmentPolicyRefreshFn | None,
+    assignment_policy_refresh_fn: AssignmentPolicyRefreshFn,
 ) -> WdvCanonicalSession:
-    """Refresh stale backend policy while preserving explicit user overrides.
-
-    Compatibility rules:
-    - explicit ``user_override`` assignments are retained unchanged;
-    - explicit curve/family/system-default assignments are re-resolved;
-    - legacy assignments with non-null scales retain the previous stale-override
-      behavior and are cleared;
-    - legacy assignments without scales are re-resolved when a refresher exists.
-    """
-
-    def refresh_assignment(
-        assignment: WdvCanonicalAssignment,
-    ) -> WdvCanonicalAssignment:
-        if assignment.display_policy_source == "user_override":
-            return assignment
-
-        if assignment.display_policy_source in {
-            "curve",
-            "family",
-            "system_default",
-        }:
-            if assignment_policy_refresh_fn is None:
-                return assignment
-            return assignment_policy_refresh_fn(assignment)
-
-        # Legacy compatibility: old non-null scale fields were historically
-        # treated as overrides. Preserve that behavior until provenance
-        # migration is complete.
-        if _assignment_has_scale_override(assignment):
-            return assignment.model_copy(
-                update={
-                    "scale_min": None,
-                    "scale_max": None,
-                    "scale_type": None,
-                    "scale_direction": None,
-                    "display_policy_source": None,
-                    "display_review_required": False,
-                    "display_warning_code": None,
-                    "display_warning_message": None,
-                }
-            )
-
-        if assignment_policy_refresh_fn is None:
-            return assignment
-        return assignment_policy_refresh_fn(assignment)
-
-    new_tracks = tuple(
+    """Re-resolve every assignment from current backend policy and explicit intent."""
+    tracks = tuple(
         track.model_copy(
             update={
                 "assignments": tuple(
-                    refresh_assignment(assignment)
+                    assignment_policy_refresh_fn(assignment)
                     for assignment in track.assignments
                 )
             }
@@ -138,48 +53,34 @@ def _refresh_assignments_and_stamp(
     )
     return session.model_copy(
         update={
-            "tracks": new_tracks,
+            "tracks": tracks,
             "display_policy_revision": display_policy_revision,
         }
     )
 
 
-
-def _clear_overrides_and_stamp(
-    session: WdvCanonicalSession,
-    display_policy_revision: str,
-) -> WdvCanonicalSession:
-    """Apply the pre-refresh compatibility behavior for standalone services."""
-    new_tracks = tuple(
-        track.model_copy(
-            update={
-                "assignments": tuple(
-                    assignment.model_copy(
-                        update={
-                            "scale_min": None,
-                            "scale_max": None,
-                            "scale_type": None,
-                            "scale_direction": None,
-                            "display_policy_source": None,
-                            "display_review_required": False,
-                            "display_warning_code": None,
-                            "display_warning_message": None,
-                        }
-                    )
-                    if _assignment_has_scale_override(assignment)
-                    else assignment
-                    for assignment in track.assignments
-                )
-            }
-        )
-        for track in session.tracks
-    )
-    return session.model_copy(
-        update={
-            "tracks": new_tracks,
-            "display_policy_revision": display_policy_revision,
-        }
-    )
+def _migrate_legacy_session_payload(raw: dict[str, Any]) -> dict[str, Any]:
+    """One-time storage-boundary conversion; legacy state never enters runtime."""
+    migrated = json.loads(json.dumps(raw))
+    for track in migrated.get("tracks", []):
+        for assignment in track.get("assignments", []):
+            if "range_override_mode" in assignment:
+                continue
+            legacy_manual = assignment.get("display_policy_source") == "user_override"
+            if legacy_manual:
+                assignment["range_override_mode"] = "manual"
+                assignment["manual_scale_min"] = assignment.get("scale_min")
+                assignment["manual_scale_max"] = assignment.get("scale_max")
+                assignment["effective_range_source"] = "manual"
+                assignment["display_policy_source"] = None
+            else:
+                assignment["range_override_mode"] = "governed"
+                assignment["manual_scale_min"] = None
+                assignment["manual_scale_max"] = None
+                assignment["effective_range_source"] = "governed"
+            assignment.setdefault("override_warning_code", None)
+            assignment.setdefault("override_warning_message", None)
+    return migrated
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +139,7 @@ class CanonicalWdvSessionService:
             store = self._read_store()
             raw = store["sessions"].get(well_uid)
             if raw is not None:
-                session = WdvCanonicalSession.model_validate(raw)
+                session = WdvCanonicalSession.model_validate(_migrate_legacy_session_payload(raw))
             else:
                 empty = self._empty_session(well_uid)
                 store["sessions"][well_uid] = empty.model_dump(mode="json")
@@ -248,28 +149,16 @@ class CanonicalWdvSessionService:
             has_assignments = any(
                 track.assignments for track in session.tracks
             )
-            if self._assignment_policy_refresh_fn is not None:
-                if has_assignments:
-                    current_revision = self._policy_revision_fn()
-                    if session.display_policy_revision != current_revision:
-                        session = self.mutate_session_transactionally(
-                            managed_well_uid,
-                            expected_revision=session.revision,
-                            mutation=lambda current: _refresh_assignments_and_stamp(
-                                current,
-                                current_revision,
-                                self._assignment_policy_refresh_fn,
-                            ),
-                        )
-            elif _session_has_scale_overrides(session):
+            if has_assignments and self._assignment_policy_refresh_fn is not None:
                 current_revision = self._policy_revision_fn()
                 if session.display_policy_revision != current_revision:
                     session = self.mutate_session_transactionally(
                         managed_well_uid,
                         expected_revision=session.revision,
-                        mutation=lambda current: _clear_overrides_and_stamp(
+                        mutation=lambda current: _refresh_assignments_and_stamp(
                             current,
                             current_revision,
+                            self._assignment_policy_refresh_fn,
                         ),
                     )
             return session
@@ -329,7 +218,7 @@ class CanonicalWdvSessionService:
             current = (
                 self._empty_session(well_uid)
                 if raw is None
-                else WdvCanonicalSession.model_validate(raw)
+                else WdvCanonicalSession.model_validate(_migrate_legacy_session_payload(raw))
             )
             if current.revision != expected_revision:
                 raise CanonicalSessionRevisionConflict(

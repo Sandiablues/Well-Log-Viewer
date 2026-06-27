@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import {
   looksLikeUuid,
   canonicalCommandRequestBody,
+  canonicalRangeOverrideCommandBody,
   frontendTracksFromCanonicalSession,
   WdvPageBoundary,
 } from '../WdvPageBoundary';
@@ -24,7 +25,11 @@ import type {
   RawCanonicalTrack,
   RawCanonicalAssignment,
 } from '../WdvPageBoundary';
-import type { CurveCatalogItem, CurveTrack } from '../../prototype/trackLayoutModel';
+import type {
+  CurveAssignment,
+  CurveCatalogItem,
+  CurveTrack,
+} from '../../prototype/trackLayoutModel';
 
 // ---------------------------------------------------------------------------
 // Shared test data helpers
@@ -290,7 +295,7 @@ describe('frontendTracksFromCanonicalSession', () => {
     );
   });
 
-  it('projects user-override provenance unchanged', () => {
+  it('rejects legacy user-override provenance at the frontend boundary', () => {
     const curveUid = 'bbbbbbbb-0000-7000-8000-000000000013';
     const assignmentUid = 'cccccccc-0000-7000-8000-000000000013';
     const catalog = [makeCatalogItem({ curveUid })];
@@ -305,7 +310,7 @@ describe('frontendTracksFromCanonicalSession', () => {
     const assignment = (frontendTracksFromCanonicalSession(session, catalog)[0] as CurveTrack)
       .curves[0];
 
-    expect(assignment.displayPolicySource).toBe('user_override');
+    expect(assignment.displayPolicySource).toBeNull();
   });
 
   it('maps canonical logarithmic and reversed values to frontend scale enums', () => {
@@ -707,5 +712,103 @@ describe('WdvPageBoundary export regression', () => {
 
   it('frontendTracksFromCanonicalSession is exported as a function', () => {
     expect(typeof frontendTracksFromCanonicalSession).toBe('function');
+  });
+});
+
+describe('canonical range ownership bridge', () => {
+  it('sends governed and fit modes as intent only', () => {
+    const assignment = {
+      assignmentId: VALID_UUID_2,
+      curveId: VALID_UUID_2,
+      curveUid: VALID_UUID_2,
+      stackIndex: 0,
+      visible: true,
+      scaleMin: 0.45,
+      scaleMax: -0.15,
+      scaleDirection: 'reverse',
+      scaleType: 'linear',
+      color: '#000000',
+      lineStyle: 'solid',
+      lineWidth: 1,
+      fillSide: 'none',
+      fillColor: '#000000',
+      rangeOverrideMode: 'governed',
+    } as CurveAssignment;
+
+    expect(canonicalRangeOverrideCommandBody(assignment, {
+      rangeOverrideMode: 'fit_to_curve',
+      manualScaleMin: null,
+      manualScaleMax: null,
+    })).toEqual({ range_override_mode: 'fit_to_curve' });
+
+    expect(canonicalRangeOverrideCommandBody(assignment, {
+      rangeOverrideMode: 'governed',
+      manualScaleMin: null,
+      manualScaleMax: null,
+    })).toEqual({ range_override_mode: 'governed' });
+  });
+
+  it('sends both manual bounds in one validated command', () => {
+    const assignment = {
+      assignmentId: VALID_UUID_2,
+      curveId: VALID_UUID_2,
+      curveUid: VALID_UUID_2,
+      stackIndex: 0,
+      visible: true,
+      scaleMin: 0.45,
+      scaleMax: -0.15,
+      scaleDirection: 'reverse',
+      scaleType: 'linear',
+      color: '#000000',
+      lineStyle: 'solid',
+      lineWidth: 1,
+      fillSide: 'none',
+      fillColor: '#000000',
+      rangeOverrideMode: 'manual',
+      manualScaleMin: 0.3,
+      manualScaleMax: 0,
+    } as CurveAssignment;
+
+    expect(canonicalRangeOverrideCommandBody(assignment, {
+      manualScaleMin: 0.25,
+    })).toEqual({
+      range_override_mode: 'manual',
+      manual_scale_min: 0.25,
+      manual_scale_max: 0,
+    });
+  });
+
+  it('projects backend range mode, effective bounds, and fit warning', () => {
+    const raw = makeAssignment(
+      VALID_UUID_2,
+      '01930e4a-8db4-7000-8b21-3f4abc000099',
+      0,
+      {
+        scale_min: 0.02,
+        scale_max: 0.31,
+        range_override_mode: 'fit_to_curve',
+        effective_range_source: 'fit_to_curve',
+        manual_scale_min: null,
+        manual_scale_max: null,
+        override_warning_code: 'FIT_TO_CURVE_UNAVAILABLE',
+        override_warning_message: 'Fit unavailable.',
+      },
+    );
+    const catalog = [makeCatalogItem({ curveUid: VALID_UUID_2 })];
+    const tracks = frontendTracksFromCanonicalSession(
+      makeActiveSession([makeCurveTrack(VALID_UUID, [raw])]),
+      catalog,
+    );
+    const curveTrack = tracks[0];
+    expect(curveTrack.trackType).toBe('curve');
+    if (curveTrack.trackType !== 'curve') throw new Error('expected curve track');
+    const assignment = curveTrack.curves[0];
+
+    expect(assignment.scaleMin).toBe(0.02);
+    expect(assignment.scaleMax).toBe(0.31);
+    expect(assignment.rangeOverrideMode).toBe('fit_to_curve');
+    expect(assignment.effectiveRangeSource).toBe('fit_to_curve');
+    expect(assignment.overrideWarningCode).toBe('FIT_TO_CURVE_UNAVAILABLE');
+    expect(assignment.overrideWarningMessage).toBe('Fit unavailable.');
   });
 });

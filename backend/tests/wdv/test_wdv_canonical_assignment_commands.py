@@ -211,9 +211,9 @@ def test_track_update_reorder_and_assignment_display_edits(tmp_path: Path) -> No
             expected_revision=assigned.revision,
             assignment_uid=assignment.assignment_uid,
             visible=False,
-            scale_min=10,
-            scale_max=150,
-            scale_direction="reversed",
+            range_override_mode="manual",
+            manual_scale_min=10,
+            manual_scale_max=150,
             range_mode="fixed",
             color="#123456",
             line_visible=False,
@@ -241,7 +241,10 @@ def test_track_update_reorder_and_assignment_display_edits(tmp_path: Path) -> No
     assert changed_assignment.visible is False
     assert changed_assignment.scale_min == 10
     assert changed_assignment.scale_max == 150
-    assert changed_assignment.scale_direction == "reversed"
+    assert changed_assignment.scale_direction == "normal"
+    assert changed_assignment.range_override_mode == "manual"
+    assert changed_assignment.manual_scale_min == 10
+    assert changed_assignment.manual_scale_max == 150
     assert changed_assignment.color == "#123456"
     assert changed_assignment.line_visible is False
     assert changed_assignment.line_opacity == 65
