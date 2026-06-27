@@ -13,7 +13,8 @@ export type CurveClass =
   | 'neutron'
   | 'sonic'
   | 'lithology'
-  | 'porosity';
+  | 'porosity'
+  | 'unknown';
 export type LineStyle = 'solid' | 'dash' | 'dot';
 export type FillSide = 'none' | 'left' | 'right' | 'between';
 export type InfillSource = 'solid' | 'pattern' | 'interval-column';

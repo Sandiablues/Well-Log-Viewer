@@ -117,6 +117,7 @@ export interface BackendAssignmentSeedV21 {
   managedSourceUid: ManagedSourceUid;
 }
 
+/** @deprecated Compatibility/test helper only. Runtime assignments come from the backend canonical contract. */
 export function buildCurveAssignmentV21(
   seed: BackendAssignmentSeedV21,
   curve: CurveCatalogItemV21,

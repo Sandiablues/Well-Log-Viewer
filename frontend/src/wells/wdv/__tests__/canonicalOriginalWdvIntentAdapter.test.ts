@@ -242,8 +242,9 @@ describe('CanonicalOriginalWdvMutationAdapter', () => {
       kind: 'update_assignment',
       body: expect.objectContaining({
         assignment_uid: assignmentUid,
-        scale_min: 10,
-        scale_max: 150,
+        range_override_mode: 'manual',
+        manual_scale_min: 10,
+        manual_scale_max: 150,
       }),
     });
   });

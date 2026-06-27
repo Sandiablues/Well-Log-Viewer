@@ -247,6 +247,34 @@ describe('original WDV presentation adapter', () => {
     const model = buildOriginalWdvPresentationModel(withoutUnit);
 
     expect(model.curveCatalog[0].unit).toBe('');
+    expect(model.issues).toEqual([
+      expect.objectContaining({ code: 'missing_curve_unit' }),
+    ]);
+  });
+
+
+  it('reports null backend bounds instead of silently dropping the assignment', () => {
+    const value = workspace();
+    const track = value.session.tracks[0];
+    if (track.trackType !== 'curve') throw new Error('curve track expected');
+    const withoutBounds = {
+      ...value,
+      session: {
+        ...value.session,
+        tracks: [{
+          ...track,
+          curves: [{ ...track.curves[0], scaleMin: null, scaleMax: null }],
+        }],
+      },
+    } as CanonicalWorkspaceV1;
+
+    const model = buildOriginalWdvPresentationModel(withoutBounds);
+    expect(model.tracks[0].trackType).toBe('curve');
+    if (model.tracks[0].trackType !== 'curve') throw new Error('curve track expected');
+    expect(model.tracks[0].curves).toEqual([]);
+    expect(model.issues).toEqual([
+      expect.objectContaining({ code: 'missing_scale_bounds' }),
+    ]);
   });
 
 });

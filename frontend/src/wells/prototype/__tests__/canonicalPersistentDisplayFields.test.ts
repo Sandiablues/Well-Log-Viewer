@@ -12,7 +12,7 @@ describe('canonical viewer persistent display fields', () => {
     const session = '019ede00-0000-7000-8000-000000000207';
 
     const parsed = parseCanonicalViewerPackageV21({
-      contract_version: 'wdv_viewer_package_v2_1',
+      contract_version: 'wdv_viewer_package_v2_2',
       managed_well_uid: well,
       managed_wellbore_uid: null,
       well_name: 'Well',

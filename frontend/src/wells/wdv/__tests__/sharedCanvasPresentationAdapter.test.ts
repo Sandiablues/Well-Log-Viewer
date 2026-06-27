@@ -381,6 +381,32 @@ describe('buildSharedCanvasPresentationModel', () => {
     expect(model.curveCatalog).toHaveLength(0);
   });
 
+  it('does not invent bounds when a bound slot has no backend bounds', () => {
+    const slot = makeBoundSlot({ scale_min: null, scale_max: null });
+    const model = buildSharedCanvasPresentationModel(
+      makeSession({ resolved_tracks: [makeTrack({ slots: [slot] })] }),
+    );
+    const curveTrack = model.tracks[0] as CurveTrack;
+    expect(curveTrack.curves).toEqual([]);
+    expect(model.curveCatalog).toEqual([]);
+    expect(model.issues).toEqual([
+      expect.objectContaining({ code: 'missing_scale_bounds' }),
+    ]);
+  });
+
+  it('uses an explicit unknown class and reports a missing backend unit', () => {
+    const slot = makeBoundSlot({ unit: null });
+    const model = buildSharedCanvasPresentationModel(
+      makeSession({ resolved_tracks: [makeTrack({ slots: [slot] })] }),
+    );
+    expect(model.curveCatalog[0].curveClass).toBe('unknown');
+    expect(model.issues).toEqual([
+      expect.objectContaining({ code: 'missing_curve_unit' }),
+    ]);
+    const curveTrack = model.tracks[0] as CurveTrack;
+    expect(curveTrack.curves[0].unit).toBeNull();
+  });
+
 });
 
 

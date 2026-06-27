@@ -63,7 +63,7 @@ export function parseCanonicalWorkspaceV1(
   }
 
   const packagePayload = {
-    contract_version: 'wdv_viewer_package_v2_1',
+    contract_version: 'wdv_viewer_package_v2_2',
     managed_well_uid: record.managed_well_uid,
     managed_wellbore_uid: record.managed_wellbore_uid ?? null,
     well_name: record.well_name,

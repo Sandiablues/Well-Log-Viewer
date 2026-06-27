@@ -40,6 +40,7 @@ import type {
   WellLogTrack,
 } from '../prototype/trackLayoutModel';
 import type {
+  OriginalWdvAdapterIssue,
   OriginalWdvLoadedCurveItem,
   OriginalWdvPresentationModel,
 } from './originalWdvPresentationAdapter';
@@ -55,8 +56,6 @@ import type {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_TRACK_WIDTH = 150;
-const DEFAULT_SCALE_MIN = 0;
-const DEFAULT_SCALE_MAX = 150;
 const DEFAULT_CURVE_COLOR = '#2f80ed';
 
 
@@ -93,7 +92,8 @@ function toDepthBasis(value: string | null): DepthBasis {
 }
 
 function toDepthUnit(value: string): 'm' | 'ft' {
-  return value === 'm' ? 'm' : 'ft';
+  if (value === 'm' || value === 'ft') return value;
+  throw new Error(`Unsupported backend depth unit: ${value}`);
 }
 
 
@@ -107,8 +107,12 @@ function toDepthUnit(value: string): 'm' | 'ft' {
  */
 function slotToAssignment(
   slot: SharedCanvasResolvedSlot,
+  track: SharedCanvasResolvedTrack,
   managedWellUid: string,
 ): CurveAssignment {
+  if (slot.scale_min === null || slot.scale_max === null) {
+    throw new Error(`Shared-canvas slot ${slot.slot_uid} has no backend scale bounds.`);
+  }
   const curveId = slot.managed_curve_uid as string; // BOUND guarantees non-null
   return {
     assignmentId: slot.slot_uid,
@@ -116,14 +120,15 @@ function slotToAssignment(
     curveUid: curveId,
     krCurveTypeId: slot.kr_curve_type_id ?? null,
     managedWellUid,
+    unit: slot.unit,
     stackIndex: slot.slot_order,
     visible: true,
-    scaleMin: slot.scale_min ?? DEFAULT_SCALE_MIN,
-    scaleMax: slot.scale_max ?? DEFAULT_SCALE_MAX,
+    scaleMin: slot.scale_min,
+    scaleMax: slot.scale_max,
     scaleMinLabel: slot.scale_min_label ?? null,
     scaleMaxLabel: slot.scale_max_label ?? null,
-    scaleDirection: 'normal',
-    scaleType: 'linear',
+    scaleDirection: slot.scale_min > slot.scale_max ? 'reverse' : 'normal',
+    scaleType: track.lattice === 'logarithmic' ? 'log' : 'linear',
     rangeMode: 'fixed',
     color: DEFAULT_CURVE_COLOR,
     lineVisible: true,
@@ -142,6 +147,7 @@ function slotToAssignment(
 
 function slotToCatalogItem(
   slot: SharedCanvasResolvedSlot,
+  track: SharedCanvasResolvedTrack,
   managedWellUid: string,
 ): CurveCatalogItem {
   const curveId = slot.managed_curve_uid as string;
@@ -154,10 +160,10 @@ function slotToCatalogItem(
     mnemonic,
     description: slot.display_name ?? mnemonic,
     unit: slot.unit ?? '',
-    curveClass: 'gamma',        // unknown from shared canvas — safe default
-    defaultLattice: 'linear',
-    defaultMin: slot.scale_min ?? DEFAULT_SCALE_MIN,
-    defaultMax: slot.scale_max ?? DEFAULT_SCALE_MAX,
+    curveClass: 'unknown',
+    defaultLattice: toLattice(track.lattice),
+    defaultMin: slot.scale_min as number,
+    defaultMax: slot.scale_max as number,
     defaultColor: DEFAULT_CURVE_COLOR,
     recognised: false,
   };
@@ -171,14 +177,34 @@ function slotToCatalogItem(
 function trackToCurveTrack(
   track: SharedCanvasResolvedTrack,
   managedWellUid: string,
+  issues: OriginalWdvAdapterIssue[],
 ): CurveTrack {
   const boundSlots = [...track.slots]
     .sort((a, b) => a.slot_order - b.slot_order)
     .filter((slot) => slot.binding_status === 'bound' && slot.managed_curve_uid !== null);
 
-  const curves: CurveAssignment[] = boundSlots.map(
-    (slot) => slotToAssignment(slot, managedWellUid),
-  );
+  const curves: CurveAssignment[] = boundSlots.flatMap((slot) => {
+    if (slot.scale_min === null || slot.scale_max === null) {
+      issues.push({
+        code: 'missing_scale_bounds',
+        message: `Shared-canvas slot ${slot.slot_uid} has no backend-owned scale bounds.`,
+        trackUid: track.track_uid,
+        assignmentUid: slot.slot_uid,
+        managedCurveUid: slot.managed_curve_uid ?? undefined,
+      });
+      return [];
+    }
+    if (slot.unit === null) {
+      issues.push({
+        code: 'missing_curve_unit',
+        message: `Shared-canvas slot ${slot.slot_uid} has no backend-owned unit.`,
+        trackUid: track.track_uid,
+        assignmentUid: slot.slot_uid,
+        managedCurveUid: slot.managed_curve_uid ?? undefined,
+      });
+    }
+    return [slotToAssignment(slot, track, managedWellUid)];
+  });
 
   return {
     trackId: track.track_uid,
@@ -214,10 +240,11 @@ function trackToDepthTrack(
 function convertTrack(
   track: SharedCanvasResolvedTrack,
   session: ResolvedWdvCanvasSession,
+  issues: OriginalWdvAdapterIssue[],
 ): WellLogTrack {
   return track.track_type === 'depth'
     ? trackToDepthTrack(track, session.depth_unit)
-    : trackToCurveTrack(track, session.managed_well_uid);
+    : trackToCurveTrack(track, session.managed_well_uid, issues);
 }
 
 
@@ -289,20 +316,27 @@ export function buildSharedCanvasPresentationModel(
   session: ResolvedWdvCanvasSession,
   samplesByManagedCurveUid: ManagedCurveSamplesByUidV21 = new Map(),
 ): OriginalWdvPresentationModel {
+  const issues: OriginalWdvAdapterIssue[] = [];
+
   // Tracks: sort by track_order ascending; all tracks are always present.
   const tracks: WellLogTrack[] = [...session.resolved_tracks]
     .sort((a, b) => a.track_order - b.track_order)
-    .map((track) => convertTrack(track, session));
+    .map((track) => convertTrack(track, session, issues));
 
   // Curve catalog: built only from BOUND slots across all tracks.
   const curveCatalogMap = new Map<string, CurveCatalogItem>();
   for (const track of session.resolved_tracks) {
     for (const slot of track.slots) {
-      if (slot.binding_status === 'bound' && slot.managed_curve_uid !== null) {
+      if (
+        slot.binding_status === 'bound'
+        && slot.managed_curve_uid !== null
+        && slot.scale_min !== null
+        && slot.scale_max !== null
+      ) {
         if (!curveCatalogMap.has(slot.managed_curve_uid)) {
           curveCatalogMap.set(
             slot.managed_curve_uid,
-            slotToCatalogItem(slot, session.managed_well_uid),
+            slotToCatalogItem(slot, track, session.managed_well_uid),
           );
         }
       }
@@ -314,7 +348,12 @@ export function buildSharedCanvasPresentationModel(
   const assignmentCounts = new Map<string, number>();
   for (const track of session.resolved_tracks) {
     for (const slot of track.slots) {
-      if (slot.binding_status === 'bound' && slot.managed_curve_uid !== null) {
+      if (
+        slot.binding_status === 'bound'
+        && slot.managed_curve_uid !== null
+        && slot.scale_min !== null
+        && slot.scale_max !== null
+      ) {
         assignmentCounts.set(
           slot.managed_curve_uid,
           (assignmentCounts.get(slot.managed_curve_uid) ?? 0) + 1,
@@ -358,7 +397,7 @@ export function buildSharedCanvasPresentationModel(
     curveSamplesByCurveId,
     fullDepthRange,
     propertiesInputs,
-    issues: [],
+    issues,
   };
 }
 

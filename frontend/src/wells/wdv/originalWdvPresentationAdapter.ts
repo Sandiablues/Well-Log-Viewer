@@ -32,6 +32,8 @@ import type {
 export type OriginalWdvAdapterIssueCode =
   | 'unresolved_assignment_curve'
   | 'unsupported_depth_unit'
+  | 'missing_scale_bounds'
+  | 'missing_curve_unit'
   | 'missing_depth_range'
   | 'selection_fallback';
 
@@ -204,8 +206,18 @@ function toLegacyCurveTrack(
         });
         return [];
       }
-      // Tier-3 null bounds: not representable in legacy rendering path; skip silently.
-      if (assignment.scaleMin === null || assignment.scaleMax === null) return [];
+      if (assignment.scaleMin === null || assignment.scaleMax === null) {
+        issues.push({
+          code: 'missing_scale_bounds',
+          message:
+            `Assignment ${assignment.assignmentUid} for curve `
+            + `${assignment.managedCurveUid} has no backend-owned scale bounds.`,
+          trackUid: track.trackUid,
+          assignmentUid: assignment.assignmentUid,
+          managedCurveUid: assignment.managedCurveUid,
+        });
+        return [];
+      }
       // Pass narrowed scaleMin/scaleMax as explicit number arguments (TypeScript narrows
       // after the null guard above but cannot propagate through the object type).
       return [toLegacyAssignment(assignment, assignment.scaleMin, assignment.scaleMax)];
@@ -230,19 +242,19 @@ function toLegacyDepthTrack(
   track: DepthTrackV21,
   issues: OriginalWdvAdapterIssue[],
 ): WellLogTrack {
-  const unit = track.unit === 'm' || track.unit === 'ft'
-    ? track.unit
-    : 'ft';
-
-  if (unit !== track.unit) {
-    issues.push({
+  if (track.unit !== 'm' && track.unit !== 'ft') {
+    const issue: OriginalWdvAdapterIssue = {
       code: 'unsupported_depth_unit',
       message:
-        `Depth track ${track.trackUid} uses unsupported unit `
-        + `${track.unit}; presentation fallback is ft`,
+        `Depth track ${track.trackUid} uses unsupported unit ${track.unit}; `
+        + 'no frontend fallback is permitted.',
       trackUid: track.trackUid,
-    });
+    };
+    issues.push(issue);
+    throw new Error(issue.message);
   }
+
+  const unit = track.unit;
 
   return {
     trackId: track.trackUid,
@@ -394,6 +406,13 @@ export function buildOriginalWdvPresentationModel(
   );
   const curveCatalog = workspace.curves.flatMap((curve) => {
     const item = toLegacyCurve(curve);
+    if (item !== null && curve.unit === null) {
+      issues.push({
+        code: 'missing_curve_unit',
+        message: `Curve ${curve.managedCurveUid} has no backend-owned unit.`,
+        managedCurveUid: curve.managedCurveUid,
+      });
+    }
     return item === null ? [] : [item];
   });
   const tracks = [...workspace.session.tracks]
