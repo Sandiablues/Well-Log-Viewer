@@ -18,6 +18,9 @@ import {
   canonicalCommandRequestBody,
   canonicalRangeOverrideCommandBody,
   frontendTracksFromCanonicalSession,
+  managedWellUidForCanvasSelection,
+  preserveCanonicalTrackOrder,
+  unionDepthRanges,
   WdvPageBoundary,
 } from '../WdvPageBoundary';
 import type {
@@ -37,6 +40,9 @@ import type {
 
 const VALID_UUID = '01930e4a-8db4-7000-8b21-3f4abc123456';
 const VALID_UUID_2 = 'a1b2c3d4-e5f6-7890-abcd-ef0123456789';
+const WELL_UUID = '01930e4a-8db4-7001-8b21-3f4abc123456';
+const PRODUCT_UUID = '01930e4a-8db4-7002-8b21-3f4abc123456';
+const SOURCE_UUID = '01930e4a-8db4-7003-8b21-3f4abc123456';
 
 /** Minimal CurveCatalogItem — only the fields touched by frontendTracksFromCanonicalSession */
 function makeCatalogItem(overrides: Partial<CurveCatalogItem> & { curveUid: string }): CurveCatalogItem {
@@ -67,6 +73,7 @@ function makeActiveSession(tracks: RawCanonicalTrack[] = []): RawCanonicalSessio
 function makeDepthTrack(trackUid = VALID_UUID): RawCanonicalTrack {
   return {
     track_uid: trackUid,
+    managed_well_uid: WELL_UUID,
     track_name: 'Depth',
     track_type: 'depth',
     width_px: 86,
@@ -85,6 +92,7 @@ function makeCurveTrack(
 ): RawCanonicalTrack {
   return {
     track_uid: trackUid,
+    managed_well_uid: WELL_UUID,
     track_name: 'Curve Track',
     track_type: 'curve',
     width_px: 200,
@@ -106,6 +114,11 @@ function makeAssignment(
   return {
     assignment_uid: assignmentUid,
     managed_curve_uid: curveUid,
+    managed_product_uid: PRODUCT_UUID,
+    managed_well_uid: WELL_UUID,
+    managed_source_uid: SOURCE_UUID,
+    observed_mnemonic: 'NPHI',
+    display_name: 'Neutron Porosity',
     stack_index: stackIndex,
     visible: true,
     scale_min: 0,
@@ -167,6 +180,8 @@ describe('frontendTracksFromCanonicalSession', () => {
     const track = tracks[0];
     expect(track.trackId).toBe(VALID_UUID);
     expect(track.trackType).toBe('depth');
+    expect(track.managedWellUid).toBeUndefined();
+    expect(track.ownerWellName).toBeUndefined();
   });
 
   // Test 4: curve track — curveUid lookup via catalog
@@ -188,8 +203,8 @@ describe('frontendTracksFromCanonicalSession', () => {
     expect(track.curves[0].curveUid).toBe(curveUid);
   });
 
-  // Test 5: unknown managed_curve_uid is skipped
-  it('skips assignments whose managed_curve_uid has no catalog match', () => {
+  // Test 5: assignments from another working well survive without a current catalog match
+  it('preserves assignments whose managed_curve_uid has no current catalog match', () => {
     const knownUid = 'bbbbbbbb-0000-7000-8000-000000000001';
     const unknownUid = 'ffffffff-0000-7000-8000-000000000099';
     const assignKnown = 'cccccccc-0000-7000-8000-000000000002';
@@ -205,8 +220,11 @@ describe('frontendTracksFromCanonicalSession', () => {
     const tracks = frontendTracksFromCanonicalSession(session, catalog);
 
     const curveTrack = tracks[0] as CurveTrack;
-    expect(curveTrack.curves).toHaveLength(1);
-    expect(curveTrack.curves[0].curveUid).toBe(knownUid);
+    expect(curveTrack.curves).toHaveLength(2);
+    expect(curveTrack.curves.map((curve) => curve.curveUid)).toEqual([
+      unknownUid,
+      knownUid,
+    ]);
   });
 
   // Test 6: assignment_uid is stored as assignmentId
@@ -810,5 +828,86 @@ describe('canonical range ownership bridge', () => {
     expect(assignment.effectiveRangeSource).toBe('fit_to_curve');
     expect(assignment.overrideWarningCode).toBe('FIT_TO_CURVE_UNAVAILABLE');
     expect(assignment.overrideWarningMessage).toBe('Fit unavailable.');
+  });
+});
+
+
+describe('unified canvas invariants', () => {
+  it('uses the union of represented well depth ranges for Full view', () => {
+    expect(unionDepthRanges([
+      { min: 301, max: 6076 },
+      { min: 10180, max: 10414 },
+    ])).toEqual({ min: 301, max: 10414 });
+  });
+
+  it('preserves existing left-to-right track order when switching working wells', () => {
+    const current = [
+      { trackId: 'forge', trackIndex: 0 },
+      { trackId: 'state', trackIndex: 1 },
+    ] as any;
+    const incoming = [
+      { trackId: 'state', trackIndex: 0 },
+      { trackId: 'forge', trackIndex: 1 },
+      { trackId: 'duvall', trackIndex: 2 },
+    ] as any;
+    expect(preserveCanonicalTrackOrder(current, incoming).map((track) => track.trackId)).toEqual([
+      'forge', 'state', 'duvall',
+    ]);
+  });
+});
+
+
+describe('canvas selection active-well synchronization', () => {
+  const ownerA = '01930e4a-8db4-7001-8b21-3f4abc123456';
+  const ownerB = '01930e4a-8db4-7002-8b21-3f4abc123456';
+  const depthTrack = {
+    trackId: '01930e4a-8db4-7003-8b21-3f4abc123456',
+    trackIndex: 0,
+    trackType: 'depth',
+    title: 'MD',
+    depthBasis: 'MD',
+    unit: 'm',
+    widthPx: 86,
+    visible: true,
+  } as any;
+  const curveTrack = {
+    trackId: '01930e4a-8db4-7004-8b21-3f4abc123456',
+    managedWellUid: ownerA,
+    trackIndex: 1,
+    trackType: 'curve',
+    title: 'GR',
+    widthPx: 220,
+    visible: true,
+    lattice: 'linear',
+    latticeSource: 'front_curve_default',
+    scaleMode: 'per_curve',
+    curves: [{
+      assignmentId: '01930e4a-8db4-7005-8b21-3f4abc123456',
+      curveId: '01930e4a-8db4-7006-8b21-3f4abc123456',
+      managedWellUid: ownerB,
+    }],
+  } as any;
+  const tracks = [depthTrack, curveTrack];
+
+  it('does not switch the active well when the shared depth ruler is selected', () => {
+    expect(managedWellUidForCanvasSelection(tracks, {
+      kind: 'track',
+      trackId: depthTrack.trackId,
+    })).toBeNull();
+  });
+
+  it('uses curve-track ownership when the track is selected', () => {
+    expect(managedWellUidForCanvasSelection(tracks, {
+      kind: 'track',
+      trackId: curveTrack.trackId,
+    })).toBe(ownerA);
+  });
+
+  it('uses assignment ownership when a curve is selected', () => {
+    expect(managedWellUidForCanvasSelection(tracks, {
+      kind: 'curve',
+      trackId: curveTrack.trackId,
+      assignmentId: curveTrack.curves[0].assignmentId,
+    })).toBe(ownerB);
   });
 });

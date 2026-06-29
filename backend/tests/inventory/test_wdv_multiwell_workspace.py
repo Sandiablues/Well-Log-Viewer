@@ -14,8 +14,13 @@ from app.inventory.service import ManagedWellInventoryService
 
 
 def _record(managed_well_id: str, product_id: str) -> ManagedWellRecord:
+    well_uid = {
+        "managed-well:a": "019f1000-0000-7000-8000-000000000001",
+        "managed-well:b": "019f1000-0000-7000-8000-000000000002",
+    }[managed_well_id]
     return ManagedWellRecord(
         managed_well_id=managed_well_id,
+        managed_well_uid=well_uid,
         well_id=managed_well_id.replace("managed-well:", ""),
         well_name=managed_well_id,
         source_references=[
@@ -58,7 +63,7 @@ def test_workspace_tracks_multiple_loaded_wells_and_active_selection(tmp_path: P
     service.load_managed_well_to_wdv("managed-well:b")
 
     workspace = service.get_wdv_workspace()
-    assert workspace.contract_version == "wdv_workspace_v1"
+    assert workspace.contract_version == "wdv_workspace_v2"
     assert workspace.active_managed_well_id == "managed-well:b"
     assert [item.managed_well_id for item in workspace.loaded_wells] == [
         "managed-well:a",

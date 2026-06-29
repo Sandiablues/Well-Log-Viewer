@@ -24,6 +24,7 @@ def _trajectory_fixture() -> dict[str, object]:
 def _record(managed_well_id: str, product_ids: list[str]) -> ManagedWellRecord:
     return ManagedWellRecord(
         managed_well_id=managed_well_id,
+        managed_well_uid="019f2000-0000-7000-8000-000000000003",
         well_id=managed_well_id.replace("managed-well:", ""),
         well_name=managed_well_id,
         source_references=[

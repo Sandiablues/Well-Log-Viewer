@@ -62,6 +62,7 @@ def _assignment(**overrides):
 def _track(**overrides):
     values = {
         "track_uid": TRACK,
+        "managed_well_uid": WELL,
         "track_key": "gamma-ray",
         "track_number": 1,
         "track_name": "Gamma Ray",
@@ -159,8 +160,8 @@ def test_session_round_trip_preserves_complete_layout_and_render_state() -> None
     assert assignment.curve_family == "gamma_ray"
 
 
-def test_session_rejects_cross_well_assignment() -> None:
-    with pytest.raises(ValidationError, match="session managed_well_uid"):
+def test_track_rejects_cross_well_assignment() -> None:
+    with pytest.raises(ValidationError, match="containing track managed_well_uid"):
         WdvCanonicalSession(
             session_uid=SESSION,
             managed_well_uid=WELL,

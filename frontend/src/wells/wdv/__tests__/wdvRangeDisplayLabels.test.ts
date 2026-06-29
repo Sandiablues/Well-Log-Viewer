@@ -13,6 +13,7 @@ describe('backend-owned WDV range labels', () => {
       selected_track_uid: null,
       tracks: [{
         track_uid: 'a1b2c3d4-e5f6-7890-abcd-ef0123456789',
+        managed_well_uid: '01930e4a-8db4-7001-8b21-3f4abc123456',
         track_name: 'Curve Track',
         track_type: 'curve',
         width_px: 220,
@@ -24,6 +25,11 @@ describe('backend-owned WDV range labels', () => {
         assignments: [{
           assignment_uid: 'cccccccc-0000-7000-8000-000000000099',
           managed_curve_uid: curveUid,
+          managed_product_uid: '01930e4a-8db4-7002-8b21-3f4abc123456',
+          managed_well_uid: '01930e4a-8db4-7001-8b21-3f4abc123456',
+          managed_source_uid: '01930e4a-8db4-7003-8b21-3f4abc123456',
+          observed_mnemonic: 'DNPH',
+          display_name: 'Density neutron porosity',
           stack_index: 0,
           visible: true,
           scale_min: -0.07529999999999999,

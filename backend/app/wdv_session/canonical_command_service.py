@@ -128,6 +128,7 @@ class CanonicalWdvCommandService:
         def mutate(session: WdvCanonicalSession) -> WdvCanonicalSession:
             track = WdvCanonicalTrack(
                 track_uid=new_uuid7_str(),
+                managed_well_uid=managed_well_uid,
                 track_key=command.track_key,
                 track_number=command.track_number,
                 track_name=command.track_name,
@@ -225,6 +226,7 @@ class CanonicalWdvCommandService:
 
             track = WdvCanonicalTrack(
                 track_uid=track_uid,
+                managed_well_uid=managed_well_uid,
                 track_key=command.track_key,
                 track_name=command.track_name,
                 track_type=command.track_type,
@@ -330,6 +332,7 @@ class CanonicalWdvCommandService:
             )
             track = WdvCanonicalTrack(
                 track_uid=track_uid,
+                managed_well_uid=managed_well_uid,
                 track_key="canonical-bootstrap-curve-track",
                 track_number=0,
                 track_name=track_name,
@@ -375,6 +378,10 @@ class CanonicalWdvCommandService:
             if target.track_type != "curve":
                 raise CanonicalWdvCommandError(
                     "Curve assignments may only be added to curve tracks"
+                )
+            if target.managed_well_uid != managed_well_uid:
+                raise CanonicalWdvCommandError(
+                    "Curve assignments may only be added to tracks owned by the working well"
                 )
 
             target_stack_index = (
@@ -689,6 +696,10 @@ class CanonicalWdvCommandService:
             if moving is None or source_track_uid is None:
                 raise CanonicalWdvCommandError(
                     f"Unknown assignment_uid: {command.assignment_uid}"
+                )
+            if target.managed_well_uid != moving.managed_well_uid:
+                raise CanonicalWdvCommandError(
+                    "Assignments may not be moved between tracks owned by different wells"
                 )
 
             target_without_moving = [

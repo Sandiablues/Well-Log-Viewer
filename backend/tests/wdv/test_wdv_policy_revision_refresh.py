@@ -88,6 +88,7 @@ def session_with(
         tracks=(
             WdvCanonicalTrack(
                 track_uid=assignment_value.track_uid,
+                managed_well_uid=assignment_value.managed_well_uid,
                 track_name="Density",
                 track_type="curve",
                 assignments=(assignment_value,),

@@ -32,6 +32,7 @@ export interface CurveCatalogItem {
   krCurveTypeId?: string | null;
   wellUid?: string | null;
   managedWellUid?: string | null;
+  managedProductUid?: string | null;
   sourceUid?: string | null;
   managedSourceUid?: string | null;
   observedMnemonic?: string | null;
@@ -64,10 +65,13 @@ export interface CurveAssignment {
   krCurveTypeId?: string | null;
   wellUid?: string | null;
   managedWellUid?: string | null;
+  managedProductUid?: string | null;
   sourceUid?: string | null;
   managedSourceUid?: string | null;
   observedMnemonic?: string | null;
   normalizedMnemonic?: string | null;
+  displayName?: string | null;
+  curveFamily?: string | null;
   /** Canonical backend assignment unit. This is projection data, not a catalog fallback. */
   unit?: string | null;
   /** Backend-owned display-policy provenance for this canonical assignment. */
@@ -122,6 +126,8 @@ export interface CurveAssignment {
 
 interface BaseTrack {
   trackId: string;
+  managedWellUid?: string;
+  ownerWellName?: string;
   trackIndex: number;
   title: string;
   widthPx: number;
@@ -243,16 +249,25 @@ export interface DragCurvePayload {
   assignmentId?: string;
 }
 
-export function makeCurveAssignment(curve: CurveCatalogItem, stackIndex: number): CurveAssignment {
+export function makeCurveAssignment(
+  curve: CurveCatalogItem,
+  stackIndex: number,
+  canonicalAssignmentUid?: string,
+): CurveAssignment {
   return {
-    assignmentId: `assign-${curve.curveUid ?? curve.curveId}-${Date.now()}-${Math.round(Math.random() * 100000)}`,
+    // Durable identity is always backend-issued UUIDv7. This token is transient frontend-only state.
+    assignmentId: canonicalAssignmentUid ?? `transient-assignment-${curve.curveUid ?? curve.curveId}-${stackIndex}`,
     curveId: curve.curveId,
     curveUid: curve.curveUid ?? curve.curveId,
     krCurveTypeId: curve.krCurveTypeId ?? null,
     wellUid: curve.wellUid ?? null,
+    managedWellUid: curve.managedWellUid ?? null,
+    managedProductUid: curve.managedProductUid ?? null,
     sourceUid: curve.sourceUid ?? null,
     observedMnemonic: curve.observedMnemonic ?? curve.mnemonic,
     normalizedMnemonic: curve.normalizedMnemonic ?? curve.mnemonic,
+    displayName: curve.description,
+    curveFamily: undefined,
     stackIndex,
     visible: true,
     scaleMin: curve.defaultMin,

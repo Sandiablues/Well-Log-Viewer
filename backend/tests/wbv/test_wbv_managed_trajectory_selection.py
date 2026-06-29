@@ -35,6 +35,7 @@ def _trajectory_package(md_max: float) -> dict[str, object]:
 def _record(managed_well_id: str) -> ManagedWellRecord:
     return ManagedWellRecord(
         managed_well_id=managed_well_id,
+        managed_well_uid="019f2000-0000-7000-8000-000000000001",
         well_id=managed_well_id.replace("managed-well:", ""),
         well_name="Trajectory Test Well",
         source_references=[

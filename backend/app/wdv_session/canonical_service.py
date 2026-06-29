@@ -62,7 +62,13 @@ def _refresh_assignments_and_stamp(
 def _migrate_legacy_session_payload(raw: dict[str, Any]) -> dict[str, Any]:
     """One-time storage-boundary conversion; legacy state never enters runtime."""
     migrated = json.loads(json.dumps(raw))
+    session_well_uid = migrated.get("managed_well_uid")
     for track in migrated.get("tracks", []):
+        if not track.get("managed_well_uid"):
+            assignments = track.get("assignments", [])
+            track["managed_well_uid"] = (
+                assignments[0].get("managed_well_uid") if assignments else session_well_uid
+            )
         for assignment in track.get("assignments", []):
             if "range_override_mode" in assignment:
                 continue
@@ -122,6 +128,21 @@ class CanonicalWdvSessionService:
             return Path(override).expanduser().resolve()
         return Path(__file__).resolve().parents[3] / "data" / "wdv" / "canonical_sessions_v2_1.json"
 
+    @staticmethod
+    def unified_multiwell_enabled() -> bool:
+        return os.environ.get("WLV_UNIFIED_MULTIWELL_SESSION", "1").strip().lower() not in {
+            "0", "false", "no", "off"
+        }
+
+    def _storage_key(self, well_uid: str) -> str:
+        return "__unified_wdv_canvas__" if self.unified_multiwell_enabled() else well_uid
+
+    @staticmethod
+    def _project_working_well(session: WdvCanonicalSession, well_uid: str) -> WdvCanonicalSession:
+        return session if session.managed_well_uid == well_uid else session.model_copy(
+            update={"managed_well_uid": well_uid}
+        )
+
     def get_session(self, managed_well_uid: str) -> WdvCanonicalSession:
         """Return the canonical session for a well, creating an empty one if absent.
 
@@ -135,14 +156,20 @@ class CanonicalWdvSessionService:
         - Empty session (no assignments) → no policy lookup or mutation.\n        - Standalone services without a configured refresher keep the prior\n          stale-override lifecycle unchanged.
         """
         well_uid = str(parse_uuid7(managed_well_uid))
+        storage_key = self._storage_key(well_uid)
         with self._lock:
             store = self._read_store()
-            raw = store["sessions"].get(well_uid)
+            raw = store["sessions"].get(storage_key)
+            if raw is None and storage_key != well_uid:
+                raw = store["sessions"].get(well_uid)
+                if raw is not None:
+                    store["sessions"][storage_key] = raw
+                    self._write_store(store)
             if raw is not None:
                 session = WdvCanonicalSession.model_validate(_migrate_legacy_session_payload(raw))
             else:
                 empty = self._empty_session(well_uid)
-                store["sessions"][well_uid] = empty.model_dump(mode="json")
+                store["sessions"][storage_key] = empty.model_dump(mode="json")
                 self._write_store(store)
                 session = empty
 
@@ -161,7 +188,7 @@ class CanonicalWdvSessionService:
                             self._assignment_policy_refresh_fn,
                         ),
                     )
-            return session
+            return self._project_working_well(session, well_uid)
 
 
     def mutate_session(
@@ -193,6 +220,7 @@ class CanonicalWdvSessionService:
         the original persisted result without incrementing the revision.
         """
         well_uid = str(parse_uuid7(managed_well_uid))
+        storage_key = self._storage_key(well_uid)
         if (command_id is None) != (command_fingerprint is None):
             raise ValueError(
                 "command_id and command_fingerprint must be supplied together"
@@ -203,22 +231,27 @@ class CanonicalWdvSessionService:
             receipts_by_well = store.setdefault("command_receipts", {})
 
             if command_id is not None:
-                well_receipts = receipts_by_well.get(well_uid, {})
+                well_receipts = receipts_by_well.get(storage_key, {})
                 receipt = well_receipts.get(command_id)
                 if receipt is not None:
                     if receipt.get("fingerprint") != command_fingerprint:
                         raise CanonicalSessionCommandReplayConflict(
                             "command_id was already used with a different payload"
                         )
-                    return WdvCanonicalSession.model_validate(
-                        receipt["session"]
+                    return self._project_working_well(
+                        WdvCanonicalSession.model_validate(receipt["session"]), well_uid
                     )
 
-            raw = store["sessions"].get(well_uid)
+            raw = store["sessions"].get(storage_key)
+            if raw is None and storage_key != well_uid:
+                raw = store["sessions"].get(well_uid)
             current = (
                 self._empty_session(well_uid)
                 if raw is None
-                else WdvCanonicalSession.model_validate(_migrate_legacy_session_payload(raw))
+                else self._project_working_well(
+                    WdvCanonicalSession.model_validate(_migrate_legacy_session_payload(raw)),
+                    well_uid,
+                )
             )
             if current.revision != expected_revision:
                 raise CanonicalSessionRevisionConflict(
@@ -244,9 +277,9 @@ class CanonicalWdvSessionService:
                 validator(persisted)
 
             persisted_json = persisted.model_dump(mode="json")
-            store["sessions"][well_uid] = persisted_json
+            store["sessions"][storage_key] = persisted_json
             if command_id is not None:
-                well_receipts = receipts_by_well.setdefault(well_uid, {})
+                well_receipts = receipts_by_well.setdefault(storage_key, {})
                 well_receipts[command_id] = {
                     "fingerprint": command_fingerprint,
                     "session": persisted_json,
@@ -257,7 +290,8 @@ class CanonicalWdvSessionService:
     def put_session(self, session: WdvCanonicalSession) -> WdvCanonicalSession:
         with self._lock:
             store = self._read_store()
-            current = store["sessions"].get(session.managed_well_uid)
+            storage_key = self._storage_key(session.managed_well_uid)
+            current = store["sessions"].get(storage_key)
             revision = int(current.get("revision", -1)) + 1 if current else 0
             persisted = session.model_copy(
                 update={
@@ -265,7 +299,7 @@ class CanonicalWdvSessionService:
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
             )
-            store["sessions"][session.managed_well_uid] = persisted.model_dump(mode="json")
+            store["sessions"][storage_key] = persisted.model_dump(mode="json")
             self._write_store(store)
             return persisted
 
@@ -285,7 +319,7 @@ class CanonicalWdvSessionService:
         )
         with self._lock:
             store = self._read_store()
-            store["sessions"][well_uid] = cleared.model_dump(mode="json")
+            store["sessions"][self._storage_key(well_uid)] = cleared.model_dump(mode="json")
             self._write_store(store)
         return cleared
 

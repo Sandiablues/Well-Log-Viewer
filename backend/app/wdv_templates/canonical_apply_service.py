@@ -138,12 +138,20 @@ class CanonicalWdvTemplateApplyService:
             warnings = tuple(sorted(set(plan.warnings or [])))
             if not any(track.assignments for track in tracks):
                 warnings = tuple(sorted(set((*warnings, "template_applied_without_curve_assignments"))))
+            retained = tuple(
+                track for track in session.tracks
+                if track.managed_well_uid != managed_well_uid
+            )
+            combined = tuple(
+                track.model_copy(update={"track_number": index})
+                for index, track in enumerate((*retained, *tracks))
+            )
             return session.model_copy(
                 update={
-                    "state_status": "active" if tracks else "empty",
+                    "state_status": "active" if combined else "empty",
                     "source": f"canonical_template_apply:{plan.template_key}",
-                    "tracks": tracks,
-                    "selected_track_uid": tracks[0].track_uid if tracks else None,
+                    "tracks": combined,
+                    "selected_track_uid": (tracks[0].track_uid if tracks else session.selected_track_uid),
                     "warnings": warnings,
                     "display_policy_revision": compute_display_policy_revision(),
                 }
@@ -244,6 +252,7 @@ class CanonicalWdvTemplateApplyService:
             tracks.append(
                 WdvCanonicalTrack(
                     track_uid=track_uid,
+                    managed_well_uid=managed_well_uid,
                     track_key=planned.track_key or planned.track_id,
                     track_number=(
                         planned.track_number

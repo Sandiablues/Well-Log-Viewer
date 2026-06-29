@@ -78,14 +78,16 @@ class WdvCanonicalWorkspace(BaseModel):
                     raise WdvWorkspaceInvariantError(
                         "Assignment references a track absent from the workspace"
                     )
+                # curve_registry is intentionally scoped to the current working
+                # well. The shared canonical session may also contain tracks
+                # owned by other wells; those assignments are validated against
+                # their own registry when that well is selected.
+                if assignment.managed_well_uid != self.managed_well_uid:
+                    continue
                 curve = curve_by_uid.get(assignment.managed_curve_uid)
                 if curve is None:
                     raise WdvWorkspaceInvariantError(
                         "Assignment references a curve absent from the workspace registry"
-                    )
-                if assignment.managed_well_uid != self.managed_well_uid:
-                    raise WdvWorkspaceInvariantError(
-                        "Assignment managed_well_uid must match workspace"
                     )
                 if assignment.managed_product_uid != curve.managed_product_uid:
                     raise WdvWorkspaceInvariantError(

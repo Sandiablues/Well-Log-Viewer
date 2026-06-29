@@ -128,6 +128,13 @@ class WdvCanonicalViewerPackage(BaseModel):
 
         for track in self.session.tracks:
             for assignment in track.assignments:
+                # The viewer package registry is scoped to the current working
+                # well, while the canonical session may contain tracks owned by
+                # several wells. Foreign-well assignments remain in the shared
+                # session and are validated by their own well package when that
+                # well becomes active.
+                if assignment.managed_well_uid != self.managed_well_uid:
+                    continue
                 if assignment.managed_curve_uid not in curve_uids:
                     raise ValueError(
                         "Session assignment references a curve absent from package"

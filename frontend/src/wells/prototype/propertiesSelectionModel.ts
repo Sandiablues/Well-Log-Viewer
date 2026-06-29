@@ -9,13 +9,21 @@ export function findCurveForAssignment(
   curveCatalogItems: CurveCatalogItem[],
   assignment: CurveAssignment,
 ): CurveCatalogItem | null {
-  return curveCatalogItems.find((curve) => (
-    curve.curveId === assignment.curveId
-    || (
-      assignment.curveUid != null
+  const sameOwner = (curve: CurveCatalogItem): boolean => (
+    assignment.managedWellUid == null
+    || curve.managedWellUid == null
+    || curve.managedWellUid === assignment.managedWellUid
+  );
+  if (assignment.curveUid != null) {
+    const exactUid = curveCatalogItems.find((curve) => (
+      sameOwner(curve)
       && curve.curveUid != null
       && curve.curveUid === assignment.curveUid
-    )
+    ));
+    if (exactUid) return exactUid;
+  }
+  return curveCatalogItems.find((curve) => (
+    sameOwner(curve) && curve.curveId === assignment.curveId
   )) ?? null;
 }
 

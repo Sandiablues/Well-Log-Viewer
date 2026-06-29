@@ -62,6 +62,7 @@ def _workspace(*, stack_index: int = 0, mismatched_product: bool = False):
     )
     track = WdvCanonicalTrack(
         track_uid=track_uid,
+        managed_well_uid=well_uid,
         track_name="Track 1",
         assignments=(assignment,),
     )
@@ -107,3 +108,34 @@ def test_workspace_rejects_assignment_curve_absent_from_registry() -> None:
     payload["curve_registry"] = ()
     with pytest.raises(ValidationError, match="absent from the workspace registry"):
         WdvCanonicalWorkspace(**payload)
+
+
+def test_workspace_accepts_foreign_well_tracks_outside_active_registry() -> None:
+    payload = _workspace()
+    active_session = payload["session"]
+    foreign_well_uid = new_uuid7_str()
+    foreign_track_uid = new_uuid7_str()
+    foreign_assignment = active_session.tracks[0].assignments[0].model_copy(
+        update={
+            "assignment_uid": new_uuid7_str(),
+            "managed_curve_uid": new_uuid7_str(),
+            "managed_product_uid": new_uuid7_str(),
+            "managed_well_uid": foreign_well_uid,
+            "managed_wellbore_uid": new_uuid7_str(),
+            "managed_source_uid": new_uuid7_str(),
+            "track_uid": foreign_track_uid,
+        }
+    )
+    foreign_track = WdvCanonicalTrack(
+        track_uid=foreign_track_uid,
+        managed_well_uid=foreign_well_uid,
+        track_name="Foreign well track",
+        assignments=(foreign_assignment,),
+    )
+    payload["session"] = active_session.model_copy(
+        update={"tracks": (*active_session.tracks, foreign_track)}
+    )
+
+    workspace = WdvCanonicalWorkspace(**payload)
+    assert len(workspace.session.tracks) == 2
+    assert workspace.session.tracks[1].managed_well_uid == foreign_well_uid

@@ -207,6 +207,7 @@ class WdvCanonicalTrack(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     track_uid: CanonicalUuid7
+    managed_well_uid: CanonicalUuid7
     track_key: str | None = None
     track_number: int | None = Field(default=None, ge=0)
     track_name: NonBlankString
@@ -234,6 +235,11 @@ class WdvCanonicalTrack(BaseModel):
         if invalid:
             raise ValueError(
                 "Every WDV assignment must reference its containing track_uid"
+            )
+
+        if any(item.managed_well_uid != self.managed_well_uid for item in self.assignments):
+            raise ValueError(
+                "Every WDV assignment must reference its containing track managed_well_uid"
             )
 
         assignment_uids = [item.assignment_uid for item in self.assignments]
@@ -278,13 +284,6 @@ class WdvCanonicalSession(BaseModel):
         ]
         if len(assignment_uids) != len(set(assignment_uids)):
             raise ValueError("Duplicate assignment_uid in WDV session")
-
-        for track in self.tracks:
-            for assignment in track.assignments:
-                if assignment.managed_well_uid != self.managed_well_uid:
-                    raise ValueError(
-                        "Every assignment must reference the session managed_well_uid"
-                    )
 
         if (
             self.selected_track_uid is not None

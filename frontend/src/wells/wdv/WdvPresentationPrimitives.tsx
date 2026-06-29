@@ -280,12 +280,13 @@ export function resolveCurveAssignmentCatalogItem(catalog: CurveCatalogItem[], a
         assignment.curveUid,
         assignment.krCurveTypeId,
     ].map((value) => String(value || '').trim()).filter(Boolean);
-    const directMatch = catalog.find((curve) => identityCandidates.includes(String(curve.curveId)));
-    if (directMatch)
-        return directMatch;
-    const uidMatch = catalog.find((curve) => (Boolean(curve.curveUid) && identityCandidates.includes(String(curve.curveUid))));
+    const sameOwner = (curve: CurveCatalogItem): boolean => !assignment.managedWellUid || !curve.managedWellUid || curve.managedWellUid === assignment.managedWellUid;
+    const uidMatch = catalog.find((curve) => sameOwner(curve) && Boolean(curve.curveUid) && identityCandidates.includes(String(curve.curveUid)));
     if (uidMatch)
         return uidMatch;
+    const directMatch = catalog.find((curve) => sameOwner(curve) && identityCandidates.includes(String(curve.curveId)));
+    if (directMatch)
+        return directMatch;
     const mnemonicCandidates = [
         assignment.normalizedMnemonic,
         assignment.observedMnemonic,
@@ -293,6 +294,7 @@ export function resolveCurveAssignmentCatalogItem(catalog: CurveCatalogItem[], a
     if (mnemonicCandidates.length === 0)
         return null;
     return catalog.find((curve) => {
+        if (!sameOwner(curve)) return false;
         const curveMnemonics = [
             curve.mnemonic,
             curve.normalizedMnemonic,
@@ -481,6 +483,18 @@ export function yToDepth(y: number, viewRange: DepthViewRange, bodyHeight = TRAC
     const ratio = bodyHeight <= 0 ? 0 : clampValue(y / bodyHeight, 0, 1);
     return viewRange.min + (viewRange.max - viewRange.min) * ratio;
 }
+export function depthTicksForRange(range: DepthViewRange, count = 11): number[] {
+    const safeCount = Math.max(2, count);
+    const step = (range.max - range.min) / (safeCount - 1);
+    return Array.from({ length: safeCount }, (_, index) => Math.round(range.min + step * index));
+}
+export function viewDepthRangeForTrack(
+    track: WellLogTrack,
+    viewDepthRangesByWellUid: Record<string, DepthViewRange>,
+    fallback: DepthViewRange,
+): DepthViewRange {
+    return track.managedWellUid ? viewDepthRangesByWellUid[track.managedWellUid] ?? fallback : fallback;
+}
 export function clampValue(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
 }
@@ -499,7 +513,7 @@ export function displayTitleForTrack(track: WellLogTrack, catalog: CurveCatalogI
     if (track.trackType !== 'curve')
         return track.title;
     const mnemonics = orderedCurves(track)
-        .map((assignment) => catalog.find((curve) => curve.curveId === assignment.curveId)?.mnemonic ?? assignment.curveId)
+        .map((assignment) => resolveCurveAssignmentCatalogItem(catalog, assignment)?.mnemonic ?? assignment.observedMnemonic ?? assignment.curveId)
         .map((value) => String(value || '').trim())
         .filter(Boolean);
     if (mnemonics.length === 0)
@@ -1877,6 +1891,8 @@ export function TrackView({ track, sharedHeaderHeightPx, selected, selectedAssig
     const width = `${widthPx}px`;
     const isCurveTrack = track.trackType === 'curve';
     const lattice = isCurveTrack ? resolveTrackLattice(track, curveCatalogItems) : null;
+    const trackViewDepthRange = viewDepthRange;
+    const trackDepthTicks = depthTicks;
     return (<section className={`wlv-track ${track.trackType} ${selected ? 'selected' : ''} ${resizingTrackId === track.trackId ? 'resizing' : ''}`} style={{ width, minWidth: width, height: `${sharedHeaderHeightPx + trackBodyHeightPx}px` }} onMouseDownCapture={(event) => {
             if (track.trackType !== 'curve' || !event.shiftKey || event.button !== 0)
                 return;
@@ -1907,6 +1923,11 @@ export function TrackView({ track, sharedHeaderHeightPx, selected, selectedAssig
           <strong>{displayTitleForTrack(track, curveCatalogItems)}</strong>
           <span>T{track.trackIndex + 1}</span>
         </div>
+        {track.managedWellUid && (
+          <div className="wlv-track-well-owner" title={track.ownerWellName ?? 'Managed well'}>
+            {track.ownerWellName ?? 'Managed well'}
+          </div>
+        )}
         {track.trackType === 'depth' && (<div className="wlv-depth-header">{track.depthBasis} · {track.unit}</div>)}
         {track.trackType === 'lithology' && (<div className="wlv-lithology-header">{lithologySource.name} · {track.wellName}</div>)}
         {track.trackType === 'curve' && (<>
@@ -1917,9 +1938,9 @@ export function TrackView({ track, sharedHeaderHeightPx, selected, selectedAssig
           </>)}
       </header>
       <div className="wlv-track-body" style={{ height: `${trackBodyHeightPx}px`, minHeight: `${trackBodyHeightPx}px`, flexBasis: `${trackBodyHeightPx}px` }}>
-        {track.trackType === 'depth' ? <DepthTrackView track={track} depthTicks={depthTicks} viewDepthRange={viewDepthRange} trackBodyHeightPx={trackBodyHeightPx}/> : null}
-        {track.trackType === 'lithology' ? <LithologyTrackView track={track} viewDepthRange={viewDepthRange} trackBodyHeightPx={trackBodyHeightPx}/> : null}
-        {track.trackType === 'curve' ? (<CurveTrackView track={track} depthTicks={depthTicks} viewDepthRange={viewDepthRange} trackBodyHeightPx={trackBodyHeightPx} managedSamplesByCurveId={managedSamplesByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} curveCatalogItems={curveCatalogItems}/>) : null}
+        {track.trackType === 'depth' ? <DepthTrackView track={track} depthTicks={trackDepthTicks} viewDepthRange={trackViewDepthRange} trackBodyHeightPx={trackBodyHeightPx}/> : null}
+        {track.trackType === 'lithology' ? <LithologyTrackView track={track} viewDepthRange={trackViewDepthRange} trackBodyHeightPx={trackBodyHeightPx}/> : null}
+        {track.trackType === 'curve' ? (<CurveTrackView track={track} depthTicks={trackDepthTicks} viewDepthRange={trackViewDepthRange} trackBodyHeightPx={trackBodyHeightPx} managedSamplesByCurveId={managedSamplesByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} curveCatalogItems={curveCatalogItems}/>) : null}
       </div>
     </section>);
 }
