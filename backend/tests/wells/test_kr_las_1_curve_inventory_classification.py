@@ -142,12 +142,12 @@ class TestLasCurveInventoryClassification:
         with pytest.raises(LasImportError):
             service.classify_curve_metadata(None)  # type: ignore[arg-type]
 
-    def test_las_parsing_methods_remain_deferred(self, tmp_path: Path) -> None:
+    def test_las_parsing_boundary_is_backend_owned(self, tmp_path: Path) -> None:
         repo = _repo(tmp_path)
         service = _las_service(repo)
         source_ref = MsiSourceRef(source_id="src-001", filename="test.las")
 
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(LasImportError):
             service.import_from_path("/tmp/test.las", source_ref)
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(LasImportError):
             service.import_from_bytes(b"", source_ref)

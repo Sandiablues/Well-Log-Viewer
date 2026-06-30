@@ -292,3 +292,79 @@ def test_compound_routes_are_registered() -> None:
         "/api/wlv/v2/wdv/session-commands/"
         "{managed_well_uid}/tracks/reset-curve-widths"
     ) in paths
+
+
+def test_clear_canvas_removes_depth_and_curve_tracks_by_default(
+    tmp_path: Path,
+) -> None:
+    from app.wdv_session.canonical_commands import ClearCanvasCommand
+
+    well_uid = new_uuid7_str()
+    sessions, service = _service(tmp_path, well_uid, ())
+    initial = sessions.get_session(well_uid)
+    depth = service.create_track(
+        well_uid,
+        CreateTrackCommand(
+            expected_revision=initial.revision,
+            track_name="MD",
+            track_type="depth",
+        ),
+    )
+    curve = service.create_track(
+        well_uid,
+        CreateTrackCommand(
+            expected_revision=depth.revision,
+            track_name="Curve",
+            track_type="curve",
+        ),
+    )
+
+    cleared = service.clear_canvas(
+        well_uid,
+        ClearCanvasCommand(expected_revision=curve.revision),
+    )
+
+    assert cleared.revision == curve.revision + 1
+    assert cleared.tracks == ()
+    assert cleared.selected_track_uid is None
+    assert cleared.state_status == "empty"
+
+
+def test_clear_canvas_preserves_depth_tracks_and_removes_curve_tracks(
+    tmp_path: Path,
+) -> None:
+    from app.wdv_session.canonical_commands import ClearCanvasCommand
+
+    well_uid = new_uuid7_str()
+    sessions, service = _service(tmp_path, well_uid, ())
+    initial = sessions.get_session(well_uid)
+    depth = service.create_track(
+        well_uid,
+        CreateTrackCommand(
+            expected_revision=initial.revision,
+            track_name="MD",
+            track_type="depth",
+        ),
+    )
+    curve = service.create_track(
+        well_uid,
+        CreateTrackCommand(
+            expected_revision=depth.revision,
+            track_name="Curve",
+            track_type="curve",
+        ),
+    )
+
+    cleared = service.clear_canvas(
+        well_uid,
+        ClearCanvasCommand(
+            expected_revision=curve.revision,
+            preserve_depth_tracks=True,
+        ),
+    )
+
+    assert cleared.revision == curve.revision + 1
+    assert [track.track_type for track in cleared.tracks] == ["depth"]
+    assert cleared.tracks[0].track_number == 0
+    assert cleared.selected_track_uid == cleared.tracks[0].track_uid
+    assert cleared.state_status == "active"

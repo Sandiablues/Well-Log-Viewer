@@ -94,6 +94,12 @@ class RemoveTrackCommand(RevisionGuardedCommand):
     track_uid: CanonicalUuid7
 
 
+class ClearCanvasCommand(RevisionGuardedCommand):
+    """Remove every track from the active WDV canvas."""
+
+    preserve_depth_tracks: bool = False
+
+
 class BootstrapCurveAssignmentCommand(RevisionGuardedCommand):
     """Atomically create the first canonical curve track and assignment.
 

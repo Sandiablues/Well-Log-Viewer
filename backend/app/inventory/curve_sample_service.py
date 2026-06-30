@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import gzip
+import json
 import math
 import re
 
@@ -28,15 +30,26 @@ class CurveSampleService:
     def get_curve_samples(self, managed_well_id: str, product_id: str, max_samples: int = 12000) -> dict[str, Any]:
         record = self.repository.get_record(managed_well_id)
         item = self._find_product_item(record, product_id)
+        sample_store = self._sample_store_path_for_item(item)
         source_path = self._source_path_for_item(item)
-        if source_path is None:
-            raise CurveSampleServiceError(f"No readable LAS source path is available for product: {product_id}")
-
-        parsed = _read_las_curve_samples(
-            source_path=source_path,
-            curve_mnemonic=item.curve_name or item.display_name,
-            max_samples=max_samples,
-        )
+        if sample_store is not None:
+            parsed = _read_managed_las_curve_samples(
+                sample_store=sample_store,
+                source_curve_index=self._source_curve_index(item),
+                max_samples=max_samples,
+            )
+            sample_source = "managed_las_sample_store"
+            provenance_path = sample_store
+        elif source_path is not None:
+            parsed = _read_las_curve_samples(
+                source_path=source_path,
+                curve_mnemonic=item.curve_name or item.display_name,
+                max_samples=max_samples,
+            )
+            sample_source = "las_original_path"
+            provenance_path = source_path
+        else:
+            raise CurveSampleServiceError(f"No readable managed LAS samples or source path is available for product: {product_id}")
 
         return {
             "ok": True,
@@ -54,8 +67,8 @@ class CurveSampleService:
             "curve_family": item.curve_family,
             "source_id": item.source_id,
             "source_intake_candidate_id": item.source_intake_candidate_id,
-            "source_path": str(source_path),
-            "sample_source": "las_original_path",
+            "source_path": str(provenance_path),
+            "sample_source": sample_source,
             "depth_unit": parsed["depth_unit"],
             "value_unit": parsed["value_unit"] or item.curve_unit or "",
             "depth_min": parsed["depth_min"],
@@ -89,6 +102,35 @@ class CurveSampleService:
         raise ManagedWellNotFoundError(product_id)
 
     @staticmethod
+    def _sample_store_path_for_item(item: ManagedProductGroupItem) -> Path | None:
+        provenance = item.provenance if isinstance(item.provenance, dict) else {}
+        candidates = [provenance.get("las_samples_uri")]
+        asset = provenance.get("las_asset")
+        if isinstance(asset, dict):
+            candidates.append(asset.get("samples_uri"))
+        for candidate in candidates:
+            if not candidate:
+                continue
+            path = Path(str(candidate)).expanduser()
+            if path.exists() and path.is_file():
+                return path.resolve()
+        return None
+
+    @staticmethod
+    def _source_curve_index(item: ManagedProductGroupItem) -> int:
+        provenance = item.provenance if isinstance(item.provenance, dict) else {}
+        value = provenance.get("source_curve_index")
+        if value is None:
+            raise CurveSampleServiceError(f"Managed LAS curve is missing source_curve_index: {item.product_id}")
+        try:
+            index = int(value)
+        except (TypeError, ValueError) as exc:
+            raise CurveSampleServiceError(f"Invalid source_curve_index for {item.product_id}: {value}") from exc
+        if index < 0:
+            raise CurveSampleServiceError(f"Invalid source_curve_index for {item.product_id}: {index}")
+        return index
+
+    @staticmethod
     def _source_path_for_item(item: ManagedProductGroupItem) -> Path | None:
         provenance = item.provenance if isinstance(item.provenance, dict) else {}
         candidates = [
@@ -103,6 +145,76 @@ class CurveSampleService:
             if path.exists() and path.is_file():
                 return path.resolve()
         return None
+
+
+def _read_managed_las_curve_samples(sample_store: Path, source_curve_index: int, max_samples: int) -> dict[str, Any]:
+    try:
+        with gzip.open(sample_store, "rt", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise CurveSampleServiceError(f"Managed LAS sample store is unreadable: {sample_store}") from exc
+    if payload.get("storage_contract") != "wlv_las_samples_v1":
+        raise CurveSampleServiceError(f"Unsupported managed LAS sample contract: {sample_store}")
+    depths = payload.get("depth_values")
+    curves = payload.get("curves")
+    if not isinstance(depths, list) or not isinstance(curves, list):
+        raise CurveSampleServiceError(f"Managed LAS sample store is incomplete: {sample_store}")
+    curve = next((item for item in curves if isinstance(item, dict) and int(item.get("curve_index", -1)) == source_curve_index), None)
+    if curve is None:
+        raise CurveSampleServiceError(f"Managed LAS curve index {source_curve_index} is absent: {sample_store}")
+    values = curve.get("values")
+    if not isinstance(values, list) or len(values) != len(depths):
+        raise CurveSampleServiceError(f"Managed LAS depth/value arrays disagree for curve index {source_curve_index}")
+    samples = []
+    rejected = 0
+    for depth, value in zip(depths, values):
+        if depth is None or value is None:
+            rejected += 1
+            continue
+        try:
+            depth_value = float(depth)
+            curve_value = float(value)
+        except (TypeError, ValueError):
+            rejected += 1
+            continue
+        if not math.isfinite(depth_value) or not math.isfinite(curve_value):
+            rejected += 1
+            continue
+        samples.append([depth_value, curve_value])
+    if not samples:
+        raise CurveSampleServiceError(f"No valid managed LAS samples for curve index {source_curve_index}")
+    stride = max(1, math.ceil(len(samples) / max_samples)) if max_samples > 0 else 1
+    returned = samples[::stride]
+    if returned[-1] != samples[-1]:
+        returned.append(samples[-1])
+    depth_values = [row[0] for row in samples]
+    curve_values = [row[1] for row in samples]
+    robust_min, robust_max = _robust_value_domain(curve_values)
+    return {
+        "depth_unit": str(payload.get("depth_unit") or "ft"),
+        "value_unit": curve.get("unit"),
+        "depth_min": min(depth_values),
+        "depth_max": max(depth_values),
+        "value_min": min(curve_values),
+        "value_max": max(curve_values),
+        "robust_value_min": robust_min,
+        "robust_value_max": robust_max,
+        "value_p01": _value_percentile(curve_values, 0.01),
+        "value_p05": _value_percentile(curve_values, 0.05),
+        "value_p50": _value_percentile(curve_values, 0.50),
+        "value_p95": _value_percentile(curve_values, 0.95),
+        "value_p99": _value_percentile(curve_values, 0.99),
+        "sample_count": len(samples),
+        "raw_numeric_sample_count": len(samples),
+        "rejected_sample_count": rejected,
+        "rejected_null_count": rejected,
+        "rejected_sentinel_count": 0,
+        "rejected_nonfinite_count": 0,
+        "rejected_plausibility_count": 0,
+        "rejected_row_count": 0,
+        "decimation_stride": stride,
+        "samples": returned,
+    }
 
 
 def _read_las_curve_samples(source_path: Path, curve_mnemonic: str, max_samples: int) -> dict[str, Any]:

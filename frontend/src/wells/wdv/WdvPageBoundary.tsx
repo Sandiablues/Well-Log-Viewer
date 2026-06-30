@@ -16,6 +16,7 @@ import {
 import { AddTrackDraft, CURVE_TRACK_MAX_WIDTH, CURVE_TRACK_MIN_WIDTH, CurveInventory, CurveInventoryWellContext, DepthViewRange, IntervalSelectionState, RightPanel, Toolbar, TrackBackdropMode, TrackCanvas, WdvCanonicalTemplateApplySession, WdvRecommendedCurve, WdvTemplateRecommendationItem, WdvTemplateRecommendationModal, WdvWorkspaceLoadedWell, buildWdvTemplateRecommendationRequest, clampCurveTrackWidth, clampValue, fetchWlvJson, sortTracks } from './WdvPresentationPrimitives';
 import { useWdvLayoutSource } from './useWdvLayoutSource';
 import type { CanonicalLayoutResult } from './useWdvLayoutSource';
+import { buildCompleteLasLoadRequest, buildCompleteLasLoadUrl } from './completeLasWorkflow';
 
 type WdvTemplateRecommendationEnvelope = {
     service: string;
@@ -160,6 +161,71 @@ const CURVE_INVENTORY_MAX_WIDTH_PX = 680;
 type CurveInventoryResizeState = {
     startX: number;
     startWidth: number;
+};
+
+type CompleteLasPlanCurve = {
+    managed_curve_uid: string;
+    mnemonic: string;
+    display_name: string;
+    unit?: string | null;
+    source_curve_position: number;
+    review_required: boolean;
+    selectable: boolean;
+    loaded_to_wdv: boolean;
+};
+
+type CompleteLasPlan = {
+    contract_kind: 'wdv_complete_las_reconstruction_plan';
+    managed_well_uid: string;
+    source_id: string;
+    original_filename: string;
+    curve_count: number;
+    eligible_curve_count: number;
+    review_curve_count: number;
+    curves: CompleteLasPlanCurve[];
+    warnings: string[];
+};
+
+type CompleteLasLoadResponse = {
+    plan: CompleteLasPlan;
+    loaded_product_ids: string[];
+    added_managed_curve_uids: string[];
+    skipped_existing_managed_curve_uids: string[];
+    session: RawCanonicalSession;
+};
+
+type CompleteLasSourceOption = {
+    sourceId: string;
+    label: string;
+    curveCount: number;
+    assetAvailable?: boolean;
+};
+
+type CompleteLasSourceListResponse = {
+    managed_well_uid: string;
+    sources: Array<{
+        source_id: string;
+        label: string;
+        original_filename: string;
+        curve_count: number;
+        asset_available: boolean;
+    }>;
+};
+
+type LogImageSourceOption = {
+    sourceId: string;
+    label: string;
+    fileFormat?: string | null;
+};
+
+type LogImageSourceListResponse = {
+    managed_well_uid: string;
+    sources: Array<{
+        source_id: string;
+        label: string;
+        original_filename: string;
+        file_format?: string | null;
+    }>;
 };
 
 type WdvWorkspaceState = {
@@ -581,6 +647,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
   const [managedSampleErrorsByCurveId, setManagedSampleErrorsByCurveId] = useState<Record<string, string>>({});
   const [managedSamplesLoading, setManagedSamplesLoading] = useState(false);
   const [recommendationRefreshRevision, setRecommendationRefreshRevision] = useState(0);
+  const [viewerPackageRefreshRevision, setViewerPackageRefreshRevision] = useState(0);
   const viewerPackageAbortRef = useRef<AbortController | null>(null);
   const viewerPackageGenerationRef = useRef(0);
   const sampleLoadAbortRef = useRef<AbortController | null>(null);
@@ -632,7 +699,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
           if (viewerPackageAbortRef.current === controller)
               viewerPackageAbortRef.current = null;
       };
-  }, [activeView, managedViewerWellId]);
+  }, [activeView, managedViewerWellId, viewerPackageRefreshRevision]);
   const [tracks, setTracks] = useState<WellLogTrack[]>([]);
   const tracksRef = useRef<WellLogTrack[]>([]);
   useEffect(() => { tracksRef.current = tracks; }, [tracks]);
@@ -668,6 +735,15 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
   const [wdvTemplateRecommendationsError, setWdvTemplateRecommendationsError] = useState<string | null>(null);
   const [selectedWdvTemplateKey, setSelectedWdvTemplateKey] = useState('');
   const [wdvTemplateModalOpen, setWdvTemplateModalOpen] = useState(false);
+  const [completeLasSourceId, setCompleteLasSourceId] = useState('');
+  const [completeLasSourceOptions, setCompleteLasSourceOptions] = useState<CompleteLasSourceOption[]>([]);
+  const [, setCompleteLasSourcesLoading] = useState(false);
+  const [completeLasIncludeReview, setCompleteLasIncludeReview] = useState(false);
+  const [completeLasPending, setCompleteLasPending] = useState(false);
+  const [completeLasError, setCompleteLasError] = useState<string | null>(null);
+  const [completeLasResult, setCompleteLasResult] = useState<string | null>(null);
+  const [logImageSourceOptions, setLogImageSourceOptions] = useState<LogImageSourceOption[]>([]);
+  const [selectedLogImageSourceId, setSelectedLogImageSourceId] = useState('');
   const selectedTrackForDepth = tracks.find((track) => track.trackId === selection.trackId) ?? null;
   const representedWellUids = useMemo(() => Array.from(new Set(
       tracks.map((track) => track.managedWellUid).filter((value): value is string => Boolean(value)),
@@ -779,6 +855,69 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
       });
       return metadata;
   }, [wdvPackageState.loadedCurveItems]);
+  const completeLasSources = completeLasSourceOptions;
+
+  useEffect(() => {
+      if (!managedViewerWellUid) {
+          setCompleteLasSourceOptions([]);
+          return;
+      }
+      const controller = new AbortController();
+      setCompleteLasSourcesLoading(true);
+      void fetchWlvJson<CompleteLasSourceListResponse>(
+          `/api/wlv/v2/wdv/las/${encodeURIComponent(managedViewerWellUid)}/sources`,
+          { signal: controller.signal },
+      ).then((payload) => {
+          if (controller.signal.aborted) return;
+          setCompleteLasSourceOptions(payload.sources.map((source) => ({
+              sourceId: source.source_id,
+              label: source.label || source.original_filename || source.source_id,
+              curveCount: source.curve_count,
+              assetAvailable: source.asset_available,
+          })));
+      }).catch((error) => {
+          if (controller.signal.aborted || isAbortError(error)) return;
+          setCompleteLasSourceOptions([]);
+          setCompleteLasError(error instanceof Error ? error.message : 'Unable to list managed LAS sources');
+      }).finally(() => {
+          if (!controller.signal.aborted) setCompleteLasSourcesLoading(false);
+      });
+      return () => controller.abort();
+  }, [managedViewerWellUid, viewerPackageRefreshRevision]);
+
+  useEffect(() => {
+      if (!managedViewerWellUid) {
+          setLogImageSourceOptions([]);
+          setSelectedLogImageSourceId('');
+          return;
+      }
+      const controller = new AbortController();
+      void fetchWlvJson<LogImageSourceListResponse>(
+          `/api/wlv/v2/wdv/las/${encodeURIComponent(managedViewerWellUid)}/log-images`,
+          { signal: controller.signal },
+      ).then((payload) => {
+          if (controller.signal.aborted) return;
+          const options = payload.sources.map((source) => ({
+              sourceId: source.source_id,
+              label: source.label || source.original_filename || source.source_id,
+              fileFormat: source.file_format,
+          }));
+          setLogImageSourceOptions(options);
+          setSelectedLogImageSourceId((current) => options.some((item) => item.sourceId === current) ? current : (options[0]?.sourceId ?? ''));
+      }).catch((error) => {
+          if (controller.signal.aborted || isAbortError(error)) return;
+          setLogImageSourceOptions([]);
+      });
+      return () => controller.abort();
+  }, [managedViewerWellUid, viewerPackageRefreshRevision]);
+
+  useEffect(() => {
+      if (completeLasSources.some((source) => source.sourceId === completeLasSourceId)) return;
+      setCompleteLasSourceId(completeLasSources[0]?.sourceId ?? '');
+      setCompleteLasError(null);
+      setCompleteLasResult(null);
+  }, [completeLasSourceId, completeLasSources]);
+
   const activeCurveCatalog = useMemo(() => {
       const merged = [...curveCatalog];
       const existingCurveIds = new Set(merged.map((curve) => curve.curveId));
@@ -1007,6 +1146,38 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
     ).catch(() => null);
     if (fresh) applyCanonicalSession(fresh);
   }, [managedViewerWellUid, applyCanonicalSession]);
+
+  const loadCompleteLas = useCallback(async (): Promise<void> => {
+      if (!managedViewerWellUid || !completeLasSourceId || canonicalRevisionRef.current < 0) return;
+      setCompleteLasPending(true);
+      setCompleteLasError(null);
+      setCompleteLasResult(null);
+      try {
+          const response = await fetchWlvJson<CompleteLasLoadResponse>(
+              buildCompleteLasLoadUrl(managedViewerWellUid),
+              {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(buildCompleteLasLoadRequest({
+                      expectedRevision: canonicalRevisionRef.current,
+                      sourceId: completeLasSourceId,
+                      placement: 'append_tracks',
+                      includeReviewRequired: completeLasIncludeReview,
+                  })),
+              },
+          );
+          applyCanonicalSession(response.session);
+          setViewerPackageRefreshRevision((current) => current + 1);
+          setCompleteLasResult(`${response.added_managed_curve_uids.length} LAS curve track(s) appended; ${response.skipped_existing_managed_curve_uids.length} existing assignment(s) skipped.`);
+      } catch (error) {
+          if (error instanceof Error && /409|revision/i.test(error.message)) {
+              await refreshCanonicalSession();
+          }
+          setCompleteLasError(error instanceof Error ? error.message : 'Unable to load complete LAS');
+      } finally {
+          setCompleteLasPending(false);
+      }
+  }, [applyCanonicalSession, completeLasIncludeReview, completeLasSourceId, managedViewerWellUid, refreshCanonicalSession]);
 
   const refreshWdvWorkspace = async () => {
       try {
@@ -1339,6 +1510,42 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
           }
       })();
   };
+  const clearCanvas = () => {
+      if (!managedViewerWellUid) return;
+      void (async () => {
+          const executeClear = async (): Promise<RawCanonicalSession> => {
+              if (canonicalRevisionRef.current < 0) {
+                  await refreshCanonicalSession();
+              }
+              if (canonicalRevisionRef.current < 0) {
+                  throw new Error('Clear Canvas could not resolve the canonical WDV revision.');
+              }
+              return executeWdvCanonicalCommand('tracks/clear', { preserve_depth_tracks: false });
+          };
+
+          try {
+              let session: RawCanonicalSession;
+              try {
+                  session = await executeClear();
+              } catch (error) {
+                  if (!(error instanceof Error) || !error.message.startsWith('409 ')) {
+                      throw error;
+                  }
+                  await refreshCanonicalSession();
+                  session = await executeClear();
+              }
+
+              applyCanonicalSession(session);
+              setOpenCurveMenu(null);
+              setPendingAddTrackCurveIds([]);
+              setAddTrackCurveSelectionMode(false);
+          } catch (error) {
+              const message = error instanceof Error ? error.message : 'Unable to clear the WDV canvas.';
+              setWdvWorkspaceError(message);
+              console.error('[WdvPageBoundary] clearCanvas failed:', error);
+          }
+      })();
+  };
   const moveSelectedTrack = (direction: -1 | 1) => {
       const trackId = selection.trackId;
       if (!trackId)
@@ -1590,7 +1797,9 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
           </span>
         </section>)}
 
-      <Toolbar selectedTrack={selectedTrack} pendingAddTrackCurveCount={pendingAddTrackCurveIds.length} viewDepthRange={viewDepthRange} fullDepthRange={canvasFullDepthRange} viewDepthReadoutEnabled={tracks.length > 0} intervalZoomActive={intervalZoomActive} goToDepthValue={goToDepthValue} onGoToDepthValueChange={setGoToDepthValue} trackBackdropMode={trackBackdropMode} onTrackBackdropModeChange={setTrackBackdropMode} onAddTrack={addTrack} onDeleteTrack={deleteSelectedTrack} onMoveSelectedTrack={moveSelectedTrack} canMoveSelectedTrackLeft={canMoveSelectedTrackLeft} canMoveSelectedTrackRight={canMoveSelectedTrackRight} canAdjustSelectedCurveTrackWidthDown={canAdjustSelectedCurveTrackWidthDown} canAdjustSelectedCurveTrackWidthUp={canAdjustSelectedCurveTrackWidthUp} onAdjustSelectedCurveTrackWidth={adjustSelectedCurveTrackWidth} onResetCurveTrackWidths={resetCurveTrackWidths} onZoomIn={() => zoomDepth(0.75)} onZoomOut={() => zoomDepth(1.33)} onPreviousView={previousDepthView} onFitDepth={fitDepth} onSpecifyDepthRange={(range) => {
+
+
+      <Toolbar selectedTrack={selectedTrack} pendingAddTrackCurveCount={pendingAddTrackCurveIds.length} viewDepthRange={viewDepthRange} fullDepthRange={canvasFullDepthRange} viewDepthReadoutEnabled={tracks.length > 0} intervalZoomActive={intervalZoomActive} goToDepthValue={goToDepthValue} onGoToDepthValueChange={setGoToDepthValue} trackBackdropMode={trackBackdropMode} onTrackBackdropModeChange={setTrackBackdropMode} onAddTrack={addTrack} onDeleteTrack={deleteSelectedTrack} onClearCanvas={clearCanvas} onMoveSelectedTrack={moveSelectedTrack} canMoveSelectedTrackLeft={canMoveSelectedTrackLeft} canMoveSelectedTrackRight={canMoveSelectedTrackRight} canAdjustSelectedCurveTrackWidthDown={canAdjustSelectedCurveTrackWidthDown} canAdjustSelectedCurveTrackWidthUp={canAdjustSelectedCurveTrackWidthUp} onAdjustSelectedCurveTrackWidth={adjustSelectedCurveTrackWidth} onResetCurveTrackWidths={resetCurveTrackWidths} onZoomIn={() => zoomDepth(0.75)} onZoomOut={() => zoomDepth(1.33)} onPreviousView={previousDepthView} onFitDepth={fitDepth} onSpecifyDepthRange={(range) => {
         setOpenCurveMenu(null);
         setIntervalZoomActive(false);
         setIntervalSelection(null);
@@ -1617,7 +1826,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
         </button>
         {curveInventoryCollapsed ? (<div className="wlv-curve-inventory-collapsed-label" aria-hidden="true">Curves</div>) : (<>
         {wdvWorkspaceError && <div className="wlv-workspace-error">{wdvWorkspaceError}</div>}
-        <CurveInventory availableCurves={activeViewerCurves} curveUsageCounts={curveUsageCounts} visibleTrackCurveIds={visibleTrackCurveIds} selectedTrackCurveIds={addTrackCurveSelectionMode ? pendingAddTrackCanonicalIds : selectedTrackCurveIds} selectedCurveIds={visibleTrackCurveIds} assignmentEnabled={addTrackCurveSelectionMode || selectedTrack?.trackType === 'curve'} preferredInventoryTab={tracks.length > 0 ? 'selected' : 'all'} loadedWells={wdvWorkspace?.loaded_wells ?? []} activeWell={activeInventoryWell} curveRunMetadata={activeCurveRunMetadata} onActiveWellChange={(managedWellId) => {
+        <CurveInventory availableCurves={activeViewerCurves} curveUsageCounts={curveUsageCounts} visibleTrackCurveIds={visibleTrackCurveIds} selectedTrackCurveIds={addTrackCurveSelectionMode ? pendingAddTrackCanonicalIds : selectedTrackCurveIds} selectedCurveIds={visibleTrackCurveIds} assignmentEnabled={addTrackCurveSelectionMode || selectedTrack?.trackType === 'curve'} preferredInventoryTab={tracks.length > 0 ? 'selected' : 'all'} loadedWells={wdvWorkspace?.loaded_wells ?? []} activeWell={activeInventoryWell} curveRunMetadata={activeCurveRunMetadata} lasSources={completeLasSources} selectedLasSourceId={completeLasSourceId} lasPending={completeLasPending} lasIncludeReviewRequired={completeLasIncludeReview} lasMessage={completeLasError ?? completeLasResult} onLasSourceChange={(sourceId) => { setCompleteLasSourceId(sourceId); setCompleteLasError(null); setCompleteLasResult(null); }} onLasIncludeReviewRequiredChange={setCompleteLasIncludeReview} onAddCompleteLas={() => void loadCompleteLas()} logImageSources={logImageSourceOptions} selectedLogImageSourceId={selectedLogImageSourceId} onLogImageSourceChange={setSelectedLogImageSourceId} onActiveWellChange={(managedWellId) => {
             const selectedIdentityPayload = wdvWorkspace?.loaded_wells.find(
                 (well) => well.managed_well_id === managedWellId,
             );

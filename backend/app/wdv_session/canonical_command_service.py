@@ -20,6 +20,7 @@ from app.wdv_session.canonical_commands import (
     BootstrapCurveAssignmentCommand,
     CreateConfiguredTrackCommand,
     CreateTrackCommand,
+    ClearCanvasCommand,
     RemoveCurveAssignmentCommand,
     RemoveTrackCommand,
     MoveCurveAssignmentCommand,
@@ -256,6 +257,31 @@ class CanonicalWdvCommandService:
                         if command.select_created_track
                         else session.selected_track_uid
                     ),
+                }
+            )
+
+        return self._execute(managed_well_uid, command, mutate)
+
+
+    def clear_canvas(
+        self,
+        managed_well_uid: str,
+        command: ClearCanvasCommand,
+    ) -> WdvCanonicalSession:
+        def mutate(session: WdvCanonicalSession) -> WdvCanonicalSession:
+            tracks = (
+                tuple(track for track in session.tracks if track.track_type == "depth")
+                if command.preserve_depth_tracks
+                else ()
+            )
+            selected = session.selected_track_uid
+            if not any(track.track_uid == selected for track in tracks):
+                selected = tracks[0].track_uid if tracks else None
+            return session.model_copy(
+                update={
+                    "tracks": self._renumber_tracks(tracks),
+                    "selected_track_uid": selected,
+                    "state_status": "active" if tracks else "empty",
                 }
             )
 

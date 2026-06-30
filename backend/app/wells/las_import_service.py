@@ -13,6 +13,11 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
+import hashlib
+import math
+import re
+from pathlib import Path
+
 from app.knowledge.managed_repository import ManagedKRRepository
 from app.knowledge.runtime_classification_service import (
     CurveClassificationBatchResult,
@@ -21,7 +26,7 @@ from app.knowledge.runtime_classification_service import (
 )
 from app.knowledge.runtime_resolver import ApprovedKnowledgeRuntimeResolver
 
-from .models import CurveMetadata, MsiSourceRef, Well
+from .models import CurveMetadata, MsiDatasetRef, MsiSourceRef, Well
 
 
 class LasImportError(Exception):
@@ -661,11 +666,45 @@ class LasCurveInventoryQaqcSummary:
         }
 
 
-class LasImportResult:
-    """
-    Value object returned by a successful LAS import.
+class LasCurveSamples:
+    """One source-ordered LAS curve and its backend-owned samples."""
 
-    Populated by the backend parser; never constructed on the frontend.
+    def __init__(
+        self,
+        *,
+        curve_index: int,
+        mnemonic: str,
+        unit: Optional[str],
+        description: Optional[str],
+        values: List[Optional[float]],
+    ) -> None:
+        self.curve_index = int(curve_index)
+        self.mnemonic = mnemonic
+        self.unit = unit
+        self.description = description
+        self.values = list(values)
+
+    @property
+    def sample_count(self) -> int:
+        return len(self.values)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "curve_index": self.curve_index,
+            "mnemonic": self.mnemonic,
+            "unit": self.unit,
+            "description": self.description,
+            "sample_count": self.sample_count,
+            "values": list(self.values),
+        }
+
+
+class LasImportResult:
+    """Backend-owned parsed LAS product contract.
+
+    The original source fingerprint, source-ordered curve metadata, depth
+    samples, and all curve samples remain correlated in one result. Duplicate
+    mnemonics are deliberately preserved by curve index.
     """
 
     def __init__(
@@ -675,28 +714,67 @@ class LasImportResult:
         depth_unit: str,
         null_value: Optional[float],
         raw_header: dict,
+        *,
+        source_fingerprint: str,
+        las_version: Optional[str],
+        wrap: bool,
+        depth_mnemonic: str,
+        depth_values: List[Optional[float]],
+        curves: List[LasCurveSamples],
+        source_bytes: bytes,
+        warnings: Optional[List[str]] = None,
     ) -> None:
         self.well = well
-        self.curve_metadata = curve_metadata
+        self.curve_metadata = list(curve_metadata)
         self.depth_unit = depth_unit
         self.null_value = null_value
         self.raw_header = raw_header
+        self.source_fingerprint = source_fingerprint
+        self.las_version = las_version
+        self.wrap = bool(wrap)
+        self.depth_mnemonic = depth_mnemonic
+        self.depth_values = list(depth_values)
+        self.curves = list(curves)
+        self.source_bytes = bytes(source_bytes)
+        self.warnings = list(warnings or [])
+
+    @property
+    def sample_count(self) -> int:
+        return len(self.depth_values)
+
+    @property
+    def curve_count(self) -> int:
+        return len(self.curves)
+
+    def as_dict(self, *, include_samples: bool = False) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "well": self.well.model_dump(mode="json"),
+            "curve_metadata": [item.model_dump(mode="json") for item in self.curve_metadata],
+            "depth_unit": self.depth_unit,
+            "null_value": self.null_value,
+            "raw_header": self.raw_header,
+            "source_fingerprint": self.source_fingerprint,
+            "las_version": self.las_version,
+            "wrap": self.wrap,
+            "depth_mnemonic": self.depth_mnemonic,
+            "sample_count": self.sample_count,
+            "curve_count": self.curve_count,
+            "warnings": list(self.warnings),
+        }
+        if include_samples:
+            payload["depth_values"] = list(self.depth_values)
+            payload["curves"] = [curve.as_dict() for curve in self.curves]
+        return payload
 
 
 class LasImportService:
-    """
-    Backend-owned service responsible for:
-    - Receiving a LAS source file (path or bytes)
-    - Parsing well header and curve sections
-    - Extracting curve metadata
-    - Returning a LasImportResult for downstream MSI registration
-    - Classifying extracted curve metadata through approved-only KR runtime
+    """Canonical backend LAS parser and approved-KR classification boundary."""
 
-    WL-BUILD-001: parsing skeleton only.
-    KR-LAS-1: adds the classification bridge for extracted curve metadata.
-    LAS parsing implementation (lasio integration) remains deferred to a later
-    sprint; frontend still must not parse LAS.
-    """
+    _GENERIC_IDENTITIES = {
+        "WELL", "WELL NAME", "WELL ID", "WELLID", "UNIQUE WELL ID",
+        "UWI", "API", "UNKNOWN", "N/A", "NA", "NONE", "NULL",
+    }
+    _DEPTH_MNEMONICS = {"DEPT", "DEPTH", "MD", "TDEP"}
 
     def __init__(
         self,
@@ -714,20 +792,8 @@ class LasImportService:
         self,
         curve_metadata: List[CurveMetadata],
     ) -> LasCurveInventoryClassificationResult:
-        """Classify extracted LAS curve metadata through approved-only KR.
-
-        This method is the KR-LAS-1 backend boundary.  It can be called by the
-        future LAS parser after curve metadata has been extracted.  Input order
-        is preserved so downstream MSI/session inventory can correlate each
-        classification to its source curve.
-
-        Candidate/rejected/deprecated knowledge cannot influence the result
-        because RuntimeCurveClassificationService depends on
-        ApprovedKnowledgeRuntimeResolver.
-        """
         if curve_metadata is None:
             raise LasImportError("curve_metadata is required")
-
         inputs: list[CurveClassificationInput] = []
         for index, metadata in enumerate(curve_metadata):
             mnemonic = (metadata.mnemonic or "").strip()
@@ -741,41 +807,279 @@ class LasImportService:
                     context={"null_value": metadata.null_value},
                 )
             )
-
         batch = self._classification_service.classify_curves(inputs)
         return LasCurveInventoryClassificationResult(
-            curve_metadata=list(curve_metadata),
-            classification_batch=batch,
+            curve_metadata=list(curve_metadata), classification_batch=batch
         )
 
     def import_from_path(self, file_path: str, source_ref: MsiSourceRef) -> LasImportResult:
-        """
-        Import a LAS file from a filesystem path.
-
-        Args:
-            file_path: Path to the LAS source file on the backend filesystem.
-            source_ref: MSI source reference for this file, already registered
-                        by the caller before invoking this service.
-
-        Returns:
-            LasImportResult containing well, curve metadata, and header info.
-
-        Raises:
-            LasImportError: If parsing fails for any reason.
-
-        WL-BUILD-001: not yet implemented — raises NotImplementedError.
-        """
-        raise NotImplementedError(
-            "LAS import not yet implemented. "
-            "Wire lasio integration in the next sprint."
-        )
+        path = Path(file_path)
+        if not path.is_file():
+            raise LasImportError(f"LAS source file does not exist: {file_path}")
+        try:
+            payload = path.read_bytes()
+        except OSError as exc:
+            raise LasImportError(f"Could not read LAS source file: {file_path}") from exc
+        if source_ref.filename is None:
+            source_ref = source_ref.model_copy(update={"filename": path.name})
+        return self.import_from_bytes(payload, source_ref)
 
     def import_from_bytes(self, file_bytes: bytes, source_ref: MsiSourceRef) -> LasImportResult:
-        """
-        Import a LAS file from raw bytes (e.g. from an upload stream).
+        if not isinstance(file_bytes, (bytes, bytearray)) or not file_bytes:
+            raise LasImportError("LAS source bytes are required")
+        if not source_ref or not (source_ref.source_id or "").strip():
+            raise LasImportError("A registered MSI source reference is required")
 
-        WL-BUILD-001: not yet implemented — raises NotImplementedError.
-        """
-        raise NotImplementedError(
-            "LAS import from bytes not yet implemented."
+        payload = bytes(file_bytes)
+        text = self._decode(payload)
+        sections = self._sections(text)
+        version_lines = sections.get("VERSION", []) + sections.get("V", [])
+        well_lines = sections.get("WELL", []) + sections.get("W", [])
+        curve_lines = sections.get("CURVE", []) + sections.get("C", [])
+        ascii_lines = sections.get("ASCII", []) + sections.get("A", [])
+        if not curve_lines:
+            raise LasImportError("LAS curve section is missing or empty")
+        if not ascii_lines:
+            raise LasImportError("LAS ASCII data section is missing or empty")
+
+        version_header = self._header_map(version_lines)
+        well_header = self._header_map(well_lines)
+        curves_header = self._parse_header_lines(curve_lines)
+        if not curves_header:
+            raise LasImportError("LAS curve definitions could not be parsed")
+
+        version = self._header_value(version_header, "VERS")
+        wrap_value = (self._header_value(version_header, "WRAP") or "NO").strip().upper()
+        wrap = wrap_value.startswith("Y")
+        null_value = self._float_header(well_header, "NULL")
+        rows = self._ascii_rows(ascii_lines, len(curves_header), wrap=wrap)
+        if not rows:
+            raise LasImportError("LAS ASCII data contains no numeric samples")
+
+        warnings: list[str] = []
+        if any(len(row) != len(curves_header) for row in rows):
+            raise LasImportError("LAS sample column count does not match curve definitions")
+
+        depth_index = self._depth_index(curves_header)
+        depth_def = curves_header[depth_index]
+        depth_values = [self._clean_sample(row[depth_index], null_value) for row in rows]
+        depth_unit = self._normalize_depth_unit(depth_def[1] or self._header_unit(well_header, "STRT") or "ft")
+
+        curve_metadata: list[CurveMetadata] = []
+        curve_samples: list[LasCurveSamples] = []
+        for index, (mnemonic, unit, _value, description) in enumerate(curves_header):
+            if index == depth_index:
+                continue
+            values = [self._clean_sample(row[index], null_value) for row in rows]
+            curve_metadata.append(
+                CurveMetadata(
+                    mnemonic=mnemonic,
+                    unit=unit,
+                    description=description,
+                    null_value=null_value,
+                )
+            )
+            curve_samples.append(
+                LasCurveSamples(
+                    curve_index=index,
+                    mnemonic=mnemonic,
+                    unit=unit,
+                    description=description,
+                    values=values,
+                )
+            )
+
+        raw_well_name = self._first_header_value(well_header, ("WELL", "WEL", "WELLNAME", "NAME"))
+        raw_well_id = self._first_header_value(well_header, ("UWI", "API", "WELLID", "WELL_ID"))
+        well_name = self._clean_identity(raw_well_name)
+        well_id = self._clean_identity(raw_well_id)
+        if well_name is None:
+            warnings.append("LAS well name is missing or generic and requires managed-well resolution.")
+            well_name = (source_ref.filename or source_ref.source_id).rsplit(".", 1)[0]
+        if well_id is None:
+            warnings.append("LAS UWI/API is missing or generic; source identity is used until resolution.")
+            well_id = f"las-source-{hashlib.sha256(payload).hexdigest()[:16]}"
+
+        fingerprint = hashlib.sha256(payload).hexdigest()
+        well = Well(
+            well_id=well_id,
+            well_name=well_name,
+            dataset_ref=MsiDatasetRef(
+                dataset_id=f"las-product:{fingerprint}",
+                display_name=source_ref.filename or well_name,
+            ),
+            source_ref=source_ref,
         )
+        raw_header = {
+            "version": version_header,
+            "well": well_header,
+            "curves": [
+                {"mnemonic": m, "unit": u, "value": v, "description": d}
+                for m, u, v, d in curves_header
+            ],
+        }
+        return LasImportResult(
+            well=well,
+            curve_metadata=curve_metadata,
+            depth_unit=depth_unit,
+            null_value=null_value,
+            raw_header=raw_header,
+            source_fingerprint=fingerprint,
+            las_version=version,
+            wrap=wrap,
+            depth_mnemonic=depth_def[0],
+            depth_values=depth_values,
+            curves=curve_samples,
+            source_bytes=payload,
+            warnings=warnings,
+        )
+
+    @staticmethod
+    def _decode(payload: bytes) -> str:
+        for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+            try:
+                return payload.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        raise LasImportError("LAS source encoding is unsupported")
+
+    @staticmethod
+    def _sections(text: str) -> dict[str, list[str]]:
+        aliases = {"V": "VERSION", "W": "WELL", "C": "CURVE", "P": "PARAMETER", "O": "OTHER", "A": "ASCII"}
+        sections: dict[str, list[str]] = {}
+        current: Optional[str] = None
+        for raw in text.splitlines():
+            stripped = raw.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("~"):
+                label = stripped[1:].split(maxsplit=1)[0].upper()
+                current = aliases.get(label, label)
+                sections.setdefault(current, [])
+            elif current is not None:
+                sections[current].append(raw)
+        return sections
+
+    @staticmethod
+    def _parse_header_lines(lines: List[str]) -> list[tuple[str, Optional[str], Optional[str], Optional[str]]]:
+        result = []
+        for raw in lines:
+            stripped = raw.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            left, sep, right = stripped.partition(":")
+            description = right.strip() or None if sep else None
+            match = re.match(r"^\s*([^\s.]+)\s*\.\s*([^\s]*)\s*(.*?)\s*$", left)
+            if not match:
+                continue
+            mnemonic = match.group(1).strip()
+            unit = match.group(2).strip() or None
+            value = match.group(3).strip() or None
+            result.append((mnemonic, unit, value, description))
+        return result
+
+    @classmethod
+    def _header_map(cls, lines: List[str]) -> dict[str, dict[str, Optional[str]]]:
+        out: dict[str, dict[str, Optional[str]]] = {}
+        value_keys = {
+            "VERS", "WRAP", "DLM", "WELL", "WEL", "WELLNAME", "NAME",
+            "UWI", "API", "WELLID", "WELL_ID", "FLD", "FIELD", "COMP",
+            "COMPANY", "CTRY", "COUNTRY", "LOC", "SRVC", "DATE", "NULL",
+        }
+        for mnemonic, unit, value, description in cls._parse_header_lines(lines):
+            key = mnemonic.upper()
+            # These LAS records carry their value after the dot and do not have
+            # a physical unit. The generic header regex cannot distinguish the
+            # first value token from a unit, so join it back explicitly.
+            if key in value_keys and unit is not None:
+                value = " ".join(part for part in (unit, value) if part)
+                unit = None
+            elif value is None and unit is not None:
+                value, unit = unit, None
+            out[key] = {"unit": unit, "value": value, "description": description}
+        return out
+
+    @staticmethod
+    def _header_value(header: dict[str, dict[str, Optional[str]]], key: str) -> Optional[str]:
+        item = header.get(key.upper())
+        return item.get("value") if item else None
+
+    @staticmethod
+    def _header_unit(header: dict[str, dict[str, Optional[str]]], key: str) -> Optional[str]:
+        item = header.get(key.upper())
+        return item.get("unit") if item else None
+
+    @classmethod
+    def _first_header_value(cls, header: dict[str, dict[str, Optional[str]]], keys: tuple[str, ...]) -> Optional[str]:
+        for key in keys:
+            value = cls._header_value(header, key)
+            if value:
+                return value
+        return None
+
+    @classmethod
+    def _float_header(cls, header: dict[str, dict[str, Optional[str]]], key: str) -> Optional[float]:
+        value = cls._header_value(header, key)
+        try:
+            return float(value) if value is not None else None
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _ascii_rows(lines: List[str], column_count: int, *, wrap: bool) -> list[list[float]]:
+        rows: list[list[float]] = []
+        pending: list[float] = []
+        for raw in lines:
+            stripped = raw.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            values: list[float] = []
+            for token in stripped.replace(",", " ").split():
+                try:
+                    values.append(float(token))
+                except ValueError as exc:
+                    raise LasImportError(f"Non-numeric LAS ASCII token: {token}") from exc
+            if wrap:
+                pending.extend(values)
+                while len(pending) >= column_count:
+                    rows.append(pending[:column_count])
+                    pending = pending[column_count:]
+            elif values:
+                rows.append(values)
+        if pending:
+            raise LasImportError("Wrapped LAS ASCII data ends with an incomplete sample row")
+        return rows
+
+    @classmethod
+    def _depth_index(cls, curves: list[tuple[str, Optional[str], Optional[str], Optional[str]]]) -> int:
+        for index, item in enumerate(curves):
+            if item[0].strip().upper() in cls._DEPTH_MNEMONICS:
+                return index
+        return 0
+
+    @staticmethod
+    def _clean_sample(value: float, null_value: Optional[float]) -> Optional[float]:
+        if not math.isfinite(value):
+            return None
+        if null_value is not None and math.isclose(value, null_value, rel_tol=0.0, abs_tol=1e-12):
+            return None
+        return value
+
+    @classmethod
+    def _clean_identity(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        cleaned = re.sub(r"\s+", " ", value.strip())
+        if not cleaned or cleaned.upper() in cls._GENERIC_IDENTITIES:
+            return None
+        return cleaned
+
+    @staticmethod
+    def _normalize_depth_unit(unit: str) -> str:
+        normalized = unit.strip().lower()
+        if normalized in {"m", "meter", "meters", "metre", "metres"}:
+            return "m"
+        if normalized in {"f", "ft", "feet", "foot"}:
+            return "ft"
+        return normalized or "ft"
+

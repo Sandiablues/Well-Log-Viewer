@@ -8,6 +8,7 @@ create a viewer representation/conversion.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Iterable
 
 from app.classification.well_log_classifier import classify_well_log_curve
@@ -40,6 +41,7 @@ from app.inventory.well_identity import (
 )
 
 from .identity_gate import clean_identity_value
+from .las_asset_store import LasAssetStore, LasAssetStoreError, StoredLasAsset
 from .readiness import evaluate_registration_readiness
 from .models import (
     SourceFileCandidate,
@@ -279,6 +281,20 @@ def register_candidate_to_inventory(
     field = canonical_metadata["field"]
     block = canonical_metadata["block"]
     provenance = _source_intake_provenance(candidate)
+    try:
+        las_asset = LasAssetStore().preserve_path(
+            Path(candidate.original_path),
+            source_id=candidate.source_file_id,
+            filename=candidate.file_name,
+        )
+    except LasAssetStoreError as exc:
+        raise ValueError(f"Original LAS asset preservation failed: {exc}") from exc
+    if candidate.checksum and candidate.checksum != las_asset.source_fingerprint:
+        raise ValueError(
+            "Source Intake checksum does not match the preserved LAS content fingerprint."
+        )
+    asset_payload = las_asset.as_dict()
+    provenance = {**provenance, "las_asset": asset_payload}
     source_reference = ManagedSourceReference(
         source_id=candidate.source_file_id,
         source_kind=ManagedSourceKind.LAS,
@@ -286,8 +302,15 @@ def register_candidate_to_inventory(
         original_path=candidate.original_path,
         file_name=candidate.file_name,
         file_format=candidate.detected_file_type.value,
-        checksum=candidate.checksum,
-        metadata={**provenance, "parsed_metadata": parsed.model_dump(mode="json")},
+        checksum=las_asset.source_fingerprint,
+        metadata={
+            **provenance,
+            "parsed_metadata": parsed.model_dump(mode="json"),
+            "storage_uri": las_asset.original_uri,
+            "las_manifest_uri": las_asset.manifest_uri,
+            "las_samples_uri": las_asset.samples_uri,
+            "las_asset_id": las_asset.asset_id,
+        },
     )
 
     review_required = bool(candidate.review_required or candidate.qaqc_status.review_required)
@@ -304,7 +327,7 @@ def register_candidate_to_inventory(
     if existing is not None:
         created_at = existing.created_at
 
-    next_product_groups = _product_groups_from_candidate(candidate)
+    next_product_groups = _product_groups_from_candidate(candidate, las_asset=las_asset)
     merged_product_groups = _merge_product_groups(existing.product_groups if existing else [], next_product_groups)
 
     record = ManagedWellRecord(
@@ -353,6 +376,10 @@ def register_candidate_to_inventory(
             "wmdp_available": True,
             "source_intake_provenance": provenance,
             "source_intake_candidate_id": candidate.source_file_id,
+            "las_assets": _merge_las_assets(
+                (existing.metadata.get("las_assets", []) if existing else []),
+                asset_payload,
+            ),
             "approval": {
                 "approved_by": approved_by,
                 "approval_note": approval_note,
@@ -372,7 +399,11 @@ def register_candidate_to_inventory(
     return inventory_service.upsert_managed_record(record)
 
 
-def _product_groups_from_candidate(candidate: SourceFileCandidate) -> list[ManagedProductGroup]:
+def _product_groups_from_candidate(
+    candidate: SourceFileCandidate,
+    *,
+    las_asset: StoredLasAsset | None = None,
+) -> list[ManagedProductGroup]:
     parsed = candidate.parsed_metadata
     log_header = parsed.log_header if parsed else None
     curve_headers = parsed.curve_headers if parsed else []
@@ -389,6 +420,8 @@ def _product_groups_from_candidate(candidate: SourceFileCandidate) -> list[Manag
         log_header.service_company if log_header else None,
     ]
     provenance = _source_intake_provenance(candidate)
+    if las_asset is not None:
+        provenance = {**provenance, "las_asset": las_asset.as_dict()}
     runtime_classifications = _runtime_classifications_for_curves(
         curve_headers=curve_headers,
         context_terms=context_terms,
@@ -430,7 +463,12 @@ def _product_groups_from_candidate(candidate: SourceFileCandidate) -> list[Manag
                 wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,
                 wdv_state=ManagedWdvState.NOT_LOADED,
                 source_intake_candidate_id=candidate.source_file_id,
-                provenance=provenance,
+                provenance={
+                    **provenance,
+                    "source_curve_index": index - 1,
+                    "source_curve_position": index,
+                    "las_samples_uri": las_asset.samples_uri if las_asset else None,
+                },
             )
         )
 
@@ -597,6 +635,14 @@ def _is_replaced_source_intake_item(
     if incoming_product_prefixes and item.product_id.startswith(incoming_product_prefixes):
         return True
     return False
+
+def _merge_las_assets(existing: object, asset: dict[str, object]) -> list[dict[str, object]]:
+    values = [item for item in existing if isinstance(item, dict)] if isinstance(existing, list) else []
+    keyed = {str(item.get("asset_id") or item.get("source_fingerprint")): item for item in values}
+    key = str(asset.get("asset_id") or asset.get("source_fingerprint"))
+    keyed[key] = asset
+    return list(keyed.values())
+
 
 def _registration_note(candidate: SourceFileCandidate, *, uwi: str | None, approved_by: str | None, approval_note: str | None) -> str:
     parts = [f"Registered from WLV Source Intake candidate {candidate.source_file_id}."]

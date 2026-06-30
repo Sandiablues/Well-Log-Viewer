@@ -22,6 +22,7 @@ from .wdv_session.router import router as wdv_session_router
 from .inventory.canonical_curve_sample_router import router as canonical_curve_sample_router
 from .wdv_session.canonical_router import router as canonical_wdv_session_router
 from .wdv_session.canonical_command_router import router as canonical_wdv_command_router
+from .wdv_session.las_reconstruction_router import router as las_reconstruction_router
 from .wells.canonical_viewer_package_router import router as canonical_viewer_package_router
 from .wdv_workspace.router import router as canonical_wdv_workspace_router
 from .wdv_templates.canonical_apply_router import router as canonical_template_command_router
@@ -66,6 +67,7 @@ app.include_router(source_intake_router)
 app.include_router(wdv_session_router)
 app.include_router(canonical_wdv_session_router)
 app.include_router(canonical_wdv_command_router)
+app.include_router(las_reconstruction_router)
 app.include_router(canonical_curve_sample_router)
 app.include_router(canonical_viewer_package_router)
 app.include_router(canonical_wdv_workspace_router)

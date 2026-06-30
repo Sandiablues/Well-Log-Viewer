@@ -466,6 +466,7 @@ export const TRACK_BODY_MIN_HEIGHT_PX = 650;
 export const TRACK_BODY_MAX_HEIGHT_PX = 900;
 export const TRACK_FOOTER_CLEARANCE_PX = 48;
 export const TRACK_HEADER_TITLE_HEIGHT_PX = 24;
+export const TRACK_HEADER_WELL_OWNER_HEIGHT_PX = 24;
 export const TRACK_HEADER_SUBTITLE_HEIGHT_PX = 28;
 export const TRACK_CURVE_HEADER_ROW_HEIGHT_PX = 24;
 export const TRACK_HEADER_BOTTOM_PADDING_PX = 8;
@@ -502,8 +503,14 @@ export function clampCurveTrackWidth(width: number): number {
     return Math.round(clampValue(width, CURVE_TRACK_MIN_WIDTH, CURVE_TRACK_MAX_WIDTH));
 }
 export function sharedTrackHeaderHeightPx(tracks: WellLogTrack[]): number {
-    const maxCurveRows = tracks.reduce((maxRows, track) => (track.trackType === 'curve' ? Math.max(maxRows, orderedCurves(track).length) : maxRows), 0);
+    const curveTracks = tracks.filter((track): track is CurveTrack => track.trackType === 'curve');
+    const maxCurveRows = curveTracks.reduce(
+        (maxRows, track) => Math.max(maxRows, orderedCurves(track).length),
+        0,
+    );
+    const hasManagedWellOwnerRow = curveTracks.some((track) => Boolean(track.managedWellUid));
     const requiredCurveHeaderHeight = TRACK_HEADER_TITLE_HEIGHT_PX +
+        (hasManagedWellOwnerRow ? TRACK_HEADER_WELL_OWNER_HEIGHT_PX : 0) +
         TRACK_HEADER_SUBTITLE_HEIGHT_PX +
         maxCurveRows * TRACK_CURVE_HEADER_ROW_HEIGHT_PX +
         TRACK_HEADER_BOTTOM_PADDING_PX;
@@ -821,7 +828,23 @@ export type CurveInventoryWellContext = {
     managedWellId: string;
     wellName: string;
 };
-export function CurveInventory({ availableCurves, curveUsageCounts, visibleTrackCurveIds, selectedTrackCurveIds, selectedCurveIds, assignmentEnabled, preferredInventoryTab, loadedWells, activeWell, curveRunMetadata, onActiveWellChange, onSelectCurve, onToggleCurveInSelectedTrack, }: {
+
+type InventorySectionExpansionState = {
+    well: boolean;
+    las: boolean;
+    curve: boolean;
+    logImage: boolean;
+};
+
+// Runtime-only state: survives WDV component remounts and canvas/session changes,
+// but resets when the frontend application is restarted or reloaded.
+const inventorySectionExpansionState: InventorySectionExpansionState = {
+    well: false,
+    las: false,
+    curve: false,
+    logImage: false,
+};
+export function CurveInventory({ availableCurves, curveUsageCounts, visibleTrackCurveIds, selectedTrackCurveIds, selectedCurveIds, assignmentEnabled, preferredInventoryTab, loadedWells, activeWell, curveRunMetadata, lasSources, selectedLasSourceId, lasPending, lasIncludeReviewRequired, lasMessage, onLasSourceChange, onLasIncludeReviewRequiredChange, onAddCompleteLas, logImageSources, selectedLogImageSourceId, onLogImageSourceChange, onActiveWellChange, onSelectCurve, onToggleCurveInSelectedTrack, }: {
     availableCurves: CurveCatalogItem[];
     curveUsageCounts: Map<string, number>;
     visibleTrackCurveIds: Set<string>;
@@ -835,15 +858,42 @@ export function CurveInventory({ availableCurves, curveUsageCounts, visibleTrack
         runInterval?: string | null;
         runNumber?: string | null;
     }>;
+    lasSources: Array<{ sourceId: string; label: string; curveCount: number; assetAvailable?: boolean }>;
+    selectedLasSourceId: string;
+    lasPending: boolean;
+    lasIncludeReviewRequired: boolean;
+    lasMessage: string | null;
+    onLasSourceChange: (sourceId: string) => void;
+    onLasIncludeReviewRequiredChange: (checked: boolean) => void;
+    onAddCompleteLas: () => void;
+    logImageSources: Array<{ sourceId: string; label: string; fileFormat?: string | null }>;
+    selectedLogImageSourceId: string;
+    onLogImageSourceChange: (sourceId: string) => void;
     onActiveWellChange: (managedWellId: string) => void;
     onSelectCurve: (curveId: string) => void;
     onToggleCurveInSelectedTrack: (curveId: string, checked: boolean) => void;
 }) {
     const [activeInventoryTab, setActiveInventoryTab] = useState<CurveInventoryTab>(preferredInventoryTab);
     const [expandedDuplicateGroups, setExpandedDuplicateGroups] = useState<Set<string>>(() => new Set());
+    const [wellSectionExpanded, setWellSectionExpanded] = useState(() => inventorySectionExpansionState.well);
+    const [lasSectionExpanded, setLasSectionExpanded] = useState(() => inventorySectionExpansionState.las);
+    const [curveSectionExpanded, setCurveSectionExpanded] = useState(() => inventorySectionExpansionState.curve);
+    const [logImageSectionExpanded, setLogImageSectionExpanded] = useState(() => inventorySectionExpansionState.logImage);
     useEffect(() => {
         setActiveInventoryTab(preferredInventoryTab);
     }, [preferredInventoryTab]);
+    useEffect(() => {
+        inventorySectionExpansionState.well = wellSectionExpanded;
+    }, [wellSectionExpanded]);
+    useEffect(() => {
+        inventorySectionExpansionState.las = lasSectionExpanded;
+    }, [lasSectionExpanded]);
+    useEffect(() => {
+        inventorySectionExpansionState.curve = curveSectionExpanded;
+    }, [curveSectionExpanded]);
+    useEffect(() => {
+        inventorySectionExpansionState.logImage = logImageSectionExpanded;
+    }, [logImageSectionExpanded]);
     const displayedCurves = useMemo(() => {
         if (activeInventoryTab === 'aliases')
             return [];
@@ -949,40 +999,85 @@ export function CurveInventory({ availableCurves, curveUsageCounts, visibleTrack
           </div>)}
       </div>);
     };
+    const sectionHeader = (label: string, expanded: boolean, onToggle: () => void, count?: number) => (
+      <button type="button" className="wlv-inventory-section-toggle" aria-expanded={expanded} onClick={onToggle}>
+        <span>{label}</span>
+        <span className="wlv-inventory-section-toggle-meta">{count === undefined ? '' : count}<b>{expanded ? '▾' : '▸'}</b></span>
+      </button>
+    );
     return (<aside className="wlv-curve-inventory">
       <div className="wlv-panel-heading">
-        <h2>Curve Inventory</h2>
-        <span>{inventoryCount}</span>
+        <h2>Well Data Inventory</h2>
       </div>
-      <div className="wlv-search-row">
-        <input aria-label="Search curves" placeholder="Search curves..."/>
-        <button type="button" title="Filter curves">Filter</button>
-      </div>
-      <div className="wlv-inventory-tabs">
-        <button type="button" className={activeInventoryTab === 'all' ? 'active' : ''} onClick={() => setActiveInventoryTab('all')}>Loaded</button>
-        <button type="button" className={activeInventoryTab === 'selected' ? 'active' : ''} onClick={() => setActiveInventoryTab('selected')}>Selected <span className="wlv-tab-count">{selectedCurveCount}</span></button>
-        <button type="button" className={activeInventoryTab === 'aliases' ? 'active' : ''} onClick={() => setActiveInventoryTab('aliases')}>Aliases</button>
-      </div>
-      {activeInventoryTab === 'all' && (<div className="wlv-loaded-well-selector">
-          <label htmlFor="wlv-loaded-well-select">Well</label>
-          <select id="wlv-loaded-well-select" value={activeWell?.managedWellId ?? ''} disabled={loadedWells.length === 0} onChange={(event) => onActiveWellChange(event.target.value)}>
-            {loadedWells.length === 0 ? (<option value="">No wells loaded</option>) : loadedWells.map((well) => (<option key={well.managed_well_id} value={well.managed_well_id}>
-                {well.well_name} · {well.displayable_curve_count}
-              </option>))}
-          </select>
+      {activeInventoryTab === 'all' && (<div className="wlv-inventory-control-stack">
+        <section className="wlv-inventory-control-section">
+          {sectionHeader('Well Selection', wellSectionExpanded, () => setWellSectionExpanded((value) => !value))}
+          {wellSectionExpanded && (<div className="wlv-inventory-section-body">
+            <select id="wlv-loaded-well-select" aria-label="Well selection" value={activeWell?.managedWellId ?? ''} disabled={loadedWells.length === 0} onChange={(event) => onActiveWellChange(event.target.value)}>
+              {loadedWells.length === 0 ? (<option value="">No wells loaded</option>) : loadedWells.map((well) => (<option key={well.managed_well_id} value={well.managed_well_id}>
+                  {well.well_name} · {well.displayable_curve_count}
+                </option>))}
+            </select>
+          </div>)}
+        </section>
+        <section className="wlv-inventory-control-section">
+          {sectionHeader('LAS Inventory', lasSectionExpanded, () => setLasSectionExpanded((value) => !value), lasSources.length)}
+          {lasSectionExpanded && (<div className="wlv-inventory-section-body">
+            <div className="wlv-las-inventory-row">
+              <select aria-label="LAS file selection" value={selectedLasSourceId} disabled={lasSources.length === 0 || lasPending} onChange={(event) => onLasSourceChange(event.target.value)}>
+                {lasSources.length === 0 ? <option value="">No managed LAS files</option> : lasSources.map((source) => (
+                  <option key={source.sourceId} value={source.sourceId}>{source.label} · {source.curveCount + 1} channels</option>
+                ))}
+              </select>
+              <button type="button" className="wlv-las-add-compact" disabled={lasPending || !selectedLasSourceId} onClick={onAddCompleteLas} title="Add selected LAS to the shared canvas" aria-label="Add selected LAS to canvas">
+                {lasPending ? '…' : '+ LAS'}
+              </button>
+            </div>
+            <label className="wlv-inventory-inline-toggle">
+              <input type="checkbox" checked={lasIncludeReviewRequired} disabled={lasPending || lasSources.length === 0} onChange={(event) => onLasIncludeReviewRequiredChange(event.target.checked)}/>
+              Include review-required curves
+            </label>
+            {lasMessage ? <div className="wlv-inventory-status">{lasMessage}</div> : null}
+          </div>)}
+        </section>
+      </div>)}
+      <section className="wlv-inventory-control-section wlv-curve-inventory-section">
+        {sectionHeader('Curve Inventory', curveSectionExpanded, () => setCurveSectionExpanded((value) => !value), inventoryCount)}
+        {curveSectionExpanded && (<div className="wlv-inventory-section-body wlv-curve-inventory-body">
+          <div className="wlv-search-row">
+            <input aria-label="Search curves" placeholder="Search curves..."/>
+            <button type="button" title="Filter curves">Filter</button>
+          </div>
+          <div className="wlv-inventory-tabs">
+            <button type="button" className={activeInventoryTab === 'all' ? 'active' : ''} onClick={() => setActiveInventoryTab('all')}>Loaded</button>
+            <button type="button" className={activeInventoryTab === 'selected' ? 'active' : ''} onClick={() => setActiveInventoryTab('selected')}>Selected <span className="wlv-tab-count">{selectedCurveCount}</span></button>
+            <button type="button" className={activeInventoryTab === 'aliases' ? 'active' : ''} onClick={() => setActiveInventoryTab('aliases')}>Aliases</button>
+          </div>
+          {activeInventoryTab === 'selected' && selectedCurveCount === 0 && (<div className="wlv-curve-assignment-hint">No curves are currently assigned to visible tracks.</div>)}
+          {activeInventoryTab === 'aliases' && (<div className="wlv-curve-assignment-hint">Alias grouping is not available in this prototype fixture yet.</div>)}
+          <div className="wlv-inventory-list">
+            {groups.map((group) => {
+                const mnemonicGroups = curvesByGroupAndMnemonic.get(group) ?? new Map<string, CurveCatalogItem[]>();
+                return (<section key={group} className="wlv-curve-group">
+                  <div className="wlv-curve-group-title">{group}</div>
+                  {Array.from(mnemonicGroups.entries()).map(([mnemonic, curves]) => renderLoadedMnemonicGroup(group, mnemonic, curves))}
+                </section>);
+            })}
+          </div>
         </div>)}
-      {activeInventoryTab === 'selected' && selectedCurveCount === 0 && (<div className="wlv-curve-assignment-hint">No curves are currently assigned to visible tracks.</div>)}
-      {activeInventoryTab === 'aliases' && (<div className="wlv-curve-assignment-hint">Alias grouping is not available in this prototype fixture yet.</div>)}
-      <div className="wlv-inventory-list">
-        {groups.map((group) => {
-            const mnemonicGroups = curvesByGroupAndMnemonic.get(group) ?? new Map<string, CurveCatalogItem[]>();
-            return (<section key={group} className="wlv-curve-group">
-              <div className="wlv-curve-group-title">{group}</div>
-              {Array.from(mnemonicGroups.entries()).map(([mnemonic, curves]) => renderLoadedMnemonicGroup(group, mnemonic, curves))}
-            </section>);
-        })}
-      </div>
-      <div className="wlv-drop-help">Drag curves into curve tracks. Drag curve headers between tracks to move assignments.</div>
+      </section>
+      {activeInventoryTab === 'all' && (<section className="wlv-inventory-control-section wlv-log-image-inventory">
+        {sectionHeader('Log Image Inventory', logImageSectionExpanded, () => setLogImageSectionExpanded((value) => !value), logImageSources.length)}
+        {logImageSectionExpanded && (<div className="wlv-inventory-section-body">
+          <select aria-label="Log image selection" value={selectedLogImageSourceId} disabled={logImageSources.length === 0} onChange={(event) => onLogImageSourceChange(event.target.value)}>
+            {logImageSources.length === 0 ? <option value="">No managed log images</option> : logImageSources.map((source) => (
+              <option key={source.sourceId} value={source.sourceId}>{source.label}{source.fileFormat ? ` · ${source.fileFormat}` : ''}</option>
+            ))}
+          </select>
+          <button type="button" disabled title="Original log-image track rendering is not implemented yet">Add Original Image Track</button>
+        </div>)}
+      </section>)}
+      <div className="wlv-drop-help">LAS files, individual curves, and log images share the same WDV canvas.</div>
     </aside>);
 }
 export function WdvTemplateRecommendationModal({ recommendation, loadedCurveItems, managedWellId, managedWellUid, getCanonicalRevision, onClose, onApplied, }: {
@@ -1177,7 +1272,7 @@ export const defaultAddTrackDraft: AddTrackDraft = {
     scaleMode: 'per_curve',
 };
 export type TrackBackdropMode = 'light' | 'dark';
-export function Toolbar({ selectedTrack, pendingAddTrackCurveCount, viewDepthRange, fullDepthRange, viewDepthReadoutEnabled, intervalZoomActive, goToDepthValue, onGoToDepthValueChange, trackBackdropMode, onTrackBackdropModeChange, onAddTrack, onDeleteTrack, onMoveSelectedTrack, canMoveSelectedTrackLeft, canMoveSelectedTrackRight, canAdjustSelectedCurveTrackWidthDown, canAdjustSelectedCurveTrackWidthUp, onAdjustSelectedCurveTrackWidth, onResetCurveTrackWidths, onZoomIn, onZoomOut, onPreviousView, onFitDepth, onSpecifyDepthRange, onResetView, onToggleIntervalZoom, onGoToDepth, onAddTrackCurveSelectionModeChange, layoutRecommendations, layoutRecommendationsLoading, layoutRecommendationsError, selectedLayoutRecommendationKey, onLayoutRecommendationChange, onRefreshLayoutRecommendations, }: {
+export function Toolbar({ selectedTrack, pendingAddTrackCurveCount, viewDepthRange, fullDepthRange, viewDepthReadoutEnabled, intervalZoomActive, goToDepthValue, onGoToDepthValueChange, trackBackdropMode, onTrackBackdropModeChange, onAddTrack, onDeleteTrack, onClearCanvas, onMoveSelectedTrack, canMoveSelectedTrackLeft, canMoveSelectedTrackRight, canAdjustSelectedCurveTrackWidthDown, canAdjustSelectedCurveTrackWidthUp, onAdjustSelectedCurveTrackWidth, onResetCurveTrackWidths, onZoomIn, onZoomOut, onPreviousView, onFitDepth, onSpecifyDepthRange, onResetView, onToggleIntervalZoom, onGoToDepth, onAddTrackCurveSelectionModeChange, layoutRecommendations, layoutRecommendationsLoading, layoutRecommendationsError, selectedLayoutRecommendationKey, onLayoutRecommendationChange, onRefreshLayoutRecommendations, }: {
     selectedTrack: WellLogTrack | null;
     pendingAddTrackCurveCount: number;
     viewDepthRange: DepthViewRange;
@@ -1190,6 +1285,7 @@ export function Toolbar({ selectedTrack, pendingAddTrackCurveCount, viewDepthRan
     onTrackBackdropModeChange: (mode: TrackBackdropMode) => void;
     onAddTrack: (draft: AddTrackDraft) => void;
     onDeleteTrack: () => void;
+    onClearCanvas: () => void;
     onMoveSelectedTrack: (direction: -1 | 1) => void;
     canMoveSelectedTrackLeft: boolean;
     canMoveSelectedTrackRight: boolean;
@@ -1485,6 +1581,7 @@ export function Toolbar({ selectedTrack, pendingAddTrackCurveCount, viewDepthRan
           </div>
           {addTrackBuilder}
           <button type="button" disabled={!selectedTrack} onClick={onDeleteTrack}>Delete</button>
+          <button type="button" onClick={onClearCanvas}>Clear Canvas</button>
         </div>
       </div>
 

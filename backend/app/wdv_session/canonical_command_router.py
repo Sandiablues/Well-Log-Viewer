@@ -16,6 +16,7 @@ from app.wdv_session.canonical_commands import (
     BootstrapCurveAssignmentCommand,
     CreateConfiguredTrackCommand,
     CreateTrackCommand,
+    ClearCanvasCommand,
     RemoveCurveAssignmentCommand,
     RemoveTrackCommand,
     MoveCurveAssignmentCommand,
@@ -96,6 +97,18 @@ def reset_curve_track_widths(
         lambda: service.reset_curve_track_widths(managed_well_uid, command)
     )
 
+
+
+@router.post(
+    "/{managed_well_uid}/tracks/clear",
+    response_model=WdvCanonicalSession,
+)
+def clear_canvas(
+    managed_well_uid: str,
+    command: ClearCanvasCommand,
+    service: CanonicalWdvCommandService = Depends(get_service),
+) -> WdvCanonicalSession:
+    return _translate(lambda: service.clear_canvas(managed_well_uid, command))
 
 
 @router.post("/{managed_well_uid}/tracks/remove", response_model=WdvCanonicalSession)
