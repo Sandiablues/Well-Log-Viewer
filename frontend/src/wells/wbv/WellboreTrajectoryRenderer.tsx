@@ -15,6 +15,9 @@ export type WbvTrajectoryRenderPoint = {
   dogleg_severity?: number | null;
   east_departure?: number | null;
   north_departure?: number | null;
+  inclination_source?: string | null;
+  azimuth_source?: string | null;
+  dogleg_severity_source?: string | null;
 };
 
 type WbvAxisRange = {
@@ -34,6 +37,46 @@ type RendererStatus = 'idle' | 'empty' | 'rendered' | 'error';
 
 export type WbvViewPreset = 'reset' | 'fit' | 'top' | 'side';
 
+export type WbvCurveOverlayRenderSample = { md: number; value: number; normalized: number };
+
+export type WbvCurveTrack = {
+  track_id: string;
+  display_name: string;
+  track_type: 'curve' | 'reference' | 'image' | 'interval';
+  display_order: number;
+  side: 'left' | 'right' | 'center';
+  width: number;
+  background_mode: 'transparent' | 'black' | 'white' | 'custom';
+  background_color: string;
+  background_opacity: number;
+  border_visible: boolean;
+  border_color: string;
+  wellbore_offset: number;
+  previous_track_gap?: number;
+};
+
+export type WbvCurveOverlayRenderCurve = {
+  curve_product_id: string;
+  display_name: string;
+  mnemonic: string;
+  unit?: string | null;
+  display_order: number;
+  radial_lane: number;
+  track_id?: string | null;
+  radial_width: number;
+  color: string;
+  line_width: number;
+  opacity: number;
+  fill_mode: 'none' | 'to_baseline' | 'between_curves';
+  fill_target_curve_product_id?: string | null;
+  fill_side: 'positive' | 'negative';
+  fill_color: string;
+  fill_opacity: number;
+  fill_outline: boolean;
+  baseline_normalized: number;
+  samples: WbvCurveOverlayRenderSample[];
+};
+
 type WbvTrajectoryRendererProps = {
   renderPoints: WbvTrajectoryRenderPoint[];
   boundingBox?: WbvBoundingBox;
@@ -41,6 +84,25 @@ type WbvTrajectoryRendererProps = {
   viewerState: string;
   viewPreset?: WbvViewPreset;
   viewCommandId?: number;
+  onPointSelect?: (point: WbvTrajectoryRenderPoint) => void | Promise<void>;
+  selectedPoint?: WbvTrajectoryRenderPoint | null;
+  selectionMode?: "none" | "point" | "interval";
+  intervalDraftStart?: WbvTrajectoryRenderPoint | null;
+  savedInterval?: { start: WbvTrajectoryRenderPoint; end: WbvTrajectoryRenderPoint; top_md: number; base_md: number } | null;
+  trackValuesAlongWellbore?: boolean;
+  showTrajectory?: boolean;
+  showBoundingBox?: boolean;
+  showDepthLabels?: boolean;
+  showSurveyStations?: boolean;
+  showGroundPlane?: boolean;
+  showBottomGrid?: boolean;
+  showTopGrid?: boolean;
+  showAxes?: boolean;
+  useSurfaceLighting?: boolean;
+  curveOverlays?: WbvCurveOverlayRenderCurve[];
+  curveTracks?: WbvCurveTrack[];
+  curveTrackSpacing?: number;
+  showCurveOverlays?: boolean;
 };
 
 type ScenePoint = {
@@ -64,6 +126,15 @@ type CameraPlan = {
   position: THREE.Vector3;
   up: THREE.Vector3;
   target: THREE.Vector3;
+  viewHeight: number;
+};
+
+type CameraViewSnapshot = {
+  position: THREE.Vector3;
+  up: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  target: THREE.Vector3;
+  zoom: number;
   viewHeight: number;
 };
 
@@ -165,53 +236,23 @@ function sceneBoxFor(points: THREE.Vector3[]): SceneBox {
   };
 }
 
-function createBoxEdges(box: SceneBox, material: THREE.LineBasicMaterial): THREE.LineSegments {
-  const corners = {
-    bottomFrontLeft: new THREE.Vector3(box.minX, box.minY, box.maxZ),
-    bottomFrontRight: new THREE.Vector3(box.maxX, box.minY, box.maxZ),
-    bottomBackRight: new THREE.Vector3(box.maxX, box.minY, box.minZ),
-    bottomBackLeft: new THREE.Vector3(box.minX, box.minY, box.minZ),
-    topFrontLeft: new THREE.Vector3(box.minX, box.maxY, box.maxZ),
-    topFrontRight: new THREE.Vector3(box.maxX, box.maxY, box.maxZ),
-    topBackRight: new THREE.Vector3(box.maxX, box.maxY, box.minZ),
-    topBackLeft: new THREE.Vector3(box.minX, box.maxY, box.minZ),
-  };
-
-  const edgePoints = [
-    corners.bottomFrontLeft, corners.bottomFrontRight,
-    corners.bottomFrontRight, corners.bottomBackRight,
-    corners.bottomBackRight, corners.bottomBackLeft,
-    corners.bottomBackLeft, corners.bottomFrontLeft,
-    corners.topFrontLeft, corners.topFrontRight,
-    corners.topFrontRight, corners.topBackRight,
-    corners.topBackRight, corners.topBackLeft,
-    corners.topBackLeft, corners.topFrontLeft,
-    corners.bottomFrontLeft, corners.topFrontLeft,
-    corners.bottomFrontRight, corners.topFrontRight,
-    corners.bottomBackRight, corners.topBackRight,
-    corners.bottomBackLeft, corners.topBackLeft,
-  ];
-
-  return new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(edgePoints), material);
-}
-
-function createDepthPlane(box: SceneBox, y: number, material: THREE.LineBasicMaterial): THREE.LineSegments {
-  const points = [
-    new THREE.Vector3(box.minX, y, box.maxZ), new THREE.Vector3(box.maxX, y, box.maxZ),
-    new THREE.Vector3(box.maxX, y, box.maxZ), new THREE.Vector3(box.maxX, y, box.minZ),
-    new THREE.Vector3(box.maxX, y, box.minZ), new THREE.Vector3(box.minX, y, box.minZ),
-    new THREE.Vector3(box.minX, y, box.minZ), new THREE.Vector3(box.minX, y, box.maxZ),
-  ];
-  return new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points), material);
-}
-
-function createCrossTick(y: number, material: THREE.LineBasicMaterial): THREE.LineSegments {
-  const size = 0.17;
-  const points = [
-    new THREE.Vector3(-size, y, 0), new THREE.Vector3(size, y, 0),
-    new THREE.Vector3(0, y, -size), new THREE.Vector3(0, y, size),
-  ];
-  return new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(points), material);
+function createTrajectoryBoundingBox(box: SceneBox): THREE.LineSegments {
+  const width = Math.max(0.001, box.maxX - box.minX);
+  const height = Math.max(0.001, box.maxY - box.minY);
+  const depth = Math.max(0.001, box.maxZ - box.minZ);
+  const geometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(width, height, depth));
+  const material = new THREE.LineBasicMaterial({
+    color: 0x45606f,
+    transparent: true,
+    opacity: 0.46,
+  });
+  const boundingBox = new THREE.LineSegments(geometry, material);
+  boundingBox.position.set(
+    (box.minX + box.maxX) / 2,
+    (box.minY + box.maxY) / 2,
+    (box.minZ + box.maxZ) / 2,
+  );
+  return boundingBox;
 }
 
 function createTextSprite(text: string, options?: { color?: string; background?: string; scale?: number }): THREE.Sprite {
@@ -275,7 +316,13 @@ function formatDepth(value: number | null | undefined, unit: string): string {
   return `${Math.round(value).toLocaleString()} ${unit}`;
 }
 
-function representativeTicks(points: WbvTrajectoryRenderPoint[]): Array<{ label: string; ratio: number }> {
+type RepresentativeDepthTick = {
+  label: string;
+  md: number | null;
+  pointIndex: number;
+};
+
+function representativeTicks(points: WbvTrajectoryRenderPoint[], depthUnit: string): RepresentativeDepthTick[] {
   if (points.length === 0) return [];
 
   const indices = Array.from(new Set([
@@ -286,11 +333,509 @@ function representativeTicks(points: WbvTrajectoryRenderPoint[]): Array<{ label:
     points.length - 1,
   ])).filter((index) => index >= 0 && index < points.length);
 
-  const denominator = Math.max(1, points.length - 1);
-  return indices.map((index) => ({
-    label: formatDepth(points[index].md ?? points[index].tvd, 'ft'),
-    ratio: index / denominator,
+  return indices.map((index) => {
+    const md = firstFinite(points[index].md, points[index].tvd);
+    return {
+      label: formatDepth(md, depthUnit),
+      md,
+      pointIndex: index,
+    };
+  });
+}
+
+function sceneYForMeasuredDepth(
+  points: WbvTrajectoryRenderPoint[],
+  scenePositions: THREE.Vector3[],
+  targetMd: number | null,
+  fallbackPointIndex: number,
+): number {
+  const fallback = scenePositions[Math.max(0, Math.min(scenePositions.length - 1, fallbackPointIndex))]?.y ?? 0;
+  if (targetMd === null || !Number.isFinite(targetMd) || points.length !== scenePositions.length) return fallback;
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const firstMd = points[index].md;
+    const secondMd = points[index + 1].md;
+    if (
+      typeof firstMd !== 'number' || !Number.isFinite(firstMd)
+      || typeof secondMd !== 'number' || !Number.isFinite(secondMd)
+    ) {
+      continue;
+    }
+
+    const minMd = Math.min(firstMd, secondMd);
+    const maxMd = Math.max(firstMd, secondMd);
+    if (targetMd < minMd || targetMd > maxMd) continue;
+
+    const denominator = secondMd - firstMd;
+    const ratio = denominator === 0 ? 0 : Math.max(0, Math.min(1, (targetMd - firstMd) / denominator));
+    return scenePositions[index].y + (scenePositions[index + 1].y - scenePositions[index].y) * ratio;
+  }
+
+  let nearestIndex = fallbackPointIndex;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  points.forEach((point, index) => {
+    const md = point.md;
+    if (typeof md !== 'number' || !Number.isFinite(md)) return;
+    const distance = Math.abs(md - targetMd);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  });
+
+  return scenePositions[Math.max(0, Math.min(scenePositions.length - 1, nearestIndex))]?.y ?? fallback;
+}
+
+function trajectoryTangents(points: THREE.Vector3[]): THREE.Vector3[] {
+  return points.map((_, index) => {
+    const previous = points[Math.max(0, index - 1)];
+    const next = points[Math.min(points.length - 1, index + 1)];
+    return next.clone().sub(previous).normalize();
+  });
+}
+
+type TrajectoryBasis = {
+  position: THREE.Vector3;
+  tangent: THREE.Vector3;
+  framePosition: number;
+};
+
+function interpolateTrajectoryBasisAtMd(
+  renderPoints: WbvTrajectoryRenderPoint[],
+  positions: THREE.Vector3[],
+  tangents: THREE.Vector3[],
+  md: number,
+): TrajectoryBasis | null {
+  for (let index = 0; index < renderPoints.length - 1; index += 1) {
+    const firstMd = renderPoints[index].md;
+    const secondMd = renderPoints[index + 1].md;
+    if (typeof firstMd !== 'number' || typeof secondMd !== 'number' || !Number.isFinite(firstMd) || !Number.isFinite(secondMd)) continue;
+    const minimum = Math.min(firstMd, secondMd);
+    const maximum = Math.max(firstMd, secondMd);
+    if (md < minimum || md > maximum) continue;
+    const ratio = secondMd === firstMd ? 0 : THREE.MathUtils.clamp((md - firstMd) / (secondMd - firstMd), 0, 1);
+    return {
+      position: positions[index].clone().lerp(positions[index + 1], ratio),
+      tangent: tangents[index].clone().lerp(tangents[index + 1], ratio).normalize(),
+      framePosition: index + ratio,
+    };
+  }
+  return null;
+}
+
+type PreparedOverlayPoint = {
+  md: number;
+  normalized: number;
+  basis: TrajectoryBasis;
+  baselineOffset: number;
+  traceOffset: number;
+};
+
+function preparedOverlaySegments(
+  curve: WbvCurveOverlayRenderCurve,
+  renderPoints: WbvTrajectoryRenderPoint[],
+  positions: THREE.Vector3[],
+  tangents: THREE.Vector3[],
+  baselineOffset: number,
+  excursion: number,
+): PreparedOverlayPoint[][] {
+  const byMd = new Map<number, WbvCurveOverlayRenderSample>();
+  curve.samples.forEach((sample) => {
+    if (!Number.isFinite(sample.md) || !Number.isFinite(sample.normalized)) return;
+    byMd.set(sample.md, sample);
+  });
+  const ordered = [...byMd.values()].sort((first, second) => first.md - second.md);
+  if (ordered.length < 2) return [];
+
+  const positiveGaps = ordered
+    .slice(1)
+    .map((sample, index) => sample.md - ordered[index].md)
+    .filter((gap) => Number.isFinite(gap) && gap > 0)
+    .sort((first, second) => first - second);
+  const medianGap = positiveGaps.length > 0
+    ? positiveGaps[Math.floor(positiveGaps.length / 2)]
+    : Number.POSITIVE_INFINITY;
+  const trajectoryMds = renderPoints
+    .map((point) => point.md)
+    .filter((md): md is number => typeof md === 'number' && Number.isFinite(md));
+  const trajectorySpan = trajectoryMds.length > 1 ? Math.max(...trajectoryMds) - Math.min(...trajectoryMds) : 0;
+  const gapThreshold = Number.isFinite(medianGap)
+    ? Math.max(medianGap * 8, trajectorySpan * 0.0025)
+    : Number.POSITIVE_INFINITY;
+
+  const segments: PreparedOverlayPoint[][] = [];
+  let current: PreparedOverlayPoint[] = [];
+  let previousMd: number | null = null;
+
+  ordered.forEach((sample) => {
+    if (previousMd !== null && sample.md - previousMd > gapThreshold && current.length > 0) {
+      if (current.length >= 2) segments.push(current);
+      current = [];
+    }
+    previousMd = sample.md;
+    const basis = interpolateTrajectoryBasisAtMd(renderPoints, positions, tangents, sample.md);
+    if (!basis) {
+      if (current.length >= 2) segments.push(current);
+      current = [];
+      return;
+    }
+    const displacement = (sample.normalized - curve.baseline_normalized) * excursion;
+    current.push({
+      md: sample.md,
+      normalized: sample.normalized,
+      basis,
+      baselineOffset,
+      traceOffset: baselineOffset + displacement,
+    });
+  });
+  if (current.length >= 2) segments.push(current);
+  return segments;
+}
+
+function interpolatePreparedPoint(segment: PreparedOverlayPoint[], md: number): PreparedOverlayPoint | null {
+  for (let index = 0; index < segment.length - 1; index += 1) {
+    const first = segment[index];
+    const second = segment[index + 1];
+    if (md < first.md || md > second.md) continue;
+    const ratio = second.md === first.md ? 0 : THREE.MathUtils.clamp((md - first.md) / (second.md - first.md), 0, 1);
+    return {
+      md,
+      normalized: THREE.MathUtils.lerp(first.normalized, second.normalized, ratio),
+      basis: {
+        position: first.basis.position.clone().lerp(second.basis.position, ratio),
+        tangent: first.basis.tangent.clone().lerp(second.basis.tangent, ratio).normalize(),
+        framePosition: THREE.MathUtils.lerp(first.basis.framePosition, second.basis.framePosition, ratio),
+      },
+      baselineOffset: THREE.MathUtils.lerp(first.baselineOffset, second.baselineOffset, ratio),
+      traceOffset: THREE.MathUtils.lerp(first.traceOffset, second.traceOffset, ratio),
+    };
+  }
+  const exact = segment.find((point) => point.md === md);
+  return exact ? {
+    ...exact,
+    basis: {
+      position: exact.basis.position.clone(),
+      tangent: exact.basis.tangent.clone(),
+      framePosition: exact.basis.framePosition,
+    },
+  } : null;
+}
+
+function pairedOverlaySegments(
+  firstSegments: PreparedOverlayPoint[][],
+  secondSegments: PreparedOverlayPoint[][],
+): Array<Array<{ first: PreparedOverlayPoint; second: PreparedOverlayPoint }>> {
+  const paired: Array<Array<{ first: PreparedOverlayPoint; second: PreparedOverlayPoint }>> = [];
+  firstSegments.forEach((firstSegment) => {
+    secondSegments.forEach((secondSegment) => {
+      const start = Math.max(firstSegment[0].md, secondSegment[0].md);
+      const end = Math.min(firstSegment[firstSegment.length - 1].md, secondSegment[secondSegment.length - 1].md);
+      if (!(end > start)) return;
+      const mds = [...new Set([
+        start,
+        end,
+        ...firstSegment.map((point) => point.md).filter((md) => md > start && md < end),
+        ...secondSegment.map((point) => point.md).filter((md) => md > start && md < end),
+      ])].sort((a, b) => a - b);
+      const current: Array<{ first: PreparedOverlayPoint; second: PreparedOverlayPoint }> = [];
+      mds.forEach((md) => {
+        const first = interpolatePreparedPoint(firstSegment, md);
+        const second = interpolatePreparedPoint(secondSegment, md);
+        if (!first || !second) return;
+        const prior = current[current.length - 1];
+        if (prior) {
+          const priorDelta = prior.first.normalized - prior.second.normalized;
+          const delta = first.normalized - second.normalized;
+          if (priorDelta !== 0 && delta !== 0 && Math.sign(priorDelta) !== Math.sign(delta)) {
+            const ratio = Math.abs(priorDelta) / (Math.abs(priorDelta) + Math.abs(delta));
+            const crossingMd = THREE.MathUtils.lerp(prior.first.md, first.md, ratio);
+            const firstCross = interpolatePreparedPoint(firstSegment, crossingMd);
+            const secondCross = interpolatePreparedPoint(secondSegment, crossingMd);
+            if (firstCross && secondCross) current.push({ first: firstCross, second: secondCross });
+          }
+        }
+        current.push({ first, second });
+      });
+      if (current.length >= 2) paired.push(current);
+    });
+  });
+  return paired;
+}
+
+type ViewRelativeVertex = {
+  position: THREE.Vector3;
+  tangent: THREE.Vector3;
+  framePosition: number;
+  offset: number;
+};
+
+type ViewRelativeGeometryBinding = {
+  attribute: THREE.BufferAttribute;
+  vertices: ViewRelativeVertex[];
+};
+
+type CurveOverlayRuntime = {
+  update(camera: THREE.Camera): void;
+};
+
+function sharedViewAxes(
+  tangents: THREE.Vector3[],
+  cameraRight: THREE.Vector3,
+): THREE.Vector3[] {
+  // Tracks are view-relative presentation overlays. Using one camera-right
+  // vector for the complete trajectory keeps every track an exact translated
+  // copy of the wellbore in screen space and prevents independent twisting or
+  // drift between tracks through deviated sections.
+  const viewRight = cameraRight.clone().normalize();
+  return tangents.map(() => viewRight.clone());
+}
+
+function axisAtFramePosition(axes: THREE.Vector3[], framePosition: number): THREE.Vector3 {
+  if (axes.length === 0) return new THREE.Vector3(1, 0, 0);
+  const clamped = THREE.MathUtils.clamp(framePosition, 0, axes.length - 1);
+  const firstIndex = Math.floor(clamped);
+  const secondIndex = Math.min(axes.length - 1, firstIndex + 1);
+  const ratio = clamped - firstIndex;
+  const first = axes[firstIndex];
+  const second = axes[secondIndex];
+  const alignedSecond = first.dot(second) < 0 ? second.clone().negate() : second;
+  return first.clone().lerp(alignedSecond, ratio).normalize();
+}
+
+function updateViewRelativeBinding(
+  binding: ViewRelativeGeometryBinding,
+  axes: THREE.Vector3[],
+): void {
+  binding.vertices.forEach((vertex, index) => {
+    const axis = axisAtFramePosition(axes, vertex.framePosition);
+    const point = vertex.position.clone().add(axis.multiplyScalar(vertex.offset));
+    binding.attribute.setXYZ(index, point.x, point.y, point.z);
+  });
+  binding.attribute.needsUpdate = true;
+}
+
+function dynamicGeometry(vertices: ViewRelativeVertex[], indices?: number[]): {
+  geometry: THREE.BufferGeometry;
+  binding: ViewRelativeGeometryBinding;
+} {
+  const attribute = new THREE.Float32BufferAttribute(new Float32Array(vertices.length * 3), 3);
+  attribute.setUsage(THREE.DynamicDrawUsage);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', attribute);
+  if (indices) geometry.setIndex(indices);
+  return { geometry, binding: { attribute, vertices } };
+}
+
+function viewVerticesFromPoints(points: PreparedOverlayPoint[], offset: 'traceOffset' | 'baselineOffset'): ViewRelativeVertex[] {
+  return points.map((point) => ({
+    position: point.basis.position,
+    tangent: point.basis.tangent,
+    framePosition: point.basis.framePosition,
+    offset: point[offset],
   }));
+}
+
+function addCurveOverlays(
+  group: THREE.Group,
+  overlays: WbvCurveOverlayRenderCurve[],
+  renderPoints: WbvTrajectoryRenderPoint[],
+  positions: THREE.Vector3[],
+  tracks: WbvCurveTrack[],
+  trackSpacing: number,
+): CurveOverlayRuntime {
+  const bindings: ViewRelativeGeometryBinding[] = [];
+  const tangents = trajectoryTangents(positions);
+  const update = (camera: THREE.Camera) => {
+    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+    const axes = sharedViewAxes(tangents, cameraRight);
+    bindings.forEach((binding) => updateViewRelativeBinding(binding, axes));
+  };
+  if (overlays.length === 0 || positions.length < 2) return { update };
+
+  const wellboreRadius = 0.008;
+  const innerClearance = wellboreRadius * 2.75;
+  const widthScale = wellboreRadius * 5.0;
+  const trackById = new Map(tracks.map((track) => [track.track_id, track]));
+  const effectiveTracks = tracks.length > 0 ? [...tracks].sort((a, b) => a.display_order - b.display_order) : [{ track_id: 'curve-track-0', display_name: 'Track 1', track_type: 'curve' as const, display_order: 0, side: 'right' as const, width: 1, background_mode: 'transparent' as const, background_color: '#000000', background_opacity: 0, border_visible: false, border_color: '#5f6d73', wellbore_offset: 0.15, previous_track_gap: trackSpacing }];
+  const trackOffsets = new Map<string, number>();
+  const sideOuterEdge: { left: number | null; right: number | null; center: number } = { left: null, right: null, center: 0 };
+  effectiveTracks.forEach((track) => {
+    const side = track.side;
+    const trackWidth = widthScale * track.width;
+    let baselineOffset: number;
+    let outerOffset: number;
+    if (side === 'center') {
+      const centerSpacing = sideOuterEdge.center;
+      baselineOffset = -trackWidth / 2 - centerSpacing;
+      outerOffset = trackWidth / 2 + centerSpacing;
+      sideOuterEdge.center += wellboreRadius * Math.max(0, trackSpacing);
+    } else {
+      const previousOuterEdge = sideOuterEdge[side];
+      const innerDistance = previousOuterEdge === null
+        ? wellboreRadius * (2.75 + Math.max(0, track.wellbore_offset))
+        : previousOuterEdge + wellboreRadius * Math.max(0, track.previous_track_gap ?? trackSpacing);
+      const outerDistance = innerDistance + trackWidth;
+      sideOuterEdge[side] = outerDistance;
+      const sign = side === 'left' ? -1 : 1;
+      baselineOffset = sign * innerDistance;
+      outerOffset = sign * outerDistance;
+    }
+    trackOffsets.set(track.track_id, baselineOffset);
+
+    const innerVertices: ViewRelativeVertex[] = positions.map((position, index) => ({ position, tangent: tangents[index], framePosition: index, offset: baselineOffset }));
+    const outerVertices: ViewRelativeVertex[] = positions.map((position, index) => ({ position, tangent: tangents[index], framePosition: index, offset: outerOffset }));
+
+    if (track.background_mode !== 'transparent' && track.background_opacity > 0) {
+      const vertices: ViewRelativeVertex[] = [];
+      positions.forEach((_, index) => vertices.push(innerVertices[index], outerVertices[index]));
+      const indices: number[] = [];
+      for (let index = 0; index < positions.length - 1; index += 1) {
+        const base = index * 2;
+        indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+      }
+      const { geometry, binding } = dynamicGeometry(vertices, indices);
+      bindings.push(binding);
+      const color = track.background_mode === 'white' ? '#ffffff' : track.background_mode === 'black' ? '#000000' : track.background_color;
+      const material = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(color),
+        transparent: true,
+        opacity: track.background_opacity,
+        side: THREE.DoubleSide,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.renderOrder = 20 + track.display_order;
+      group.add(mesh);
+    }
+
+    if (track.border_visible) {
+      [innerVertices, outerVertices].forEach((vertices) => {
+        const { geometry, binding } = dynamicGeometry(vertices);
+        bindings.push(binding);
+        const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
+          color: new THREE.Color(track.border_color),
+          transparent: true,
+          opacity: 0.75,
+          depthTest: false,
+          depthWrite: false,
+        }));
+        line.renderOrder = 24 + track.display_order;
+        group.add(line);
+      });
+    }
+  });
+
+  const preparedByCurve = new Map<string, PreparedOverlayPoint[][]>();
+  overlays.forEach((curve) => {
+    const fallbackTrack = effectiveTracks[Math.min(curve.radial_lane, effectiveTracks.length - 1)];
+    const track = trackById.get(curve.track_id ?? '') ?? fallbackTrack;
+    const baselineOffset = trackOffsets.get(track.track_id) ?? innerClearance;
+    const excursionSign = track.side === 'left' ? -1 : 1;
+    const excursion = excursionSign * widthScale * Math.min(curve.radial_width, track.width);
+    preparedByCurve.set(curve.curve_product_id, preparedOverlaySegments(
+      curve,
+      renderPoints,
+      positions,
+      tangents,
+      baselineOffset,
+      excursion,
+    ));
+  });
+
+  overlays.forEach((curve) => {
+    const segments = preparedByCurve.get(curve.curve_product_id) ?? [];
+
+    if (curve.fill_mode === 'between_curves' && curve.fill_target_curve_product_id) {
+      const target = overlays.find((candidate) => candidate.curve_product_id === curve.fill_target_curve_product_id);
+      const targetSegments = preparedByCurve.get(curve.fill_target_curve_product_id) ?? [];
+      if (target && (target.track_id ?? String(target.radial_lane)) === (curve.track_id ?? String(curve.radial_lane))) {
+        pairedOverlaySegments(segments, targetSegments).forEach((segment) => {
+          const vertices: ViewRelativeVertex[] = [];
+          segment.forEach((point) => {
+            vertices.push(
+              { position: point.first.basis.position, tangent: point.first.basis.tangent, framePosition: point.first.basis.framePosition, offset: point.first.traceOffset },
+              { position: point.second.basis.position, tangent: point.second.basis.tangent, framePosition: point.second.basis.framePosition, offset: point.second.traceOffset },
+            );
+          });
+          const indices: number[] = [];
+          for (let index = 0; index < segment.length - 1; index += 1) {
+            const base = index * 2;
+            indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+          }
+          if (indices.length > 0) {
+            const { geometry, binding } = dynamicGeometry(vertices, indices);
+            bindings.push(binding);
+            const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+              color: new THREE.Color(curve.fill_color),
+              transparent: true,
+              opacity: curve.fill_opacity,
+              side: THREE.DoubleSide,
+              depthTest: false,
+              depthWrite: false,
+            }));
+            mesh.renderOrder = 30 + curve.display_order;
+            group.add(mesh);
+          }
+        });
+      }
+    }
+
+    segments.forEach((segment) => {
+      if (curve.fill_mode === 'to_baseline') {
+        const vertices: ViewRelativeVertex[] = [];
+        const indices: number[] = [];
+        segment.forEach((point) => {
+          vertices.push(
+            { position: point.basis.position, tangent: point.basis.tangent, framePosition: point.basis.framePosition, offset: point.traceOffset },
+            { position: point.basis.position, tangent: point.basis.tangent, framePosition: point.basis.framePosition, offset: point.baselineOffset },
+          );
+        });
+        for (let index = 0; index < segment.length - 1; index += 1) {
+          const first = segment[index];
+          const second = segment[index + 1];
+          const firstEnabled = curve.fill_side === 'positive'
+            ? first.normalized >= curve.baseline_normalized
+            : first.normalized <= curve.baseline_normalized;
+          const secondEnabled = curve.fill_side === 'positive'
+            ? second.normalized >= curve.baseline_normalized
+            : second.normalized <= curve.baseline_normalized;
+          if (!firstEnabled || !secondEnabled) continue;
+          const base = index * 2;
+          indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+        }
+        if (indices.length > 0) {
+          const { geometry, binding } = dynamicGeometry(vertices, indices);
+          bindings.push(binding);
+          const fillMesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+            color: new THREE.Color(curve.fill_color),
+            transparent: true,
+            opacity: curve.fill_opacity,
+            side: THREE.DoubleSide,
+            depthTest: false,
+            depthWrite: false,
+          }));
+          fillMesh.renderOrder = 30 + curve.display_order;
+          group.add(fillMesh);
+        }
+      }
+
+      const { geometry, binding } = dynamicGeometry(viewVerticesFromPoints(segment, 'traceOffset'));
+      bindings.push(binding);
+      const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
+        color: new THREE.Color(curve.color),
+        transparent: true,
+        opacity: curve.opacity,
+        linewidth: curve.line_width,
+        depthTest: false,
+        depthWrite: false,
+      }));
+      line.renderOrder = 40 + curve.display_order;
+      group.add(line);
+    });
+  });
+
+  return { update };
 }
 
 function materialList(material: THREE.Material | THREE.Material[] | undefined): THREE.Material[] {
@@ -365,6 +910,111 @@ function applyCameraPlan(
   controls.update();
 }
 
+
+function interpolateOptional(a: number | null | undefined, b: number | null | undefined, ratio: number): number | null {
+  if (typeof a === 'number' && Number.isFinite(a) && typeof b === 'number' && Number.isFinite(b)) {
+    return a + (b - a) * ratio;
+  }
+  if (typeof a === 'number' && Number.isFinite(a)) return a;
+  if (typeof b === 'number' && Number.isFinite(b)) return b;
+  return null;
+}
+
+function interpolateAzimuth(a: number | null | undefined, b: number | null | undefined, ratio: number): number | null {
+  if (typeof a !== 'number' || !Number.isFinite(a)) return interpolateOptional(a, b, ratio);
+  if (typeof b !== 'number' || !Number.isFinite(b)) return a;
+  let delta = ((b - a + 540) % 360) - 180;
+  const value = a + delta * ratio;
+  return ((value % 360) + 360) % 360;
+}
+
+function interpolateRenderPoint(
+  first: WbvTrajectoryRenderPoint,
+  second: WbvTrajectoryRenderPoint,
+  ratio: number,
+): WbvTrajectoryRenderPoint {
+  return {
+    station_index: interpolateOptional(first.station_index, second.station_index, ratio) ?? undefined,
+    md: interpolateOptional(first.md, second.md, ratio),
+    tvd: interpolateOptional(first.tvd, second.tvd, ratio),
+    tvdss: interpolateOptional(first.tvdss, second.tvdss, ratio),
+    x: interpolateOptional(first.x, second.x, ratio),
+    y: interpolateOptional(first.y, second.y, ratio),
+    z: interpolateOptional(first.z, second.z, ratio),
+    inclination: interpolateOptional(first.inclination, second.inclination, ratio),
+    azimuth: interpolateAzimuth(first.azimuth, second.azimuth, ratio),
+    dogleg_severity: interpolateOptional(first.dogleg_severity, second.dogleg_severity, ratio),
+    east_departure: interpolateOptional(first.east_departure, second.east_departure, ratio),
+    north_departure: interpolateOptional(first.north_departure, second.north_departure, ratio),
+    inclination_source: ratio === 0 ? first.inclination_source : 'interpolated_along_trajectory',
+    azimuth_source: ratio === 0 ? first.azimuth_source : 'interpolated_along_trajectory',
+    dogleg_severity_source: ratio === 0 ? first.dogleg_severity_source : 'interpolated_along_trajectory',
+  };
+}
+
+export function nearestSegmentOnScreen(
+  event: PointerEvent,
+  canvas: HTMLCanvasElement,
+  camera: THREE.Camera,
+  points: THREE.Vector3[],
+): { segmentIndex: number; ratio: number; distance: number } | null {
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0 || points.length < 2) return null;
+  const px = event.clientX - rect.left;
+  const py = event.clientY - rect.top;
+  let best: { segmentIndex: number; ratio: number; distance: number } | null = null;
+  const projected = points.map((point) => {
+    const p = point.clone().project(camera);
+    return { x: (p.x * 0.5 + 0.5) * rect.width, y: (-p.y * 0.5 + 0.5) * rect.height };
+  });
+  for (let index = 0; index < projected.length - 1; index += 1) {
+    const a = projected[index];
+    const b = projected[index + 1];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lengthSquared = dx * dx + dy * dy;
+    const ratio = lengthSquared > 0 ? Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / lengthSquared)) : 0;
+    const nx = a.x + ratio * dx;
+    const ny = a.y + ratio * dy;
+    const distance = Math.hypot(px - nx, py - ny);
+    if (!best || distance < best.distance) best = { segmentIndex: index, ratio, distance };
+  }
+  return best;
+}
+
+export function cameraFacingMarkerPosition(
+  basePosition: THREE.Vector3,
+  cameraDirection: THREE.Vector3,
+  offset = 0.028,
+): THREE.Vector3 {
+  return basePosition.clone().addScaledVector(cameraDirection, -Math.max(0, offset));
+}
+
+
+export function markerScaleForZoom(zoom: number): number {
+  const safeZoom = Math.max(0.25, Number.isFinite(zoom) ? zoom : 1);
+  return THREE.MathUtils.clamp(Math.pow(safeZoom, -1.35), 0.18, 1.6);
+}
+
+export function interpolateCurveValueAtMd(
+  samples: WbvCurveOverlayRenderSample[],
+  md: number,
+): number | null {
+  const ordered = samples
+    .filter((sample) => Number.isFinite(sample.md) && Number.isFinite(sample.value))
+    .slice()
+    .sort((a, b) => a.md - b.md);
+  if (ordered.length === 0 || md < ordered[0].md || md > ordered[ordered.length - 1].md) return null;
+  for (let index = 0; index < ordered.length - 1; index += 1) {
+    const first = ordered[index];
+    const second = ordered[index + 1];
+    if (md < first.md || md > second.md) continue;
+    const ratio = second.md === first.md ? 0 : THREE.MathUtils.clamp((md - first.md) / (second.md - first.md), 0, 1);
+    return first.value + (second.value - first.value) * ratio;
+  }
+  return ordered[ordered.length - 1].value;
+}
+
 function disposeObject(object: THREE.Object3D): void {
   object.traverse((child: THREE.Object3D) => {
     const materialHolder = child as THREE.Object3D & { material?: THREE.Material | THREE.Material[] };
@@ -387,14 +1037,61 @@ export function WellboreTrajectoryRenderer({
   viewerState,
   viewPreset = 'reset',
   viewCommandId = 0,
+  onPointSelect,
+  selectedPoint = null,
+  selectionMode = "none",
+  intervalDraftStart = null,
+  savedInterval = null,
+  trackValuesAlongWellbore = false,
+  showTrajectory = true,
+  showBoundingBox = true,
+  showDepthLabels = true,
+  showSurveyStations = true,
+  showGroundPlane = false,
+  showBottomGrid = false,
+  showTopGrid = false,
+  showAxes = false,
+  useSurfaceLighting = true,
+  curveOverlays = [],
+  curveTracks = [],
+  curveTrackSpacing = 0.05,
+  showCurveOverlays = true,
 }: WbvTrajectoryRendererProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const leaderRef = useRef<HTMLDivElement | null>(null);
+  const liveReadoutRef = useRef<HTMLDivElement | null>(null);
+  const trackValuesRef = useRef(trackValuesAlongWellbore);
+  const onPointSelectRef = useRef(onPointSelect);
+  onPointSelectRef.current = onPointSelect;
+  const selectedPointRef = useRef<WbvTrajectoryRenderPoint | null>(selectedPoint);
+  selectedPointRef.current = selectedPoint;
+  const selectionModeRef = useRef(selectionMode);
+  selectionModeRef.current = selectionMode;
+  const intervalDraftStartRef = useRef<WbvTrajectoryRenderPoint | null>(intervalDraftStart);
+  intervalDraftStartRef.current = intervalDraftStart;
+  const savedIntervalRef = useRef(savedInterval);
+  savedIntervalRef.current = savedInterval;
   const [status, setStatus] = useState<RendererStatus>('idle');
-  const runtimeRef = useRef<{ applyPreset: (preset: WbvViewPreset) => void } | null>(null);
+  const runtimeRef = useRef<{
+    applyPreset: (preset: WbvViewPreset) => void;
+    syncInteraction: () => void;
+  } | null>(null);
+  const cameraViewRef = useRef<CameraViewSnapshot | null>(null);
+  const curveOverlayGroupRef = useRef<THREE.Group | null>(null);
+
+  useEffect(() => {
+    trackValuesRef.current = trackValuesAlongWellbore;
+  }, [trackValuesAlongWellbore]);
+
+  useEffect(() => {
+    if (curveOverlayGroupRef.current) {
+      curveOverlayGroupRef.current.visible = showCurveOverlays;
+    }
+  }, [showCurveOverlays]);
 
   const scenePoints = useMemo(() => scenePointsFromBackend(renderPoints), [renderPoints]);
-  const depthTicks = useMemo(() => representativeTicks(renderPoints), [renderPoints]);
+  const depthTicks = useMemo(() => representativeTicks(renderPoints, depthUnit), [renderPoints, depthUnit]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -454,37 +1151,111 @@ export function WellboreTrajectoryRenderer({
         TWO: THREE.TOUCH.DOLLY_PAN,
       };
 
-      const boxMaterial = new THREE.LineBasicMaterial({
-        color: 0x6fd3ff,
-        transparent: true,
-        opacity: 0.24,
-      });
-      group.add(createBoxEdges(box, boxMaterial));
+      if (showBoundingBox) {
+        group.add(createTrajectoryBoundingBox(box));
+      }
 
-      const planeMaterial = new THREE.LineBasicMaterial({
-        color: 0x4ca6cc,
-        transparent: true,
-        opacity: 0.072,
-      });
-      const tickMaterial = new THREE.LineBasicMaterial({
-        color: 0xc6f6ff,
-        transparent: true,
-        opacity: 0.26,
-      });
+      if (showGroundPlane) {
+        const plane = new THREE.Mesh(
+          new THREE.PlaneGeometry(Math.max(3.2, box.maxX - box.minX + 1.2), Math.max(3.2, box.maxZ - box.minZ + 1.2)),
+          new THREE.MeshStandardMaterial({ color: 0x182129, transparent: true, opacity: 0.62, roughness: 0.92 }),
+        );
+        plane.rotation.x = -Math.PI / 2;
+        plane.position.y = box.minY;
+        group.add(plane);
+      }
 
-      depthTicks.forEach((tick) => {
-        const y = box.maxY - (box.maxY - box.minY) * tick.ratio;
-        group.add(createDepthPlane(box, y, planeMaterial));
-        group.add(createCrossTick(y, tickMaterial));
+      const gridSize = Math.max(3.2, box.maxX - box.minX + 1.2, box.maxZ - box.minZ + 1.2);
+      const gridCenterX = (box.minX + box.maxX) / 2;
+      const gridCenterZ = (box.minZ + box.maxZ) / 2;
 
-        const label = createTextSprite(`MD ${tick.label}`, {
-          color: '#b9f3ff',
-          background: 'rgba(3, 8, 12, 0.58)',
-          scale: 0.12,
+      if (showBottomGrid) {
+        const bottomGrid = new THREE.GridHelper(gridSize, 12, 0x526878, 0x2b3944);
+        bottomGrid.position.set(gridCenterX, box.minY + 0.002, gridCenterZ);
+        group.add(bottomGrid);
+      }
+
+      if (showTopGrid) {
+        const topGrid = new THREE.GridHelper(gridSize, 12, 0x526878, 0x2b3944);
+        topGrid.position.set(gridCenterX, box.maxY - 0.002, gridCenterZ);
+        group.add(topGrid);
+      }
+
+      if (showAxes) {
+        const axes = new THREE.AxesHelper(0.82);
+        axes.position.set(box.minX, box.minY, box.minZ);
+        group.add(axes);
+      }
+
+      if (useSurfaceLighting) {
+        scene.add(new THREE.HemisphereLight(0xdff6ff, 0x17202a, 1.1));
+        const keyLight = new THREE.DirectionalLight(0xffffff, 1.15);
+        keyLight.position.set(3, 5, 4);
+        scene.add(keyLight);
+      }
+
+      if (showDepthLabels) {
+        const depthTickPoints: THREE.Vector3[] = [];
+        const tickLength = Math.max(
+          0.06,
+          Math.min(0.11, Math.abs(box.maxX - box.minX) * 0.06),
+        );
+
+        depthTicks.forEach((tick) => {
+          const y = sceneYForMeasuredDepth(renderPoints, normalizedPoints, tick.md, tick.pointIndex);
+          const label = createTextSprite(`MD ${tick.label}`, {
+            color: '#b9f3ff',
+            background: 'rgba(3, 8, 12, 0.58)',
+            scale: 0.18,
+          });
+          label.position.set(box.minX - 0.52, y, box.maxZ + 0.09);
+          group.add(label);
+
+          const verticalEdges = [
+            { x: box.minX, z: box.maxZ, outwardX: -tickLength },
+            { x: box.minX, z: box.minZ, outwardX: -tickLength },
+            { x: box.maxX, z: box.maxZ, outwardX: tickLength },
+            { x: box.maxX, z: box.minZ, outwardX: tickLength },
+          ];
+
+          verticalEdges.forEach((edge) => {
+            depthTickPoints.push(
+              new THREE.Vector3(edge.x, y, edge.z),
+              new THREE.Vector3(edge.x + edge.outwardX, y, edge.z),
+            );
+          });
         });
-        label.position.set(box.minX - 0.52, y, box.maxZ + 0.09);
-        group.add(label);
-      });
+
+        if (depthTickPoints.length > 0) {
+          const depthTickGeometry = new THREE.BufferGeometry().setFromPoints(depthTickPoints);
+          const depthTickMaterial = new THREE.LineBasicMaterial({
+            color: 0x9bc8d6,
+            transparent: true,
+            opacity: 0.86,
+            depthTest: false,
+            depthWrite: false,
+          });
+          const depthTickMarks = new THREE.LineSegments(depthTickGeometry, depthTickMaterial);
+          depthTickMarks.renderOrder = 18;
+          group.add(depthTickMarks);
+        }
+      }
+
+      if (showSurveyStations) {
+        const stationGeometry = new THREE.BufferGeometry().setFromPoints(normalizedPoints);
+        const stationMaterial = new THREE.PointsMaterial({
+          color: 0xc6f6ff,
+          size: 5.5,
+          sizeAttenuation: false,
+          transparent: true,
+          opacity: 0.96,
+          depthTest: false,
+          depthWrite: false,
+        });
+        const surveyStations = new THREE.Points(stationGeometry, stationMaterial);
+        surveyStations.renderOrder = 20;
+        group.add(surveyStations);
+      }
 
       const curve = new THREE.CatmullRomCurve3(normalizedPoints, false, 'catmullrom', 0.02);
       const guideGeometry = new THREE.TubeGeometry(
@@ -494,20 +1265,359 @@ export function WellboreTrajectoryRenderer({
         8,
         false,
       );
-      const guideMaterial = new THREE.MeshBasicMaterial({
-        color: 0x67d599,
-        transparent: true,
-        opacity: 0.9,
-      });
-      group.add(new THREE.Mesh(guideGeometry, guideMaterial));
+      const guideMaterial = useSurfaceLighting
+        ? new THREE.MeshStandardMaterial({
+            color: 0x67d599,
+            emissive: 0x2c7a52,
+            emissiveIntensity: 0.90,
+            roughness: 0.42,
+            transparent: true,
+            opacity: 0.96,
+          })
+        : new THREE.MeshBasicMaterial({
+            color: 0x67d599,
+            transparent: true,
+            opacity: 0.96,
+          });
+      const trajectoryMesh = new THREE.Mesh(guideGeometry, guideMaterial);
+      trajectoryMesh.visible = showTrajectory;
+      trajectoryMesh.renderOrder = 35;
+      guideMaterial.depthTest = false;
+      guideMaterial.depthWrite = false;
+      group.add(trajectoryMesh);
 
       const lineGeometry = new THREE.BufferGeometry().setFromPoints(normalizedPoints);
       const lineMaterial = new THREE.LineBasicMaterial({
         color: 0xe7fbff,
         transparent: true,
-        opacity: 0.68,
+        opacity: 0.76,
       });
-      group.add(new THREE.Line(lineGeometry, lineMaterial));
+      const trajectoryLine = new THREE.Line(lineGeometry, lineMaterial);
+      trajectoryLine.visible = showTrajectory;
+      trajectoryLine.renderOrder = 36;
+      lineMaterial.depthTest = false;
+      lineMaterial.depthWrite = false;
+      group.add(trajectoryLine);
+
+      const curveOverlayGroup = new THREE.Group();
+      curveOverlayGroup.visible = showCurveOverlays;
+      curveOverlayGroupRef.current = curveOverlayGroup;
+      group.add(curveOverlayGroup);
+      const curveOverlayRuntime = addCurveOverlays(
+        curveOverlayGroup,
+        curveOverlays,
+        renderPoints,
+        normalizedPoints,
+        curveTracks,
+        curveTrackSpacing,
+      );
+
+      const createBullseye = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const context = canvas.getContext('2d');
+        if (context) {
+          const center = 64;
+          context.clearRect(0, 0, 128, 128);
+          context.beginPath();
+          context.arc(center, center, 48, 0, Math.PI * 2);
+          context.fillStyle = 'rgba(4, 8, 11, 0.82)';
+          context.fill();
+          context.strokeStyle = '#e23232';
+          context.lineWidth = 10;
+          context.beginPath();
+          context.arc(center, center, 42, 0, Math.PI * 2);
+          context.stroke();
+          context.lineWidth = 8;
+          context.beginPath();
+          context.arc(center, center, 21, 0, Math.PI * 2);
+          context.stroke();
+          context.beginPath();
+          context.arc(center, center, 6, 0, Math.PI * 2);
+          context.fillStyle = '#e23232';
+          context.fill();
+        }
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.needsUpdate = true;
+        const material = new THREE.SpriteMaterial({
+          map: texture,
+          transparent: true,
+          depthTest: false,
+          depthWrite: false,
+          sizeAttenuation: true,
+        });
+        const marker = new THREE.Sprite(material);
+        marker.renderOrder = 200;
+        marker.frustumCulled = false;
+        marker.visible = false;
+        marker.userData.basePosition = new THREE.Vector3();
+        marker.scale.setScalar(0.16);
+        group.add(marker);
+        return marker;
+      };
+      const selectionMarker = createBullseye();
+      const intervalStartMarker = createBullseye();
+      const intervalEndMarker = createBullseye();
+      let intervalHighlight: THREE.Line | null = null;
+      let selectedRuntimePoint: WbvTrajectoryRenderPoint | null = null;
+      let shiftDragActive = false;
+      let dragPreviewPoint: WbvTrajectoryRenderPoint | null = null;
+      let dragDispatchTimer: number | null = null;
+      let lastDragDispatchAt = 0;
+      const DRAG_BACKEND_INTERVAL_MS = 75;
+
+      const setMarkerBasePosition = (marker: THREE.Object3D, position: THREE.Vector3) => {
+        const basePosition = marker.userData.basePosition as THREE.Vector3;
+        basePosition.copy(position);
+        marker.position.copy(position);
+      };
+
+      const pointAtMd = (md: number): THREE.Vector3 | null => {
+        for (let index = 0; index < renderPoints.length - 1; index += 1) {
+          const firstMd = renderPoints[index].md;
+          const secondMd = renderPoints[index + 1].md;
+          if (typeof firstMd !== 'number' || !Number.isFinite(firstMd) || typeof secondMd !== 'number' || !Number.isFinite(secondMd)) continue;
+          if (md < Math.min(firstMd, secondMd) || md > Math.max(firstMd, secondMd)) continue;
+          const ratio = secondMd === firstMd ? 0 : THREE.MathUtils.clamp((md - firstMd) / (secondMd - firstMd), 0, 1);
+          return normalizedPoints[index].clone().lerp(normalizedPoints[index + 1], ratio);
+        }
+        return null;
+      };
+
+      const clearIntervalHighlight = () => {
+        if (!intervalHighlight) return;
+        group.remove(intervalHighlight);
+        intervalHighlight.geometry.dispose();
+        materialList(intervalHighlight.material).forEach((material) => material.dispose());
+        intervalHighlight = null;
+      };
+
+      const syncInteraction = () => {
+        if (shiftDragActive && dragPreviewPoint && typeof dragPreviewPoint.md === 'number') {
+          const previewPosition = pointAtMd(dragPreviewPoint.md);
+          if (previewPosition) {
+            setMarkerBasePosition(selectionMarker, previewPosition);
+            selectionMarker.visible = true;
+            selectedRuntimePoint = dragPreviewPoint;
+          }
+          return;
+        }
+        selectionMarker.visible = false;
+        intervalStartMarker.visible = false;
+        intervalEndMarker.visible = false;
+        selectedRuntimePoint = null;
+        clearIntervalHighlight();
+
+        if (selectionModeRef.current === 'point') {
+          const point = selectedPointRef.current;
+          if (point && typeof point.md === 'number' && Number.isFinite(point.md)) {
+            const position = pointAtMd(point.md);
+            if (position) {
+              setMarkerBasePosition(selectionMarker, position);
+              selectionMarker.visible = true;
+              selectedRuntimePoint = point;
+            }
+          }
+          return;
+        }
+
+        if (selectionModeRef.current !== 'interval') return;
+        const interval = savedIntervalRef.current;
+        const start = interval?.start ?? intervalDraftStartRef.current;
+        const end = interval?.end ?? null;
+        if (typeof start?.md === 'number') {
+          const position = pointAtMd(start.md);
+          if (position) {
+            setMarkerBasePosition(intervalStartMarker, position);
+            intervalStartMarker.visible = true;
+          }
+        }
+        if (typeof end?.md === 'number') {
+          const position = pointAtMd(end.md);
+          if (position) {
+            setMarkerBasePosition(intervalEndMarker, position);
+            intervalEndMarker.visible = true;
+          }
+        }
+        if (!interval) return;
+        const interior = renderPoints
+          .map((point, index) => ({ point, index }))
+          .filter(({ point }) => typeof point.md === 'number' && point.md >= interval.top_md && point.md <= interval.base_md)
+          .map(({ index }) => normalizedPoints[index]);
+        const top = pointAtMd(interval.top_md);
+        const base = pointAtMd(interval.base_md);
+        const points = [...(top ? [top] : []), ...interior, ...(base ? [base] : [])];
+        if (points.length >= 2) {
+          intervalHighlight = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(points),
+            new THREE.LineBasicMaterial({ color: 0xe23232, linewidth: 3, depthTest: false, depthWrite: false }),
+          );
+          intervalHighlight.renderOrder = 88;
+          group.add(intervalHighlight);
+        }
+      };
+
+      const resolvePick = (event: PointerEvent): WbvTrajectoryRenderPoint | null => {
+        if (!renderer) return null;
+        const nearest = nearestSegmentOnScreen(event, renderer.domElement, camera, normalizedPoints);
+        if (!nearest || nearest.distance > 20) return null;
+        const firstPoint = renderPoints[nearest.segmentIndex];
+        const secondPoint = renderPoints[nearest.segmentIndex + 1];
+        if (!firstPoint || !secondPoint) return null;
+        return interpolateRenderPoint(firstPoint, secondPoint, nearest.ratio);
+      };
+
+      let ordinaryPointerDown: { pointerId: number; x: number; y: number; moved: boolean } | null = null;
+      let pickCommandInFlight = false;
+      let pendingDragPoint: WbvTrajectoryRenderPoint | null = null;
+
+      const setDragPreview = (point: WbvTrajectoryRenderPoint) => {
+        dragPreviewPoint = point;
+        if (typeof point.md !== 'number' || !Number.isFinite(point.md)) return;
+        const previewPosition = pointAtMd(point.md);
+        if (!previewPosition) return;
+        setMarkerBasePosition(selectionMarker, previewPosition);
+        selectionMarker.visible = true;
+        selectedRuntimePoint = point;
+      };
+
+      const dispatchPick = (point: WbvTrajectoryRenderPoint) => {
+        const command = onPointSelectRef.current;
+        if (!command) return;
+        if (pickCommandInFlight) {
+          pendingDragPoint = point;
+          return;
+        }
+        pickCommandInFlight = true;
+        lastDragDispatchAt = performance.now();
+        Promise.resolve(command(point)).finally(() => {
+          pickCommandInFlight = false;
+          const pending = pendingDragPoint;
+          pendingDragPoint = null;
+          if (pending) {
+            dispatchPick(pending);
+          } else if (!shiftDragActive) {
+            dragPreviewPoint = null;
+            syncInteraction();
+          }
+        });
+      };
+
+      const queueDragPick = (point: WbvTrajectoryRenderPoint, final = false) => {
+        setDragPreview(point);
+        pendingDragPoint = point;
+        if (dragDispatchTimer !== null) {
+          window.clearTimeout(dragDispatchTimer);
+          dragDispatchTimer = null;
+        }
+        const elapsed = performance.now() - lastDragDispatchAt;
+        if (final || (!pickCommandInFlight && elapsed >= DRAG_BACKEND_INTERVAL_MS)) {
+          const next = pendingDragPoint;
+          pendingDragPoint = null;
+          if (next) dispatchPick(next);
+          return;
+        }
+        const delay = Math.max(0, DRAG_BACKEND_INTERVAL_MS - elapsed);
+        dragDispatchTimer = window.setTimeout(() => {
+          dragDispatchTimer = null;
+          if (pickCommandInFlight) return;
+          const next = pendingDragPoint;
+          pendingDragPoint = null;
+          if (next) dispatchPick(next);
+        }, delay);
+      };
+
+      const endShiftDrag = (event: PointerEvent, finalPoint: WbvTrajectoryRenderPoint | null = null) => {
+        if (!shiftDragActive) return;
+        shiftDragActive = false;
+        ordinaryPointerDown = null;
+        if (dragDispatchTimer !== null) {
+          window.clearTimeout(dragDispatchTimer);
+          dragDispatchTimer = null;
+        }
+        if (finalPoint) queueDragPick(finalPoint, true);
+        if (renderer?.domElement.hasPointerCapture(event.pointerId)) {
+          renderer.domElement.releasePointerCapture(event.pointerId);
+        }
+        if (controls) controls.enabled = true;
+        event.preventDefault();
+        event.stopPropagation();
+      };
+
+      const handlePointerDown = (event: PointerEvent) => {
+        if (!renderer || event.button !== 0 || selectionModeRef.current === 'none') return;
+        if (event.detail >= 2) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+
+        if (event.shiftKey && selectionModeRef.current === 'point') {
+          shiftDragActive = true;
+          ordinaryPointerDown = null;
+          if (controls) controls.enabled = false;
+          renderer.domElement.setPointerCapture(event.pointerId);
+          const picked = resolvePick(event);
+          if (picked) queueDragPick(picked);
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+
+        ordinaryPointerDown = {
+          pointerId: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          moved: false,
+        };
+      };
+
+      const handlePointerMove = (event: PointerEvent) => {
+        if (shiftDragActive) {
+          const picked = resolvePick(event);
+          if (picked) queueDragPick(picked);
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        if (!ordinaryPointerDown || ordinaryPointerDown.pointerId !== event.pointerId) return;
+        if (Math.hypot(event.clientX - ordinaryPointerDown.x, event.clientY - ordinaryPointerDown.y) > 4) {
+          ordinaryPointerDown.moved = true;
+        }
+      };
+
+      const handlePointerUp = (event: PointerEvent) => {
+        if (shiftDragActive) {
+          endShiftDrag(event, resolvePick(event));
+          return;
+        }
+        const pointerDown = ordinaryPointerDown;
+        ordinaryPointerDown = null;
+        if (!pointerDown || pointerDown.pointerId !== event.pointerId || pointerDown.moved) return;
+        const picked = resolvePick(event);
+        if (!picked) return;
+        dispatchPick(picked);
+      };
+
+      const handlePointerCancel = (event: PointerEvent) => {
+        ordinaryPointerDown = null;
+        endShiftDrag(event, null);
+      };
+
+      const handleDoubleClick = (event: MouseEvent) => {
+        if (selectionModeRef.current === 'none') return;
+        event.preventDefault();
+        event.stopPropagation();
+      };
+
+      renderer.domElement.addEventListener('pointerdown', handlePointerDown, true);
+      renderer.domElement.addEventListener('pointermove', handlePointerMove, true);
+      renderer.domElement.addEventListener('pointerup', handlePointerUp, true);
+      renderer.domElement.addEventListener('pointercancel', handlePointerCancel, true);
+      renderer.domElement.addEventListener('dblclick', handleDoubleClick, true);
+      syncInteraction();
 
       const topMarker = new THREE.Mesh(
         new THREE.SphereGeometry(0.026, 16, 16),
@@ -526,7 +1636,7 @@ export function WellboreTrajectoryRenderer({
       const topLabel = createTextSprite(`Top ${formatDepth(renderPoints[0]?.md ?? renderPoints[0]?.tvd, depthUnit)}`, {
         color: '#e7fbff',
         background: 'rgba(3, 8, 12, 0.62)',
-        scale: 0.12,
+        scale: 0.18,
       });
       topLabel.position.set(box.maxX + 0.5, normalizedPoints[0].y, box.maxZ + 0.1);
       group.add(topLabel);
@@ -534,20 +1644,20 @@ export function WellboreTrajectoryRenderer({
       const baseLabel = createTextSprite(`Base ${formatDepth(renderPoints[renderPoints.length - 1]?.md ?? renderPoints[renderPoints.length - 1]?.tvd, depthUnit)}`, {
         color: '#dff8ec',
         background: 'rgba(3, 8, 12, 0.62)',
-        scale: 0.12,
+        scale: 0.18,
       });
       baseLabel.position.set(box.maxX + 0.52, normalizedPoints[normalizedPoints.length - 1].y, box.maxZ + 0.1);
       group.add(baseLabel);
 
-      const xLabel = createTextSprite('X / EAST', { color: '#80dcff', scale: 0.12 });
+      const xLabel = createTextSprite('X / EAST', { color: '#80dcff', scale: 0.18 });
       xLabel.position.set(box.maxX + 0.34, box.minY, box.maxZ + 0.08);
       group.add(xLabel);
 
-      const yLabel = createTextSprite('Y / NORTH', { color: '#80dcff', scale: 0.12 });
+      const yLabel = createTextSprite('Y / NORTH', { color: '#80dcff', scale: 0.18 });
       yLabel.position.set(box.minX - 0.34, box.minY, box.maxZ + 0.08);
       group.add(yLabel);
 
-      const zLabel = createTextSprite('Z / TVD', { color: '#80dcff', scale: 0.13 });
+      const zLabel = createTextSprite('Z / TVD', { color: '#80dcff', scale: 0.195 });
       zLabel.position.set(box.maxX + 0.38, box.maxY, box.minZ - 0.08);
       group.add(zLabel);
 
@@ -573,13 +1683,75 @@ export function WellboreTrajectoryRenderer({
         applyCameraProjection(camera, currentViewHeight, aspect);
       };
 
-      runtimeRef.current = { applyPreset };
-      resizeRenderer();
-      applyPreset(viewPreset);
+      runtimeRef.current = { applyPreset, syncInteraction };
+      const { aspect } = resizeRenderer();
+      const savedView = cameraViewRef.current;
+      if (savedView) {
+        camera.position.copy(savedView.position);
+        camera.up.copy(savedView.up);
+        camera.quaternion.copy(savedView.quaternion);
+        camera.zoom = savedView.zoom;
+        controls.target.copy(savedView.target);
+        applyCameraProjection(camera, savedView.viewHeight, aspect);
+        camera.updateProjectionMatrix();
+        controls.update();
+      } else {
+        applyPreset(viewPreset);
+      }
+
+      curveOverlayRuntime.update(camera);
+      const lastOverlayQuaternion = camera.quaternion.clone();
 
       const renderScene = () => {
         if (!renderer || !controls) return;
         controls.update();
+        if (1 - Math.abs(lastOverlayQuaternion.dot(camera.quaternion)) > 1e-5) {
+          lastOverlayQuaternion.copy(camera.quaternion);
+          curveOverlayRuntime.update(camera);
+        }
+        if (leaderRef.current && liveReadoutRef.current) {
+          const currentPoint = selectedRuntimePoint;
+          const showLive = trackValuesRef.current && selectionMarker.visible && currentPoint !== null;
+          if (showLive && renderer && currentPoint) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            const projected = selectionMarker.position.clone().project(camera);
+            const markerX = (projected.x * 0.5 + 0.5) * rect.width;
+            const markerY = (-projected.y * 0.5 + 0.5) * rect.height;
+            const placeLeft = markerX > rect.width * 0.68;
+            const lineWidth = 64;
+            leaderRef.current.hidden = false;
+            liveReadoutRef.current.hidden = false;
+            leaderRef.current.style.left = `${placeLeft ? markerX - lineWidth : markerX}px`;
+            leaderRef.current.style.top = `${markerY}px`;
+            liveReadoutRef.current.style.left = `${placeLeft ? markerX - lineWidth - 210 : markerX + lineWidth + 8}px`;
+            liveReadoutRef.current.style.top = `${markerY}px`;
+            const curveValues = typeof currentPoint.md === 'number'
+              ? curveOverlays
+                  .map((curve) => {
+                    const value = interpolateCurveValueAtMd(curve.samples, currentPoint.md as number);
+                    return value === null ? null : `${curve.display_name} ${value.toPrecision(4)}${curve.unit ? ` ${curve.unit}` : ''}`;
+                  })
+                  .filter((value): value is string => value !== null)
+              : [];
+            liveReadoutRef.current.textContent = [
+              `MD ${formatDepth(currentPoint.md, depthUnit)} / TVD ${formatDepth(currentPoint.tvd, depthUnit)}`,
+              ...curveValues,
+            ].join('\n');
+          } else {
+            leaderRef.current.hidden = true;
+            liveReadoutRef.current.hidden = true;
+          }
+        }
+        const markerScale = markerScaleForZoom(camera.zoom);
+        const cameraDirection = new THREE.Vector3();
+        camera.getWorldDirection(cameraDirection);
+        [selectionMarker, intervalStartMarker, intervalEndMarker].forEach((marker) => {
+          if (marker.visible) {
+            const basePosition = marker.userData.basePosition as THREE.Vector3;
+            marker.position.copy(cameraFacingMarkerPosition(basePosition, cameraDirection, 0.06));
+          }
+          marker.scale.setScalar(0.16 * markerScale);
+        });
         renderer.render(scene, camera);
         animationFrame = window.requestAnimationFrame(renderScene);
       };
@@ -590,11 +1762,28 @@ export function WellboreTrajectoryRenderer({
       setStatus('rendered');
 
       return () => {
+        cameraViewRef.current = {
+          position: camera.position.clone(),
+          up: camera.up.clone(),
+          quaternion: camera.quaternion.clone(),
+          target: controls?.target.clone() ?? new THREE.Vector3(),
+          zoom: camera.zoom,
+          viewHeight: Math.abs(camera.top - camera.bottom),
+        };
         runtimeRef.current = null;
+        if (curveOverlayGroupRef.current === curveOverlayGroup) {
+          curveOverlayGroupRef.current = null;
+        }
         if (animationFrame !== null) {
           window.cancelAnimationFrame(animationFrame);
         }
         resizeObserver?.disconnect();
+        if (dragDispatchTimer !== null) window.clearTimeout(dragDispatchTimer);
+        renderer?.domElement.removeEventListener('pointerdown', handlePointerDown, true);
+        renderer?.domElement.removeEventListener('pointermove', handlePointerMove, true);
+        renderer?.domElement.removeEventListener('pointerup', handlePointerUp, true);
+        renderer?.domElement.removeEventListener('pointercancel', handlePointerCancel, true);
+        renderer?.domElement.removeEventListener('dblclick', handleDoubleClick, true);
         controls?.dispose();
         disposeObject(scene);
         renderer?.dispose();
@@ -602,12 +1791,34 @@ export function WellboreTrajectoryRenderer({
     } catch (error) {
       console.error('WBV trajectory renderer failed', error);
       runtimeRef.current = null;
+      curveOverlayGroupRef.current = null;
       setStatus('error');
       controls?.dispose();
       renderer?.dispose();
       return undefined;
     }
-  }, [depthTicks, depthUnit, renderPoints, scenePoints]);
+  }, [
+    curveOverlays,
+    curveTracks,
+    curveTrackSpacing,
+    depthTicks,
+    depthUnit,
+    renderPoints,
+    scenePoints,
+    showAxes,
+    showBoundingBox,
+    showDepthLabels,
+    showBottomGrid,
+    showTopGrid,
+    showGroundPlane,
+    showSurveyStations,
+    showTrajectory,
+    useSurfaceLighting,
+  ]);
+
+  useEffect(() => {
+    runtimeRef.current?.syncInteraction();
+  }, [selectionMode, selectedPoint, intervalDraftStart, savedInterval]);
 
   useEffect(() => {
     runtimeRef.current?.applyPreset(viewPreset);
@@ -624,9 +1835,11 @@ export function WellboreTrajectoryRenderer({
       data-viewer-state={viewerState}
     >
       <canvas ref={canvasRef} aria-hidden="true" />
+      <div ref={leaderRef} className="wlv-wbv-live-track-line" hidden aria-hidden="true" />
+      <div ref={liveReadoutRef} className="wlv-wbv-live-track-readout" hidden aria-live="polite" />
       <div className="wlv-wbv-renderer-readout" aria-live="polite">
         <strong>{status === 'rendered' ? '3D trajectory rendered' : `3D trajectory renderer: ${status}`}</strong>
-        <span>{pointCount} backend render points · {depthUnit} · {viewPreset} view</span>
+        <span>{pointCount} survey points · {depthUnit} · {viewPreset} view · click a point to inspect</span>
       </div>
     </div>
   );

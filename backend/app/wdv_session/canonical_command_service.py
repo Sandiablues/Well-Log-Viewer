@@ -7,6 +7,7 @@ from collections.abc import Callable
 from app.identity import new_uuid7_str
 from app.identity.wdv_contract_v2 import (
     WdvCanonicalAssignment,
+    WdvCanonicalCurveFill,
     WdvCanonicalSession,
     WdvCanonicalTrack,
 )
@@ -30,6 +31,8 @@ from app.wdv_session.canonical_commands import (
     SelectTrackCommand,
     UpdateCurveAssignmentCommand,
     UpdateTrackCommand,
+    UpsertCurveFillCommand,
+    RemoveCurveFillCommand,
 )
 from app.wdv_session.assignment_policy_service import (
     CanonicalWdvAssignmentPolicyService,
@@ -282,6 +285,7 @@ class CanonicalWdvCommandService:
                     "tracks": self._renumber_tracks(tracks),
                     "selected_track_uid": selected,
                     "state_status": "active" if tracks else "empty",
+                    "curve_fills": tuple(fill for fill in session.curve_fills if fill.track_uid in {track.track_uid for track in tracks}),
                 }
             )
 
@@ -310,6 +314,7 @@ class CanonicalWdvCommandService:
                     "tracks": tracks,
                     "selected_track_uid": selected,
                     "state_status": "active" if tracks else "empty",
+                    "curve_fills": tuple(fill for fill in session.curve_fills if fill.track_uid != command.track_uid),
                 }
             )
 
@@ -483,8 +488,50 @@ class CanonicalWdvCommandService:
                 raise CanonicalWdvCommandError(
                     f"Unknown assignment_uid: {command.assignment_uid}"
                 )
-            return session.model_copy(update={"tracks": tuple(tracks)})
+            return session.model_copy(update={
+                "tracks": tuple(tracks),
+                "curve_fills": tuple(
+                    fill for fill in session.curve_fills
+                    if fill.owner_assignment_uid != command.assignment_uid
+                ),
+            })
 
+        return self._execute(managed_well_uid, command, mutate)
+
+    def upsert_curve_fill(
+        self, managed_well_uid: str, command: UpsertCurveFillCommand
+    ) -> WdvCanonicalSession:
+        def mutate(session: WdvCanonicalSession) -> WdvCanonicalSession:
+            fill_uid = command.fill_uid or new_uuid7_str()
+            definition = WdvCanonicalCurveFill(
+                fill_uid=fill_uid,
+                track_uid=command.track_uid,
+                owner_assignment_uid=command.owner_assignment_uid,
+                fill_mode=command.fill_mode,
+                operand_a=command.operand_a,
+                operand_b=command.operand_b,
+                condition=command.condition,
+                comparison_basis=command.comparison_basis,
+                overlay_policy_id=command.overlay_policy_id,
+                overlay_policy_revision=command.overlay_policy_revision,
+                style=command.style,
+                deadband=command.deadband,
+                minimum_interval=command.minimum_interval,
+                depth_unit=command.depth_unit,
+                enabled=command.enabled,
+            )
+            fills = tuple(item for item in session.curve_fills if item.fill_uid != fill_uid) + (definition,)
+            return session.model_copy(update={"curve_fills": fills})
+        return self._execute(managed_well_uid, command, mutate)
+
+    def remove_curve_fill(
+        self, managed_well_uid: str, command: RemoveCurveFillCommand
+    ) -> WdvCanonicalSession:
+        def mutate(session: WdvCanonicalSession) -> WdvCanonicalSession:
+            fills = tuple(item for item in session.curve_fills if item.fill_uid != command.fill_uid)
+            if len(fills) == len(session.curve_fills):
+                raise CanonicalWdvCommandError(f"Unknown fill_uid: {command.fill_uid}")
+            return session.model_copy(update={"curve_fills": fills})
         return self._execute(managed_well_uid, command, mutate)
 
     def reorder_assignments(

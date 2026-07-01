@@ -144,6 +144,11 @@ class ManagedProductGroupItem(BaseModel):
     wmdp_state: ManagedWmdpState = ManagedWmdpState.REGISTERED
     wdv_state: ManagedWdvState = ManagedWdvState.NOT_LOADED
     source_intake_candidate_id: Optional[str] = None
+    display_layer_type: Optional[str] = None
+    depth_reference: Optional[str] = None
+    depth_units: Optional[str] = None
+    depth_start: Optional[float] = None
+    depth_end: Optional[float] = None
     provenance: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -307,6 +312,7 @@ class WdvWorkspaceStateResponse(BaseModel):
     active_managed_well_id: str | None = None
     active_managed_well_uid: CanonicalUuid7 | None = None
     loaded_wells: list[WdvWorkspaceLoadedWellSummary] = Field(default_factory=list)
+    active_aoi: dict[str, Any] | None = None
     updated_at: str = Field(default_factory=utc_now_iso)
 
 

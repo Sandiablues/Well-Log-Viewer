@@ -27,6 +27,13 @@ from pydantic import (
 )
 
 from app.identity import LegacyIdentityAlias, parse_uuid7
+from app.curve_fill.models import (
+    ComparisonBasis,
+    ComparisonCondition,
+    FillOperand,
+    FillStyle,
+    FillMode,
+)
 
 
 WDV_IDENTITY_CONTRACT_VERSION = "wdv_identity_v2_1"
@@ -201,6 +208,51 @@ class WdvCanonicalAssignment(BaseModel):
         return self
 
 
+class WdvCanonicalCurveFill(BaseModel):
+    """One durable backend-owned curve-fill definition."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    fill_uid: CanonicalUuid7
+    track_uid: CanonicalUuid7
+    owner_assignment_uid: CanonicalUuid7
+    fill_mode: FillMode
+    operand_a: FillOperand
+    operand_b: FillOperand
+    condition: ComparisonCondition | None = None
+    comparison_basis: ComparisonBasis
+    overlay_policy_id: str | None = None
+    overlay_policy_revision: str | None = None
+    style: FillStyle
+    deadband: FiniteNumber | None = Field(default=None, ge=0)
+    minimum_interval: FiniteNumber | None = Field(default=None, ge=0)
+    depth_unit: NonBlankString
+    enabled: bool = True
+    source: NonBlankString = "backend_owned_curve_fill"
+
+    @model_validator(mode="after")
+    def validate_fill_definition(self) -> "WdvCanonicalCurveFill":
+        if self.operand_a.managed_well_uid != self.operand_b.managed_well_uid:
+            raise ValueError("fill operands must belong to the same managed well")
+        if self.operand_a.depth_domain_uid != self.operand_b.depth_domain_uid:
+            raise ValueError("fill operands must share one depth domain")
+        if self.fill_mode == FillMode.CONDITIONAL:
+            if self.condition is None:
+                raise ValueError("conditional fill requires a comparison condition")
+            if self.comparison_basis != ComparisonBasis.ENGINEERING_VALUE:
+                raise ValueError("conditional fill requires engineering-value comparison")
+            if self.overlay_policy_id is not None or self.overlay_policy_revision is not None:
+                raise ValueError("conditional fill cannot carry an overlay policy")
+        else:
+            if self.condition is not None:
+                raise ValueError("crossover direction is owned by the overlay policy")
+            if self.comparison_basis != ComparisonBasis.NORMALIZED_TRACK_POSITION:
+                raise ValueError("crossover fill requires normalized track positions")
+            if not self.overlay_policy_id or not self.overlay_policy_revision:
+                raise ValueError("crossover fill requires a versioned approved overlay policy")
+        return self
+
+
 class WdvCanonicalTrack(BaseModel):
     """One backend-governed WDV track with complete layout state."""
 
@@ -267,6 +319,7 @@ class WdvCanonicalSession(BaseModel):
     source: NonBlankString = "backend_owned_session_state"
     selected_track_uid: CanonicalUuid7 | None = None
     tracks: tuple[WdvCanonicalTrack, ...] = ()
+    curve_fills: tuple[WdvCanonicalCurveFill, ...] = ()
     warnings: tuple[str, ...] = ()
     updated_at: IsoDatetimeString
 
@@ -284,6 +337,33 @@ class WdvCanonicalSession(BaseModel):
         ]
         if len(assignment_uids) != len(set(assignment_uids)):
             raise ValueError("Duplicate assignment_uid in WDV session")
+
+        fill_uids = [item.fill_uid for item in self.curve_fills]
+        if len(fill_uids) != len(set(fill_uids)):
+            raise ValueError("Duplicate fill_uid in WDV session")
+        assignment_uid_set = set(assignment_uids)
+        assignment_by_uid = {
+            assignment.assignment_uid: assignment
+            for track in self.tracks
+            for assignment in track.assignments
+        }
+        for fill in self.curve_fills:
+            if fill.track_uid not in track_uid_set:
+                raise ValueError("curve fill track_uid must reference a session track")
+            if fill.owner_assignment_uid not in assignment_uid_set:
+                raise ValueError("curve fill owner_assignment_uid must reference a session assignment")
+            owner = assignment_by_uid[fill.owner_assignment_uid]
+            if owner.track_uid != fill.track_uid:
+                raise ValueError("curve fill owner assignment must belong to fill track")
+            if fill.operand_a.managed_well_uid != owner.managed_well_uid or fill.operand_b.managed_well_uid != owner.managed_well_uid:
+                raise ValueError("curve fill operands must belong to the owner assignment well")
+            for operand in (fill.operand_a, fill.operand_b):
+                if getattr(operand, "type", None) == "curve":
+                    matches = [a for a in assignment_by_uid.values() if a.managed_curve_uid == operand.curve_uid]
+                    if not matches:
+                        raise ValueError("curve fill curve operand must reference an assigned managed curve")
+                    if any(a.track_uid != fill.track_uid for a in matches):
+                        raise ValueError("curve fill curve operands must be assigned to the same track")
 
         if (
             self.selected_track_uid is not None
@@ -304,6 +384,8 @@ class WdvCanonicalSession(BaseModel):
                 raise ValueError(
                     "Empty or cleared WDV sessions cannot select a track"
                 )
+            if self.curve_fills:
+                raise ValueError("Empty or cleared WDV sessions cannot contain curve fills")
         return self
 
 

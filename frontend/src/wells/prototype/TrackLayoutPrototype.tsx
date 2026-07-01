@@ -1201,7 +1201,7 @@ export function TrackLayoutPrototype() {
               </header>
             </section>) : activeView === 'knowledge' ? (<div className="wlv-kr-page-shell">
               <KrManagedInstructionsWorkbench />
-            </div>) : activeView === 'sources' ? (<SourceIntakeWorkbench />) : activeView === 'wellbore-3d' ? (<Wellbore3DPage activeManagedWellId={managedViewerWellId} onOpenLogViewer={() => setActiveView('log-viewer')}/>) : <WdvPageBoundary managedViewerWell={managedViewerWell} setManagedViewerWell={setManagedViewerWell} onOpenWellbore3D={() => setActiveView("wellbore-3d")}/>}
+            </div>) : activeView === 'sources' ? (<SourceIntakeWorkbench />) : activeView === 'wellbore-3d' ? (<Wellbore3DPage onOpenLogViewer={() => setActiveView('log-viewer')}/>) : <WdvPageBoundary managedViewerWell={managedViewerWell} setManagedViewerWell={setManagedViewerWell} onOpenWellbore3D={() => setActiveView("wellbore-3d")}/>}
         </main>
       </div>);
 }

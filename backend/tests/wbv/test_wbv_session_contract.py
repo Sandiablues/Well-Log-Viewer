@@ -78,7 +78,7 @@ def test_wbv_session_returns_not_loaded_when_no_wdv_well_is_loaded(tmp_path: Pat
     assert session.active_managed_well_id is None
     assert session.available_layers.trajectory is False
     assert session.available_layers.loaded_curves is False
-    assert session.warnings[0].code == "no_loaded_wdv_well"
+    assert session.warnings[0].code == "no_active_wdv_workspace_well"
 
 
 def test_wbv_session_uses_backend_wdv_load_session_as_source_authority(tmp_path: Path) -> None:
@@ -149,3 +149,42 @@ def test_wbv_viewer_package_can_surface_future_backend_owned_trajectory_package(
     assert package.available_layers.survey_stations is True
     assert package.trajectory.method == "minimum_curvature"
     assert package.trajectory.render_points == [{"md": 0.0, "tvd": 0.0, "x": 0.0, "y": 0.0, "z": 0.0}]
+
+
+def test_wbv_session_uses_backend_workspace_active_well_when_multiple_wells_are_loaded(tmp_path: Path) -> None:
+    repository = ManagedWellInventoryRepository(storage_path=tmp_path / "inventory.json")
+    inventory = ManagedWellInventoryService(repository=repository)
+    first = _record("managed-well:a", ["GR"])
+    second = _record("managed-well:b", ["RT"])
+    second.managed_well_uid = "019f2000-0000-7000-8000-000000000003"
+    repository.upsert_record(first)
+    repository.upsert_record(second)
+
+    inventory.load_managed_well_to_wdv("managed-well:a", product_ids=["GR"])
+    inventory.load_managed_well_to_wdv("managed-well:b", product_ids=["RT"])
+    inventory.set_active_wdv_well("managed-well:b")
+
+    session = WbvService(repository=repository).get_session()
+
+    assert session.active_managed_well_id == "managed-well:b"
+    assert session.source_session is not None
+    assert session.source_session.source_product_ids == ["RT"]
+    assert all(warning.code != "multiple_loaded_wdv_wells" for warning in session.warnings)
+
+
+def test_wbv_set_active_well_commands_backend_workspace(tmp_path: Path) -> None:
+    repository = ManagedWellInventoryRepository(storage_path=tmp_path / "inventory.json")
+    inventory = ManagedWellInventoryService(repository=repository)
+    first = _record("managed-well:a", ["GR"])
+    second = _record("managed-well:b", ["RT"])
+    second.managed_well_uid = "019f2000-0000-7000-8000-000000000003"
+    repository.upsert_record(first)
+    repository.upsert_record(second)
+
+    inventory.load_managed_well_to_wdv("managed-well:a", product_ids=["GR"])
+    inventory.load_managed_well_to_wdv("managed-well:b", product_ids=["RT"])
+
+    session = WbvService(repository=repository).set_active_well("managed-well:a")
+
+    assert session.active_managed_well_id == "managed-well:a"
+    assert inventory.get_wdv_workspace().active_managed_well_id == "managed-well:a"

@@ -124,6 +124,7 @@ class WdvWorkspaceService:
             active_managed_well_id=active_id,
             active_managed_well_uid=active_uid,
             loaded_wells=summaries,
+            active_aoi=stored.get("active_aoi") if isinstance(stored.get("active_aoi"), dict) else None,
             updated_at=updated_at,
         )
 

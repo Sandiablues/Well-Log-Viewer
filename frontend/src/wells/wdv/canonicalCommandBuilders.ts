@@ -205,3 +205,70 @@ export function moveAssignmentCommand(
     },
   };
 }
+
+export function upsertCurveFillCommand(input: {
+  revision: number;
+  fillUid?: string | null;
+  trackUid: string;
+  ownerAssignmentUid: string;
+  ownerCurveUid: string;
+  comparisonCurveUid: string;
+  managedWellUid: string;
+  ownerUnit: string | null;
+  comparisonUnit: string | null;
+  fillMode: 'conditional' | 'crossover';
+  condition: 'a_greater_than_b' | 'a_less_than_b' | null;
+  overlayPolicyId: string | null;
+  overlayPolicyRevision: string | null;
+  fill: string;
+  opacity: number;
+  deadband: number | null;
+  minimumInterval: number | null;
+  depthUnit: string;
+}): CanonicalSessionCommandV21 {
+  const depthDomainUid = `md:${input.managedWellUid}`;
+  const operand = (curveUid: string, unit: string | null) => ({
+    type: 'curve',
+    managed_well_uid: input.managedWellUid,
+    curve_uid: curveUid,
+    depth_domain_uid: depthDomainUid,
+    unit,
+  });
+  return {
+    kind: 'upsert_curve_fill',
+    body: {
+      expected_revision: input.revision,
+      fill_uid: input.fillUid ?? null,
+      track_uid: input.trackUid,
+      owner_assignment_uid: input.ownerAssignmentUid,
+      fill_mode: input.fillMode,
+      operand_a: operand(input.ownerCurveUid, input.ownerUnit),
+      operand_b: operand(input.comparisonCurveUid, input.comparisonUnit),
+      condition: input.fillMode === 'conditional' ? input.condition : null,
+      comparison_basis: input.fillMode === 'conditional'
+        ? 'engineering_value'
+        : 'normalized_track_position',
+      overlay_policy_id: input.fillMode === 'crossover'
+        ? input.overlayPolicyId
+        : null,
+      overlay_policy_revision: input.fillMode === 'crossover'
+        ? input.overlayPolicyRevision
+        : null,
+      style: { fill: input.fill, opacity: input.opacity },
+      deadband: input.deadband,
+      minimum_interval: input.minimumInterval,
+      depth_unit: input.depthUnit,
+      enabled: true,
+    },
+  };
+}
+
+export function removeCurveFillCommand(
+  revision: number,
+  fillUid: string,
+): CanonicalSessionCommandV21 {
+  return {
+    kind: 'remove_curve_fill',
+    body: { expected_revision: revision, fill_uid: fillUid },
+  };
+}
