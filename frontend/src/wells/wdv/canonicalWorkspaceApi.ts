@@ -28,9 +28,7 @@ export type CanonicalWorkspaceCommandKind =
   | 'update_assignment'
   | 'move_assignment'
   | 'reorder_assignments'
-  | 'select_track'
-  | 'upsert_curve_fill'
-  | 'remove_curve_fill';
+  | 'select_track';
 
 export interface CanonicalWorkspaceCommandIntent {
   kind: CanonicalWorkspaceCommandKind;
@@ -51,8 +49,6 @@ function commandPath(kind: CanonicalWorkspaceCommandKind): string {
     case 'move_assignment': return 'assignments/move';
     case 'reorder_assignments': return 'assignments/reorder';
     case 'select_track': return 'selection';
-    case 'upsert_curve_fill': return 'curve-fills/upsert';
-    case 'remove_curve_fill': return 'curve-fills/remove';
   }
 }
 

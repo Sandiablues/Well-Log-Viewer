@@ -55,28 +55,8 @@ export interface CanonicalViewerSessionV21 {
   stateStatus: 'empty' | 'active' | 'cleared';
   selectedTrackUid: TrackUid | null;
   tracks: WellLogTrackV21[];
-  curveFills?: CanonicalCurveFillV21[];
   warnings: string[];
   updatedAt: string;
-}
-
-
-export interface CanonicalCurveFillV21 {
-  fillUid: string;
-  trackUid: TrackUid;
-  ownerAssignmentUid: AssignmentUid;
-  fillMode: 'conditional' | 'crossover';
-  operandACurveUid: ManagedCurveUid;
-  operandBCurveUid: ManagedCurveUid;
-  condition: 'a_greater_than_b' | 'a_less_than_b' | null;
-  overlayPolicyId: string | null;
-  overlayPolicyRevision: string | null;
-  fill: string;
-  opacity: number;
-  deadband: number | null;
-  minimumInterval: number | null;
-  depthUnit: string;
-  enabled: boolean;
 }
 
 export class CanonicalWdvApiError extends Error {
@@ -459,35 +439,6 @@ function parseTrack(
   return track;
 }
 
-
-function parseCurveFill(value: unknown): CanonicalCurveFillV21 {
-  const record = requireRecord(value, 'curve fill');
-  const operandA = requireRecord(record.operand_a, 'curve fill operand_a');
-  const operandB = requireRecord(record.operand_b, 'curve fill operand_b');
-  if (operandA.type !== 'curve' || operandB.type !== 'curve') {
-    throw new WdvIdentityContractError('Canonical frontend currently requires curve operands');
-  }
-  const style = requireRecord(record.style, 'curve fill style');
-  const fillMode = enumValue(record.fill_mode, 'fill_mode', ['conditional','crossover'] as const, 'conditional');
-  return {
-    fillUid: requireString(record.fill_uid, 'fill_uid'),
-    trackUid: asTrackUid(record.track_uid),
-    ownerAssignmentUid: asAssignmentUid(record.owner_assignment_uid),
-    fillMode,
-    operandACurveUid: asManagedCurveUid(operandA.curve_uid),
-    operandBCurveUid: asManagedCurveUid(operandB.curve_uid),
-    condition: record.condition == null ? null : enumValue(record.condition,'condition',['a_greater_than_b','a_less_than_b'] as const,'a_greater_than_b'),
-    overlayPolicyId: optionalString(record.overlay_policy_id,'overlay_policy_id'),
-    overlayPolicyRevision: optionalString(record.overlay_policy_revision,'overlay_policy_revision'),
-    fill: requireString(style.fill,'style.fill'),
-    opacity: finiteNumber(style.opacity,'style.opacity'),
-    deadband: optionalFiniteNumber(record.deadband,'deadband'),
-    minimumInterval: optionalFiniteNumber(record.minimum_interval,'minimum_interval'),
-    depthUnit: requireString(record.depth_unit,'depth_unit'),
-    enabled: optionalBoolean(record.enabled,'enabled',true),
-  };
-}
-
 export function parseCanonicalViewerSessionV21(
   value: unknown,
   curves: readonly CurveCatalogItemV21[],
@@ -540,7 +491,6 @@ export function parseCanonicalViewerSessionV21(
         ? null
         : asTrackUid(record.selected_track_uid),
     tracks,
-    curveFills: Array.isArray(record.curve_fills) ? record.curve_fills.map(parseCurveFill) : [],
     warnings: stringArray(record.warnings, 'warnings'),
     updatedAt: requireString(record.updated_at, 'updated_at'),
   };
@@ -629,9 +579,7 @@ export type CanonicalSessionCommandV21 =
   | { kind: 'update_assignment'; body: Record<string, unknown> }
   | { kind: 'move_assignment'; body: Record<string, unknown> }
   | { kind: 'reorder_assignments'; body: Record<string, unknown> }
-  | { kind: 'select_track'; body: Record<string, unknown> }
-  | { kind: 'upsert_curve_fill'; body: Record<string, unknown> }
-  | { kind: 'remove_curve_fill'; body: Record<string, unknown> };
+  | { kind: 'select_track'; body: Record<string, unknown> };
 
 function commandPath(kind: CanonicalSessionCommandV21['kind']): string {
   switch (kind) {
@@ -655,10 +603,6 @@ function commandPath(kind: CanonicalSessionCommandV21['kind']): string {
       return 'assignments/reorder';
     case 'select_track':
       return 'selection';
-    case 'upsert_curve_fill':
-      return 'curve-fills/upsert';
-    case 'remove_curve_fill':
-      return 'curve-fills/remove';
   }
 }
 

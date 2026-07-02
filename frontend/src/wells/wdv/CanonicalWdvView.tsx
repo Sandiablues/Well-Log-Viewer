@@ -370,7 +370,6 @@ export function CanonicalWdvView({
           session={session}
           curves={viewerPackage.curves}
           selection={selection}
-          depthUnit={viewerPackage.depthRange.unit}
           onCommand={(command) => void runCommand(command)}
         />
       </div>

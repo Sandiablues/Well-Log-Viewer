@@ -7,7 +7,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.identity.wdv_contract_v2 import CanonicalUuid7, FiniteNumber, NonBlankString
-from app.curve_fill.models import ComparisonBasis, ComparisonCondition, FillMode, FillOperand, FillStyle
 
 
 class RevisionGuardedCommand(BaseModel):
@@ -262,25 +261,3 @@ class MoveCurveAssignmentCommand(RevisionGuardedCommand):
     assignment_uid: CanonicalUuid7
     target_track_uid: CanonicalUuid7
     target_stack_index: int = Field(ge=0)
-
-
-class UpsertCurveFillCommand(RevisionGuardedCommand):
-    fill_uid: CanonicalUuid7 | None = None
-    track_uid: CanonicalUuid7
-    owner_assignment_uid: CanonicalUuid7
-    fill_mode: FillMode
-    operand_a: FillOperand
-    operand_b: FillOperand
-    condition: ComparisonCondition | None = None
-    comparison_basis: ComparisonBasis
-    overlay_policy_id: str | None = None
-    overlay_policy_revision: str | None = None
-    style: FillStyle
-    deadband: FiniteNumber | None = Field(default=None, ge=0)
-    minimum_interval: FiniteNumber | None = Field(default=None, ge=0)
-    depth_unit: NonBlankString
-    enabled: bool = True
-
-
-class RemoveCurveFillCommand(RevisionGuardedCommand):
-    fill_uid: CanonicalUuid7

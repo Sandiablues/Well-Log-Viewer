@@ -26,8 +26,6 @@ from app.wdv_session.canonical_commands import (
     SelectTrackCommand,
     UpdateCurveAssignmentCommand,
     UpdateTrackCommand,
-    UpsertCurveFillCommand,
-    RemoveCurveFillCommand,
 )
 from app.wdv_session.canonical_service import (
     CanonicalSessionCommandReplayConflict,
@@ -208,21 +206,3 @@ def move_assignment(
     service: CanonicalWdvCommandService = Depends(get_service),
 ) -> WdvCanonicalSession:
     return _translate(lambda: service.move_assignment(managed_well_uid, command))
-
-
-@router.post("/{managed_well_uid}/curve-fills/upsert", response_model=WdvCanonicalSession)
-def upsert_curve_fill(
-    managed_well_uid: str,
-    command: UpsertCurveFillCommand,
-    service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
-    return _translate(lambda: service.upsert_curve_fill(managed_well_uid, command))
-
-
-@router.post("/{managed_well_uid}/curve-fills/remove", response_model=WdvCanonicalSession)
-def remove_curve_fill(
-    managed_well_uid: str,
-    command: RemoveCurveFillCommand,
-    service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
-    return _translate(lambda: service.remove_curve_fill(managed_well_uid, command))
