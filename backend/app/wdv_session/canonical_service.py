@@ -62,6 +62,7 @@ def _refresh_assignments_and_stamp(
 def _migrate_legacy_session_payload(raw: dict[str, Any]) -> dict[str, Any]:
     """One-time storage-boundary conversion; legacy state never enters runtime."""
     migrated = json.loads(json.dumps(raw))
+    migrated.setdefault("curve_fills", [])
     session_well_uid = migrated.get("managed_well_uid")
     for track in migrated.get("tracks", []):
         if not track.get("managed_well_uid"):
@@ -202,6 +203,44 @@ class CanonicalWdvSessionService:
             expected_revision=expected_revision,
             mutation=mutation,
         )
+
+    def promote_command_receipt_session(
+        self,
+        managed_well_uid: str,
+        *,
+        command_id: str,
+        command_fingerprint: str,
+        session: WdvCanonicalSession,
+    ) -> None:
+        """Atomically promote a command receipt to a later canonical session.
+
+        Compound backend workflows may persist the command mutation first and
+        then promote derived backend-owned state (for example resolved geometry
+        metadata). Replays must return the final canonical state, not the
+        intermediate mutation revision.
+        """
+        well_uid = str(parse_uuid7(managed_well_uid))
+        storage_key = self._storage_key(well_uid)
+        with self._lock:
+            store = self._read_store()
+            receipts_by_well = store.setdefault("command_receipts", {})
+            well_receipts = receipts_by_well.setdefault(storage_key, {})
+            receipt = well_receipts.get(command_id)
+            if receipt is None:
+                raise CanonicalSessionCommandReplayConflict(
+                    "Cannot promote an unknown command receipt"
+                )
+            if receipt.get("fingerprint") != command_fingerprint:
+                raise CanonicalSessionCommandReplayConflict(
+                    "command_id was already used with a different payload"
+                )
+            validated = WdvCanonicalSession.model_validate(
+                session.model_dump(mode="json")
+            )
+            if validated.managed_well_uid != well_uid:
+                raise ValueError("Receipt promotion session belongs to a different managed well")
+            receipt["session"] = validated.model_dump(mode="json")
+            self._write_store(store)
 
     def mutate_session_transactionally(
         self,

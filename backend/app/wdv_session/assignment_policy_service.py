@@ -149,6 +149,10 @@ class CanonicalWdvAssignmentPolicyService:
         )
         governed = self._materialize_policy(self._display_policy_resolver(resolved.product))
         update = dict(governed)
+        if assignment.scale_type_override is not None:
+            update["scale_type"] = assignment.scale_type_override
+        if assignment.scale_direction_override is not None:
+            update["scale_direction"] = assignment.scale_direction_override
         update.update({
             "effective_range_source": assignment.range_override_mode,
             "override_warning_code": None,

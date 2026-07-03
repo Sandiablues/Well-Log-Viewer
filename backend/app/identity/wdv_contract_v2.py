@@ -27,6 +27,7 @@ from pydantic import (
 )
 
 from app.identity import LegacyIdentityAlias, parse_uuid7
+from app.curve_fill_v2.models import CanonicalCurveFillRule
 
 
 WDV_IDENTITY_CONTRACT_VERSION = "wdv_identity_v2_1"
@@ -113,6 +114,8 @@ class WdvCanonicalAssignment(BaseModel):
     scale_max_label: str | None = None
     scale_type: Literal["linear", "logarithmic"] | None = None
     scale_direction: Literal["normal", "reversed"] | None = None
+    scale_type_override: Literal["linear", "logarithmic"] | None = None
+    scale_direction_override: Literal["normal", "reversed"] | None = None
     # User intent is explicit. Effective scale_* fields are backend outputs.
     range_override_mode: Literal["governed", "manual", "fit_to_curve", "fit_to_curve_p05_p95", "fit_to_curve_p01_p99"] = "governed"
     manual_scale_min: FiniteNumber | None = None
@@ -267,6 +270,7 @@ class WdvCanonicalSession(BaseModel):
     source: NonBlankString = "backend_owned_session_state"
     selected_track_uid: CanonicalUuid7 | None = None
     tracks: tuple[WdvCanonicalTrack, ...] = ()
+    curve_fills: tuple[CanonicalCurveFillRule, ...] = ()
     warnings: tuple[str, ...] = ()
     updated_at: IsoDatetimeString
 
@@ -293,6 +297,34 @@ class WdvCanonicalSession(BaseModel):
                 "selected_track_uid must reference a track in the WDV session"
             )
 
+        assignment_by_uid = {
+            assignment.assignment_uid: assignment
+            for track in self.tracks
+            for assignment in track.assignments
+        }
+        fill_uids = [rule.rule_uid for rule in self.curve_fills]
+        if len(fill_uids) != len(set(fill_uids)):
+            raise ValueError("Duplicate rule_uid in WDV session")
+        rules_by_track: dict[str, list[CanonicalCurveFillRule]] = {}
+        for rule in self.curve_fills:
+            if rule.managed_well_uid != self.managed_well_uid:
+                raise ValueError("Curve Fill rule belongs to a different managed well")
+            track = next((item for item in self.tracks if item.track_uid == rule.track_uid), None)
+            if track is None or track.track_type != "curve":
+                raise ValueError("Curve Fill rule must reference a curve track in the session")
+            assignment_a = assignment_by_uid.get(rule.curve_a_assignment_uid)
+            if assignment_a is None or assignment_a.track_uid != rule.track_uid:
+                raise ValueError("Curve Fill Curve A assignment must belong to the rule track")
+            if rule.curve_b_assignment_uid is not None:
+                assignment_b = assignment_by_uid.get(rule.curve_b_assignment_uid)
+                if assignment_b is None or assignment_b.track_uid != rule.track_uid:
+                    raise ValueError("Curve Fill Curve B assignment must belong to the rule track")
+            rules_by_track.setdefault(rule.track_uid, []).append(rule)
+        for rules in rules_by_track.values():
+            orders = sorted(rule.order for rule in rules)
+            if orders != list(range(len(rules))):
+                raise ValueError("Curve Fill rule order must be contiguous per track")
+
         if self.state_status == "active" and not self.tracks:
             raise ValueError("Active WDV sessions must contain at least one track")
         if self.state_status in {"empty", "cleared"}:
@@ -304,6 +336,8 @@ class WdvCanonicalSession(BaseModel):
                 raise ValueError(
                     "Empty or cleared WDV sessions cannot select a track"
                 )
+            if self.curve_fills:
+                raise ValueError("Empty or cleared WDV sessions cannot contain Curve Fill rules")
         return self
 
 

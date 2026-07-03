@@ -31,6 +31,7 @@ from .knowledge.api_managed_knowledge import router as managed_knowledge_router
 from .knowledge.api_managed_knowledge import resolve_router as resolve_knowledge_router
 from .knowledge.api_managed_instructions import router as managed_instruction_router
 from .wdv_shared_canvas.router import router as shared_canvas_router
+from .curve_fill_v2.router import router as curve_fill_v2_router
 
 app = FastAPI(
     title="MultiViewer Well Log Viewer Backend",
@@ -74,4 +75,5 @@ app.include_router(canonical_wdv_workspace_router)
 app.include_router(canonical_template_command_router)
 app.include_router(wdv_template_router)
 app.include_router(shared_canvas_router)
+app.include_router(curve_fill_v2_router)
 app.include_router(wlv_router)

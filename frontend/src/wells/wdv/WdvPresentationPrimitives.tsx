@@ -1,3 +1,4 @@
+import { resolvedCurveFillPaintV2, type CurveFillGeometryV2 } from './curveFillV2';
 // WLV WDV presentation primitives.
 // Extracted from TrackLayoutPrototype.
 
@@ -1786,7 +1787,32 @@ export function LithologyTrackView({ track, viewDepthRange, trackBodyHeightPx, }
         })}
     </div>);
 }
-export function CurveTrackView({ track, depthTicks, viewDepthRange, trackBodyHeightPx, managedSamplesByCurveId, managedSampleErrorsByCurveId, curveCatalogItems, }: {
+function curveFillPolygonPathV2(
+    geometry: CurveFillGeometryV2,
+    viewDepthRange: DepthViewRange,
+    trackBodyHeightPx: number,
+): string[] {
+    return geometry.polygons.flatMap((polygon) => {
+        if (polygon.vertices.length < 2) return [];
+        const left = polygon.vertices.map((vertex) =>
+            `${vertex.x_a_px},${depthToY(vertex.depth, viewDepthRange, trackBodyHeightPx)}`
+        );
+        const right = [...polygon.vertices].reverse().map((vertex) =>
+            `${vertex.x_b_px},${depthToY(vertex.depth, viewDepthRange, trackBodyHeightPx)}`
+        );
+        return [`M ${left.join(' L ')} L ${right.join(' L ')} Z`];
+    });
+}
+
+
+function curveFillPaintId(ruleUid: string): string { return `curve-fill-paint-${ruleUid.replace(/[^a-zA-Z0-9_-]/g, '-')}`; }
+function curveFillSvgPaint(geometry: CurveFillGeometryV2): string {
+  const paint = resolvedCurveFillPaintV2(geometry);
+  if (paint.appearance === 'solid') return geometry.style.color;
+  return `url(#${curveFillPaintId(geometry.rule_uid)})`;
+}
+
+export function CurveTrackView({ track, depthTicks, viewDepthRange, trackBodyHeightPx, managedSamplesByCurveId, managedSampleErrorsByCurveId, curveCatalogItems, curveFillGeometryByRuleUid = new Map(), }: {
     track: CurveTrack;
     depthTicks: number[];
     viewDepthRange: DepthViewRange;
@@ -1794,6 +1820,7 @@ export function CurveTrackView({ track, depthTicks, viewDepthRange, trackBodyHei
     managedSamplesByCurveId: ManagedCurveSamplesByCurveId;
     managedSampleErrorsByCurveId: Record<string, string>;
     curveCatalogItems: CurveCatalogItem[];
+    curveFillGeometryByRuleUid?: ReadonlyMap<string, CurveFillGeometryV2>;
 }) {
     const ordered = orderedCurves(track);
     const backToFront = [...ordered].sort((a, b) => {
@@ -1807,6 +1834,9 @@ export function CurveTrackView({ track, depthTicks, viewDepthRange, trackBodyHei
     const missingSampleMessages = ordered
         .map((assignment) => managedSampleErrorsByCurveId[assignment.curveId])
         .filter((message, index, all): message is string => Boolean(message) && all.indexOf(message) === index);
+    const curveFillGeometry = [...curveFillGeometryByRuleUid.values()]
+        .filter((geometry) => geometry.track_uid === track.trackId)
+        .sort((left, right) => left.order - right.order || left.rule_uid.localeCompare(right.rule_uid));
     return (<svg className={`wlv-curve-track-svg ${lattice.lattice}`} viewBox={`0 0 ${trackWidth} ${trackBodyHeightPx}`} preserveAspectRatio="none">
       <defs>
         <pattern id={`infill-hatch-${track.trackId}`} width="8" height="8" patternUnits="userSpaceOnUse">
@@ -1831,6 +1861,29 @@ export function CurveTrackView({ track, depthTicks, viewDepthRange, trackBodyHei
             const y = depthToY(depth, viewDepthRange, trackBodyHeightPx);
             return <line key={depth} x1="0" x2={trackWidth} y1={y} y2={y} stroke="#aeb8c5" strokeWidth="1"/>;
         })}
+      <defs>{curveFillGeometry.map((geometry) => {
+        const id = curveFillPaintId(geometry.rule_uid);
+        const paint = resolvedCurveFillPaintV2(geometry);
+        if (paint.appearance === 'raster' && paint.raster) {
+          const topY = depthToY(paint.raster.top_depth, viewDepthRange, trackBodyHeightPx);
+          const baseY = depthToY(paint.raster.base_depth, viewDepthRange, trackBodyHeightPx);
+          const y = Math.min(topY, baseY);
+          const height = Math.max(1, Math.abs(baseY - topY));
+          return <pattern key={id} id={id} x="0" y={y} width={trackWidth} height={height} patternUnits="userSpaceOnUse"><image href={paint.raster.image_url} x="0" y={y} width={trackWidth} height={height} preserveAspectRatio={paint.raster.horizontal_fit === 'stretch' ? 'none' : 'xMidYMid slice'} /></pattern>;
+        }
+        if (paint.appearance !== 'pattern') return null;
+        const scale = Math.max(0.25, paint.pattern_scale || 1);
+        const size = 8 * scale;
+        if (paint.pattern_uid === 'dots-v1') return <pattern key={id} id={id} width={size} height={size} patternUnits="userSpaceOnUse"><circle cx={size/2} cy={size/2} r={Math.max(1, scale)} fill={geometry.style.color}/></pattern>;
+        if (paint.pattern_uid === 'crosshatch-v1') return <pattern key={id} id={id} width={size} height={size} patternUnits="userSpaceOnUse"><path d={`M0 ${size}L${size} 0M0 0L${size} ${size}`} stroke={geometry.style.color} strokeWidth={Math.max(1, scale)}/></pattern>;
+        if (paint.pattern_uid === 'bricks-v1') return <pattern key={id} id={id} width={size*2} height={size} patternUnits="userSpaceOnUse"><path d={`M0 0H${size*2}V${size}H0ZM0 ${size/2}H${size*2}M${size} 0V${size/2}M${size/2} ${size/2}V${size}`} fill="none" stroke={geometry.style.color} strokeWidth={Math.max(1, scale)}/></pattern>;
+        return <pattern key={id} id={id} width={size} height={size} patternUnits="userSpaceOnUse"><path d={`M-${size/4} ${size/4}L${size/4} -${size/4}M0 ${size}L${size} 0M${size*3/4} ${size*5/4}L${size*5/4} ${size*3/4}`} stroke={geometry.style.color} strokeWidth={Math.max(1, scale)}/></pattern>;
+      })}</defs>
+      {curveFillGeometry.flatMap((geometry) =>
+          curveFillPolygonPathV2(geometry, viewDepthRange, trackBodyHeightPx).map((path, index) => (
+            <path key={`${geometry.rule_uid}-${geometry.geometry_revision}-${index}`} d={path} fill={curveFillSvgPaint(geometry)} fillOpacity={geometry.style.opacity} stroke="none" data-curve-fill-rule-uid={geometry.rule_uid}/>
+          ))
+        )}
       {backToFront.map((assignment, index) => {
             const curve = resolveCurveAssignmentCatalogItem(curveCatalogItems, assignment);
             if (!curve)
@@ -1959,7 +2012,7 @@ export function CurveHeaderActionMenuPortal({ trackId, assignmentId, assignmentI
       </button>
     </div>, document.body);
 }
-export function TrackView({ track, sharedHeaderHeightPx, selected, selectedAssignmentId, openCurveMenu, depthTicks, viewDepthRange, onSelectTrack, onSelectCurve, onReorderCurve, onMoveCurveToTrack, onOpenCurveMenu, onCloseCurveMenu, onRemoveCurveFromTrack, onStartCurveTrackResize, resizingTrackId, trackBodyHeightPx, managedSamplesByCurveId, managedSampleErrorsByCurveId, curveCatalogItems, }: {
+export function TrackView({ track, sharedHeaderHeightPx, selected, selectedAssignmentId, openCurveMenu, depthTicks, viewDepthRange, onSelectTrack, onSelectCurve, onReorderCurve, onMoveCurveToTrack, onOpenCurveMenu, onCloseCurveMenu, onRemoveCurveFromTrack, onStartCurveTrackResize, resizingTrackId, trackBodyHeightPx, managedSamplesByCurveId, managedSampleErrorsByCurveId, curveCatalogItems, curveFillGeometryByRuleUid = new Map(), }: {
     track: WellLogTrack;
     sharedHeaderHeightPx: number;
     selected: boolean;
@@ -1983,6 +2036,7 @@ export function TrackView({ track, sharedHeaderHeightPx, selected, selectedAssig
     managedSamplesByCurveId: ManagedCurveSamplesByCurveId;
     managedSampleErrorsByCurveId: Record<string, string>;
     curveCatalogItems: CurveCatalogItem[];
+    curveFillGeometryByRuleUid?: ReadonlyMap<string, CurveFillGeometryV2>;
 }) {
     const widthPx = track.trackType === 'curve' ? clampCurveTrackWidth(track.widthPx) : track.widthPx;
     const width = `${widthPx}px`;
@@ -2037,11 +2091,11 @@ export function TrackView({ track, sharedHeaderHeightPx, selected, selectedAssig
       <div className="wlv-track-body" style={{ height: `${trackBodyHeightPx}px`, minHeight: `${trackBodyHeightPx}px`, flexBasis: `${trackBodyHeightPx}px` }}>
         {track.trackType === 'depth' ? <DepthTrackView track={track} depthTicks={trackDepthTicks} viewDepthRange={trackViewDepthRange} trackBodyHeightPx={trackBodyHeightPx}/> : null}
         {track.trackType === 'lithology' ? <LithologyTrackView track={track} viewDepthRange={trackViewDepthRange} trackBodyHeightPx={trackBodyHeightPx}/> : null}
-        {track.trackType === 'curve' ? (<CurveTrackView track={track} depthTicks={trackDepthTicks} viewDepthRange={trackViewDepthRange} trackBodyHeightPx={trackBodyHeightPx} managedSamplesByCurveId={managedSamplesByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} curveCatalogItems={curveCatalogItems}/>) : null}
+        {track.trackType === 'curve' ? (<CurveTrackView track={track} depthTicks={trackDepthTicks} viewDepthRange={trackViewDepthRange} trackBodyHeightPx={trackBodyHeightPx} managedSamplesByCurveId={managedSamplesByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} curveCatalogItems={curveCatalogItems} curveFillGeometryByRuleUid={curveFillGeometryByRuleUid}/>) : null}
       </div>
     </section>);
 }
-export function TrackCanvas({ tracks, selection, openCurveMenu, depthTicks, viewDepthRange, goToDepthMarker, intervalZoomActive, intervalSelection, dragPanActive, onSelectTrack, onSelectCurve, onReorderCurve, onMoveCurveToTrack, onOpenCurveMenu, onCloseCurveMenu, onRemoveCurveFromTrack, onStartIntervalSelection, onUpdateIntervalSelection, onArmIntervalSelection, onCompleteIntervalSelection, onStartDragPan, onUpdateDragPan, onEndDragPan, onStartCurveTrackResize, resizingTrackId, managedSamplesByCurveId, managedSampleErrorsByCurveId, curveCatalogItems, }: {
+export function TrackCanvas({ tracks, selection, openCurveMenu, depthTicks, viewDepthRange, goToDepthMarker, intervalZoomActive, intervalSelection, dragPanActive, onSelectTrack, onSelectCurve, onReorderCurve, onMoveCurveToTrack, onOpenCurveMenu, onCloseCurveMenu, onRemoveCurveFromTrack, onStartIntervalSelection, onUpdateIntervalSelection, onArmIntervalSelection, onCompleteIntervalSelection, onStartDragPan, onUpdateDragPan, onEndDragPan, onStartCurveTrackResize, resizingTrackId, managedSamplesByCurveId, managedSampleErrorsByCurveId, curveCatalogItems, curveFillGeometryByRuleUid = new Map(), }: {
     tracks: WellLogTrack[];
     selection: SelectionRef;
     openCurveMenu: {
@@ -2073,6 +2127,7 @@ export function TrackCanvas({ tracks, selection, openCurveMenu, depthTicks, view
     managedSamplesByCurveId: ManagedCurveSamplesByCurveId;
     managedSampleErrorsByCurveId: Record<string, string>;
     curveCatalogItems: CurveCatalogItem[];
+    curveFillGeometryByRuleUid?: ReadonlyMap<string, CurveFillGeometryV2>;
 }) {
     const canvasRef = useRef<HTMLElement | null>(null);
     const orderedTracks = sortTracks(tracks);
@@ -2212,7 +2267,7 @@ export function TrackCanvas({ tracks, selection, openCurveMenu, depthTicks, view
           <span>{Math.round(goToDepthMarker as number)} m</span>
         </div>)}
       <div className="wlv-track-strip">
-        {orderedTracks.map((track) => (<TrackView key={track.trackId} track={track} sharedHeaderHeightPx={sharedHeaderHeight} selected={selection.kind === 'track' && selection.trackId === track.trackId || selection.kind === 'curve' && selection.trackId === track.trackId} selectedAssignmentId={selection.kind === 'curve' && selection.trackId === track.trackId ? selection.assignmentId : null} openCurveMenu={openCurveMenu} depthTicks={depthTicks} viewDepthRange={viewDepthRange} onSelectTrack={onSelectTrack} onSelectCurve={onSelectCurve} onReorderCurve={onReorderCurve} onMoveCurveToTrack={onMoveCurveToTrack} onOpenCurveMenu={onOpenCurveMenu} onCloseCurveMenu={onCloseCurveMenu} onRemoveCurveFromTrack={onRemoveCurveFromTrack} onStartCurveTrackResize={onStartCurveTrackResize} resizingTrackId={resizingTrackId} trackBodyHeightPx={trackBodyHeightPx} managedSamplesByCurveId={managedSamplesByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} curveCatalogItems={curveCatalogItems}/>))}
+        {orderedTracks.map((track) => (<TrackView key={track.trackId} track={track} sharedHeaderHeightPx={sharedHeaderHeight} selected={selection.kind === 'track' && selection.trackId === track.trackId || selection.kind === 'curve' && selection.trackId === track.trackId} selectedAssignmentId={selection.kind === 'curve' && selection.trackId === track.trackId ? selection.assignmentId : null} openCurveMenu={openCurveMenu} depthTicks={depthTicks} viewDepthRange={viewDepthRange} onSelectTrack={onSelectTrack} onSelectCurve={onSelectCurve} onReorderCurve={onReorderCurve} onMoveCurveToTrack={onMoveCurveToTrack} onOpenCurveMenu={onOpenCurveMenu} onCloseCurveMenu={onCloseCurveMenu} onRemoveCurveFromTrack={onRemoveCurveFromTrack} onStartCurveTrackResize={onStartCurveTrackResize} resizingTrackId={resizingTrackId} trackBodyHeightPx={trackBodyHeightPx} managedSamplesByCurveId={managedSamplesByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} curveCatalogItems={curveCatalogItems} curveFillGeometryByRuleUid={curveFillGeometryByRuleUid}/>))}
       </div>
     </main>);
 }

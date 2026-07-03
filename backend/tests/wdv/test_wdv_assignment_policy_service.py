@@ -229,3 +229,30 @@ def test_refresh_preserves_explicit_manual_intent_and_recomputes_effective_value
     assert refreshed.scale_type == "linear"
     assert refreshed.scale_direction == "normal"
     assert refreshed.display_policy_source == "family"
+
+
+def test_refresh_preserves_explicit_scale_direction_and_type_overrides() -> None:
+    resolver, service = build({
+        "min": 1.95,
+        "max": 2.95,
+        "type": "linear",
+        "direction": "normal",
+        "source": "managed_knowledge_family_default",
+    })
+    original = service.create_assignment(
+        managed_well_uid=resolver.well_uid,
+        managed_curve_uid=resolver.curve_uid,
+        track_uid=new_uuid7_str(),
+        stack_index=0,
+        assignment_source="manual_backend_command",
+    ).model_copy(update={
+        "scale_direction_override": "reversed",
+        "scale_type_override": "logarithmic",
+    })
+
+    refreshed = service.refresh_assignment(original)
+
+    assert refreshed.scale_direction_override == "reversed"
+    assert refreshed.scale_direction == "reversed"
+    assert refreshed.scale_type_override == "logarithmic"
+    assert refreshed.scale_type == "logarithmic"

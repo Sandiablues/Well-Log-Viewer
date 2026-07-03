@@ -182,6 +182,8 @@ class ReorderTracksCommand(RevisionGuardedCommand):
 class UpdateCurveAssignmentCommand(RevisionGuardedCommand):
     assignment_uid: CanonicalUuid7
     visible: bool | None = None
+    scale_type: Literal["linear", "logarithmic"] | None = None
+    scale_direction: Literal["normal", "reversed"] | None = None
     range_override_mode: Literal["governed", "manual", "fit_to_curve", "fit_to_curve_p05_p95", "fit_to_curve_p01_p99"] | None = None
     manual_scale_min: FiniteNumber | None = None
     manual_scale_max: FiniteNumber | None = None
@@ -225,6 +227,8 @@ class UpdateCurveAssignmentCommand(RevisionGuardedCommand):
 
         fields = (
             self.visible,
+            self.scale_type,
+            self.scale_direction,
             self.range_override_mode,
             self.range_mode,
             self.color,

@@ -277,9 +277,14 @@ class CanonicalWdvCommandService:
             selected = session.selected_track_uid
             if not any(track.track_uid == selected for track in tracks):
                 selected = tracks[0].track_uid if tracks else None
+            retained_track_uids = {track.track_uid for track in tracks}
             return session.model_copy(
                 update={
                     "tracks": self._renumber_tracks(tracks),
+                    "curve_fills": tuple(
+                        rule for rule in session.curve_fills
+                        if rule.track_uid in retained_track_uids
+                    ),
                     "selected_track_uid": selected,
                     "state_status": "active" if tracks else "empty",
                 }
@@ -308,6 +313,10 @@ class CanonicalWdvCommandService:
             return session.model_copy(
                 update={
                     "tracks": tracks,
+                    "curve_fills": tuple(
+                        rule for rule in session.curve_fills
+                        if rule.track_uid != command.track_uid
+                    ),
                     "selected_track_uid": selected,
                     "state_status": "active" if tracks else "empty",
                 }
@@ -483,7 +492,16 @@ class CanonicalWdvCommandService:
                 raise CanonicalWdvCommandError(
                     f"Unknown assignment_uid: {command.assignment_uid}"
                 )
-            return session.model_copy(update={"tracks": tuple(tracks)})
+            return session.model_copy(
+                update={
+                    "tracks": tuple(tracks),
+                    "curve_fills": tuple(
+                        rule for rule in session.curve_fills
+                        if rule.curve_a_assignment_uid != command.assignment_uid
+                        and rule.curve_b_assignment_uid != command.assignment_uid
+                    ),
+                }
+            )
 
         return self._execute(managed_well_uid, command, mutate)
 
@@ -599,7 +617,20 @@ class CanonicalWdvCommandService:
                 raise CanonicalWdvCommandError(
                     f"Unknown track_uid: {command.track_uid}"
                 )
-            return session.model_copy(update={"tracks": tuple(tracks)})
+            invalidated_rules = tuple(
+                rule.model_copy(update={
+                    "state": type(rule.state)("pending_geometry"),
+                    "state_reason": None,
+                    "geometry_revision": None,
+                })
+                if rule.track_uid == command.track_uid and rule.enabled
+                else rule
+                for rule in session.curve_fills
+            )
+            return session.model_copy(update={
+                "tracks": tuple(tracks),
+                "curve_fills": invalidated_rules,
+            })
 
         return self._execute(managed_well_uid, command, mutate)
 
@@ -642,9 +673,15 @@ class CanonicalWdvCommandService:
                     "range_override_mode",
                     "manual_scale_min",
                     "manual_scale_max",
+                    "scale_type",
+                    "scale_direction",
                 },
                 exclude_none=True,
             )
+            if command.scale_type is not None:
+                patch["scale_type_override"] = command.scale_type
+            if command.scale_direction is not None:
+                patch["scale_direction_override"] = command.scale_direction
             if command.clear_paired_managed_curve_uid:
                 patch["paired_managed_curve_uid"] = None
             if command.range_override_mode is not None:
@@ -676,9 +713,22 @@ class CanonicalWdvCommandService:
                 raise CanonicalWdvCommandError(
                     f"Unknown assignment_uid: {command.assignment_uid}"
                 )
+            invalidated_rules = tuple(
+                rule.model_copy(update={
+                    "state": type(rule.state)("pending_geometry"),
+                    "state_reason": None,
+                    "geometry_revision": None,
+                })
+                if rule.enabled and (
+                    rule.curve_a_assignment_uid == command.assignment_uid
+                    or rule.curve_b_assignment_uid == command.assignment_uid
+                ) else rule
+                for rule in session.curve_fills
+            )
             return session.model_copy(
                 update={
                     "tracks": tuple(tracks),
+                    "curve_fills": invalidated_rules,
                     "display_policy_revision": self._policy_revision_fn(),
                 }
             )
@@ -773,6 +823,11 @@ class CanonicalWdvCommandService:
             return session.model_copy(
                 update={
                     "tracks": tuple(tracks),
+                    "curve_fills": tuple(
+                        rule for rule in session.curve_fills
+                        if rule.curve_a_assignment_uid != command.assignment_uid
+                        and rule.curve_b_assignment_uid != command.assignment_uid
+                    ),
                     "selected_track_uid": command.target_track_uid,
                 }
             )

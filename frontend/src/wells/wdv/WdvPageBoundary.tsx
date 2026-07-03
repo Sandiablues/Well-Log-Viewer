@@ -17,6 +17,18 @@ import { AddTrackDraft, CURVE_TRACK_MAX_WIDTH, CURVE_TRACK_MIN_WIDTH, CurveInven
 import { useWdvLayoutSource } from './useWdvLayoutSource';
 import type { CanonicalLayoutResult } from './useWdvLayoutSource';
 import { buildCompleteLasLoadRequest, buildCompleteLasLoadUrl } from './completeLasWorkflow';
+import {
+    applyCurveFillGeometryDeltaV2,
+    createCurveFillRuleV2,
+    fetchCurveFillFeatureStatusV2,
+    hydrateCurveFillV2,
+    removeCurveFillRuleV2,
+    updateCurveFillRuleV2,
+    reorderCurveFillRulesV2,
+    type CanonicalCurveFillRuleV2,
+    type CurveFillGeometryV2,
+    type CurveFillWorkflowResultV2,
+} from './curveFillV2';
 
 type WdvTemplateRecommendationEnvelope = {
     service: string;
@@ -129,6 +141,31 @@ export function preserveCanonicalTrackOrder(current: WellLogTrack[], incoming: W
     const preservedIds = new Set(preserved.map((track) => track.trackId));
     const appended = incoming.filter((track) => !preservedIds.has(track.trackId));
     return reindexTracksInCurrentOrder([...preserved, ...appended]);
+}
+
+export function preserveSelectionAcrossCanonicalRefresh(
+    current: SelectionRef,
+    incoming: WellLogTrack[],
+    backendSelectedTrackUid: string | null,
+): SelectionRef {
+    const selectedTrack = incoming.find((track) => track.trackId === current.trackId);
+    if (selectedTrack) {
+        if (
+            current.kind === 'curve'
+            && selectedTrack.trackType === 'curve'
+            && selectedTrack.curves.some((assignment) => assignment.assignmentId === current.assignmentId)
+        ) {
+            return current;
+        }
+        return { kind: 'track', trackId: selectedTrack.trackId };
+    }
+
+    if (backendSelectedTrackUid) {
+        const backendTrack = incoming.find((track) => track.trackId === backendSelectedTrackUid);
+        if (backendTrack) return { kind: 'track', trackId: backendTrack.trackId };
+    }
+
+    return { kind: 'track', trackId: incoming[0]?.trackId ?? '' };
 }
 
 function reindexTracksInCurrentOrder(tracks: WellLogTrack[]): WellLogTrack[] {
@@ -316,6 +353,7 @@ export interface RawCanonicalSession {
   state_status: 'empty' | 'active' | 'cleared';
   selected_track_uid: string | null;
   tracks: RawCanonicalTrack[];
+  curve_fills?: CanonicalCurveFillRuleV2[];
 }
 
 /** Regex matching any variant-4 UUID (v4/v5/v7, etc.) — used to gate
@@ -341,6 +379,15 @@ export function canonicalRangeOverrideCommandBody(
   assignment: CurveAssignment,
   patch: Partial<CurveAssignment>,
 ): Record<string, unknown> | null {
+  const body: Record<string, unknown> = {};
+
+  if (patch.scaleDirection !== undefined) {
+    body.scale_direction = patch.scaleDirection === 'reverse' ? 'reversed' : 'normal';
+  }
+  if (patch.scaleType !== undefined) {
+    body.scale_type = patch.scaleType === 'log' ? 'logarithmic' : 'linear';
+  }
+
   const hasRangeIntent =
     patch.rangeOverrideMode !== undefined
     || patch.manualScaleMin !== undefined
@@ -348,7 +395,7 @@ export function canonicalRangeOverrideCommandBody(
     || patch.scaleMin !== undefined
     || patch.scaleMax !== undefined;
 
-  if (!hasRangeIntent) return null;
+  if (!hasRangeIntent) return Object.keys(body).length > 0 ? body : null;
 
   const scaleChanged =
     patch.scaleMin !== undefined || patch.scaleMax !== undefined;
@@ -357,7 +404,8 @@ export function canonicalRangeOverrideCommandBody(
     ?? (scaleChanged ? 'manual' : assignment.rangeOverrideMode ?? 'governed');
 
   if (rangeOverrideMode !== 'manual') {
-    return { range_override_mode: rangeOverrideMode };
+    body.range_override_mode = rangeOverrideMode;
+    return body;
   }
 
   const manualScaleMin =
@@ -379,11 +427,10 @@ export function canonicalRangeOverrideCommandBody(
     throw new Error('Manual curve range requires two distinct finite bounds.');
   }
 
-  return {
-    range_override_mode: 'manual',
-    manual_scale_min: manualScaleMin,
-    manual_scale_max: manualScaleMax,
-  };
+  body.range_override_mode = 'manual';
+  body.manual_scale_min = manualScaleMin;
+  body.manual_scale_max = manualScaleMax;
+  return body;
 }
 
 export function canonicalCommandRequestBody(
@@ -704,6 +751,8 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
   const tracksRef = useRef<WellLogTrack[]>([]);
   useEffect(() => { tracksRef.current = tracks; }, [tracks]);
   const [selection, setSelection] = useState<SelectionRef>({ kind: 'track', trackId: 'track-gr-sp' });
+  const selectionRef = useRef<SelectionRef>(selection);
+  useEffect(() => { selectionRef.current = selection; }, [selection]);
   const [addTrackCurveSelectionMode, setAddTrackCurveSelectionMode] = useState(false);
   const [pendingAddTrackCurveIds, setPendingAddTrackCurveIds] = useState<string[]>([]);
   const [openCurveMenu, setOpenCurveMenu] = useState<{
@@ -728,6 +777,12 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
   // returned empty or was unreachable).  ≥ 0 means the session is live and
   // canonical commands can be dispatched.
   const canonicalRevisionRef = useRef<number>(-1);
+  const [canonicalSession, setCanonicalSession] = useState<RawCanonicalSession | null>(null);
+  const [curveFillFeatureEnabled, setCurveFillFeatureEnabled] = useState(false);
+  const [curveFillGeometryByRuleUid, setCurveFillGeometryByRuleUid] = useState<Map<string, CurveFillGeometryV2>>(() => new Map());
+  const [curveFillPending, setCurveFillPending] = useState(false);
+  const [curveFillError, setCurveFillError] = useState<string | null>(null);
+  const curveFillHydrationKeyRef = useRef<string | null>(null);
   const hasLoadedViewerWell = Boolean(managedViewerWellId);
   const [trackBackdropMode, setTrackBackdropMode] = useState<TrackBackdropMode>('light');
   const [wdvTemplateRecommendations, setWdvTemplateRecommendations] = useState<WdvTemplateRecommendationItem[]>([]);
@@ -744,6 +799,20 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
   const [completeLasResult, setCompleteLasResult] = useState<string | null>(null);
   const [logImageSourceOptions, setLogImageSourceOptions] = useState<LogImageSourceOption[]>([]);
   const [selectedLogImageSourceId, setSelectedLogImageSourceId] = useState('');
+  useEffect(() => {
+      if (activeView !== 'log-viewer') return;
+      let cancelled = false;
+      void fetchCurveFillFeatureStatusV2()
+          .then((status) => { if (!cancelled) setCurveFillFeatureEnabled(status.enabled); })
+          .catch(() => { if (!cancelled) setCurveFillFeatureEnabled(false); });
+      return () => { cancelled = true; };
+  }, [activeView]);
+
+  useEffect(() => {
+      setCurveFillGeometryByRuleUid(new Map());
+      curveFillHydrationKeyRef.current = null;
+  }, [managedViewerWellUid]);
+
   const selectedTrackForDepth = tracks.find((track) => track.trackId === selection.trackId) ?? null;
   const representedWellUids = useMemo(() => Array.from(new Set(
       tracks.map((track) => track.managedWellUid).filter((value): value is string => Boolean(value)),
@@ -1061,6 +1130,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
         { signal },
       );
       canonicalRevisionRef.current = canonicalSession.revision;
+      setCanonicalSession(canonicalSession);
       const canonicalTracks = canonicalSession.state_status === 'active'
         ? frontendTracksFromCanonicalSession(canonicalSession, activeCurveCatalog).map((track) => ({
             ...track,
@@ -1118,25 +1188,35 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
    * Updates tracks, canonical revision, and selection from backend truth.
    */
   const applyCanonicalSession = useCallback(
-    (rawSession: RawCanonicalSession): void => {
-      const nextTracks = frontendTracksFromCanonicalSession(rawSession, activeCurveCatalog).map((track) => ({
+    (
+      rawSession: RawCanonicalSession,
+      options: Readonly<{ preserveInteraction?: boolean }> = {},
+    ): void => {
+      const projectedTracks = frontendTracksFromCanonicalSession(rawSession, activeCurveCatalog).map((track) => ({
           ...track,
           ownerWellName: track.managedWellUid ? ownerWellNames.get(track.managedWellUid) : undefined,
       }));
+      const nextTracks = options.preserveInteraction
+        ? preserveCanonicalTrackOrder(tracksRef.current, projectedTracks)
+        : projectedTracks;
       canonicalRevisionRef.current = rawSession.revision;
+      setCanonicalSession(rawSession);
       setTracks(nextTracks);
-      if (nextTracks.length > 0) {
-        const selectedUid = rawSession.selected_track_uid;
-        const selectedExists =
-          selectedUid !== null &&
-          nextTracks.some((t) => t.trackId === selectedUid);
-        setSelection({
-          kind: 'track',
-          trackId: selectedExists ? selectedUid! : nextTracks[0].trackId,
-        });
-      }
+      setSelection(
+        options.preserveInteraction
+          ? preserveSelectionAcrossCanonicalRefresh(
+              selectionRef.current,
+              nextTracks,
+              rawSession.selected_track_uid,
+            )
+          : preserveSelectionAcrossCanonicalRefresh(
+              { kind: 'track', trackId: rawSession.selected_track_uid ?? '' },
+              nextTracks,
+              rawSession.selected_track_uid,
+            ),
+      );
     },
-    [activeCurveCatalog, ownerWellNames, wdvSessionKey],
+    [activeCurveCatalog, ownerWellNames],
   );
 
   const refreshCanonicalSession = useCallback(async (): Promise<void> => {
@@ -1146,6 +1226,81 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
     ).catch(() => null);
     if (fresh) applyCanonicalSession(fresh);
   }, [managedViewerWellUid, applyCanonicalSession]);
+
+  const applyCurveFillWorkflowResult = useCallback((result: CurveFillWorkflowResultV2<RawCanonicalSession>): void => {
+      setCurveFillGeometryByRuleUid((current) => applyCurveFillGeometryDeltaV2(current, result.geometry_delta));
+      applyCanonicalSession(result.session, { preserveInteraction: true });
+  }, [applyCanonicalSession]);
+
+  const createCurveFillRule = useCallback(async (body: Readonly<Record<string, unknown>>): Promise<void> => {
+      if (!managedViewerWellUid || !curveFillFeatureEnabled || canonicalRevisionRef.current < 0) return;
+      setCurveFillPending(true); setCurveFillError(null);
+      try {
+          const result = await createCurveFillRuleV2<RawCanonicalSession>(managedViewerWellUid, { ...body, expected_revision: canonicalRevisionRef.current });
+          applyCurveFillWorkflowResult(result);
+      } catch (error) {
+          setCurveFillError(error instanceof Error ? error.message : 'Curve Fill command failed');
+          await refreshCanonicalSession();
+      } finally { setCurveFillPending(false); }
+  }, [applyCurveFillWorkflowResult, curveFillFeatureEnabled, managedViewerWellUid, refreshCanonicalSession]);
+
+  const removeCurveFillRule = useCallback(async (ruleUid: string): Promise<void> => {
+      if (!managedViewerWellUid || !curveFillFeatureEnabled || canonicalRevisionRef.current < 0) return;
+      setCurveFillPending(true); setCurveFillError(null);
+      try {
+          const result = await removeCurveFillRuleV2<RawCanonicalSession>(managedViewerWellUid, canonicalRevisionRef.current, ruleUid);
+          applyCurveFillWorkflowResult(result);
+      } catch (error) {
+          setCurveFillError(error instanceof Error ? error.message : 'Curve Fill delete failed');
+          await refreshCanonicalSession();
+      } finally { setCurveFillPending(false); }
+  }, [applyCurveFillWorkflowResult, curveFillFeatureEnabled, managedViewerWellUid, refreshCanonicalSession]);
+
+  const updateCurveFillRule = useCallback(async (ruleUid: string, patch: Readonly<Record<string, unknown>>): Promise<void> => {
+      if (!managedViewerWellUid || !curveFillFeatureEnabled || canonicalRevisionRef.current < 0) return;
+      setCurveFillPending(true); setCurveFillError(null);
+      try {
+          const result = await updateCurveFillRuleV2<RawCanonicalSession>(managedViewerWellUid, {
+              expected_revision: canonicalRevisionRef.current,
+              rule_uid: ruleUid,
+              ...patch,
+          });
+          applyCurveFillWorkflowResult(result);
+      } catch (error) {
+          setCurveFillError(error instanceof Error ? error.message : 'Curve Fill update failed');
+          await refreshCanonicalSession();
+      } finally { setCurveFillPending(false); }
+  }, [applyCurveFillWorkflowResult, curveFillFeatureEnabled, managedViewerWellUid, refreshCanonicalSession]);
+
+  const reorderCurveFillRules = useCallback(async (trackUid: string, ruleUids: readonly string[]): Promise<void> => {
+      if (!managedViewerWellUid || !curveFillFeatureEnabled || canonicalRevisionRef.current < 0) return;
+      setCurveFillPending(true); setCurveFillError(null);
+      try {
+          const result = await reorderCurveFillRulesV2<RawCanonicalSession>(managedViewerWellUid, {
+              expected_revision: canonicalRevisionRef.current,
+              track_uid: trackUid,
+              rule_uids: ruleUids,
+          });
+          applyCurveFillWorkflowResult(result);
+      } catch (error) {
+          setCurveFillError(error instanceof Error ? error.message : 'Curve Fill reorder failed');
+          await refreshCanonicalSession();
+      } finally { setCurveFillPending(false); }
+  }, [applyCurveFillWorkflowResult, curveFillFeatureEnabled, managedViewerWellUid, refreshCanonicalSession]);
+
+  useEffect(() => {
+      if (!curveFillFeatureEnabled || !managedViewerWellUid || canonicalSession === null || curveFillPending) return;
+      const enabledRules = (canonicalSession.curve_fills ?? []).filter((rule) => rule.enabled);
+      if (!enabledRules.some((rule) => rule.state !== 'resolved' || !curveFillGeometryByRuleUid.has(rule.rule_uid))) return;
+      const key = `${managedViewerWellUid}:${canonicalSession.revision}:${enabledRules.map((rule) => rule.rule_uid).join('|')}`;
+      if (curveFillHydrationKeyRef.current === key) return;
+      curveFillHydrationKeyRef.current = key;
+      setCurveFillPending(true); setCurveFillError(null);
+      void hydrateCurveFillV2<RawCanonicalSession>(managedViewerWellUid, canonicalSession.revision)
+          .then(applyCurveFillWorkflowResult)
+          .catch((error) => setCurveFillError(error instanceof Error ? error.message : 'Curve Fill hydration failed'))
+          .finally(() => setCurveFillPending(false));
+  }, [applyCurveFillWorkflowResult, canonicalSession, curveFillFeatureEnabled, curveFillGeometryByRuleUid, curveFillPending, managedViewerWellUid]);
 
   const loadCompleteLas = useCallback(async (): Promise<void> => {
       if (!managedViewerWellUid || !completeLasSourceId || canonicalRevisionRef.current < 0) return;
@@ -1883,7 +2038,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
               </div>
             </section>) : (<section className="wlv-track-canvas wlv-track-canvas-empty-active" aria-label="Blank Well Data Viewer track canvas">
               <div className="wlv-track-strip" aria-hidden="true"/>
-            </section>)) : (<TrackCanvas tracks={tracks} selection={selection} openCurveMenu={openCurveMenu} depthTicks={visibleDepthTicks} viewDepthRange={viewDepthRange} goToDepthMarker={goToDepthMarker} intervalZoomActive={intervalZoomActive} intervalSelection={intervalSelection} dragPanActive={Boolean(dragPanState)} onSelectTrack={selectCanvasTrack} onSelectCurve={selectCanvasCurve} onReorderCurve={reorderCurve} onMoveCurveToTrack={moveCurveToTrack} onOpenCurveMenu={(trackId, assignmentId) => setOpenCurveMenu({ trackId, assignmentId })} onCloseCurveMenu={() => setOpenCurveMenu(null)} onRemoveCurveFromTrack={removeCurveFromTrack} onStartIntervalSelection={startIntervalSelection} onUpdateIntervalSelection={updateIntervalSelection} onArmIntervalSelection={armIntervalSelection} onCompleteIntervalSelection={completeIntervalSelection} onStartDragPan={startDragPan} onUpdateDragPan={updateDragPan} onEndDragPan={endDragPan} onStartCurveTrackResize={startCurveTrackResize} resizingTrackId={trackResizeState?.trackId ?? null} managedSamplesByCurveId={managedSamplesByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} curveCatalogItems={activeCurveCatalog}/>)}
+            </section>)) : (<TrackCanvas tracks={tracks} selection={selection} openCurveMenu={openCurveMenu} depthTicks={visibleDepthTicks} viewDepthRange={viewDepthRange} goToDepthMarker={goToDepthMarker} intervalZoomActive={intervalZoomActive} intervalSelection={intervalSelection} dragPanActive={Boolean(dragPanState)} onSelectTrack={selectCanvasTrack} onSelectCurve={selectCanvasCurve} onReorderCurve={reorderCurve} onMoveCurveToTrack={moveCurveToTrack} onOpenCurveMenu={(trackId, assignmentId) => setOpenCurveMenu({ trackId, assignmentId })} onCloseCurveMenu={() => setOpenCurveMenu(null)} onRemoveCurveFromTrack={removeCurveFromTrack} onStartIntervalSelection={startIntervalSelection} onUpdateIntervalSelection={updateIntervalSelection} onArmIntervalSelection={armIntervalSelection} onCompleteIntervalSelection={completeIntervalSelection} onStartDragPan={startDragPan} onUpdateDragPan={updateDragPan} onEndDragPan={endDragPan} onStartCurveTrackResize={startCurveTrackResize} resizingTrackId={trackResizeState?.trackId ?? null} managedSamplesByCurveId={managedSamplesByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} curveCatalogItems={activeCurveCatalog} curveFillGeometryByRuleUid={curveFillFeatureEnabled ? curveFillGeometryByRuleUid : new Map()}/>)}
         {tracks.length === 0 ? (<aside className="wlv-right-panel wlv-ready-properties-panel" aria-label="Track properties unavailable">
             <div className="wlv-panel-heading">
               <h2>Track Properties</h2>
@@ -1891,7 +2046,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
             <div className="wlv-ready-properties-copy">
               Create or select a visible track to edit display properties.
             </div>
-          </aside>) : (<WellLogPropertiesPanelSlot tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment} legacyPanel={(<RightPanel tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment}/>)}/>)}
+          </aside>) : (<WellLogPropertiesPanelSlot tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment} curveFillV2={{ enabled: curveFillFeatureEnabled, managedWellUid: managedViewerWellUid, revision: canonicalSession?.revision ?? canonicalRevisionRef.current, rules: canonicalSession?.curve_fills ?? [], pending: curveFillPending, error: curveFillError, onCreateRule: createCurveFillRule, onUpdateRule: updateCurveFillRule, onRemoveRule: removeCurveFillRule, onReorderRules: reorderCurveFillRules }} legacyPanel={(<RightPanel tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment}/>)}/>)}
       </div>
 
       <footer className="wlv-status-footer">

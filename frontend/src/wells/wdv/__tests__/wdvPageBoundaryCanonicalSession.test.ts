@@ -20,6 +20,7 @@ import {
   frontendTracksFromCanonicalSession,
   managedWellUidForCanvasSelection,
   preserveCanonicalTrackOrder,
+  preserveSelectionAcrossCanonicalRefresh,
   unionDepthRanges,
   WdvPageBoundary,
 } from '../WdvPageBoundary';
@@ -733,6 +734,26 @@ describe('WdvPageBoundary export regression', () => {
   });
 });
 
+describe('canonical display ownership bridge', () => {
+  it('sends reverse and scale-type changes to the backend canonical command', () => {
+    const assignment = {
+      assignmentId: VALID_UUID_2, curveId: VALID_UUID_2, curveUid: VALID_UUID_2,
+      stackIndex: 0, visible: true, scaleMin: 1.95, scaleMax: 2.95,
+      scaleDirection: 'normal', scaleType: 'linear', color: '#000000',
+      lineStyle: 'solid', lineWidth: 1, fillSide: 'none', fillColor: '#000000',
+      rangeOverrideMode: 'governed',
+    } as CurveAssignment;
+
+    expect(canonicalRangeOverrideCommandBody(assignment, {
+      scaleDirection: 'reverse',
+    })).toEqual({ scale_direction: 'reversed' });
+
+    expect(canonicalRangeOverrideCommandBody(assignment, {
+      scaleType: 'log',
+    })).toEqual({ scale_type: 'logarithmic' });
+  });
+});
+
 describe('canonical range ownership bridge', () => {
   it('sends governed and fit modes as intent only', () => {
     const assignment = {
@@ -909,5 +930,72 @@ describe('canvas selection active-well synchronization', () => {
       trackId: curveTrack.trackId,
       assignmentId: curveTrack.curves[0].assignmentId,
     })).toBe(ownerB);
+  });
+});
+
+describe('Curve Fill workflow interaction preservation', () => {
+  it('preserves curve-track order and selected assignment across a non-layout canonical refresh', () => {
+    const curveTrack = {
+      trackId: 'curve-track',
+      trackIndex: 0,
+      trackType: 'curve',
+      title: 'RHOZ / NPHI',
+      widthPx: 220,
+      visible: true,
+      lattice: 'linear',
+      latticeSource: 'front_curve_default',
+      curves: [
+        { assignmentId: 'rhoz-assignment', curveId: 'rhoz' },
+        { assignmentId: 'nphi-assignment', curveId: 'nphi' },
+      ],
+    } as any;
+    const depthTrack = {
+      trackId: 'depth-track',
+      trackIndex: 1,
+      trackType: 'depth',
+      title: 'MD',
+      depthBasis: 'MD',
+      unit: 'm',
+      widthPx: 86,
+      visible: true,
+    } as any;
+
+    const incoming = preserveCanonicalTrackOrder(
+      [curveTrack, depthTrack],
+      [
+        { ...depthTrack, trackIndex: 0 },
+        { ...curveTrack, trackIndex: 1 },
+      ],
+    );
+
+    expect(incoming.map((track) => track.trackId)).toEqual(['curve-track', 'depth-track']);
+    expect(
+      preserveSelectionAcrossCanonicalRefresh(
+        { kind: 'curve', trackId: 'curve-track', assignmentId: 'rhoz-assignment' },
+        incoming,
+        'depth-track',
+      ),
+    ).toEqual({ kind: 'curve', trackId: 'curve-track', assignmentId: 'rhoz-assignment' });
+  });
+
+  it('falls back to backend selection only when the prior selected entity no longer exists', () => {
+    const depthTrack = {
+      trackId: 'depth-track',
+      trackIndex: 0,
+      trackType: 'depth',
+      title: 'MD',
+      depthBasis: 'MD',
+      unit: 'm',
+      widthPx: 86,
+      visible: true,
+    } as any;
+
+    expect(
+      preserveSelectionAcrossCanonicalRefresh(
+        { kind: 'curve', trackId: 'removed-track', assignmentId: 'removed-assignment' },
+        [depthTrack],
+        'depth-track',
+      ),
+    ).toEqual({ kind: 'track', trackId: 'depth-track' });
   });
 });
