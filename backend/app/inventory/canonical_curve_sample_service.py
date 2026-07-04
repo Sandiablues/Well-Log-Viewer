@@ -12,7 +12,7 @@ from app.identity.wdv_contract_v2 import (
 from app.inventory.canonical_identity_resolver import CanonicalInventoryIdentityResolver
 from app.inventory.curve_sample_service import (
     CurveSampleServiceError,
-    _read_las_curve_samples,
+    _read_source_curve_samples,
 )
 
 
@@ -27,16 +27,20 @@ class CanonicalCurveSampleService:
         )
         product = resolved.product
         provenance = product.provenance if isinstance(product.provenance, dict) else {}
-        source_path = self._source_path(provenance)
+        source_path = self._source_path(
+            source=resolved.source,
+            product_provenance=provenance,
+        )
         if source_path is None:
             raise CurveSampleServiceError(
-                f"No readable LAS source path for managed_curve_uid={request.managed_curve_uid}"
+                "No readable source path for "
+                f"managed_curve_uid={request.managed_curve_uid}; "
+                f"managed_source_uid={resolved.managed_source_uid}"
             )
 
-        parsed = _read_las_curve_samples(
-            source_path=source_path,
-            curve_mnemonic=product.curve_name or product.display_name,
-            max_samples=request.max_samples,
+        parsed, sample_source = _read_source_curve_samples(
+            source_path=source_path, curve_mnemonic=product.curve_name or product.display_name,
+            max_samples=request.max_samples, source_kind=product.source_kind, provenance=provenance,
         )
         samples = tuple((float(depth), float(value)) for depth, value in parsed["samples"])
         return WdvCurveSampleResponse(
@@ -73,7 +77,7 @@ class CanonicalCurveSampleService:
             rejected_row_count=parsed.get("rejected_row_count", 0),
             decimation_stride=parsed["decimation_stride"],
             provenance=WdvCurveSampleProvenance(
-                sample_source="las_original_path",
+                sample_source=sample_source,
                 source_path=str(source_path),
                 source_intake_candidate_id=product.source_intake_candidate_id,
                 checksum=None,
@@ -83,12 +87,63 @@ class CanonicalCurveSampleService:
         )
 
     @staticmethod
-    def _source_path(provenance: dict[str, object]) -> Path | None:
-        for key in ("original_path", "path", "source_path"):
-            value = provenance.get(key)
+    def _source_path(
+        *,
+        source: object,
+        product_provenance: dict[str, object],
+    ) -> Path | None:
+        """Resolve samples from the canonical managed-source record.
+
+        The managed source is the authority for the retained source asset. Curve
+        provenance is accepted only as a compatibility fallback for inventory
+        records created before source-level asset ownership was enforced.
+        """
+
+        candidates: list[object] = [
+            getattr(source, "original_path", None),
+        ]
+
+        source_metadata = getattr(source, "metadata", None)
+        if isinstance(source_metadata, dict):
+            candidates.extend(
+                CanonicalCurveSampleService._path_candidates(source_metadata)
+            )
+
+        candidates.extend(
+            CanonicalCurveSampleService._path_candidates(product_provenance)
+        )
+
+        seen: set[str] = set()
+        for value in candidates:
             if not value:
                 continue
-            path = Path(str(value)).expanduser()
+            token = str(value).strip()
+            if not token or token in seen:
+                continue
+            seen.add(token)
+            path = Path(token).expanduser()
             if path.exists() and path.is_file():
                 return path.resolve()
         return None
+
+    @staticmethod
+    def _path_candidates(payload: dict[str, object]) -> list[object]:
+        candidates: list[object] = [
+            payload.get("storage_uri"),
+            payload.get("original_uri"),
+            payload.get("original_path"),
+            payload.get("path"),
+            payload.get("source_path"),
+        ]
+        for asset_key in ("dlis_asset", "las_asset"):
+            asset = payload.get(asset_key)
+            if isinstance(asset, dict):
+                candidates.extend(
+                    [
+                        asset.get("original_uri"),
+                        asset.get("storage_uri"),
+                        asset.get("original_path"),
+                        asset.get("path"),
+                    ]
+                )
+        return candidates
