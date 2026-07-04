@@ -25,7 +25,7 @@ def test_source_intake_expanded_parse_status_contract(tmp_path: Path) -> None:
     statuses = {candidate.file_name: candidate.parser_status for candidate in result.candidates}
 
     assert statuses["archive.zip"] == SourceIntakeParseStatus.CONTAINER_PENDING_EXTRACTION
-    assert statuses["legacy.dlis"] == SourceIntakeParseStatus.UNSUPPORTED
+    assert statuses["legacy.dlis"] == SourceIntakeParseStatus.PARSE_FAILED
     assert statuses["legacy.lis"] == SourceIntakeParseStatus.UNSUPPORTED
     assert statuses["report.pdf"] == SourceIntakeParseStatus.UNSUPPORTED
     assert statuses["unknown.bin"] == SourceIntakeParseStatus.NOT_PARSED

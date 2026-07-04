@@ -39,6 +39,7 @@ from .resolution_service import (
     is_ingestible,
     occurrence_identity,
 )
+from .dlis_parser import DlisInspectionError, inspect_dlis
 from .deviation_survey_parser import (
     DeviationSurveyParseError,
     parse_deviation_survey_full,
@@ -74,6 +75,7 @@ from .models import (
     SourceIntakeRepositoryStatus,
     SourceIntakeWellHeader,
     SourceIntakeCurveHeader,
+    SourceIntakeDlisChannelHeader,
     SourceIntakeSnapshot,
     SourceIntakeWorkbench,
     SourceIntakeWorkbenchSummary,
@@ -1465,6 +1467,8 @@ class WlvSourceIntakeService:
 
         if detected_file_type == SourceIntakeFileType.LAS:
             self._attach_las_metadata(candidate, file_path)
+        elif detected_file_type == SourceIntakeFileType.DLIS:
+            self._attach_dlis_metadata(candidate, file_path)
 
         candidate.qaqc_status = run_source_intake_qaqc(candidate)
         candidate.review_required = candidate.review_required or candidate.qaqc_status.review_required
@@ -1474,7 +1478,7 @@ class WlvSourceIntakeService:
     def _initial_parser_status(self, file_path: Path, detected_file_type: SourceIntakeFileType) -> SourceIntakeParseStatus:
         # WLV-WSI-PARSE-STATUS-FILENAME-1: deterministic initial parse classification.
         ext = file_path.suffix.lower().lstrip(".")
-        if detected_file_type == SourceIntakeFileType.LAS:
+        if detected_file_type in {SourceIntakeFileType.LAS, SourceIntakeFileType.DLIS}:
             return SourceIntakeParseStatus.NOT_PARSED
         if ext in {"zip", "tar", "tgz", "gz", "gzip", "7z", "rar"}:
             return SourceIntakeParseStatus.CONTAINER_PENDING_EXTRACTION
@@ -1516,6 +1520,68 @@ class WlvSourceIntakeService:
         for message in preview.warnings:
             if message not in candidate.warnings:
                 candidate.warnings.append(message)
+
+
+    def _attach_dlis_metadata(self, candidate: SourceFileCandidate, file_path: Path) -> None:
+        try:
+            inspection = inspect_dlis(file_path)
+        except DlisInspectionError as exc:
+            candidate.parser_status = SourceIntakeParseStatus.PARSE_FAILED
+            candidate.parse_error = str(exc)
+            candidate.review_required = True
+            candidate.warnings.append(f"DLIS inspection failed: {exc}")
+            return
+        channels = list(inspection.scalar_channels)
+        top_values = [item.top_depth for item in channels if item.top_depth is not None]
+        base_values = [item.base_depth for item in channels if item.base_depth is not None]
+        depth_unit = next((item.depth_unit for item in channels if item.depth_unit), None)
+        candidate.parsed_metadata = SourceIntakeParsedMetadata(
+            parser_id=inspection.parser_id,
+            source_format=inspection.source_format,
+            well_header=SourceIntakeWellHeader(
+                well_name=inspection.well_name, uwi=inspection.uwi,
+                operator=inspection.operator, field=inspection.field,
+                depth_unit=depth_unit,
+            ),
+            log_header=SourceIntakeLogHeader(
+                file_name=candidate.file_name, file_type=candidate.detected_file_type,
+                service_company=inspection.service_company,
+                start_depth=min(top_values) if top_values else None,
+                stop_depth=max(base_values) if base_values else None,
+                depth_unit=depth_unit, curve_count=len(channels),
+            ),
+            curve_headers=[SourceIntakeCurveHeader(
+                mnemonic=item.mnemonic, description=item.description, unit=item.unit,
+                source_curve_name=item.source_curve_name, depth_unit=item.depth_unit,
+                top_depth=item.top_depth, base_depth=item.base_depth,
+                sample_count=item.sample_count,
+            ) for item in channels],
+            logical_file_count=inspection.logical_file_count,
+            frame_count=inspection.frame_count,
+            dlis_channels=[SourceIntakeDlisChannelHeader(
+                logical_file_id=item.logical_file_id,
+                frame_id=item.frame_id,
+                mnemonic=item.mnemonic,
+                description=item.description,
+                unit=item.unit,
+                dimensions=list(item.dimensions),
+                index_channel=item.index_channel,
+                sample_count=item.sample_count,
+                role=item.role,
+                supported=item.supported,
+                unsupported_reason=item.unsupported_reason,
+            ) for item in inspection.channel_inventory],
+            evidence_count=inspection.logical_file_count + inspection.frame_count + len(inspection.channel_inventory),
+            warning_count=len(inspection.warnings), error_count=0,
+            warnings=list(inspection.warnings),
+        )
+        candidate.resolved_metadata = resolve_candidate_metadata(candidate)
+        candidate.parser_status = SourceIntakeParseStatus.PARSED_WITH_WARNINGS if inspection.warnings else SourceIntakeParseStatus.PARSED
+        candidate.parse_error = None
+        for warning in inspection.warnings:
+            if warning not in candidate.warnings: candidate.warnings.append(warning)
+        candidate.review_required = candidate.review_required or bool(inspection.warnings) or inspection.well_name is None
+
 
     def _attach_las_metadata(self, candidate: SourceFileCandidate, file_path: Path) -> None:
         """Parse LAS headers into the three-level source-intake metadata model.

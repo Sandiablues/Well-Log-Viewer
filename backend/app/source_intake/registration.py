@@ -42,6 +42,7 @@ from app.inventory.well_identity import (
 
 from .identity_gate import clean_identity_value
 from .las_asset_store import LasAssetStore, LasAssetStoreError, StoredLasAsset
+from .dlis_asset_store import DlisAssetStore, DlisAssetStoreError, StoredDlisAsset
 from .readiness import evaluate_registration_readiness
 from .models import (
     SourceFileCandidate,
@@ -51,6 +52,7 @@ from .models import (
     SourceIntakeReadinessState,
     SourceIntakeResolutionState,
     SourceIntakeHumanDecision,
+    SourceIntakeFileType,
     SourceIntakeWellAssignmentMode,
 )
 from .resolution_service import is_ingestible
@@ -106,7 +108,7 @@ def registration_block_reason(candidate: SourceFileCandidate) -> str | None:
         return f"Candidate parser_status is not registration-ready: {candidate.parser_status.value}."
 
     if candidate.parsed_metadata is None:
-        return "Candidate has no parsed LAS metadata."
+        return "Candidate has no parsed well-log metadata."
 
     if candidate.qaqc_status.status not in _ALLOWED_REGISTER_QAQC_STATUSES:
         return f"Candidate QAQC status is not registration-ready: {candidate.qaqc_status.status.value}."
@@ -281,36 +283,34 @@ def register_candidate_to_inventory(
     field = canonical_metadata["field"]
     block = canonical_metadata["block"]
     provenance = _source_intake_provenance(candidate)
-    try:
-        las_asset = LasAssetStore().preserve_path(
-            Path(candidate.original_path),
-            source_id=candidate.source_file_id,
-            filename=candidate.file_name,
-        )
-    except LasAssetStoreError as exc:
-        raise ValueError(f"Original LAS asset preservation failed: {exc}") from exc
-    if candidate.checksum and candidate.checksum != las_asset.source_fingerprint:
-        raise ValueError(
-            "Source Intake checksum does not match the preserved LAS content fingerprint."
-        )
-    asset_payload = las_asset.as_dict()
-    provenance = {**provenance, "las_asset": asset_payload}
+    las_asset: StoredLasAsset | None = None
+    dlis_asset: StoredDlisAsset | None = None
+    if candidate.detected_file_type == SourceIntakeFileType.DLIS:
+        try:
+            dlis_asset = DlisAssetStore().preserve_path(Path(candidate.original_path), source_id=candidate.source_file_id, filename=candidate.file_name)
+        except DlisAssetStoreError as exc:
+            raise ValueError(f"Original DLIS asset preservation failed: {exc}") from exc
+        asset_payload = dlis_asset.as_dict()
+        provenance = {**provenance, "dlis_asset": asset_payload, "source_format": "DLIS"}
+        source_kind = ManagedSourceKind.DLIS
+        source_metadata = {**provenance, "parsed_metadata": parsed.model_dump(mode="json"), "storage_uri": dlis_asset.original_uri, "dlis_asset_id": dlis_asset.asset_id}
+        source_fingerprint = dlis_asset.source_fingerprint
+    else:
+        try:
+            las_asset = LasAssetStore().preserve_path(Path(candidate.original_path), source_id=candidate.source_file_id, filename=candidate.file_name)
+        except LasAssetStoreError as exc:
+            raise ValueError(f"Original LAS asset preservation failed: {exc}") from exc
+        asset_payload = las_asset.as_dict()
+        provenance = {**provenance, "las_asset": asset_payload, "source_format": "LAS"}
+        source_kind = ManagedSourceKind.LAS
+        source_metadata = {**provenance, "parsed_metadata": parsed.model_dump(mode="json"), "storage_uri": las_asset.original_uri, "las_manifest_uri": las_asset.manifest_uri, "las_samples_uri": las_asset.samples_uri, "las_asset_id": las_asset.asset_id}
+        source_fingerprint = las_asset.source_fingerprint
+    if candidate.checksum and candidate.checksum != source_fingerprint:
+        raise ValueError("Source Intake checksum does not match the preserved source content fingerprint.")
     source_reference = ManagedSourceReference(
-        source_id=candidate.source_file_id,
-        source_kind=ManagedSourceKind.LAS,
-        display_name=candidate.file_name,
-        original_path=candidate.original_path,
-        file_name=candidate.file_name,
-        file_format=candidate.detected_file_type.value,
-        checksum=las_asset.source_fingerprint,
-        metadata={
-            **provenance,
-            "parsed_metadata": parsed.model_dump(mode="json"),
-            "storage_uri": las_asset.original_uri,
-            "las_manifest_uri": las_asset.manifest_uri,
-            "las_samples_uri": las_asset.samples_uri,
-            "las_asset_id": las_asset.asset_id,
-        },
+        source_id=candidate.source_file_id, source_kind=source_kind, display_name=candidate.file_name,
+        original_path=candidate.original_path, file_name=candidate.file_name,
+        file_format=candidate.detected_file_type.value, checksum=source_fingerprint, metadata=source_metadata,
     )
 
     review_required = bool(candidate.review_required or candidate.qaqc_status.review_required)
@@ -327,7 +327,7 @@ def register_candidate_to_inventory(
     if existing is not None:
         created_at = existing.created_at
 
-    next_product_groups = _product_groups_from_candidate(candidate, las_asset=las_asset)
+    next_product_groups = _product_groups_from_candidate(candidate, las_asset=las_asset, dlis_asset=dlis_asset)
     merged_product_groups = _merge_product_groups(existing.product_groups if existing else [], next_product_groups)
 
     record = ManagedWellRecord(
@@ -356,7 +356,7 @@ def register_candidate_to_inventory(
         source_references=_merge_source_references(existing.source_references if existing else [], source_reference),
         viewer_packages=existing.viewer_packages if existing else [],
         product_groups=merged_product_groups,
-        tags=_merge_tags(existing.tags if existing else [], ["source-intake", "las"]),
+        tags=_merge_tags(existing.tags if existing else [], ["source-intake", candidate.detected_file_type.value.lower()]),
         metadata={
             **(existing.metadata if existing else {}),
             "canonical_well_name": well_name,
@@ -376,10 +376,7 @@ def register_candidate_to_inventory(
             "wmdp_available": True,
             "source_intake_provenance": provenance,
             "source_intake_candidate_id": candidate.source_file_id,
-            "las_assets": _merge_las_assets(
-                (existing.metadata.get("las_assets", []) if existing else []),
-                asset_payload,
-            ),
+            **({"dlis_assets": _merge_las_assets((existing.metadata.get("dlis_assets", []) if existing else []), asset_payload)} if dlis_asset is not None else {"las_assets": _merge_las_assets((existing.metadata.get("las_assets", []) if existing else []), asset_payload)}),
             "approval": {
                 "approved_by": approved_by,
                 "approval_note": approval_note,
@@ -403,6 +400,7 @@ def _product_groups_from_candidate(
     candidate: SourceFileCandidate,
     *,
     las_asset: StoredLasAsset | None = None,
+    dlis_asset: StoredDlisAsset | None = None,
 ) -> list[ManagedProductGroup]:
     parsed = candidate.parsed_metadata
     log_header = parsed.log_header if parsed else None
@@ -421,7 +419,9 @@ def _product_groups_from_candidate(
     ]
     provenance = _source_intake_provenance(candidate)
     if las_asset is not None:
-        provenance = {**provenance, "las_asset": las_asset.as_dict()}
+        provenance = {**provenance, "las_asset": las_asset.as_dict(), "source_format": "LAS"}
+    elif dlis_asset is not None:
+        provenance = {**provenance, "dlis_asset": dlis_asset.as_dict(), "source_format": "DLIS"}
     runtime_classifications = _runtime_classifications_for_curves(
         curve_headers=curve_headers,
         context_terms=context_terms,
@@ -457,7 +457,7 @@ def _product_groups_from_candidate(
                 run_number=run_number,
                 qa_flag="Review" if review_required else "Passed",
                 selectable=True,
-                source_kind=ManagedSourceKind.LAS.value,
+                source_kind=(ManagedSourceKind.DLIS.value if dlis_asset is not None else ManagedSourceKind.LAS.value),
                 source_id=candidate.source_file_id,
                 viewer_package_id=None,
                 wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,
@@ -467,7 +467,9 @@ def _product_groups_from_candidate(
                     **provenance,
                     "source_curve_index": index - 1,
                     "source_curve_position": index,
+                    "source_curve_name": curve.source_curve_name,
                     "las_samples_uri": las_asset.samples_uri if las_asset else None,
+                    **(_dlis_curve_provenance(curve, parsed) if dlis_asset is not None else {}),
                 },
             )
         )
@@ -480,6 +482,33 @@ def _product_groups_from_candidate(
         )
         for definition in PRODUCT_GROUP_ORDER
     ]
+
+
+
+def _dlis_curve_provenance(curve, parsed) -> dict[str, object]:
+    parts = str(curve.source_curve_name or "").split("|", 2)
+    if len(parts) != 3:
+        return {}
+    logical_file_id, frame_id, mnemonic = parts
+    channel = next((
+        item for item in getattr(parsed, "dlis_channels", [])
+        if item.logical_file_id == logical_file_id
+        and item.frame_id == frame_id
+        and item.mnemonic == mnemonic
+    ), None)
+    payload: dict[str, object] = {
+        "dlis_logical_file_id": logical_file_id,
+        "dlis_frame_id": frame_id,
+        "dlis_channel_mnemonic": mnemonic,
+    }
+    if channel is not None:
+        payload.update({
+            "dlis_channel_dimensions": list(channel.dimensions),
+            "dlis_index_channel": channel.index_channel,
+            "dlis_channel_sample_count": channel.sample_count,
+            "dlis_channel_supported": channel.supported,
+        })
+    return payload
 
 
 def _runtime_classifications_for_curves(*, curve_headers, context_terms: Iterable[str | None]) -> list[CurveClassificationResult]:

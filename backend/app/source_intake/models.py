@@ -150,12 +150,29 @@ class SourceIntakeCurveHeader(BaseModel):
     sample_count: Optional[int] = None
 
 
+class SourceIntakeDlisChannelHeader(BaseModel):
+    logical_file_id: str
+    frame_id: str
+    mnemonic: str
+    description: Optional[str] = None
+    unit: Optional[str] = None
+    dimensions: list[int] = Field(default_factory=list)
+    index_channel: str
+    sample_count: Optional[int] = None
+    role: str = "curve"
+    supported: bool = True
+    unsupported_reason: Optional[str] = None
+
+
 class SourceIntakeParsedMetadata(BaseModel):
     parser_id: str
     source_format: str
     well_header: SourceIntakeWellHeader = Field(default_factory=SourceIntakeWellHeader)
     log_header: Optional[SourceIntakeLogHeader] = None
     curve_headers: list[SourceIntakeCurveHeader] = Field(default_factory=list)
+    logical_file_count: int = 0
+    frame_count: int = 0
+    dlis_channels: list[SourceIntakeDlisChannelHeader] = Field(default_factory=list)
     evidence_count: int = 0
     warning_count: int = 0
     error_count: int = 0
