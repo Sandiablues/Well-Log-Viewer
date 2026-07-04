@@ -18,6 +18,8 @@ import re
 from .models import ManagedProductGroupItem, ManagedWellRecord
 from .repository import ManagedWellInventoryRepository, ManagedWellNotFoundError
 
+from .dlis_sample_reader import DlisSampleReaderError, read_dlis_curve_samples
+
 
 class CurveSampleServiceError(ValueError):
     """Raised when product-backed curve samples cannot be safely returned."""
@@ -41,15 +43,13 @@ class CurveSampleService:
             sample_source = "managed_las_sample_store"
             provenance_path = sample_store
         elif source_path is not None:
-            parsed = _read_las_curve_samples(
-                source_path=source_path,
-                curve_mnemonic=item.curve_name or item.display_name,
-                max_samples=max_samples,
+            parsed, sample_source = _read_source_curve_samples(
+                source_path=source_path, curve_mnemonic=item.curve_name or item.display_name,
+                max_samples=max_samples, source_kind=item.source_kind, provenance=item.provenance,
             )
-            sample_source = "las_original_path"
             provenance_path = source_path
         else:
-            raise CurveSampleServiceError(f"No readable managed LAS samples or source path is available for product: {product_id}")
+            raise CurveSampleServiceError(f"No readable managed samples or source path is available for product: {product_id}")
 
         return {
             "ok": True,
@@ -69,6 +69,17 @@ class CurveSampleService:
             "source_intake_candidate_id": item.source_intake_candidate_id,
             "source_path": str(provenance_path),
             "sample_source": sample_source,
+            "source_format": parsed.get("source_format") or ("DLIS" if sample_source == "dlis_original_path" else "LAS"),
+            "sample_provenance": {
+                key: parsed[key]
+                for key in (
+                    "dlis_logical_file_id",
+                    "dlis_frame_id",
+                    "dlis_channel_mnemonic",
+                    "dlis_index_channel",
+                )
+                if parsed.get(key) is not None
+            },
             "depth_unit": parsed["depth_unit"],
             "value_unit": parsed["value_unit"] or item.curve_unit or "",
             "depth_min": parsed["depth_min"],
@@ -215,6 +226,20 @@ def _read_managed_las_curve_samples(sample_store: Path, source_curve_index: int,
         "decimation_stride": stride,
         "samples": returned,
     }
+
+
+
+def _read_source_curve_samples(*, source_path: Path, curve_mnemonic: str, max_samples: int, source_kind: str | None = None, provenance: dict[str, Any] | None = None) -> tuple[dict[str, Any], str]:
+    provenance = provenance if isinstance(provenance, dict) else {}
+    kind = str(source_kind or provenance.get("source_format") or "").lower()
+    if kind == "dlis":
+        return read_dlis_curve_samples(
+            source_path=source_path, curve_mnemonic=curve_mnemonic, max_samples=max_samples,
+            logical_file_id=str(provenance.get("dlis_logical_file_id") or "") or None,
+            frame_id=str(provenance.get("dlis_frame_id") or "") or None,
+            channel_mnemonic=str(provenance.get("dlis_channel_mnemonic") or curve_mnemonic),
+        ), "dlis_original_path"
+    return _read_las_curve_samples(source_path, curve_mnemonic, max_samples), "las_original_path"
 
 
 def _read_las_curve_samples(source_path: Path, curve_mnemonic: str, max_samples: int) -> dict[str, Any]:
