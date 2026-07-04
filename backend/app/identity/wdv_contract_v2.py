@@ -307,18 +307,28 @@ class WdvCanonicalSession(BaseModel):
             raise ValueError("Duplicate rule_uid in WDV session")
         rules_by_track: dict[str, list[CanonicalCurveFillRule]] = {}
         for rule in self.curve_fills:
-            if rule.managed_well_uid != self.managed_well_uid:
-                raise ValueError("Curve Fill rule belongs to a different managed well")
             track = next((item for item in self.tracks if item.track_uid == rule.track_uid), None)
             if track is None or track.track_type != "curve":
                 raise ValueError("Curve Fill rule must reference a curve track in the session")
             assignment_a = assignment_by_uid.get(rule.curve_a_assignment_uid)
             if assignment_a is None or assignment_a.track_uid != rule.track_uid:
                 raise ValueError("Curve Fill Curve A assignment must belong to the rule track")
+            # A shared multi-well canvas is projected through whichever well is
+            # currently active.  Session.managed_well_uid therefore identifies
+            # the working registry, not ownership of every assignment on the
+            # canvas.  Curve Fill ownership follows its referenced assignments.
+            if rule.managed_well_uid != assignment_a.managed_well_uid:
+                raise ValueError(
+                    "Curve Fill rule managed well must match Curve A assignment"
+                )
             if rule.curve_b_assignment_uid is not None:
                 assignment_b = assignment_by_uid.get(rule.curve_b_assignment_uid)
                 if assignment_b is None or assignment_b.track_uid != rule.track_uid:
                     raise ValueError("Curve Fill Curve B assignment must belong to the rule track")
+                if assignment_b.managed_well_uid != rule.managed_well_uid:
+                    raise ValueError(
+                        "Curve Fill Curve B assignment must belong to the rule managed well"
+                    )
             rules_by_track.setdefault(rule.track_uid, []).append(rule)
         for rules in rules_by_track.values():
             orders = sorted(rule.order for rule in rules)
