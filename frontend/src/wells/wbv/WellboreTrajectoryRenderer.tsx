@@ -45,12 +45,19 @@ export type WbvCurveTrack = {
   track_type: 'curve' | 'reference' | 'image' | 'interval';
   display_order: number;
   side: 'left' | 'right' | 'center';
+  geometry_type: 'legacy_planar' | 'camera_ribbon' | 'radial_panel';
+  radial_lane: number;
+  angular_position_deg: number;
+  orientation_mode: 'follow_trajectory' | 'camera_facing';
+  thickness: number;
   width: number;
   background_mode: 'transparent' | 'black' | 'white' | 'custom';
   background_color: string;
   background_opacity: number;
   border_visible: boolean;
   border_color: string;
+  grid_mode: 'off' | 'linear' | 'logarithmic';
+  grid_color: string;
   wellbore_offset: number;
   previous_track_gap?: number;
 };
@@ -67,7 +74,7 @@ export type WbvCurveOverlayRenderCurve = {
   color: string;
   line_width: number;
   opacity: number;
-  fill_mode: 'none' | 'to_baseline' | 'between_curves';
+  fill_mode: 'none' | 'to_baseline' | 'between_curves' | 'crossover';
   fill_target_curve_product_id?: string | null;
   fill_side: 'positive' | 'negative';
   fill_color: string;
@@ -137,6 +144,168 @@ type CameraViewSnapshot = {
   zoom: number;
   viewHeight: number;
 };
+
+
+
+type OverviewPoint = { x: number; y: number; sourceIndex: number };
+type OverviewRange = { startIndex: number; endIndex: number };
+type OverviewRuntime = {
+  panToSourceIndex: (sourceIndex: number) => void;
+};
+
+const OVERVIEW_WIDTH = 160;
+const OVERVIEW_HEIGHT = 220;
+const OVERVIEW_PADDING = 14;
+const OVERVIEW_ENVELOPE_HALF_WIDTH = 7;
+const OVERVIEW_MAX_POINTS = 700;
+
+function sampledIndices(length: number, maximum = OVERVIEW_MAX_POINTS): number[] {
+  if (length <= 0) return [];
+  if (length <= maximum) return Array.from({ length }, (_, index) => index);
+  const result: number[] = [];
+  const step = (length - 1) / (maximum - 1);
+  for (let index = 0; index < maximum; index += 1) {
+    result.push(Math.min(length - 1, Math.round(index * step)));
+  }
+  return result;
+}
+
+export function buildOverviewProjection(points: THREE.Vector3[]): OverviewPoint[] {
+  const indices = sampledIndices(points.length);
+  if (indices.length === 0) return [];
+
+  let meanX = 0;
+  let meanZ = 0;
+  for (const index of indices) {
+    meanX += finiteNumber(points[index]?.x, 0);
+    meanZ += finiteNumber(points[index]?.z, 0);
+  }
+  meanX /= indices.length;
+  meanZ /= indices.length;
+
+  let xx = 0;
+  let xz = 0;
+  let zz = 0;
+  for (const index of indices) {
+    const point = points[index];
+    const dx = finiteNumber(point?.x, 0) - meanX;
+    const dz = finiteNumber(point?.z, 0) - meanZ;
+    xx += dx * dx;
+    xz += dx * dz;
+    zz += dz * dz;
+  }
+
+  const angle = 0.5 * Math.atan2(2 * xz, xx - zz);
+  const axisX = Math.cos(angle);
+  const axisZ = Math.sin(angle);
+  const raw = indices.map((sourceIndex) => {
+    const point = points[sourceIndex];
+    return {
+      x: (finiteNumber(point?.x, 0) - meanX) * axisX + (finiteNumber(point?.z, 0) - meanZ) * axisZ,
+      y: finiteNumber(point?.y, 0),
+      sourceIndex,
+    };
+  });
+
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const point of raw) {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+
+  const spanX = Math.max(0.001, maxX - minX);
+  const spanY = Math.max(0.001, maxY - minY);
+  const availableWidth = OVERVIEW_WIDTH - OVERVIEW_PADDING * 2;
+  const availableHeight = OVERVIEW_HEIGHT - OVERVIEW_PADDING * 2;
+  const scale = Math.min(availableWidth / spanX, availableHeight / spanY);
+  const offsetX = (OVERVIEW_WIDTH - spanX * scale) / 2;
+  const offsetY = (OVERVIEW_HEIGHT - spanY * scale) / 2;
+
+  return raw.map((point) => ({
+    x: offsetX + (point.x - minX) * scale,
+    y: OVERVIEW_HEIGHT - (offsetY + (point.y - minY) * scale),
+    sourceIndex: point.sourceIndex,
+  }));
+}
+
+function overviewPath(points: OverviewPoint[]): string {
+  let path = '';
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index];
+    path += `${index === 0 ? 'M' : ' L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
+  }
+  return path;
+}
+
+function overviewEnvelope(points: OverviewPoint[], halfWidth = OVERVIEW_ENVELOPE_HALF_WIDTH): string {
+  if (points.length < 2) return '';
+  const left: OverviewPoint[] = [];
+  const right: OverviewPoint[] = [];
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index];
+    const previous = points[Math.max(0, index - 1)];
+    const next = points[Math.min(points.length - 1, index + 1)];
+    const dx = next.x - previous.x;
+    const dy = next.y - previous.y;
+    const length = Math.max(0.001, Math.hypot(dx, dy));
+    const nx = -dy / length;
+    const ny = dx / length;
+    left.push({ x: point.x + nx * halfWidth, y: point.y + ny * halfWidth, sourceIndex: point.sourceIndex });
+    right.push({ x: point.x - nx * halfWidth, y: point.y - ny * halfWidth, sourceIndex: point.sourceIndex });
+  }
+  return `${overviewPath([...left, ...right.reverse()])} Z`;
+}
+
+function visibleTrajectoryRange(camera: THREE.Camera, points: THREE.Vector3[]): OverviewRange {
+  const indices = sampledIndices(points.length);
+  if (indices.length < 2) return { startIndex: 0, endIndex: Math.max(0, points.length - 1) };
+  let firstVisible = -1;
+  let lastVisible = -1;
+  let nearestIndex = indices[0];
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const sourceIndex of indices) {
+    const projected = points[sourceIndex].clone().project(camera);
+    const distance = Math.hypot(projected.x, projected.y);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = sourceIndex;
+    }
+    if (projected.x >= -1 && projected.x <= 1 && projected.y >= -1 && projected.y <= 1 && projected.z >= -1 && projected.z <= 1) {
+      if (firstVisible < 0) firstVisible = sourceIndex;
+      lastVisible = sourceIndex;
+    }
+  }
+  if (firstVisible >= 0) {
+    const margin = Math.max(1, Math.ceil(points.length / OVERVIEW_MAX_POINTS));
+    return {
+      startIndex: Math.max(0, firstVisible - margin),
+      endIndex: Math.min(points.length - 1, lastVisible + margin),
+    };
+  }
+  const halfWindow = Math.max(1, Math.round(points.length * 0.04));
+  return {
+    startIndex: Math.max(0, nearestIndex - halfWindow),
+    endIndex: Math.min(points.length - 1, nearestIndex + halfWindow),
+  };
+}
+
+function nearestOverviewSourceIndex(points: OverviewPoint[], x: number, y: number): number {
+  let nearestSourceIndex = points[0]?.sourceIndex ?? 0;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const point of points) {
+    const distance = Math.hypot(point.x - x, point.y - y);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestSourceIndex = point.sourceIndex;
+    }
+  }
+  return nearestSourceIndex;
+}
 
 const TARGET_WELL_HEIGHT = 5.35;
 const MIN_DISPLAY_LATERAL_HALF_SPAN = 0.92;
@@ -572,6 +741,7 @@ type ViewRelativeVertex = {
 type ViewRelativeGeometryBinding = {
   attribute: THREE.BufferAttribute;
   vertices: ViewRelativeVertex[];
+  trackId: string;
 };
 
 type CurveOverlayRuntime = {
@@ -582,12 +752,39 @@ function sharedViewAxes(
   tangents: THREE.Vector3[],
   cameraRight: THREE.Vector3,
 ): THREE.Vector3[] {
-  // Tracks are view-relative presentation overlays. Using one camera-right
-  // vector for the complete trajectory keeps every track an exact translated
-  // copy of the wellbore in screen space and prevents independent twisting or
-  // drift between tracks through deviated sections.
   const viewRight = cameraRight.clone().normalize();
   return tangents.map(() => viewRight.clone());
+}
+
+function trajectoryRadialAxes(
+  tangents: THREE.Vector3[],
+  angleDeg: number,
+): THREE.Vector3[] {
+  const angle = THREE.MathUtils.degToRad(angleDeg);
+  let previous: THREE.Vector3 | null = null;
+  return tangents.map((tangent) => {
+    const t = tangent.clone().normalize();
+    const reference = Math.abs(t.dot(new THREE.Vector3(0, 1, 0))) > 0.92
+      ? new THREE.Vector3(1, 0, 0)
+      : new THREE.Vector3(0, 1, 0);
+    let axis = new THREE.Vector3().crossVectors(reference, t).normalize();
+    if (previous && previous.dot(axis) < 0) axis.negate();
+    axis.applyAxisAngle(t, angle).normalize();
+    previous = axis.clone();
+    return axis;
+  });
+}
+
+function axesForTrack(
+  track: WbvCurveTrack | undefined,
+  tangents: THREE.Vector3[],
+  cameraRight: THREE.Vector3,
+): THREE.Vector3[] {
+  if (!track || track.geometry_type === 'legacy_planar') return sharedViewAxes(tangents, cameraRight);
+  if (track.geometry_type === 'camera_ribbon' || track.orientation_mode === 'camera_facing') {
+    return sharedViewAxes(tangents, cameraRight);
+  }
+  return trajectoryRadialAxes(tangents, track.angular_position_deg);
 }
 
 function axisAtFramePosition(axes: THREE.Vector3[], framePosition: number): THREE.Vector3 {
@@ -614,7 +811,7 @@ function updateViewRelativeBinding(
   binding.attribute.needsUpdate = true;
 }
 
-function dynamicGeometry(vertices: ViewRelativeVertex[], indices?: number[]): {
+function dynamicGeometry(vertices: ViewRelativeVertex[], indices: number[] | undefined, trackId: string): {
   geometry: THREE.BufferGeometry;
   binding: ViewRelativeGeometryBinding;
 } {
@@ -623,7 +820,7 @@ function dynamicGeometry(vertices: ViewRelativeVertex[], indices?: number[]): {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', attribute);
   if (indices) geometry.setIndex(indices);
-  return { geometry, binding: { attribute, vertices } };
+  return { geometry, binding: { attribute, vertices, trackId } };
 }
 
 function viewVerticesFromPoints(points: PreparedOverlayPoint[], offset: 'traceOffset' | 'baselineOffset'): ViewRelativeVertex[] {
@@ -645,18 +842,25 @@ function addCurveOverlays(
 ): CurveOverlayRuntime {
   const bindings: ViewRelativeGeometryBinding[] = [];
   const tangents = trajectoryTangents(positions);
+  const trackById = new Map(tracks.map((track) => [track.track_id, track]));
   const update = (camera: THREE.Camera) => {
     const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
-    const axes = sharedViewAxes(tangents, cameraRight);
-    bindings.forEach((binding) => updateViewRelativeBinding(binding, axes));
+    const axesCache = new Map<string, THREE.Vector3[]>();
+    bindings.forEach((binding) => {
+      let axes = axesCache.get(binding.trackId);
+      if (!axes) {
+        axes = axesForTrack(trackById.get(binding.trackId), tangents, cameraRight);
+        axesCache.set(binding.trackId, axes);
+      }
+      updateViewRelativeBinding(binding, axes);
+    });
   };
   if (overlays.length === 0 || positions.length < 2) return { update };
 
   const wellboreRadius = 0.008;
   const innerClearance = wellboreRadius * 2.75;
   const widthScale = wellboreRadius * 5.0;
-  const trackById = new Map(tracks.map((track) => [track.track_id, track]));
-  const effectiveTracks = tracks.length > 0 ? [...tracks].sort((a, b) => a.display_order - b.display_order) : [{ track_id: 'curve-track-0', display_name: 'Track 1', track_type: 'curve' as const, display_order: 0, side: 'right' as const, width: 1, background_mode: 'transparent' as const, background_color: '#000000', background_opacity: 0, border_visible: false, border_color: '#5f6d73', wellbore_offset: 0.15, previous_track_gap: trackSpacing }];
+  const effectiveTracks = tracks.length > 0 ? [...tracks].sort((a, b) => a.display_order - b.display_order) : [{ track_id: 'curve-track-0', display_name: 'Track 1', track_type: 'curve' as const, display_order: 0, side: 'right' as const, geometry_type: 'legacy_planar' as const, radial_lane: 0, angular_position_deg: 0, orientation_mode: 'camera_facing' as const, thickness: 0.05, width: 1, background_mode: 'transparent' as const, background_color: '#000000', background_opacity: 0, border_visible: false, border_color: '#5f6d73', grid_mode: 'off' as const, grid_color: '#44545d', wellbore_offset: 0.15, previous_track_gap: trackSpacing }];
   const trackOffsets = new Map<string, number>();
   const sideOuterEdge: { left: number | null; right: number | null; center: number } = { left: null, right: null, center: 0 };
   effectiveTracks.forEach((track) => {
@@ -664,7 +868,19 @@ function addCurveOverlays(
     const trackWidth = widthScale * track.width;
     let baselineOffset: number;
     let outerOffset: number;
-    if (side === 'center') {
+    if (track.geometry_type !== 'legacy_planar') {
+      const radialDistance = wellboreRadius * (2.75 + Math.max(0, track.wellbore_offset));
+      if (track.side === 'left') {
+        baselineOffset = -radialDistance;
+        outerOffset = baselineOffset - trackWidth;
+      } else if (track.side === 'center') {
+        baselineOffset = -trackWidth / 2;
+        outerOffset = trackWidth / 2;
+      } else {
+        baselineOffset = radialDistance;
+        outerOffset = baselineOffset + trackWidth;
+      }
+    } else if (side === 'center') {
       const centerSpacing = sideOuterEdge.center;
       baselineOffset = -trackWidth / 2 - centerSpacing;
       outerOffset = trackWidth / 2 + centerSpacing;
@@ -693,7 +909,7 @@ function addCurveOverlays(
         const base = index * 2;
         indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
       }
-      const { geometry, binding } = dynamicGeometry(vertices, indices);
+      const { geometry, binding } = dynamicGeometry(vertices, indices, track.track_id);
       bindings.push(binding);
       const color = track.background_mode === 'white' ? '#ffffff' : track.background_mode === 'black' ? '#000000' : track.background_color;
       const material = new THREE.MeshBasicMaterial({
@@ -709,9 +925,35 @@ function addCurveOverlays(
       group.add(mesh);
     }
 
+    if (track.grid_mode !== 'off') {
+      const gridFractions = track.grid_mode === 'linear'
+        ? [0.25, 0.5, 0.75]
+        : [2, 3, 4, 5, 6, 7, 8, 9].map((value) => Math.log10(value));
+      gridFractions.forEach((fraction) => {
+        const offset = baselineOffset + (outerOffset - baselineOffset) * fraction;
+        const vertices: ViewRelativeVertex[] = positions.map((position, index) => ({
+          position,
+          tangent: tangents[index],
+          framePosition: index,
+          offset,
+        }));
+        const { geometry, binding } = dynamicGeometry(vertices, undefined, track.track_id);
+        bindings.push(binding);
+        const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
+          color: new THREE.Color(track.grid_color),
+          transparent: true,
+          opacity: 0.42,
+          depthTest: false,
+          depthWrite: false,
+        }));
+        line.renderOrder = 23 + track.display_order;
+        group.add(line);
+      });
+    }
+
     if (track.border_visible) {
       [innerVertices, outerVertices].forEach((vertices) => {
-        const { geometry, binding } = dynamicGeometry(vertices);
+        const { geometry, binding } = dynamicGeometry(vertices, undefined, track.track_id);
         bindings.push(binding);
         const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
           color: new THREE.Color(track.border_color),
@@ -744,9 +986,11 @@ function addCurveOverlays(
   });
 
   overlays.forEach((curve) => {
+    const fallbackTrack = effectiveTracks[Math.min(curve.radial_lane, effectiveTracks.length - 1)];
+    const track = trackById.get(curve.track_id ?? '') ?? fallbackTrack;
     const segments = preparedByCurve.get(curve.curve_product_id) ?? [];
 
-    if (curve.fill_mode === 'between_curves' && curve.fill_target_curve_product_id) {
+    if ((curve.fill_mode === 'between_curves' || curve.fill_mode === 'crossover') && curve.fill_target_curve_product_id) {
       const target = overlays.find((candidate) => candidate.curve_product_id === curve.fill_target_curve_product_id);
       const targetSegments = preparedByCurve.get(curve.fill_target_curve_product_id) ?? [];
       if (target && (target.track_id ?? String(target.radial_lane)) === (curve.track_id ?? String(curve.radial_lane))) {
@@ -760,11 +1004,18 @@ function addCurveOverlays(
           });
           const indices: number[] = [];
           for (let index = 0; index < segment.length - 1; index += 1) {
+            const firstPair = segment[index];
+            const secondPair = segment[index + 1];
+            if (curve.fill_mode === 'crossover') {
+              const firstDelta = firstPair.first.traceOffset - firstPair.second.traceOffset;
+              const secondDelta = secondPair.first.traceOffset - secondPair.second.traceOffset;
+              if (firstDelta < 0 || secondDelta < 0) continue;
+            }
             const base = index * 2;
             indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
           }
           if (indices.length > 0) {
-            const { geometry, binding } = dynamicGeometry(vertices, indices);
+            const { geometry, binding } = dynamicGeometry(vertices, indices, track.track_id);
             bindings.push(binding);
             const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
               color: new THREE.Color(curve.fill_color),
@@ -805,7 +1056,7 @@ function addCurveOverlays(
           indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
         }
         if (indices.length > 0) {
-          const { geometry, binding } = dynamicGeometry(vertices, indices);
+          const { geometry, binding } = dynamicGeometry(vertices, indices, track.track_id);
           bindings.push(binding);
           const fillMesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
             color: new THREE.Color(curve.fill_color),
@@ -820,7 +1071,7 @@ function addCurveOverlays(
         }
       }
 
-      const { geometry, binding } = dynamicGeometry(viewVerticesFromPoints(segment, 'traceOffset'));
+      const { geometry, binding } = dynamicGeometry(viewVerticesFromPoints(segment, 'traceOffset'), undefined, track.track_id);
       bindings.push(binding);
       const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({
         color: new THREE.Color(curve.color),
@@ -1061,6 +1312,10 @@ export function WellboreTrajectoryRenderer({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const leaderRef = useRef<HTMLDivElement | null>(null);
   const liveReadoutRef = useRef<HTMLDivElement | null>(null);
+  const overviewFocusPathRef = useRef<SVGPathElement | null>(null);
+  const overviewRuntimeRef = useRef<OverviewRuntime | null>(null);
+  const overviewDisabledRef = useRef(false);
+  const overviewDragRef = useRef(false);
   const trackValuesRef = useRef(trackValuesAlongWellbore);
   const onPointSelectRef = useRef(onPointSelect);
   onPointSelectRef.current = onPointSelect;
@@ -1091,6 +1346,15 @@ export function WellboreTrajectoryRenderer({
   }, [showCurveOverlays]);
 
   const scenePoints = useMemo(() => scenePointsFromBackend(renderPoints), [renderPoints]);
+  const overviewPoints = useMemo(() => {
+    try {
+      return buildOverviewProjection(createNormalizedPoints(scenePoints));
+    } catch (error) {
+      console.error('WBV overview projection disabled', error);
+      return [];
+    }
+  }, [scenePoints]);
+  const overviewFullPath = useMemo(() => overviewPath(overviewPoints), [overviewPoints]);
   const depthTicks = useMemo(() => representativeTicks(renderPoints, depthUnit), [renderPoints, depthUnit]);
 
   useEffect(() => {
@@ -1098,6 +1362,8 @@ export function WellboreTrajectoryRenderer({
     const canvas = canvasRef.current;
 
     runtimeRef.current = null;
+    overviewRuntimeRef.current = null;
+    overviewDisabledRef.current = false;
 
     if (!host || !canvas) return undefined;
 
@@ -1140,7 +1406,7 @@ export function WellboreTrajectoryRenderer({
       controls.zoomSpeed = 0.82;
       controls.panSpeed = 0.72;
       controls.minZoom = 0.35;
-      controls.maxZoom = 14;
+      controls.maxZoom = 40;
       controls.mouseButtons = {
         LEFT: THREE.MOUSE.ROTATE,
         MIDDLE: THREE.MOUSE.DOLLY,
@@ -1701,8 +1967,34 @@ export function WellboreTrajectoryRenderer({
 
       curveOverlayRuntime.update(camera);
       const lastOverlayQuaternion = camera.quaternion.clone();
+      let lastOverviewUpdate = Number.NEGATIVE_INFINITY;
+      let currentOverviewRange: OverviewRange = { startIndex: 0, endIndex: normalizedPoints.length - 1 };
 
-      const renderScene = () => {
+      const updateOverviewFocus = () => {
+        if (overviewDisabledRef.current || !overviewFocusPathRef.current) return;
+        currentOverviewRange = visibleTrajectoryRange(camera, normalizedPoints);
+        const focusedPoints = overviewPoints.filter(
+          (point) => point.sourceIndex >= currentOverviewRange.startIndex && point.sourceIndex <= currentOverviewRange.endIndex,
+        );
+        overviewFocusPathRef.current.setAttribute('d', overviewEnvelope(focusedPoints));
+      };
+
+      overviewRuntimeRef.current = {
+        panToSourceIndex: (requestedIndex: number) => {
+          if (!controls || normalizedPoints.length === 0) return;
+          const span = Math.max(1, currentOverviewRange.endIndex - currentOverviewRange.startIndex);
+          const halfBefore = Math.floor(span / 2);
+          const halfAfter = span - halfBefore;
+          const sourceIndex = Math.max(halfBefore, Math.min(normalizedPoints.length - 1 - halfAfter, requestedIndex));
+          const newTarget = normalizedPoints[sourceIndex];
+          const translation = newTarget.clone().sub(controls.target);
+          controls.target.add(translation);
+          camera.position.add(translation);
+          controls.update();
+        },
+      };
+
+      const renderScene = (frameTime = 0) => {
         if (!renderer || !controls) return;
         controls.update();
         if (1 - Math.abs(lastOverlayQuaternion.dot(camera.quaternion)) > 1e-5) {
@@ -1754,6 +2046,15 @@ export function WellboreTrajectoryRenderer({
         });
         renderer.render(scene, camera);
         animationFrame = window.requestAnimationFrame(renderScene);
+        if (!overviewDisabledRef.current && frameTime - lastOverviewUpdate >= 100) {
+          try {
+            updateOverviewFocus();
+          } catch (error) {
+            overviewDisabledRef.current = true;
+            console.error('WBV overview disabled after isolated update failure', error);
+          }
+          lastOverviewUpdate = frameTime;
+        }
       };
 
       resizeObserver = new ResizeObserver(resizeAndPreserveView);
@@ -1771,6 +2072,7 @@ export function WellboreTrajectoryRenderer({
           viewHeight: Math.abs(camera.top - camera.bottom),
         };
         runtimeRef.current = null;
+        overviewRuntimeRef.current = null;
         if (curveOverlayGroupRef.current === curveOverlayGroup) {
           curveOverlayGroupRef.current = null;
         }
@@ -1791,6 +2093,7 @@ export function WellboreTrajectoryRenderer({
     } catch (error) {
       console.error('WBV trajectory renderer failed', error);
       runtimeRef.current = null;
+      overviewRuntimeRef.current = null;
       curveOverlayGroupRef.current = null;
       setStatus('error');
       controls?.dispose();
@@ -1824,6 +2127,47 @@ export function WellboreTrajectoryRenderer({
     runtimeRef.current?.applyPreset(viewPreset);
   }, [viewPreset, viewCommandId]);
 
+  const overviewPointerPosition = (event: React.PointerEvent<SVGSVGElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * OVERVIEW_WIDTH,
+      y: ((event.clientY - rect.top) / rect.height) * OVERVIEW_HEIGHT,
+    };
+  };
+
+  const panOverviewFromPointer = (event: React.PointerEvent<SVGSVGElement>) => {
+    const position = overviewPointerPosition(event);
+    if (!position || overviewPoints.length === 0) return;
+    const sourceIndex = nearestOverviewSourceIndex(overviewPoints, position.x, position.y);
+    overviewRuntimeRef.current?.panToSourceIndex(sourceIndex);
+  };
+
+  const handleOverviewPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (event.button !== 0) return;
+    overviewDragRef.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+    panOverviewFromPointer(event);
+  };
+
+  const handleOverviewPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (!overviewDragRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    panOverviewFromPointer(event);
+  };
+
+  const handleOverviewPointerEnd = (event: React.PointerEvent<SVGSVGElement>) => {
+    overviewDragRef.current = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
   const pointCount = renderPoints.length.toLocaleString();
 
   return (
@@ -1835,6 +2179,24 @@ export function WellboreTrajectoryRenderer({
       data-viewer-state={viewerState}
     >
       <canvas ref={canvasRef} aria-hidden="true" />
+      {status === 'rendered' && overviewPoints.length >= 2 ? (
+        <div className="wlv-wbv-overview" aria-label="Wellbore overview and draggable zoom focus">
+          <span className="wlv-wbv-overview__title">Overview</span>
+          <svg
+            className="wlv-wbv-overview__svg"
+            viewBox={`0 0 ${OVERVIEW_WIDTH} ${OVERVIEW_HEIGHT}`}
+            role="application"
+            aria-label="Drag the highlighted focus polygon to pan the wellbore view"
+            onPointerDown={handleOverviewPointerDown}
+            onPointerMove={handleOverviewPointerMove}
+            onPointerUp={handleOverviewPointerEnd}
+            onPointerCancel={handleOverviewPointerEnd}
+          >
+            <path className="wlv-wbv-overview__trajectory" d={overviewFullPath} />
+            <path ref={overviewFocusPathRef} className="wlv-wbv-overview__focus" />
+          </svg>
+        </div>
+      ) : null}
       <div ref={leaderRef} className="wlv-wbv-live-track-line" hidden aria-hidden="true" />
       <div ref={liveReadoutRef} className="wlv-wbv-live-track-readout" hidden aria-live="polite" />
       <div className="wlv-wbv-renderer-readout" aria-live="polite">

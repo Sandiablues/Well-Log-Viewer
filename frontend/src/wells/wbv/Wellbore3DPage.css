@@ -1207,3 +1207,491 @@
   line-height: 1.3;
   overflow-wrap: anywhere;
 }
+
+.wlv-wbv-published-package-list,
+.wlv-wbv-published-track-list {
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+}
+.wlv-wbv-published-package-list > button {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  padding: 10px;
+  border: 1px solid #58646a;
+  background: #171b1d;
+  color: inherit;
+}
+.wlv-wbv-published-package-list > button.is-current {
+  border-color: #c9a66b;
+  background: #24211d;
+}
+.wlv-wbv-published-package-list small {
+  text-transform: uppercase;
+}
+.wlv-wbv-published-track-list > section {
+  border: 1px solid #4f5a60;
+  background: #15191b;
+}
+.wlv-wbv-published-track-list header,
+.wlv-wbv-published-track-list section > div {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) 1fr auto;
+  gap: 10px;
+  padding: 7px 9px;
+  border-bottom: 1px solid #343d41;
+  align-items: center;
+}
+.wlv-wbv-published-track-list header {
+  background: #242a2d;
+}
+.wlv-wbv-published-curve-edit {
+  display: grid;
+  grid-template-columns: minmax(55px, auto) repeat(4, minmax(70px, 1fr));
+  gap: 8px;
+  align-items: end;
+  padding: 7px 0;
+  border-top: 1px solid #343d41;
+}
+.wlv-wbv-published-curve-edit label {
+  display: grid;
+  gap: 3px;
+  font-size: 11px;
+}
+
+.wlv-wbv-track-authority-note {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(126, 145, 151, 0.32);
+  border-radius: 8px;
+  background: rgba(12, 18, 21, 0.72);
+}
+.wlv-wbv-track-authority-note strong { font-size: 13px; }
+.wlv-wbv-track-authority-note span,
+.wlv-wbv-track-authority-note p { font-size: 11px; line-height: 1.45; color: #aebbc0; }
+
+/* Simplified backend-owned WBV destination-track layout */
+.wlv-wbv-layer-manager-body.is-track-layout{grid-template-columns:minmax(300px,38%) minmax(420px,62%)}
+.wlv-wbv-track-toolbar{display:flex;gap:8px;align-items:center;padding:10px;border-bottom:1px solid #24353e}.wlv-wbv-track-toolbar select{min-width:150px}
+.wlv-wbv-simple-track-properties{grid-column:2}.wlv-wbv-destination-select{padding:8px 10px;border-bottom:1px solid #2b3b43}.wlv-wbv-assignment-summary{display:block;font-size:12px;color:#9eb0b8;margin:0 0 8px}
+.wlv-wbv-control-button.is-danger{border-color:#7a3c3c;color:#f0b2b2}
+
+/* WBV Curve Overlays cleanup: merged package/content cards and wider post-production. */
+.wlv-wbv-layer-manager-body.is-curve-overlays {
+  grid-template-columns: minmax(430px, 44%) minmax(560px, 56%);
+}
+.wlv-wbv-layer-manager-body.is-curve-overlays > section {
+  border-right: 1px solid rgba(148,156,166,.14);
+}
+.wlv-wbv-layer-manager-body.is-curve-overlays > section:last-child {
+  border-right: 0;
+}
+.wlv-wbv-published-package-cards {
+  display: grid;
+  gap: .65rem;
+  padding: .65rem;
+}
+.wlv-wbv-published-package-cards > article {
+  overflow: hidden;
+  border: 1px solid #46545d;
+  border-radius: .4rem;
+  background: #11191f;
+}
+.wlv-wbv-published-package-cards > article.is-current {
+  border-color: #65b98a;
+  box-shadow: 0 0 0 1px rgba(101,185,138,.14);
+}
+.wlv-wbv-package-card-heading {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: .25rem .55rem;
+  width: 100%;
+  padding: .75rem;
+  border: 0;
+  background: #151e24;
+  color: #e5ebee;
+  text-align: left;
+  cursor: pointer;
+}
+.wlv-wbv-package-card-heading strong {
+  min-width: 0;
+  font-size: .78rem;
+  line-height: 1.25;
+}
+.wlv-wbv-package-card-heading small {
+  grid-column: 2;
+  color: #91a0aa;
+  font-size: .6rem;
+  font-weight: 500;
+}
+.wlv-wbv-package-status {
+  align-self: start;
+  padding: .15rem .38rem;
+  border: 1px solid #46545d;
+  border-radius: .7rem;
+  color: #aebbc3;
+  font-size: .52rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.wlv-wbv-package-track-cards {
+  display: grid;
+  gap: .5rem;
+  padding: .65rem;
+}
+.wlv-wbv-package-track-cards > section {
+  overflow: hidden;
+  border: 1px solid #34434c;
+  border-radius: .32rem;
+  background: #0d151b;
+}
+.wlv-wbv-package-track-heading {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(170px,42%);
+  gap: .7rem;
+  align-items: end;
+  padding: .55rem .65rem;
+  background: #182128;
+}
+.wlv-wbv-package-track-heading > div {
+  display: grid;
+  gap: .15rem;
+  min-width: 0;
+}
+.wlv-wbv-package-track-heading strong {
+  overflow: hidden;
+  color: #edf2f4;
+  font-size: .7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wlv-wbv-package-track-heading span {
+  overflow: hidden;
+  color: #8fa0aa;
+  font-size: .56rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wlv-wbv-package-track-heading label {
+  display: grid;
+  gap: .18rem;
+  color: #9eabb4;
+  font-size: .56rem;
+}
+.wlv-wbv-package-track-heading select {
+  width: 100%;
+  min-height: 1.7rem;
+  border: 1px solid #3b4b56;
+  border-radius: .25rem;
+  background: #091118;
+  color: #e3e8ec;
+  padding: .2rem .38rem;
+  font-size: .62rem;
+}
+.wlv-wbv-package-curve-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  padding: .48rem .65rem;
+}
+.wlv-wbv-package-curve-summary span {
+  padding: .18rem .38rem;
+  border: 1px solid #2f3e47;
+  border-radius: .7rem;
+  color: #aebac1;
+  font-size: .56rem;
+}
+.wlv-wbv-package-curve-summary strong {
+  color: #e2e8eb;
+}
+.wlv-wbv-published-post-panel .wlv-wbv-properties-scroll {
+  padding-bottom: .85rem;
+}
+.wlv-wbv-post-package-controls {
+  padding: .2rem .35rem .45rem;
+  border-bottom: 1px solid #2c3942;
+}
+.wlv-wbv-post-track-list {
+  display: grid;
+  gap: .65rem;
+  padding: .65rem;
+}
+.wlv-wbv-post-track-list fieldset {
+  margin: 0;
+  padding: .45rem .65rem .65rem;
+  border: 1px solid #3b4952;
+  border-radius: .35rem;
+  background: #0d151b;
+}
+.wlv-wbv-post-track-list legend {
+  padding: 0 .35rem;
+  color: #e7edef;
+  font-size: .68rem;
+  font-weight: 700;
+}
+.wlv-wbv-published-curve-edit input[type="number"] {
+  width: 100%;
+  min-height: 1.55rem;
+  border: 1px solid #354452;
+  border-radius: .22rem;
+  background: #091118;
+  color: #e3e8ec;
+  padding: .15rem .3rem;
+}
+@media (max-width: 1100px) {
+  .wlv-wbv-layer-manager-body.is-curve-overlays {
+    grid-template-columns: minmax(390px, 48%) minmax(470px, 52%);
+  }
+}
+
+
+.wlv-wbv-package-filters { display:flex; gap:.3rem; }
+.wlv-wbv-package-filters button { border:1px solid #46545d; border-radius:.25rem; background:#10181e; color:#9eabb4; padding:.28rem .5rem; font-size:.58rem; }
+.wlv-wbv-package-filters button.is-active { border-color:#65b98a; color:#e8f2ed; background:#183026; }
+.wlv-wbv-package-actions { display:flex; gap:.45rem; justify-content:flex-end; }
+.wlv-wbv-control-button.is-danger { border-color:#9c4f4f; color:#ffd8d8; background:#3a1d1d; }
+.wlv-wbv-control-button.is-danger:hover { background:#4a2424; }
+.wlv-wbv-confirm-backdrop { position:fixed; inset:0; z-index:10020; display:grid; place-items:center; background:rgba(0,0,0,.7); }
+.wlv-wbv-confirm-dialog { width:min(440px,calc(100vw - 2rem)); border:1px solid #52616a; border-radius:.45rem; background:#10181e; color:#dfe7ea; padding:1rem; box-shadow:0 20px 60px rgba(0,0,0,.55); }
+.wlv-wbv-confirm-dialog h2 { margin:0 0 .6rem; font-size:1rem; }
+.wlv-wbv-confirm-dialog p { margin:0 0 1rem; color:#aab6bd; font-size:.72rem; line-height:1.5; }
+.wlv-wbv-confirm-dialog > div { display:flex; justify-content:flex-end; gap:.5rem; }
+
+/* Compact package cards and global package lifecycle controls. */
+.wlv-wbv-published-package-cards > article {
+  min-height: 0;
+}
+.wlv-wbv-package-card-heading {
+  padding: .55rem .65rem;
+}
+.wlv-wbv-package-card-heading strong {
+  font-size: .7rem;
+}
+.wlv-wbv-package-card-heading small {
+  font-size: .55rem;
+}
+.wlv-wbv-selected-package-assignments {
+  display: grid;
+  gap: .45rem;
+  margin: .65rem;
+  padding: .65rem;
+  border: 1px solid #3a4851;
+  border-radius: .35rem;
+  background: #0d151b;
+}
+.wlv-wbv-selected-package-assignments h4 {
+  margin: 0 0 .15rem;
+  color: #e5ecef;
+  font-size: .67rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.wlv-wbv-selected-assignment-row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(190px,42%);
+  gap: .7rem;
+  align-items: end;
+  padding: .45rem 0;
+  border-top: 1px solid rgba(148,156,166,.14);
+}
+.wlv-wbv-selected-assignment-row:first-of-type {
+  border-top: 0;
+}
+.wlv-wbv-selected-assignment-row > div {
+  display: grid;
+  gap: .12rem;
+  min-width: 0;
+}
+.wlv-wbv-selected-assignment-row strong {
+  color: #e7edef;
+  font-size: .66rem;
+}
+.wlv-wbv-selected-assignment-row span,
+.wlv-wbv-selected-assignment-row label {
+  color: #95a4ad;
+  font-size: .56rem;
+}
+.wlv-wbv-selected-assignment-row label {
+  display: grid;
+  gap: .18rem;
+}
+.wlv-wbv-selected-assignment-row select {
+  min-height: 1.7rem;
+  border: 1px solid #3a4954;
+  border-radius: .25rem;
+  background: #091118;
+  color: #e3e9ec;
+  padding: .2rem .35rem;
+  font-size: .62rem;
+}
+.wlv-wbv-layer-manager-footer .wlv-wbv-footer-left {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  min-width: 0;
+}
+.wlv-wbv-package-global-actions {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  padding-left: .55rem;
+  border-left: 1px solid #33414a;
+}
+.wlv-wbv-package-action-error {
+  margin: .45rem 0 0;
+  color: #ff9e9e;
+  font-size: .65rem;
+}
+
+/* Compact combined curve-assignment cards. */
+.wlv-wbv-post-track-list {
+  gap: .5rem;
+  padding: .55rem;
+}
+.wlv-wbv-combined-curve-track-card {
+  margin: 0;
+  padding: .35rem .55rem .5rem;
+}
+.wlv-wbv-combined-curve-track-card legend {
+  font-size: .6rem;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.wlv-wbv-combined-track-header {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(180px,38%);
+  gap: .65rem;
+  align-items: end;
+  padding: .2rem 0 .4rem;
+  border-bottom: 1px solid rgba(148,156,166,.14);
+}
+.wlv-wbv-combined-track-header > div {
+  display: grid;
+  gap: .1rem;
+  min-width: 0;
+}
+.wlv-wbv-combined-track-header strong {
+  overflow: hidden;
+  color: #dfe7ea;
+  font-size: .58rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wlv-wbv-combined-track-header span,
+.wlv-wbv-combined-track-header label {
+  color: #91a0aa;
+  font-size: .54rem;
+}
+.wlv-wbv-combined-track-header label {
+  display: grid;
+  gap: .16rem;
+}
+.wlv-wbv-combined-track-header select {
+  min-height: 1.55rem;
+  border: 1px solid #394955;
+  border-radius: .22rem;
+  background: #091118;
+  color: #dce4e8;
+  padding: .15rem .32rem;
+  font-size: .58rem;
+}
+.wlv-wbv-published-curve-edit {
+  grid-template-columns: minmax(70px,.8fr) minmax(56px,.55fr) repeat(3,minmax(85px,1fr));
+  min-height: 2.1rem;
+  padding: .28rem 0;
+}
+.wlv-wbv-published-curve-edit > strong {
+  font-size: .62rem;
+  font-weight: 650;
+}
+.wlv-wbv-published-curve-edit label,
+.wlv-wbv-published-curve-edit label > span {
+  font-size: .52rem;
+}
+.wlv-wbv-published-curve-edit input[type="number"] {
+  min-height: 1.35rem;
+  font-size: .56rem;
+}
+
+
+
+.wlv-wbv-properties-scroll input[type="color"] {
+  width: 100%;
+  min-height: 1.8rem;
+  padding: .12rem;
+  border: 1px solid #394955;
+  border-radius: .25rem;
+  background: #091118;
+}
+.wlv-wbv-properties-scroll input[type="color"]:disabled {
+  opacity: .42;
+}
+
+/* Compact Display Layers Manage button only. */
+.wlv-wbv-manage-layers-button {
+  min-height: 1.28rem;
+  padding: 0.08rem 0.42rem;
+  border-radius: 0.64rem;
+  font-size: 0.58rem;
+  line-height: 1;
+}
+
+/* WBV overview inset. The renderer host geometry remains owned by the shared
+   full-frame rule (.wlv-wbv-trajectory-renderer { position:absolute; inset:0 }). */
+.wlv-wbv-overview {
+  position: absolute;
+  right: 0.8rem;
+  bottom: 3.2rem;
+  z-index: 12;
+  width: 132px;
+  height: 184px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 0.42rem;
+  border: 1px solid rgba(111, 211, 255, 0.32);
+  border-radius: 9px;
+  background: rgba(7, 12, 17, 0.86);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(3px);
+  user-select: none;
+}
+
+.wlv-wbv-overview__title {
+  color: #a8b8c7;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  line-height: 1;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.wlv-wbv-overview__svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  touch-action: none;
+  cursor: grab;
+}
+
+.wlv-wbv-overview__svg:active { cursor: grabbing; }
+.wlv-wbv-overview__trajectory {
+  fill: none;
+  stroke: rgba(199, 241, 255, 0.52);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.wlv-wbv-overview__focus {
+  fill: rgba(103, 213, 153, 0.22);
+  stroke: rgba(134, 239, 182, 0.94);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 3px rgba(103, 213, 153, 0.44));
+  pointer-events: all;
+}
