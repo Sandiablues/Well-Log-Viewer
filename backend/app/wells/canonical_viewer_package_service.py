@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.identity import LegacyIdentityAlias, parse_uuid7
+from app.depth_reference import well_depth_contract_from_record
 from app.identity.wdv_contract_v2 import WdvCanonicalCurveReference
 from app.identity.wdv_viewer_package_v21 import (
     WdvCanonicalCurveDisplayPolicy,
@@ -61,6 +62,7 @@ class CanonicalViewerPackageService:
             )
         )
 
+        depth_contract = self._well_depth_contract(well)
         session = self.session_service.get_session(well_uid)
         return WdvCanonicalViewerPackage(
             managed_well_uid=well_uid,
@@ -68,14 +70,18 @@ class CanonicalViewerPackageService:
             well_name=well.well_name,
             wellbore_name=well.wellbore_name,
             depth_range=WdvCanonicalDepthRange(
-                minimum=well.top_depth,
-                maximum=well.base_depth,
-                unit=well.depth_unit,
+                minimum=depth_contract["minimum"],
+                maximum=depth_contract["maximum"],
+                unit=depth_contract["unit"],
             ),
             curves=tuple(curves),
             session=session,
             warnings=(),
         )
+
+    @staticmethod
+    def _well_depth_contract(well: object) -> dict[str, object]:
+        return well_depth_contract_from_record(well)
 
     @staticmethod
     def _source_index(
