@@ -4,12 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.depth_reference import (
-    source_contract_from_metadata,
-    transform_sample_payload,
-    well_depth_contract_from_record,
-)
-
 from app.identity.wdv_contract_v2 import (
     WdvCurveSampleProvenance,
     WdvCurveSampleRequest,
@@ -47,13 +41,6 @@ class CanonicalCurveSampleService:
         parsed, sample_source = _read_source_curve_samples(
             source_path=source_path, curve_mnemonic=product.curve_name or product.display_name,
             max_samples=request.max_samples, source_kind=product.source_kind, provenance=provenance,
-        )
-        source_contract = source_contract_from_metadata(resolved.source.metadata)
-        well_contract = self._well_depth_contract(resolved.well)
-        parsed = transform_sample_payload(
-            parsed,
-            source_contract=source_contract,
-            target_unit=well_contract["unit"],
         )
         samples = tuple((float(depth), float(value)) for depth, value in parsed["samples"])
         return WdvCurveSampleResponse(
@@ -98,11 +85,6 @@ class CanonicalCurveSampleService:
             ),
             samples=samples,
         )
-
-
-    @staticmethod
-    def _well_depth_contract(well: object) -> dict[str, object]:
-        return well_depth_contract_from_record(well)
 
     @staticmethod
     def _source_path(

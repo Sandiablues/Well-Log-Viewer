@@ -44,7 +44,6 @@ from .identity_gate import clean_identity_value
 from .las_asset_store import LasAssetStore, LasAssetStoreError, StoredLasAsset
 from .dlis_asset_store import DlisAssetStore, DlisAssetStoreError, StoredDlisAsset
 from .readiness import evaluate_registration_readiness
-from .managed_depth_contract_service import project_candidate_depth_contract
 from .models import (
     SourceFileCandidate,
     SourceIntakeCandidateRole,
@@ -144,7 +143,6 @@ def _source_intake_provenance(candidate: SourceFileCandidate) -> dict[str, objec
         "parser_status": candidate.parser_status.value,
         "qaqc_status": candidate.qaqc_status.model_dump(mode="json"),
         "resolved_metadata": candidate.resolved_metadata.model_dump(mode="json") if candidate.resolved_metadata else None,
-        "depth_normalization": candidate.depth_normalization.model_dump(mode="json") if candidate.depth_normalization else None,
     }
 
 
@@ -391,7 +389,6 @@ def register_candidate_to_inventory(
             "review_required": review_required,
             "qaqc_status": candidate.qaqc_status.model_dump(mode="json"),
             "resolved_metadata": candidate.resolved_metadata.model_dump(mode="json") if candidate.resolved_metadata else None,
-        "depth_normalization": candidate.depth_normalization.model_dump(mode="json") if candidate.depth_normalization else None,
         },
         lifecycle_notes=_merge_lifecycle_notes(
             existing.lifecycle_notes if existing else [],
@@ -400,7 +397,6 @@ def register_candidate_to_inventory(
         created_at=created_at,
         updated_at=now,
     )
-    record = project_candidate_depth_contract(record, candidate)
     return inventory_service.upsert_managed_record(record)
 
 
