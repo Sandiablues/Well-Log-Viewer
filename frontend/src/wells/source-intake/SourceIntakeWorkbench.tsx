@@ -1541,8 +1541,29 @@ export function SourceIntakeWorkbench() {
                     <div><dt>Selected unit</dt><dd>{diagnosticFallbackCandidate.depth_normalization.decision?.target_unit ?? 'Not selected'}</dd></div>
                   </dl>
                   {diagnosticFallbackCandidate.depth_normalization.status === 'review_required' ? (
-                    <>
-                      <p className="wlv-si-diagnostic-note">The source provides a valid physical scale but does not govern whether WSI should normalize it to metres or feet. Select the target explicitly.</p>
+                    <div
+                      style={{
+                        border: '2px solid rgba(239, 68, 68, 0.95)',
+                        borderRadius: '10px',
+                        padding: '0.9rem',
+                        marginTop: '0.85rem',
+                        background: 'rgba(127, 29, 29, 0.12)',
+                        boxShadow: '0 0 0 1px rgba(239, 68, 68, 0.18) inset',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: '0.74rem',
+                          fontWeight: 700,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          color: '#fca5a5',
+                          marginBottom: '0.45rem',
+                        }}
+                      >
+                        Action required: choose depth unit
+                      </div>
+                      <p className="wlv-si-diagnostic-note" style={{ marginTop: 0 }}>The source provides a valid physical scale but does not govern whether WSI should normalize it to metres or feet. Select the target explicitly.</p>
                       <div className="wlv-si-toolbar-actions">
                         {diagnosticFallbackCandidate.depth_normalization.options.map((option) => (
                           <button
@@ -1556,7 +1577,7 @@ export function SourceIntakeWorkbench() {
                           </button>
                         ))}
                       </div>
-                    </>
+                    </div>
                   ) : null}
                 </section>
               ) : null}
