@@ -5,7 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from .models import (
+    SourceFileCandidate,
     SourceIntakeCandidateDiagnostics,
+    SourceIntakeDepthNormalizationRequest,
     SourceIntakeClearRequest,
     SourceIntakeClearResponse,
     SourceIntakeHealth,
@@ -139,5 +141,20 @@ def restore_candidates_to_mdp(request: SourceIntakeRestoreToMdpRequest) -> Sourc
 def register_candidates(request: SourceIntakeRegisterRequest) -> SourceIntakeRegisterResponse:
     try:
         return _service.register_candidates(request, inventory_service=_inventory_service)
+    except SourceIntakeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post(
+    "/candidates/{candidate_id}/depth-normalization",
+    response_model=SourceFileCandidate,
+    summary="Resolve a WSI candidate depth target unit",
+)
+def set_candidate_depth_normalization(
+    candidate_id: str,
+    request: SourceIntakeDepthNormalizationRequest,
+) -> SourceFileCandidate:
+    try:
+        return _service.set_depth_normalization(candidate_id, request)
     except SourceIntakeError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

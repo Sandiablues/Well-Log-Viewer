@@ -39,6 +39,7 @@ from .resolution_service import (
     is_ingestible,
     occurrence_identity,
 )
+from .depth_units import convert_depth_to_target
 from .dlis_parser import DlisInspectionError, inspect_dlis
 from .deviation_survey_parser import (
     DeviationSurveyParseError,
@@ -76,6 +77,11 @@ from .models import (
     SourceIntakeWellHeader,
     SourceIntakeCurveHeader,
     SourceIntakeDlisChannelHeader,
+    SourceIntakeDepthNormalizationContract,
+    SourceIntakeDepthNormalizationDecision,
+    SourceIntakeDepthNormalizationOption,
+    SourceIntakeDepthNormalizationRequest,
+    SourceIntakeDepthNormalizationStatus,
     SourceIntakeSnapshot,
     SourceIntakeWorkbench,
     SourceIntakeWorkbenchSummary,
@@ -276,6 +282,7 @@ class WlvSourceIntakeService:
         fresh.resolved_at = existing.resolved_at
         fresh.resolution_reason = existing.resolution_reason
         fresh.current_decision = existing.current_decision
+        fresh.depth_normalization = existing.depth_normalization
 
         fresh.registration_status = existing.registration_status
         fresh.managed_well_id = existing.managed_well_id
@@ -303,6 +310,7 @@ class WlvSourceIntakeService:
             return
 
         WlvSourceIntakeService._reapply_decision_payload(candidate)
+        WlvSourceIntakeService._reapply_depth_normalization(candidate)
         recompute_qaqc_after_resolution(candidate, candidate.current_decision)
 
     @staticmethod
@@ -356,6 +364,65 @@ class WlvSourceIntakeService:
             evaluate_registration_readiness(candidate)
         self._save_snapshot(snapshot)
         return response
+
+    def set_depth_normalization(
+        self,
+        candidate_id: str,
+        request: SourceIntakeDepthNormalizationRequest,
+    ) -> SourceFileCandidate:
+        snapshot = self._load_snapshot()
+        candidate = next((item for item in snapshot.candidates if item.source_file_id == candidate_id), None)
+        if candidate is None:
+            raise SourceIntakeError(f"Source Intake candidate not found: {candidate_id}")
+        contract = candidate.depth_normalization
+        if contract is None or contract.status not in {
+            SourceIntakeDepthNormalizationStatus.REVIEW_REQUIRED,
+            SourceIntakeDepthNormalizationStatus.HUMAN_RESOLVED,
+        }:
+            raise SourceIntakeError("Candidate does not require a depth target-unit decision.")
+        target = request.target_unit.strip().casefold()
+        if target not in {"m", "ft"}:
+            raise SourceIntakeError("Depth target unit must be 'm' or 'ft'.")
+        contract.decision = SourceIntakeDepthNormalizationDecision(
+            target_unit=target, actor=request.actor, reason=request.reason
+        )
+        contract.status = SourceIntakeDepthNormalizationStatus.HUMAN_RESOLVED
+        self._reapply_depth_normalization(candidate)
+        candidate.qaqc_status = run_source_intake_qaqc(candidate)
+        candidate.review_required = candidate.qaqc_status.review_required
+        evaluate_registration_readiness(candidate)
+        self._save_snapshot(snapshot)
+        return candidate
+
+    @staticmethod
+    def _reapply_depth_normalization(candidate: SourceFileCandidate) -> None:
+        contract = candidate.depth_normalization
+        parsed = candidate.parsed_metadata
+        if contract is None or parsed is None or contract.decision is None:
+            return
+        target = contract.decision.target_unit
+        raw_unit = contract.raw_unit
+        if raw_unit is None:
+            return
+        for header in parsed.curve_headers:
+            if header.raw_depth_unit != raw_unit:
+                continue
+            raw_top = getattr(header, "raw_top_depth", None)
+            raw_base = getattr(header, "raw_base_depth", None)
+            if raw_top is not None:
+                header.top_depth = convert_depth_to_target(raw_top, raw_unit, target)
+            if raw_base is not None:
+                header.base_depth = convert_depth_to_target(raw_base, raw_unit, target)
+            header.depth_unit = target
+            header.depth_normalization_status = "human_resolved"
+        starts = [item.top_depth for item in parsed.curve_headers if item.top_depth is not None]
+        stops = [item.base_depth for item in parsed.curve_headers if item.base_depth is not None]
+        if parsed.log_header is not None:
+            parsed.log_header.start_depth = min(starts) if starts else convert_depth_to_target(contract.raw_start_depth, raw_unit, target)
+            parsed.log_header.stop_depth = max(stops) if stops else convert_depth_to_target(contract.raw_stop_depth, raw_unit, target)
+            parsed.log_header.depth_unit = target
+        parsed.well_header.depth_unit = target
+        contract.status = SourceIntakeDepthNormalizationStatus.HUMAN_RESOLVED
 
     def get_occurrence_accounting(self) -> SourceIntakeOccurrenceAccounting:
         snapshot = self._load_snapshot()
@@ -1555,6 +1622,12 @@ class WlvSourceIntakeService:
                 source_curve_name=item.source_curve_name, depth_unit=item.depth_unit,
                 top_depth=item.top_depth, base_depth=item.base_depth,
                 sample_count=item.sample_count,
+                raw_depth_unit=item.raw_depth_unit,
+                depth_scale_factor=item.depth_scale_factor,
+                depth_normalization_status=item.depth_normalization_status,
+                depth_normalization_reason=item.depth_normalization_reason,
+                raw_top_depth=item.raw_top_depth,
+                raw_base_depth=item.raw_base_depth,
             ) for item in channels],
             logical_file_count=inspection.logical_file_count,
             frame_count=inspection.frame_count,
@@ -1570,11 +1643,42 @@ class WlvSourceIntakeService:
                 role=item.role,
                 supported=item.supported,
                 unsupported_reason=item.unsupported_reason,
+                raw_depth_unit=item.raw_depth_unit,
+                depth_scale_factor=item.depth_scale_factor,
+                normalized_depth_unit=item.normalized_depth_unit,
+                depth_normalization_status=item.depth_normalization_status,
+                depth_normalization_reason=item.depth_normalization_reason,
             ) for item in inspection.channel_inventory],
             evidence_count=inspection.logical_file_count + inspection.frame_count + len(inspection.channel_inventory),
             warning_count=len(inspection.warnings), error_count=0,
             warnings=list(inspection.warnings),
         )
+        review_channels = [item for item in inspection.channel_inventory if item.depth_normalization_status == "review_required"]
+        if review_channels:
+            raw_unit = review_channels[0].raw_depth_unit
+            raw_ranges = [
+                (item.raw_top_depth, item.raw_base_depth)
+                for item in inspection.scalar_channels
+                if item.raw_top_depth is not None and item.raw_base_depth is not None
+            ]
+            raw_start = min(item[0] for item in raw_ranges) if raw_ranges else None
+            raw_stop = max(item[1] for item in raw_ranges) if raw_ranges else None
+            if raw_start is not None and raw_stop is not None and raw_unit:
+                candidate.depth_normalization = SourceIntakeDepthNormalizationContract(
+                    raw_unit=raw_unit,
+                    raw_start_depth=raw_start,
+                    raw_stop_depth=raw_stop,
+                    status=SourceIntakeDepthNormalizationStatus.REVIEW_REQUIRED,
+                    reason="Non-standard encoded depth unit requires an explicit human target unit.",
+                    options=[
+                        SourceIntakeDepthNormalizationOption(
+                            target_unit=target,
+                            start_depth=convert_depth_to_target(raw_start, raw_unit, target),
+                            stop_depth=convert_depth_to_target(raw_stop, raw_unit, target),
+                        )
+                        for target in ("m", "ft")
+                    ],
+                )
         candidate.resolved_metadata = resolve_candidate_metadata(candidate)
         candidate.parser_status = SourceIntakeParseStatus.PARSED_WITH_WARNINGS if inspection.warnings else SourceIntakeParseStatus.PARSED
         candidate.parse_error = None

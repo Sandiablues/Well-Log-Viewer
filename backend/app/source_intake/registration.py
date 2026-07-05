@@ -74,6 +74,10 @@ def registration_block_reason(candidate: SourceFileCandidate) -> str | None:
     if candidate.readiness_state == SourceIntakeReadinessState.READY:
         return None
 
+    depth_contract = candidate.depth_normalization
+    if depth_contract is not None and getattr(depth_contract.status, "value", depth_contract.status) != "human_resolved":
+        return "Depth target unit must be resolved to metres or feet before registration."
+
     if candidate.registration_status == "registered" or candidate.resolution_state == SourceIntakeResolutionState.REGISTERED:
         return "Candidate is already registered to Managed Well Inventory."
 

@@ -37,6 +37,7 @@ def run_source_intake_qaqc(candidate: SourceFileCandidate) -> SourceIntakeQaqcRe
 
     _check_file_integrity(candidate, checks)
     _check_candidate_role(candidate, checks)
+    _check_depth_normalization(candidate, checks)
 
     if candidate.detected_file_type == SourceIntakeFileType.LAS:
         _check_las_parse(candidate, checks)
@@ -471,3 +472,22 @@ def _fail(check_id: str, message: str, field_name: str | None = None) -> SourceI
         field_name=field_name,
         review_required=True,
     )
+
+
+def _check_depth_normalization(candidate: SourceFileCandidate, checks: list[SourceIntakeQaqcCheck]) -> None:
+    contract = candidate.depth_normalization
+    if contract is None:
+        return
+    status = getattr(contract.status, "value", contract.status)
+    if status == "review_required":
+        checks.append(_review(
+            "depth.target_unit.required",
+            "A human must choose whether the decoded depth is normalized to metres or feet.",
+            field_name="depth_unit",
+            severity=SourceIntakeQaqcSeverity.HIGH,
+        ))
+    elif status == "human_resolved":
+        checks.append(_pass(
+            "depth.target_unit.resolved",
+            f"Depth target unit was explicitly resolved to {contract.decision.target_unit if contract.decision else 'unknown'}.",
+        ))

@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .depth_units import depth_unit_conversion, requires_human_target_unit
+
 try:
     from dlisio import dlis
 except ImportError as exc:  # pragma: no cover
@@ -31,6 +33,12 @@ class DlisScalarChannel:
     top_depth: float | None
     base_depth: float | None
     depth_unit: str | None
+    raw_depth_unit: str | None = None
+    depth_scale_factor: float | None = None
+    depth_normalization_status: str = "supported"
+    depth_normalization_reason: str | None = None
+    raw_top_depth: float | None = None
+    raw_base_depth: float | None = None
 
     @property
     def source_curve_name(self) -> str:
@@ -50,6 +58,11 @@ class DlisChannelInventoryItem:
     role: str
     supported: bool
     unsupported_reason: str | None = None
+    raw_depth_unit: str | None = None
+    depth_scale_factor: float | None = None
+    normalized_depth_unit: str | None = None
+    depth_normalization_status: str = "supported"
+    depth_normalization_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -117,7 +130,26 @@ def inspect_dlis(path: Path) -> DlisInspection:
                         warnings.append(f"{logical_id}/{frame_id}: index channel is unavailable in frame data.")
                         continue
                     raw_depth_unit = _text(getattr(index_channel, "units", None))
-                    top_depth, base_depth, depth_unit = _normalized_depth_range(curves[index_name], raw_depth_unit)
+                    depth_conversion = depth_unit_conversion(raw_depth_unit)
+                    raw_top_depth, raw_base_depth = _raw_depth_range(curves[index_name])
+                    decision_required = requires_human_target_unit(raw_depth_unit)
+                    if decision_required:
+                        top_depth, base_depth, depth_unit = None, None, None
+                    else:
+                        top_depth, base_depth, depth_unit = _normalized_depth_range(
+                            curves[index_name], depth_conversion
+                        )
+                    if decision_required:
+                        warnings.append(
+                            f"{logical_id}/{frame_id}: index channel {index_name} uses non-standard "
+                            f"depth encoding {raw_depth_unit!r}; a human must choose metres or feet."
+                        )
+                    elif not depth_conversion.supported:
+                        warnings.append(
+                            f"{logical_id}/{frame_id}: index channel {index_name} has "
+                            f"unsupported depth unit {raw_depth_unit!r} "
+                            f"({depth_conversion.reason}); frame requires human review."
+                        )
 
                     for channel in channels:
                         mnemonic = _text(getattr(channel, "name", None))
@@ -130,8 +162,12 @@ def inspect_dlis(path: Path) -> DlisInspection:
                         is_scalar = dimensions in ((), (1,))
                         sample_count = len(curves[mnemonic]) if mnemonic in curves.dtype.names else None
                         unsupported_reason = None
-                        supported = is_scalar and sample_count is not None
-                        if not is_scalar:
+                        supported = is_scalar and sample_count is not None and depth_conversion.supported and not decision_required
+                        if decision_required:
+                            unsupported_reason = "depth_target_unit_review_required"
+                        elif not depth_conversion.supported:
+                            unsupported_reason = "unsupported_depth_unit"
+                        elif not is_scalar:
                             non_scalar_count += 1
                             unsupported_reason = "multidimensional_channel"
                         elif sample_count is None:
@@ -148,8 +184,15 @@ def inspect_dlis(path: Path) -> DlisInspection:
                             role="index" if is_index else "curve",
                             supported=supported,
                             unsupported_reason=unsupported_reason,
+                            raw_depth_unit=raw_depth_unit,
+                            depth_scale_factor=depth_conversion.factor,
+                            normalized_depth_unit=depth_conversion.normalized_unit,
+                            depth_normalization_status="review_required" if decision_required else depth_conversion.status,
+                            depth_normalization_reason="human_target_unit_required" if decision_required else depth_conversion.reason,
                         ))
                         if is_index:
+                            continue
+                        if not depth_conversion.supported:
                             continue
                         if not is_scalar:
                             warnings.append(
@@ -171,6 +214,12 @@ def inspect_dlis(path: Path) -> DlisInspection:
                             top_depth=top_depth,
                             base_depth=base_depth,
                             depth_unit=depth_unit,
+                            raw_depth_unit=raw_depth_unit,
+                            depth_scale_factor=depth_conversion.factor,
+                            depth_normalization_status="review_required" if decision_required else depth_conversion.status,
+                            depth_normalization_reason="human_target_unit_required" if decision_required else depth_conversion.reason,
+                            raw_top_depth=raw_top_depth,
+                            raw_base_depth=raw_base_depth,
                         ))
                         if not unit:
                             warnings.append(f"{logical_id}/{frame_id}/{mnemonic}: channel unit is missing.")
@@ -198,23 +247,24 @@ def _text(value: Any) -> str | None:
     return text or None
 
 
-def _normalized_depth_range(values: Any, unit: str | None) -> tuple[float | None, float | None, str | None]:
+def _normalized_depth_range(values: Any, conversion) -> tuple[float | None, float | None, str | None]:
+    if not conversion.supported:
+        return None, None, None
     try:
         numeric = [float(value) for value in values]
     except Exception:
-        return None, None, unit
+        return None, None, conversion.normalized_unit
     if not numeric:
-        return None, None, unit
-    factor, normalized_unit = _depth_conversion(unit)
-    normalized = [value * factor for value in numeric]
-    return min(normalized), max(normalized), normalized_unit
+        return None, None, conversion.normalized_unit
+    normalized = [conversion.convert(value) for value in numeric]
+    return min(normalized), max(normalized), conversion.normalized_unit
 
 
-def _depth_conversion(unit: str | None) -> tuple[float, str | None]:
-    token = (unit or "").strip().lower()
-    if token in {"mm", "millimeter", "millimetre", "millimeters", "millimetres"}: return 0.001, "m"
-    if token in {"cm", "centimeter", "centimetre", "centimeters", "centimetres"}: return 0.01, "m"
-    if token in {"m", "meter", "metre", "meters", "metres"}: return 1.0, "m"
-    if token in {"in", "inch", "inches"}: return 1.0 / 12.0, "ft"
-    if token in {"ft", "foot", "feet"}: return 1.0, "ft"
-    return 1.0, unit
+def _raw_depth_range(values: Any) -> tuple[float | None, float | None]:
+    try:
+        numeric = [float(value) for value in values]
+    except Exception:
+        return None, None
+    if not numeric:
+        return None, None
+    return min(numeric), max(numeric)

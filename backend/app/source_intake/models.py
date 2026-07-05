@@ -148,6 +148,12 @@ class SourceIntakeCurveHeader(BaseModel):
     top_depth: Optional[float] = None
     base_depth: Optional[float] = None
     sample_count: Optional[int] = None
+    raw_depth_unit: Optional[str] = None
+    depth_scale_factor: Optional[float] = None
+    depth_normalization_status: str = "supported"
+    depth_normalization_reason: Optional[str] = None
+    raw_top_depth: Optional[float] = None
+    raw_base_depth: Optional[float] = None
 
 
 class SourceIntakeDlisChannelHeader(BaseModel):
@@ -162,6 +168,11 @@ class SourceIntakeDlisChannelHeader(BaseModel):
     role: str = "curve"
     supported: bool = True
     unsupported_reason: Optional[str] = None
+    raw_depth_unit: Optional[str] = None
+    depth_scale_factor: Optional[float] = None
+    normalized_depth_unit: Optional[str] = None
+    depth_normalization_status: str = "supported"
+    depth_normalization_reason: Optional[str] = None
 
 
 class SourceIntakeParsedMetadata(BaseModel):
@@ -308,6 +319,44 @@ class SourceIntakeResolvedMetadata(BaseModel):
 
 
 
+
+
+
+
+class SourceIntakeDepthNormalizationStatus(str, Enum):
+    SOURCE_NATIVE = "source_native"
+    REVIEW_REQUIRED = "review_required"
+    HUMAN_RESOLVED = "human_resolved"
+    UNSUPPORTED = "unsupported"
+
+
+class SourceIntakeDepthNormalizationOption(BaseModel):
+    target_unit: str
+    start_depth: float
+    stop_depth: float
+
+
+class SourceIntakeDepthNormalizationDecision(BaseModel):
+    target_unit: str
+    actor: Optional[str] = None
+    decided_at: str = Field(default_factory=utc_now_iso)
+    reason: Optional[str] = None
+
+
+class SourceIntakeDepthNormalizationContract(BaseModel):
+    raw_unit: Optional[str] = None
+    raw_start_depth: Optional[float] = None
+    raw_stop_depth: Optional[float] = None
+    status: SourceIntakeDepthNormalizationStatus = SourceIntakeDepthNormalizationStatus.SOURCE_NATIVE
+    reason: Optional[str] = None
+    options: list[SourceIntakeDepthNormalizationOption] = Field(default_factory=list)
+    decision: Optional[SourceIntakeDepthNormalizationDecision] = None
+
+
+class SourceIntakeDepthNormalizationRequest(BaseModel):
+    target_unit: str
+    actor: Optional[str] = None
+    reason: Optional[str] = None
 
 
 class SourceIntakeReadinessState(str, Enum):
@@ -462,6 +511,7 @@ class SourceFileCandidate(BaseModel):
     resolved_at: Optional[str] = None
     resolution_reason: Optional[str] = None
     current_decision: Optional[SourceIntakeCurrentDecision] = None
+    depth_normalization: Optional[SourceIntakeDepthNormalizationContract] = None
 
     @model_validator(mode="before")
     @classmethod

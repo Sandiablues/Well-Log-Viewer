@@ -147,6 +147,10 @@ def evaluate_registration_readiness(
 
     review_issues: list[str] = []
 
+    depth_contract = candidate.depth_normalization
+    if depth_contract is not None and getattr(depth_contract.status, "value", depth_contract.status) == "review_required":
+        review_issues.append("A human must choose the normalized depth unit: metres or feet.")
+
     if (
         candidate.candidate_role == SourceIntakeCandidateRole.WELL_LOG_CANDIDATE
         and not _canonical_well_name(candidate)

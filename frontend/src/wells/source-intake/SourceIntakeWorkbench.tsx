@@ -70,8 +70,29 @@ type SourceFileCandidate = {
   readiness_issues: string[];
   available_human_actions: string[];
   current_decision?: SourceIntakeCurrentDecision | null;
+  depth_normalization?: {
+    raw_unit?: string | null;
+    raw_start_depth?: number | null;
+    raw_stop_depth?: number | null;
+    status: 'source_native' | 'review_required' | 'human_resolved' | 'unsupported';
+    reason?: string | null;
+    options: Array<{ target_unit: 'm' | 'ft'; start_depth: number; stop_depth: number }>;
+    decision?: { target_unit: 'm' | 'ft'; actor?: string | null; decided_at: string; reason?: string | null } | null;
+  } | null;
   parsed_metadata?: {
-    log_header?: { curve_count?: number | null } | null;
+    well_header?: {
+      well_name?: string | null;
+      uwi?: string | null;
+      operator?: string | null;
+      field?: string | null;
+      depth_unit?: string | null;
+    } | null;
+    log_header?: {
+      curve_count?: number | null;
+      start_depth?: number | null;
+      stop_depth?: number | null;
+      depth_unit?: string | null;
+    } | null;
     curve_headers?: Array<{ mnemonic?: string | null }> | null;
   } | null;
   geometry_preview?: {
@@ -545,11 +566,18 @@ export function SourceIntakeWorkbench() {
     const fallback = diagnosticFallbackCandidate;
     if (!fallback && !candidateDiagnostics) return [];
 
+    const logHeader = fallback?.parsed_metadata?.log_header;
+    const depthUnit = logHeader?.depth_unit ?? fallback?.parsed_metadata?.well_header?.depth_unit ?? '';
+    const depthRange = typeof logHeader?.start_depth === 'number' && typeof logHeader?.stop_depth === 'number'
+      ? `${logHeader.start_depth.toLocaleString()}–${logHeader.stop_depth.toLocaleString()}${depthUnit ? ` ${depthUnit}` : ''}`
+      : '—';
+
     return [
       { label: 'Well', value: candidateDiagnostics?.summary.well_name ?? fallback?.resolved_metadata?.well_name?.value ?? '—' },
       { label: 'UWI/API', value: fallback?.resolved_metadata?.uwi?.value ?? '—' },
       { label: 'Operator', value: fallback?.resolved_metadata?.operator?.value ?? '—' },
-      { label: 'Field', value: fallback?.resolved_metadata?.field?.value ?? '—' },
+      { label: 'Field', value: fallback?.resolved_metadata?.field?.value ?? fallback?.parsed_metadata?.well_header?.field ?? '—' },
+      { label: 'Depth Range', value: depthRange },
       { label: 'File Type', value: labelize(candidateDiagnostics?.summary.detected_file_type ?? fallback?.detected_file_type ?? 'unknown') },
       { label: 'Role', value: labelize(candidateDiagnostics?.summary.candidate_role ?? fallback?.candidate_role ?? 'unknown') },
       { label: fallback?.candidate_role === 'wellbore_geometry_candidate' ? 'Geometry Preview' : 'Curves', value: fallback?.candidate_role === 'wellbore_geometry_candidate' ? geometryPreviewLabel(fallback) : String(candidateDiagnostics?.summary.curve_count ?? (fallback ? candidateCurveCount(fallback) : 0)) },
@@ -823,6 +851,26 @@ export function SourceIntakeWorkbench() {
     resetHumanActionForm();
     setMessage(`Applied human decision to ${response.resolved_count} candidate(s).`);
   });
+
+  const resolveDepthUnit = (candidate: SourceFileCandidate, targetUnit: 'm' | 'ft') => runAction(
+    `depth-normalization:${candidate.source_file_id}:${targetUnit}`,
+    async () => {
+      await fetchWlvJson<SourceFileCandidate>(
+        `/api/wlv/source-intake/candidates/${encodeURIComponent(candidate.source_file_id)}/depth-normalization`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            target_unit: targetUnit,
+            actor: 'user',
+            reason: `Human-selected WSI depth normalization to ${targetUnit}.`,
+          }),
+        },
+      );
+      await loadWorkbench();
+      setMessage(`Depth normalization resolved to ${targetUnit}.`);
+    },
+  );
 
   const handleRegister = () => runAction('register', async () => {
     const candidateIds = visibleCandidates
@@ -1482,6 +1530,36 @@ export function SourceIntakeWorkbench() {
               </section>
 
 
+
+              {diagnosticFallbackCandidate?.depth_normalization ? (
+                <section className="wlv-si-diagnostic-section">
+                  <h3>Depth Normalization</h3>
+                  <dl className="wlv-si-diagnostic-summary">
+                    <div><dt>Raw encoding</dt><dd>{diagnosticFallbackCandidate.depth_normalization.raw_unit ?? '—'}</dd></div>
+                    <div><dt>Raw interval</dt><dd>{typeof diagnosticFallbackCandidate.depth_normalization.raw_start_depth === 'number' && typeof diagnosticFallbackCandidate.depth_normalization.raw_stop_depth === 'number' ? `${diagnosticFallbackCandidate.depth_normalization.raw_start_depth.toLocaleString()}–${diagnosticFallbackCandidate.depth_normalization.raw_stop_depth.toLocaleString()}` : '—'}</dd></div>
+                    <div><dt>Status</dt><dd>{labelize(diagnosticFallbackCandidate.depth_normalization.status)}</dd></div>
+                    <div><dt>Selected unit</dt><dd>{diagnosticFallbackCandidate.depth_normalization.decision?.target_unit ?? 'Not selected'}</dd></div>
+                  </dl>
+                  {diagnosticFallbackCandidate.depth_normalization.status === 'review_required' ? (
+                    <>
+                      <p className="wlv-si-diagnostic-note">The source provides a valid physical scale but does not govern whether WSI should normalize it to metres or feet. Select the target explicitly.</p>
+                      <div className="wlv-si-toolbar-actions">
+                        {diagnosticFallbackCandidate.depth_normalization.options.map((option) => (
+                          <button
+                            key={option.target_unit}
+                            type="button"
+                            className="wlv-si-detail-button"
+                            disabled={busyAction !== null}
+                            onClick={() => void resolveDepthUnit(diagnosticFallbackCandidate, option.target_unit)}
+                          >
+                            Use {option.target_unit === 'm' ? 'metres' : 'feet'} ({option.start_depth.toLocaleString(undefined, { maximumFractionDigits: 3 })}–{option.stop_depth.toLocaleString(undefined, { maximumFractionDigits: 3 })} {option.target_unit})
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
+                </section>
+              ) : null}
 
               {diagnosticFallbackCandidate?.geometry_preview ? (
                 <section className="wlv-si-diagnostic-section">
