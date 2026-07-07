@@ -126,6 +126,7 @@ def test_product_sample_service_uses_same_wdv_contract_for_dlis(monkeypatch, tmp
         managed_well_id="managed-well:dlis",
         well_id="dlis",
         well_name="DLIS Well",
+        depth_unit="m",
         product_groups=[ManagedProductGroup(
             group_key="open_hole_logs",
             group_label="Open hole logs",

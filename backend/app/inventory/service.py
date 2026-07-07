@@ -6,6 +6,7 @@ from collections import Counter
 import hashlib
 import math
 import re
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote
@@ -28,6 +29,11 @@ from .models import (
     ManagedInventoryValidationIssue,
     ManagedInventoryValidationResult,
     LoadManagedWellToWdvResponse,
+    WmdDownstreamRecoveryStatus,
+    ExecuteWmdCleanupResponse,
+    RebuildWmdPayloadResponse,
+    RebuildWmdPayloadResult,
+    ExecuteWmdCleanupResult,
     LoadManagedWellToWdvResult,
     BulkLoadWdvWorkspaceResponse,
     BulkLoadWdvWellResult,
@@ -49,6 +55,10 @@ from .models import (
     ManagedWmdpState,
     RegisterSeedWellResponse,
     ViewerPackageReference,
+    WmdReferenceType,
+    WmdRetentionState,
+    WmdSourceRecoveryState,
+    WmdWorkingState,
     WdvWorkspaceStateResponse,
     utc_now_iso,
 )
@@ -56,6 +66,7 @@ from .repository import ManagedWellInventoryRepository, ManagedWellNotFoundError
 from .curve_sample_service import CurveSampleService, CurveSampleServiceError
 from .identity_reconciliation import reconcile_managed_record_identity
 from .wdv_workspace import WdvWorkspaceService, wdv_curve_counts
+from .wmd_lifecycle_service import WmdLifecycleService
 
 
 class ManagedWellInventoryService:
@@ -64,11 +75,483 @@ class ManagedWellInventoryService:
         repository: ManagedWellInventoryRepository | None = None,
         seed_repository: SeedWellRepository | None = None,
         workspace_service: WdvWorkspaceService | None = None,
+        source_intake_service: Any | None = None,
     ) -> None:
+        use_default_source_intake = repository is None
         self.repository = repository or ManagedWellInventoryRepository()
         self.seed_repository = seed_repository or SeedWellRepository()
         self.curve_sample_service = CurveSampleService(repository=self.repository)
         self.workspace_service = workspace_service or WdvWorkspaceService(repository=self.repository)
+        self.wmd_lifecycle_service = WmdLifecycleService()
+        self._source_intake_service = source_intake_service
+        self._use_default_source_intake = use_default_source_intake
+
+    def _source_intake_reference_service(self) -> Any | None:
+        if self._source_intake_service is not None:
+            return self._source_intake_service
+        if not self._use_default_source_intake:
+            return None
+        from app.source_intake.service import WlvSourceIntakeService
+
+        self._source_intake_service = WlvSourceIntakeService()
+        return self._source_intake_service
+
+    def _sync_source_intake_reference_state(self, record: ManagedWellRecord) -> None:
+        service = self._source_intake_reference_service()
+        if service is not None:
+            service.synchronize_managed_well_reference_state(record)
+
+    def _sync_source_intake_reference_states(self, records: list[ManagedWellRecord]) -> None:
+        for record in records:
+            self._sync_source_intake_reference_state(record)
+
+    def _acquire_wmd_reference(self, record: ManagedWellRecord) -> None:
+        self.wmd_lifecycle_service.acquire_reference(
+            record, WmdReferenceType.WMD, record.managed_well_id, "available_in_wmd"
+        )
+        for group in record.product_groups:
+            for item in group.items:
+                if item.wmdp_state != ManagedWmdpState.REMOVED_FROM_WMDP:
+                    self.wmd_lifecycle_service.acquire_reference(
+                        item, WmdReferenceType.WMD, record.managed_well_id, "available_in_wmd"
+                    )
+
+    def _release_wmd_reference(self, record: ManagedWellRecord, product_ids: set[str] | None = None) -> None:
+        if product_ids is None:
+            self.wmd_lifecycle_service.release_reference(
+                record, WmdReferenceType.WMD, record.managed_well_id
+            )
+        for group in record.product_groups:
+            for item in group.items:
+                if product_ids is None or item.product_id in product_ids:
+                    self.wmd_lifecycle_service.release_reference(
+                        item, WmdReferenceType.WMD, record.managed_well_id
+                    )
+
+    def _acquire_wdv_reference(self, record: ManagedWellRecord, product_ids: set[str]) -> None:
+        owner_id = f"wdv-workspace:{record.managed_well_id}"
+        self.wmd_lifecycle_service.acquire_reference(
+            record, WmdReferenceType.WDV, owner_id, "loaded_to_wdv"
+        )
+        for group in record.product_groups:
+            for item in group.items:
+                if item.product_id in product_ids:
+                    self.wmd_lifecycle_service.acquire_reference(
+                        item, WmdReferenceType.WDV, owner_id, "loaded_to_wdv"
+                    )
+
+    def _release_wdv_reference(self, record: ManagedWellRecord, product_ids: set[str] | None = None) -> None:
+        owner_id = f"wdv-workspace:{record.managed_well_id}"
+        for group in record.product_groups:
+            for item in group.items:
+                if product_ids is None or item.product_id in product_ids:
+                    self.wmd_lifecycle_service.release_reference(
+                        item, WmdReferenceType.WDV, owner_id
+                    )
+        if not any(
+            binding.reference_type == WmdReferenceType.WDV
+            for group in record.product_groups
+            for item in group.items
+            for binding in item.wmd_references
+        ):
+            self.wmd_lifecycle_service.release_reference(
+                record, WmdReferenceType.WDV, owner_id
+            )
+
+    def acquire_wmd_consumer_reference(
+        self,
+        managed_well_id: str,
+        reference_type: WmdReferenceType,
+        owner_id: str,
+        product_ids: list[str] | None = None,
+        reason: str | None = None,
+    ) -> ManagedWellRecord:
+        if reference_type == WmdReferenceType.WMD:
+            raise ValueError("Use WMD availability transitions for WMD ownership")
+        record = self._resolve_managed_well_reference(
+            managed_well_id, self.repository.list_records()
+        )
+        selected = set(self._resolve_product_references(record, product_ids or []))
+        self.wmd_lifecycle_service.acquire_reference(record, reference_type, owner_id, reason)
+        for group in record.product_groups:
+            for item in group.items:
+                if not selected or item.product_id in selected:
+                    self.wmd_lifecycle_service.acquire_reference(
+                        item, reference_type, owner_id, reason
+                    )
+        record.updated_at = utc_now_iso()
+        record = self.wmd_lifecycle_service.project_record(record)
+        _action, saved = self.repository.upsert_record(record)
+        return saved
+
+    def release_wmd_consumer_reference(
+        self,
+        managed_well_id: str,
+        reference_type: WmdReferenceType,
+        owner_id: str,
+        product_ids: list[str] | None = None,
+    ) -> ManagedWellRecord:
+        record = self._resolve_managed_well_reference(
+            managed_well_id, self.repository.list_records()
+        )
+        selected = set(self._resolve_product_references(record, product_ids or []))
+        for group in record.product_groups:
+            for item in group.items:
+                if not selected or item.product_id in selected:
+                    self.wmd_lifecycle_service.release_reference(
+                        item, reference_type, owner_id
+                    )
+        if not any(
+            binding.reference_type == reference_type and binding.owner_id == owner_id
+            for group in record.product_groups
+            for item in group.items
+            for binding in item.wmd_references
+        ):
+            self.wmd_lifecycle_service.release_reference(record, reference_type, owner_id)
+        record.updated_at = utc_now_iso()
+        record = self.wmd_lifecycle_service.project_record(record)
+        _action, saved = self.repository.upsert_record(record)
+        return saved
+
+
+    def _downstream_recovery_status_for_record(
+        self,
+        record: ManagedWellRecord,
+        product_ids: set[str] | None = None,
+    ) -> WmdDownstreamRecoveryStatus:
+        items = [item for group in record.product_groups for item in group.items]
+        if product_ids:
+            items = [item for item in items if item.product_id in product_ids]
+        blocked = [
+            item.product_id
+            for item in items
+            if item.wmd_source_recovery_state != WmdSourceRecoveryState.AVAILABLE
+            or item.wmd_working_state == WmdWorkingState.CLEARED
+            or item.wmd_retention_state == WmdRetentionState.CLEARED
+        ]
+        record_blocked = (
+            record.wmd_source_recovery_state != WmdSourceRecoveryState.AVAILABLE
+            or record.wmd_working_state == WmdWorkingState.CLEARED
+            or record.wmd_retention_state == WmdRetentionState.CLEARED
+        )
+        allowed = not record_blocked and not blocked
+        message = None if allowed else (
+            record.wmd_source_recovery_message
+            or "Transient WMD payload is unavailable. Restore the original unchanged source and rebuild before downstream use."
+        )
+        return WmdDownstreamRecoveryStatus(
+            managed_well_id=record.managed_well_id,
+            source_recovery_state=record.wmd_source_recovery_state,
+            payload_available=allowed,
+            wdv_load_allowed=allowed,
+            wbv_load_allowed=allowed,
+            export_allowed=allowed,
+            saved_workspace_resume_allowed=allowed,
+            blocked_product_ids=blocked,
+            recovery_message=message,
+        )
+
+    def reconcile_wbv_session_reference(
+        self,
+        active_managed_well_id: str | None,
+        *,
+        owner_id: str = "wbv-session:default",
+    ) -> ManagedWellRecord | None:
+        """Align the single backend-owned WBV session reference with WDV active well.
+
+        WBV does not own an independent durable well selection. The active WDV
+        workspace well is the authority. This command releases stale WBV
+        references from every other record, validates downstream availability,
+        and acquires a WBV reference only for the active well and its currently
+        loaded WDV products.
+        """
+        records = self.repository.list_records()
+        active: ManagedWellRecord | None = None
+        if active_managed_well_id:
+            active = self._resolve_managed_well_reference(active_managed_well_id, records)
+            self._require_downstream_payload_available(active)
+
+        saved_active: ManagedWellRecord | None = None
+        for record in records:
+            changed = False
+            is_active = active is not None and record.managed_well_id == active.managed_well_id
+            loaded_product_ids = {
+                item.product_id
+                for group in record.product_groups
+                for item in group.items
+                if item.wdv_state == ManagedWdvState.LOADED_TO_WDV
+            }
+
+            for group in record.product_groups:
+                for item in group.items:
+                    should_hold = is_active and item.product_id in loaded_product_ids
+                    if should_hold:
+                        before = len(item.wmd_references)
+                        self.wmd_lifecycle_service.acquire_reference(
+                            item, WmdReferenceType.WBV, owner_id, "active_wbv_session"
+                        )
+                        changed = changed or len(item.wmd_references) != before
+                    else:
+                        changed = self.wmd_lifecycle_service.release_reference(
+                            item, WmdReferenceType.WBV, owner_id
+                        ) or changed
+
+            if is_active and loaded_product_ids:
+                before = len(record.wmd_references)
+                self.wmd_lifecycle_service.acquire_reference(
+                    record, WmdReferenceType.WBV, owner_id, "active_wbv_session"
+                )
+                changed = changed or len(record.wmd_references) != before
+            else:
+                changed = self.wmd_lifecycle_service.release_reference(
+                    record, WmdReferenceType.WBV, owner_id
+                ) or changed
+
+            if changed:
+                record.updated_at = utc_now_iso()
+                record = self.wmd_lifecycle_service.project_record(record)
+                _action, record = self.repository.upsert_record(record)
+            if is_active:
+                saved_active = record
+
+        return saved_active
+
+    def reconcile_saved_workspace_references(
+        self,
+        workspace_uid: str,
+        well_product_references: dict[str, list[str] | None],
+    ) -> list[ManagedWellRecord]:
+        """Reconcile WMD retention for one backend-owned saved workspace.
+
+        The supplied selection is authoritative for this workspace owner. Stale
+        bindings are released from every other well/product before requested
+        bindings are acquired. Every requested well is checked against the frozen
+        WMD downstream-recovery contract, so a saved workspace cannot retain or
+        resume stale, cleared, missing, changed, or inaccessible payloads.
+        """
+        owner_id = str(workspace_uid or "").strip()
+        if not owner_id:
+            raise ValueError("Saved workspace UUIDv7 owner is required.")
+
+        records = self.repository.list_records()
+        requested: dict[str, set[str]] = {}
+        for well_reference, product_references in well_product_references.items():
+            record = self._resolve_managed_well_reference(well_reference, records)
+            selected = set(self._resolve_product_references(record, product_references or []))
+            if not selected:
+                selected = {
+                    item.product_id
+                    for group in record.product_groups
+                    for item in group.items
+                    if item.wdv_state == ManagedWdvState.LOADED_TO_WDV
+                }
+            self._require_downstream_payload_available(record, selected or None)
+            requested[record.managed_well_id] = selected
+
+        saved: list[ManagedWellRecord] = []
+        for record in records:
+            selected = requested.get(record.managed_well_id, set())
+            changed = False
+            for group in record.product_groups:
+                for item in group.items:
+                    should_hold = item.product_id in selected
+                    if should_hold:
+                        before = len(item.wmd_references)
+                        self.wmd_lifecycle_service.acquire_reference(
+                            item,
+                            WmdReferenceType.SAVED_WORKSPACE,
+                            owner_id,
+                            "saved_workspace_resume",
+                        )
+                        changed = changed or len(item.wmd_references) != before
+                    else:
+                        changed = self.wmd_lifecycle_service.release_reference(
+                            item, WmdReferenceType.SAVED_WORKSPACE, owner_id
+                        ) or changed
+
+            if selected:
+                before = len(record.wmd_references)
+                self.wmd_lifecycle_service.acquire_reference(
+                    record,
+                    WmdReferenceType.SAVED_WORKSPACE,
+                    owner_id,
+                    "saved_workspace_resume",
+                )
+                changed = changed or len(record.wmd_references) != before
+            else:
+                changed = self.wmd_lifecycle_service.release_reference(
+                    record, WmdReferenceType.SAVED_WORKSPACE, owner_id
+                ) or changed
+
+            if changed:
+                record.updated_at = utc_now_iso()
+                record = self.wmd_lifecycle_service.project_record(record)
+                _action, record = self.repository.upsert_record(record)
+            if selected:
+                saved.append(record)
+        return saved
+
+    def release_saved_workspace_references(
+        self, workspace_uid: str
+    ) -> list[ManagedWellRecord]:
+        """Release all WMD bindings owned by a deleted saved workspace."""
+        return self.reconcile_saved_workspace_references(workspace_uid, {})
+
+    def reconcile_export_references(
+        self,
+        export_uid: str,
+        well_product_references: dict[str, list[str] | None],
+    ) -> list[ManagedWellRecord]:
+        """Acquire exactly the WMD payload references needed by one export job.
+
+        The export UUIDv7 is the owner. Reconciliation is idempotent, rejects
+        blocked/cleared payloads before acquisition, and releases stale bindings
+        previously owned by the same export.
+        """
+        owner_id = str(export_uid or "").strip()
+        if not owner_id:
+            raise ValueError("Export UUIDv7 owner is required.")
+
+        records = self.repository.list_records()
+        requested: dict[str, set[str]] = {}
+        for well_reference, product_references in well_product_references.items():
+            record = self._resolve_managed_well_reference(well_reference, records)
+            selected = set(self._resolve_product_references(record, product_references or []))
+            if not selected:
+                selected = {
+                    item.product_id
+                    for group in record.product_groups
+                    for item in group.items
+                    if item.wdv_state == ManagedWdvState.LOADED_TO_WDV
+                }
+            self._require_downstream_payload_available(record, selected or None)
+            requested[record.managed_well_id] = selected
+
+        saved: list[ManagedWellRecord] = []
+        for record in records:
+            selected = requested.get(record.managed_well_id, set())
+            changed = False
+            for group in record.product_groups:
+                for item in group.items:
+                    if item.product_id in selected:
+                        before = len(item.wmd_references)
+                        self.wmd_lifecycle_service.acquire_reference(
+                            item, WmdReferenceType.EXPORT, owner_id, "active_export"
+                        )
+                        changed = changed or len(item.wmd_references) != before
+                    else:
+                        changed = self.wmd_lifecycle_service.release_reference(
+                            item, WmdReferenceType.EXPORT, owner_id
+                        ) or changed
+
+            if selected:
+                before = len(record.wmd_references)
+                self.wmd_lifecycle_service.acquire_reference(
+                    record, WmdReferenceType.EXPORT, owner_id, "active_export"
+                )
+                changed = changed or len(record.wmd_references) != before
+            else:
+                changed = self.wmd_lifecycle_service.release_reference(
+                    record, WmdReferenceType.EXPORT, owner_id
+                ) or changed
+
+            if changed:
+                record.updated_at = utc_now_iso()
+                record = self.wmd_lifecycle_service.project_record(record)
+                _action, record = self.repository.upsert_record(record)
+            if selected:
+                saved.append(record)
+        return saved
+
+    def release_export_references(self, export_uid: str) -> list[ManagedWellRecord]:
+        """Release all WMD bindings owned by a completed or failed export job."""
+        return self.reconcile_export_references(export_uid, {})
+
+    def reset_viewer_session_references(
+        self, *, owner_id: str = "wbv-session:default"
+    ) -> list[ManagedWellRecord]:
+        """Release transient WBV session bindings without unloading WDV workspace data.
+
+        Page exit and viewer-session reset must not erase the backend-persisted WDV
+        workspace. Only the ephemeral WBV session owner is released.
+        """
+        touched: list[ManagedWellRecord] = []
+        for record in self.repository.list_records():
+            changed = False
+            for group in record.product_groups:
+                for item in group.items:
+                    changed = self.wmd_lifecycle_service.release_reference(
+                        item, WmdReferenceType.WBV, owner_id
+                    ) or changed
+            changed = self.wmd_lifecycle_service.release_reference(
+                record, WmdReferenceType.WBV, owner_id
+            ) or changed
+            if changed:
+                record.updated_at = utc_now_iso()
+                record = self.wmd_lifecycle_service.project_record(record)
+                _action, record = self.repository.upsert_record(record)
+                touched.append(record)
+        return touched
+
+    def reconcile_stale_consumer_references(
+        self,
+        *,
+        active_export_owner_ids: set[str],
+        active_saved_workspace_owner_ids: set[str],
+        active_wbv_owner_ids: set[str],
+    ) -> list[ManagedWellRecord]:
+        """Release stale transient consumer bindings using backend-authoritative owner sets.
+
+        WMD and WDV bindings are deliberately excluded: WMD availability and the
+        persistent WDV workspace have separate lifecycle commands.
+        """
+        active_by_type = {
+            WmdReferenceType.EXPORT: {str(v) for v in active_export_owner_ids},
+            WmdReferenceType.SAVED_WORKSPACE: {str(v) for v in active_saved_workspace_owner_ids},
+            WmdReferenceType.WBV: {str(v) for v in active_wbv_owner_ids},
+        }
+        touched: list[ManagedWellRecord] = []
+        for record in self.repository.list_records():
+            changed = False
+            for group in record.product_groups:
+                for item in group.items:
+                    for binding in list(item.wmd_references):
+                        allowed = active_by_type.get(binding.reference_type)
+                        if allowed is not None and binding.owner_id not in allowed:
+                            changed = self.wmd_lifecycle_service.release_reference(
+                                item, binding.reference_type, binding.owner_id
+                            ) or changed
+            for binding in list(record.wmd_references):
+                allowed = active_by_type.get(binding.reference_type)
+                if allowed is not None and binding.owner_id not in allowed:
+                    changed = self.wmd_lifecycle_service.release_reference(
+                        record, binding.reference_type, binding.owner_id
+                    ) or changed
+            if changed:
+                record.updated_at = utc_now_iso()
+                record = self.wmd_lifecycle_service.project_record(record)
+                _action, record = self.repository.upsert_record(record)
+                touched.append(record)
+        return touched
+
+    def get_wmd_downstream_recovery_status(
+        self, managed_well_id: str, product_ids: list[str] | None = None
+    ) -> WmdDownstreamRecoveryStatus:
+        record = self._resolve_managed_well_reference(
+            managed_well_id, self.repository.list_records()
+        )
+        selected = set(self._resolve_product_references(record, product_ids or []))
+        return self._downstream_recovery_status_for_record(record, selected or None)
+
+    def _require_downstream_payload_available(
+        self, record: ManagedWellRecord, product_ids: set[str] | None = None
+    ) -> None:
+        status = self._downstream_recovery_status_for_record(record, product_ids)
+        if not status.payload_available:
+            blocked = ", ".join(status.blocked_product_ids) or record.managed_well_id
+            raise ValueError(
+                f"WMD downstream payload unavailable for {blocked}: {status.recovery_message}"
+            )
 
     def health(self) -> ManagedInventoryHealth:
         return ManagedInventoryHealth()
@@ -155,15 +638,388 @@ class ManagedWellInventoryService:
             "updated_product_ids": unique_changed_product_ids,
         }
 
+    def execute_wmd_cleanup(
+        self,
+        managed_well_id: str,
+        product_ids: list[str] | None = None,
+    ) -> ExecuteWmdCleanupResponse:
+        """Persist guarded cleanup of WLV-owned transient WMD viewer payloads."""
+        record = self._resolve_managed_well_reference(
+            managed_well_id, self.repository.list_records()
+        )
+        record = self._with_inventory_identity_contract(
+            self._with_product_groups(record)
+        )
+        selected = (
+            self._resolve_product_references(record, product_ids)
+            if product_ids
+            else None
+        )
+        cleared, cleared_ids, record_payload_cleared = (
+            self.wmd_lifecycle_service.execute_cleanup(record, selected)
+        )
+        cleared.updated_at = utc_now_iso()
+        _action, persisted = self.repository.upsert_record(cleared)
+        self._sync_source_intake_reference_state(persisted)
+        return ExecuteWmdCleanupResponse(
+            result=ExecuteWmdCleanupResult(
+                managed_well_id=persisted.managed_well_id,
+                cleared_product_ids=cleared_ids,
+                cleared_record_payload=record_payload_cleared,
+                external_sources_touched=False,
+            ),
+            record=persisted,
+        )
+
+
+    @staticmethod
+    def _source_candidates_for_rebuild(
+        record: ManagedWellRecord,
+        item: ManagedProductGroupItem,
+    ) -> list[Path]:
+        provenance = item.provenance if isinstance(item.provenance, dict) else {}
+        candidates = [
+            provenance.get("original_path"),
+            provenance.get("source_path"),
+            provenance.get("path"),
+        ]
+        matching_reference = next(
+            (
+                source
+                for source in record.source_references
+                if item.source_id and source.source_id == item.source_id
+            ),
+            None,
+        )
+        if matching_reference is not None:
+            candidates.append(matching_reference.original_path)
+        paths: list[Path] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            if not candidate:
+                continue
+            path = Path(str(candidate)).expanduser()
+            key = str(path)
+            if key not in seen:
+                seen.add(key)
+                paths.append(path)
+        return paths
+
+    @staticmethod
+    def _expected_source_fingerprint(
+        record: ManagedWellRecord,
+        item: ManagedProductGroupItem,
+    ) -> str | None:
+        provenance = item.provenance if isinstance(item.provenance, dict) else {}
+        asset = provenance.get("las_asset")
+        values = [
+            provenance.get("source_fingerprint"),
+            provenance.get("fingerprint"),
+            provenance.get("checksum"),
+            asset.get("source_fingerprint") if isinstance(asset, dict) else None,
+        ]
+        matching_reference = next(
+            (
+                source
+                for source in record.source_references
+                if item.source_id and source.source_id == item.source_id
+            ),
+            None,
+        )
+        if matching_reference is not None:
+            values.append(matching_reference.checksum)
+        for value in values:
+            text = str(value or "").strip().lower()
+            if re.fullmatch(r"[0-9a-f]{64}", text):
+                return text
+        return None
+
+    @staticmethod
+    def _sha256_read_only(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _inspect_source_for_rebuild(
+        self,
+        record: ManagedWellRecord,
+        item: ManagedProductGroupItem,
+    ) -> tuple[WmdSourceRecoveryState, Path | None, str | None, str]:
+        candidates = self._source_candidates_for_rebuild(record, item)
+        if not candidates:
+            return (
+                WmdSourceRecoveryState.MISSING,
+                None,
+                None,
+                f"No authoritative external source reference is retained for WMD product: {item.product_id}",
+            )
+
+        existing = [path for path in candidates if path.exists()]
+        if not existing:
+            return (
+                WmdSourceRecoveryState.MISSING,
+                None,
+                None,
+                f"Authoritative external source is missing for WMD product: {item.product_id}",
+            )
+
+        path = existing[0]
+        if not path.is_file():
+            return (
+                WmdSourceRecoveryState.INACCESSIBLE,
+                path,
+                None,
+                f"Authoritative external source is inaccessible for WMD product: {item.product_id}",
+            )
+        try:
+            resolved = path.resolve(strict=True)
+            actual = self._sha256_read_only(resolved)
+        except (OSError, PermissionError):
+            return (
+                WmdSourceRecoveryState.INACCESSIBLE,
+                path,
+                None,
+                f"Authoritative external source is inaccessible for WMD product: {item.product_id}",
+            )
+
+        expected = self._expected_source_fingerprint(record, item)
+        if expected is not None and actual != expected:
+            return (
+                WmdSourceRecoveryState.CHANGED,
+                resolved,
+                actual,
+                f"Authoritative source fingerprint changed for WMD product: {item.product_id}",
+            )
+        return (
+            WmdSourceRecoveryState.AVAILABLE,
+            resolved,
+            actual,
+            "Authoritative external source is available and fingerprint-verified.",
+        )
+
+    def _persist_wmd_source_recovery_state(
+        self,
+        record: ManagedWellRecord,
+        item_states: dict[str, tuple[WmdSourceRecoveryState, str | None, str]],
+    ) -> ManagedWellRecord:
+        checked_at = utc_now_iso()
+        groups: list[ManagedProductGroup] = []
+        for group in record.product_groups:
+            items: list[ManagedProductGroupItem] = []
+            for item in group.items:
+                state = item_states.get(item.product_id)
+                if state is None:
+                    items.append(item)
+                    continue
+                recovery_state, observed, message = state
+                items.append(
+                    item.model_copy(
+                        update={
+                            "wmd_source_recovery_state": recovery_state,
+                            "wmd_source_checked_at": checked_at,
+                            "wmd_source_recovery_message": message,
+                            "wmd_observed_source_fingerprint": observed,
+                            "wmd_working_state": WmdWorkingState.CLEARED,
+                            "wmd_retention_state": WmdRetentionState.CLEARED,
+                            "wmd_cleanup_eligible": False,
+                            "wmd_retention_reason": f"rebuild_blocked_source_{recovery_state.value}",
+                        }
+                    )
+                )
+            groups.append(group.model_copy(update={"items": items}))
+
+        states = {value[0] for value in item_states.values()}
+        aggregate = (
+            WmdSourceRecoveryState.CHANGED
+            if WmdSourceRecoveryState.CHANGED in states
+            else WmdSourceRecoveryState.INACCESSIBLE
+            if WmdSourceRecoveryState.INACCESSIBLE in states
+            else WmdSourceRecoveryState.MISSING
+            if WmdSourceRecoveryState.MISSING in states
+            else WmdSourceRecoveryState.AVAILABLE
+        )
+        messages = [value[2] for value in item_states.values()]
+        observed_values = [value[1] for value in item_states.values() if value[1]]
+        updated = record.model_copy(
+            update={
+                "product_groups": groups,
+                "wmd_source_recovery_state": aggregate,
+                "wmd_source_checked_at": checked_at,
+                "wmd_source_recovery_message": "; ".join(messages),
+                "wmd_observed_source_fingerprint": observed_values[0] if len(set(observed_values)) == 1 else None,
+                "wmd_working_state": WmdWorkingState.CLEARED,
+                "wmd_retention_state": WmdRetentionState.CLEARED,
+                "wmd_cleanup_eligible": False,
+                "wmd_retention_reason": f"rebuild_blocked_source_{aggregate.value}",
+                "updated_at": checked_at,
+            }
+        )
+        _action, persisted = self.repository.upsert_record(updated)
+        self._sync_source_intake_reference_state(persisted)
+        return persisted
+
+    def rebuild_wmd_payload(
+        self,
+        managed_well_id: str,
+        product_ids: list[str] | None = None,
+    ) -> RebuildWmdPayloadResponse:
+        """Rebuild cleared transient WMD payload state from retained source provenance."""
+        record = self._resolve_managed_well_reference(
+            managed_well_id, self.repository.list_records()
+        )
+        record = self._with_inventory_identity_contract(
+            self._with_product_groups(record)
+        )
+        selected = (
+            self._resolve_product_references(record, product_ids)
+            if product_ids
+            else None
+        )
+        selected_items = [
+            item
+            for group in record.product_groups
+            for item in group.items
+            if selected is None or item.product_id in selected
+        ]
+        if not selected_items:
+            raise ValueError("No WMD products were selected for rebuild.")
+
+        verified: list[str] = []
+        identity_before = {
+            item.product_id: (
+                str(item.managed_product_uid or ""),
+                str(item.managed_curve_uid or ""),
+                str(item.curve_uid or ""),
+            )
+            for item in selected_items
+        }
+        recovery_states: dict[str, tuple[WmdSourceRecoveryState, str | None, str]] = {}
+        available_paths: dict[str, Path] = {}
+        for item in selected_items:
+            if item.wmd_retention_state != WmdRetentionState.CLEARED:
+                raise ValueError(
+                    f"WMD product is not cleared and cannot be rebuilt: {item.product_id}"
+                )
+            state, source_path, observed, message = self._inspect_source_for_rebuild(record, item)
+            recovery_states[item.product_id] = (state, observed, message)
+            if state == WmdSourceRecoveryState.AVAILABLE and source_path is not None:
+                available_paths[item.product_id] = source_path
+
+        blocked = {
+            product_id: state
+            for product_id, state in recovery_states.items()
+            if state[0] != WmdSourceRecoveryState.AVAILABLE
+        }
+        if blocked:
+            self._persist_wmd_source_recovery_state(record, recovery_states)
+            messages = [state[2] for state in blocked.values()]
+            raise ValueError("; ".join(messages))
+
+        for item in selected_items:
+            # Prove the retained source/provenance path can supply samples before
+            # changing lifecycle state. This reparses LAS/DLIS read-only.
+            try:
+                self.curve_sample_service.get_curve_samples(
+                    managed_well_id=record.managed_well_id,
+                    product_id=item.product_id,
+                    max_samples=32,
+                )
+            except (CurveSampleServiceError, OSError, PermissionError) as exc:
+                message = f"Authoritative external source is inaccessible for WMD product: {item.product_id}"
+                recovery_states[item.product_id] = (
+                    WmdSourceRecoveryState.INACCESSIBLE,
+                    recovery_states[item.product_id][1],
+                    message,
+                )
+                self._persist_wmd_source_recovery_state(record, recovery_states)
+                raise ValueError(message) from exc
+            verified.append(recovery_states[item.product_id][1] or "")
+
+        rebuilt, rebuilt_ids = self.wmd_lifecycle_service.rebuild_cleared_payload(
+            record, selected
+        )
+        self._acquire_wmd_reference(rebuilt)
+        rebuilt = self.wmd_lifecycle_service.project_record(rebuilt)
+        checked_at = utc_now_iso()
+        rebuilt_groups: list[ManagedProductGroup] = []
+        for group in rebuilt.product_groups:
+            rebuilt_groups.append(
+                group.model_copy(
+                    update={
+                        "items": [
+                            item.model_copy(
+                                update={
+                                    "wmd_source_recovery_state": WmdSourceRecoveryState.AVAILABLE,
+                                    "wmd_source_checked_at": checked_at,
+                                    "wmd_source_recovery_message": "Authoritative external source is available and fingerprint-verified.",
+                                    "wmd_observed_source_fingerprint": recovery_states[item.product_id][1],
+                                }
+                            )
+                            if item.product_id in rebuilt_ids
+                            else item
+                            for item in group.items
+                        ]
+                    }
+                )
+            )
+        rebuilt = rebuilt.model_copy(
+            update={
+                "product_groups": rebuilt_groups,
+                "wmd_source_recovery_state": WmdSourceRecoveryState.AVAILABLE,
+                "wmd_source_checked_at": checked_at,
+                "wmd_source_recovery_message": "Authoritative external source is available and fingerprint-verified.",
+                "wmd_observed_source_fingerprint": verified[0] if len(set(verified)) == 1 else None,
+            }
+        )
+        rebuilt.updated_at = checked_at
+        _action, persisted = self.repository.upsert_record(rebuilt)
+        self._sync_source_intake_reference_state(persisted)
+
+        identity_after = {
+            item.product_id: (
+                str(item.managed_product_uid or ""),
+                str(item.managed_curve_uid or ""),
+                str(item.curve_uid or ""),
+            )
+            for group in persisted.product_groups
+            for item in group.items
+            if item.product_id in rebuilt_ids
+        }
+        identities_preserved = all(
+            identity_after.get(product_id) == identity_before.get(product_id)
+            for product_id in rebuilt_ids
+        )
+        if not identities_preserved:
+            raise ValueError("WMD rebuild changed durable product or curve identity.")
+
+        return RebuildWmdPayloadResponse(
+            result=RebuildWmdPayloadResult(
+                managed_well_id=persisted.managed_well_id,
+                rebuilt_product_ids=rebuilt_ids,
+                source_fingerprints_verified=verified,
+                identities_preserved=True,
+                external_sources_touched=False,
+            ),
+            record=persisted,
+        )
+
     def list_wells(self) -> list[ManagedWellRecord]:
         return [
-            self._with_inventory_identity_contract(self._with_product_groups(record))
+            self.wmd_lifecycle_service.project_record(
+                self._with_inventory_identity_contract(self._with_product_groups(record))
+            )
             for record in self.repository.list_records()
             if record.wmdp_available and record.wmdp_state != ManagedWmdpState.REMOVED_FROM_WMDP
         ]
 
     def get_well(self, managed_well_id: str) -> ManagedWellRecord:
-        return self._with_inventory_identity_contract(self._with_product_groups(self.repository.get_record(managed_well_id)))
+        return self.wmd_lifecycle_service.project_record(
+            self._with_inventory_identity_contract(
+                self._with_product_groups(self.repository.get_record(managed_well_id))
+            )
+        )
 
     def list_viewer_packages(self) -> list[ViewerPackageReference]:
         packages: list[ViewerPackageReference] = []
@@ -182,6 +1038,9 @@ class ManagedWellInventoryService:
         """
         record = self._with_inventory_identity_contract(self.repository.get_record(managed_well_id))
         loaded_items = self._loaded_wdv_product_items(record)
+        self._require_downstream_payload_available(
+            record, {item.product_id for item in loaded_items} or None
+        )
         if loaded_items:
             existing_session = record.metadata.get("wdv_load_session_contract")
             existing_product_ids = []
@@ -263,7 +1122,9 @@ class ManagedWellInventoryService:
         except ManagedWellNotFoundError:
             existing_record = None
 
-        normalized_record = self._with_inventory_identity_contract(record)
+        normalized_record = self.wmd_lifecycle_service.project_record(
+            self._with_inventory_identity_contract(record)
+        )
         normalized_record = reconcile_managed_record_identity(
             normalized_record,
             existing=existing_record,
@@ -357,6 +1218,9 @@ class ManagedWellInventoryService:
             target,
             product_ids or [],
         )
+        self._require_downstream_payload_available(
+            target, set(selected_product_ids) or None
+        )
 
         unloaded_managed_well_ids: list[str] = []
 
@@ -382,12 +1246,16 @@ class ManagedWellInventoryService:
                     item.wdv_state = ManagedWdvState.NOT_LOADED
 
         active_package_id = self._sync_wdv_load_session_for_record(target)
+        self._acquire_wmd_reference(target)
+        self._acquire_wdv_reference(target, loaded_product_id_set)
         target.updated_at = utc_now_iso()
+        target = self.wmd_lifecycle_service.project_record(target)
         _action, saved = self.repository.upsert_record(target)
         self.workspace_service.reconcile(
             self.repository.list_records(),
             preferred_active=saved.managed_well_id,
         )
+        self._sync_source_intake_reference_state(saved)
 
         return LoadManagedWellToWdvResponse(
             result=LoadManagedWellToWdvResult(
@@ -423,6 +1291,9 @@ class ManagedWellInventoryService:
             selected_product_ids = self._resolve_product_references(
                 target,
                 selection.product_references,
+            )
+            self._require_downstream_payload_available(
+                target, set(selected_product_ids) or None
             )
             loadable_items = [
                 item
@@ -467,6 +1338,9 @@ class ManagedWellInventoryService:
                 for item in group.items:
                     if item.product_id in loaded_set:
                         item.wdv_state = ManagedWdvState.LOADED_TO_WDV
+            self._acquire_wmd_reference(target)
+            self._acquire_wdv_reference(target, loaded_set)
+            target = self.wmd_lifecycle_service.project_record(target)
             target.updated_at = now
             updated_records.append(target)
             results.append(
@@ -482,6 +1356,7 @@ class ManagedWellInventoryService:
         self.repository.write_snapshot(
             snapshot.model_copy(update={"records": updated_records, "updated_at": now})
         )
+        self._sync_source_intake_reference_states([item[0] for item in prepared])
 
         previous_workspace = self.workspace_service.get_workspace()
         loaded_record_ids = {
@@ -555,7 +1430,9 @@ class ManagedWellInventoryService:
                         item.wdv_state = ManagedWdvState.NOT_LOADED
             remaining = [item.product_id for item in self._loaded_wdv_product_items(target)]
             target.wdv_state = ManagedWdvState.LOADED_TO_WDV if remaining else ManagedWdvState.NOT_LOADED
+            self._release_wdv_reference(target, unload_set)
             self._sync_wdv_load_session_for_record(target)
+            target = self.wmd_lifecycle_service.project_record(target)
             target.updated_at = now
             updated_records.append(target)
             results.append(BulkUnloadWdvWellResult(
@@ -568,9 +1445,11 @@ class ManagedWellInventoryService:
             ))
 
         self.repository.write_snapshot(snapshot.model_copy(update={"records": updated_records, "updated_at": now}))
+        self._sync_source_intake_reference_states([item[0] for item in prepared])
         remaining_ids = {record.managed_well_id for record in updated_records if self._loaded_wdv_product_items(record)}
         preferred_active = previous.active_managed_well_id if previous.active_managed_well_id in remaining_ids else None
         workspace = self.workspace_service.reconcile(updated_records, preferred_active=preferred_active)
+        self.reconcile_wbv_session_reference(workspace.active_managed_well_id)
         return BulkUnloadWdvWorkspaceResponse(
             requested_count=len(selections),
             unloaded_count=sum(1 for item in results if item.status == "unloaded"),
@@ -583,7 +1462,12 @@ class ManagedWellInventoryService:
         return self.workspace_service.get_workspace()
 
     def set_active_wdv_well(self, managed_well_reference: str) -> WdvWorkspaceStateResponse:
-        return self.workspace_service.set_active_well(managed_well_reference)
+        workspace = self.workspace_service.set_active_well(managed_well_reference)
+        self.reconcile_wbv_session_reference(workspace.active_managed_well_id)
+        return workspace
+
+    def set_common_depth_unit(self, common_depth_unit: str) -> WdvWorkspaceStateResponse:
+        return self.workspace_service.set_common_depth_unit(common_depth_unit)
 
     def restore_source_candidates_to_mdp(
         self,
@@ -661,12 +1545,15 @@ class ManagedWellInventoryService:
                 already_visible_well_ids.append(record.managed_well_id)
 
             if record_changed:
+                self._acquire_wmd_reference(record)
                 record.updated_at = utc_now_iso()
+                record = self.wmd_lifecycle_service.project_record(record)
                 _action, saved = self.repository.upsert_record(record)
                 touched_records.append(saved)
 
         missing = sorted(set(candidate_ids) - matched_candidates)
         self.workspace_service.reconcile(self.repository.list_records())
+        self._sync_source_intake_reference_states(touched_records)
 
         return RestoreManagedDataToMdpResponse(
             result=RestoreManagedDataToMdpResult(
@@ -756,14 +1643,25 @@ class ManagedWellInventoryService:
                 )
 
             if full_well_remove or product_removed_for_record:
+                removed_for_record = {
+                    item.product_id
+                    for group in record.product_groups
+                    for item in group.items
+                    if item.wmdp_state == ManagedWmdpState.REMOVED_FROM_WMDP
+                }
+                self._release_wdv_reference(record, None if full_well_remove else removed_for_record)
+                self._release_wmd_reference(record, None if full_well_remove else removed_for_record)
                 self._sync_wdv_load_session_for_record(record)
                 record.updated_at = utc_now_iso()
+                record = self.wmd_lifecycle_service.project_record(record)
                 _action, saved = self.repository.upsert_record(record)
                 touched_records.append(saved)
 
         missing_product_ids = sorted(selected_product_ids - set(removed_product_ids))
         if missing_product_ids and not touched_records:
             raise ManagedWellNotFoundError(missing_product_ids[0])
+
+        self._sync_source_intake_reference_states(touched_records)
 
         return RemoveManagedDataFromMdpResponse(
             result=RemoveManagedDataFromMdpResult(
@@ -828,10 +1726,13 @@ class ManagedWellInventoryService:
             if remaining_loaded_product_ids
             else ManagedWdvState.NOT_LOADED
         )
+        self._release_wdv_reference(record, unloaded_product_id_set)
         self._sync_wdv_load_session_for_record(record)
         record.updated_at = utc_now_iso()
+        record = self.wmd_lifecycle_service.project_record(record)
         _action, saved = self.repository.upsert_record(record)
         self.workspace_service.reconcile(self.repository.list_records())
+        self._sync_source_intake_reference_state(saved)
 
         return UnloadManagedWellFromWdvResponse(
             result=UnloadManagedWellFromWdvResult(

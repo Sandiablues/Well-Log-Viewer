@@ -8,6 +8,7 @@ import { buildInventoryActionPayload, buildInventoryRemovalPayload } from '../id
 import { managedWellIdentityFromActiveWorkspace, managedWellIdentityFromPayload, type ManagedWellIdentity } from '../identity/managedWellIdentity';
 import { fetchWlvJson } from '../wdv/WdvPresentationPrimitives';
 import { WdvPageBoundary } from '../wdv/WdvPageBoundary';
+import { fetchWmdDownstreamRecovery, rebuildWmdPayload, wmdRecoveryAction, wmdRecoveryLabel, type WmdDownstreamRecoveryStatus } from '../inventory/wmdRecoveryApi';
 
 type DemoNavView = 'log-viewer' | 'data' | 'sources' | 'knowledge' | 'wellbore-3d' | 'info';
 
@@ -65,6 +66,9 @@ type ManagedProductGroupItem = {
     product_subgroup_key?: string | null;
     product_subgroup_label?: string | null;
     classification_confidence?: string | null;
+    classification_source?: string | null;
+    classification_reasons?: string[] | null;
+    review_required?: boolean | null;
     run_date?: string | null;
     run_interval?: string | null;
     run_number?: string | null;
@@ -169,8 +173,8 @@ function wellStatus(well: ManagedInventoryWellRecord): string {
     return well.lifecycle_state || well.status || 'unknown';
 }
 
-function developmentSeedAlreadyRegistered(wells: ManagedInventoryWellRecord[]): boolean {
-    return wells.some((well) => well.managed_well_id === 'managed-well:forge-21-31' || well.well_id === 'forge-21-31');
+function developmentSeedAlreadyRegistered(_wells: ManagedInventoryWellRecord[]): boolean {
+    return false;
 }
 
 function wellTypeLabel(well: ManagedInventoryWellRecord): string {
@@ -456,7 +460,7 @@ function WmdpProductItemRow({ item, selected, onToggle, managedWellId, onSetActi
             <span className="wlv-wmdp-product-item-run-number" title={safeText(item.run_number)}>
               <strong>Run Number:</strong> {safeText(item.run_number)}
             </span>
-            <span className="wlv-wmdp-product-item-qa-flag" title={safeText(item.qa_flag)}>
+            <span className="wlv-wmdp-product-item-qa-flag" title={[`QA Flag: ${safeText(item.qa_flag)}`, item.classification_source ? `Classification source: ${item.classification_source}` : '', ...(item.classification_reasons ?? [])].filter(Boolean).join('\n')}>
               <strong>QA Flag:</strong> {safeText(item.qa_flag)}
             </span>
           </>)}
@@ -486,6 +490,8 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
     const [loading, setLoading] = useState(true);
     const [registering, setRegistering] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [recoveryByWellId, setRecoveryByWellId] = useState<Map<string, WmdDownstreamRecoveryStatus>>(new Map());
+    const [rebuildingWellId, setRebuildingWellId] = useState<string | null>(null);
     // KR-1: backend-owned product groups fetched once on mount.
     // If unavailable the page degrades safely (subgroups not shown).
     const [krProductGroups, setKrProductGroups] = useState<KrProductGroup[]>([]);
@@ -542,6 +548,15 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
             ]);
             setStatus(nextStatus);
             setWells(nextWells);
+            const recoveryResults = await Promise.all(nextWells.map(async (well) => {
+                try {
+                    return [well.managed_well_id, await fetchWmdDownstreamRecovery(well.managed_well_id)] as const;
+                }
+                catch {
+                    return null;
+                }
+            }));
+            setRecoveryByWellId(new Map(recoveryResults.filter((value): value is readonly [string, WmdDownstreamRecoveryStatus] => value !== null)));
             setSelectedWellId((current) => (current && nextWells.some((well) => well.managed_well_id === current)
                 ? current
                 : nextWells[0]?.managed_well_id ?? null));
@@ -563,6 +578,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
             setError(caught instanceof Error ? caught.message : 'Unable to load managed well inventory');
             setStatus(null);
             setWells([]);
+            setRecoveryByWellId(new Map());
             setSelectedWellId(null);
             setSelectedWellIds(new Set());
             setExpandedWellIds(new Set());
@@ -713,7 +729,23 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
     const selectedWellCount = selectedWellIds.size;
     const selectedProductCount = selectedProductItemIds.size;
     const hasSelection = selectedWellCount > 0 || selectedProductCount > 0;
-    const canApplyBulkAction = hasSelection && !bulkApplying;
+    const selectedRecoveryWellIds = new Set([...selectedWellIds, ...selectedProductWellIds]);
+    const recoveryBlocksLoad = bulkAction === 'load' && [...selectedRecoveryWellIds].some((wellId) => recoveryByWellId.get(wellId)?.wdv_load_allowed !== true);
+    const canApplyBulkAction = hasSelection && !bulkApplying && !recoveryBlocksLoad;
+    const rebuildWell = async (managedWellId: string) => {
+        setRebuildingWellId(managedWellId);
+        setError(null);
+        try {
+            await rebuildWmdPayload(managedWellId);
+            await loadInventory();
+        }
+        catch (caught) {
+            setError(caught instanceof Error ? caught.message : 'Unable to rebuild transient WMD payload');
+        }
+        finally {
+            setRebuildingWellId(null);
+        }
+    };
     const applyBulkAction = async () => {
         if (!canApplyBulkAction)
             return;
@@ -880,6 +912,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
       </header>
 
       {error ? <div className="wlv-managed-inventory-error" role="alert">{error}</div> : null}
+      {recoveryBlocksLoad ? <div className="wlv-wmd-recovery-banner" role="status">Selected data is not available to WDV. Restore the source or rebuild the transient WMD payload shown below.</div> : null}
 
       <section className="wlv-wmdp-panel" aria-label="Managed well data table">
         <header className="wlv-wmdp-panel-header">
@@ -986,7 +1019,17 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                       <td>{wellDisplayableCurveCount(well)}</td>
                       <td>
                         <div className="wlv-wmdp-row-actions">
-                          <button type="button" onClick={() => { setSelectedWellIds(new Set([well.managed_well_id])); void fetchWlvJson('/api/wlv/inventory/load-to-wdv', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildInventoryActionPayload(well, [])) }).then(() => loadInventory()).then(() => onOpenLogViewer(managedWellIdentityFromPayload(well))).catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load managed well to WDV')); }}>Load</button>
+                          {(() => {
+                            const recovery = recoveryByWellId.get(well.managed_well_id);
+                            const loadAllowed = recovery?.wdv_load_allowed === true;
+                            const action = recovery ? wmdRecoveryAction(recovery) : null;
+                            return <>
+                              <span className={`wlv-wmd-recovery-chip ${recovery?.payload_available === false ? 'is-blocked' : 'is-available'}`} title={recovery?.recovery_message || 'Backend recovery status'}>{recovery ? wmdRecoveryLabel(recovery) : 'Checking…'}</span>
+                              <button type="button" disabled={!loadAllowed} title={!loadAllowed ? recovery?.recovery_message || 'WMD payload unavailable' : 'Load managed well to WDV'} onClick={() => { setSelectedWellIds(new Set([well.managed_well_id])); void fetchWlvJson('/api/wlv/inventory/load-to-wdv', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildInventoryActionPayload(well, [])) }).then(() => loadInventory()).then(() => onOpenLogViewer(managedWellIdentityFromPayload(well))).catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load managed well to WDV')); }}>Load</button>
+                              {action === 'rebuild' ? <button type="button" disabled={rebuildingWellId === well.managed_well_id} onClick={() => void rebuildWell(well.managed_well_id)}>{rebuildingWellId === well.managed_well_id ? 'Rebuilding…' : 'Rebuild'}</button> : null}
+                              {action === 'restore-source' ? <button type="button" disabled title={recovery?.recovery_message || 'Restore the original unchanged source before rebuilding'}>Restore source</button> : null}
+                            </>;
+                          })()}
                           <button type="button" onClick={() => setSelectedWellId(well.managed_well_id)}>Info</button>
                           <button type="button" onClick={() => { setSelectedWellIds(new Set([well.managed_well_id])); setSelectedProductItemIds(new Set()); setBulkAction('remove'); }}>Remove</button>
                         </div>
@@ -1177,9 +1220,27 @@ function DemoShellRail({ activeView, onNavigate, }: {
     </aside>);
 }
 
+function WmdRecoveryBlockedView({ status, onReturnToData }: { status: WmdDownstreamRecoveryStatus; onReturnToData: () => void }) {
+  const action = wmdRecoveryAction(status);
+  return (<section className="wlv-prototype-root wlv-wmd-recovery-blocked-view" role="status">
+    <header className="wlv-app-header">
+      <div className="wlv-app-title">
+        <strong>{wmdRecoveryLabel(status)}</strong>
+        <span>{status.recovery_message || 'Transient WMD payload is unavailable.'}</span>
+      </div>
+    </header>
+    <div className="wlv-wmd-recovery-blocked-body">
+      <p>WDV, WBV, export, and saved-workspace resume are blocked by the backend recovery contract.</p>
+      <p>{action === 'rebuild' ? 'Return to Managed Well Data and rebuild the transient payload.' : 'Restore the original unchanged source, then return to Managed Well Data and rebuild.'}</p>
+      <button type="button" onClick={onReturnToData}>Open Managed Well Data</button>
+    </div>
+  </section>);
+}
+
 export function TrackLayoutPrototype() {
   const [activeView, setActiveView] = useState<DemoNavView>('log-viewer');
   const [managedViewerWell, setManagedViewerWell] = useState<ManagedWellIdentity | null>(null);
+  const [activeRecovery, setActiveRecovery] = useState<WmdDownstreamRecoveryStatus | null>(null);
   const openManagedWellLogViewer = (identity?: ManagedWellIdentity | null) => {
     if (identity) setManagedViewerWell(identity);
     setActiveView('log-viewer');
@@ -1189,10 +1250,22 @@ export function TrackLayoutPrototype() {
     setActiveView('log-viewer');
   };
   const managedViewerWellId = managedViewerWell?.managedWellId ?? null;
+  useEffect(() => {
+    let cancelled = false;
+    if (!managedViewerWellId) {
+      setActiveRecovery(null);
+      return () => { cancelled = true; };
+    }
+    void fetchWmdDownstreamRecovery(managedViewerWellId)
+      .then((status) => { if (!cancelled) setActiveRecovery(status); })
+      .catch(() => { if (!cancelled) setActiveRecovery(null); });
+    return () => { cancelled = true; };
+  }, [managedViewerWellId, activeView]);
+  const downstreamBlocked = Boolean(activeRecovery && !activeRecovery.payload_available && (activeView === 'log-viewer' || activeView === 'wellbore-3d'));
   return (<div className="wlv-demo-shell">
         <DemoShellRail activeView={activeView} onNavigate={setActiveView}/>
         <main className="wlv-demo-main" aria-label="Well Log Viewer workspace">
-          {activeView === 'data' ? (<ManagedWellInventoryPage onOpenLogViewer={openManagedWellLogViewer} onClearLogViewer={clearManagedWellLogViewer} activeManagedWellId={managedViewerWellId}/>) : activeView === 'info' ? (<section className="wlv-prototype-root">
+          {downstreamBlocked && activeRecovery ? (<WmdRecoveryBlockedView status={activeRecovery} onReturnToData={() => setActiveView('data')}/>) : activeView === 'data' ? (<ManagedWellInventoryPage onOpenLogViewer={openManagedWellLogViewer} onClearLogViewer={clearManagedWellLogViewer} activeManagedWellId={managedViewerWellId}/>) : activeView === 'info' ? (<section className="wlv-prototype-root">
               <header className="wlv-app-header">
                 <div className="wlv-app-title">
                   <strong>Info</strong>

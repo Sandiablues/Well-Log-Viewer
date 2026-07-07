@@ -85,24 +85,11 @@ class CanonicalCurveFillService:
                 assignment_b = assignments.get(command.curve_b_assignment_uid)
                 if assignment_b is None:
                     raise CanonicalCurveFillCommandError("Curve B assignment is not in the target track")
-            if command.rule_type == RuleType.CONDITIONAL and assignment_b is not None:
-                unit_a = (assignment_a.unit or "").strip().lower()
-                unit_b = (assignment_b.unit or "").strip().lower()
-                if unit_a and unit_b and unit_a != unit_b:
-                    raise CanonicalCurveFillCommandError(
-                        "Conditional fill requires compatible engineering units"
-                    )
             if command.rule_type == RuleType.CROSSOVER:
-                policy = CurveFillPolicyRegistry.require(
+                CurveFillPolicyRegistry.require(
                     command.overlay_policy_uid or "",
                     command.overlay_policy_revision or "",
                 )
-                family_a = (assignment_a.curve_family or "").strip().lower()
-                family_b = (assignment_b.curve_family or "").strip().lower() if assignment_b else ""
-                if family_a not in policy.primary_families or family_b not in policy.comparison_families:
-                    raise CanonicalCurveFillCommandError(
-                        "Curve assignments are incompatible with the governed crossover policy"
-                    )
             track_rules = [rule for rule in session.curve_fills if rule.track_uid == track.track_uid]
             target = len(track_rules) if command.target_order is None else command.target_order
             if target > len(track_rules):

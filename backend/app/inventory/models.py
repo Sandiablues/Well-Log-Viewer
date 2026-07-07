@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from pydantic import AfterValidator, BaseModel, Field, model_validator
 
@@ -67,8 +67,56 @@ class ManagedWdvState(str, Enum):
     LOADED_TO_WDV = "loaded_to_wdv"
 
 
+class WmdWorkingState(str, Enum):
+    """Backend-owned transient WMD working-data lifecycle."""
+
+    AVAILABLE = "available"
+    LOADED = "loaded"
+    IN_USE = "in_use"
+    UNREFERENCED = "unreferenced"
+    ELIGIBLE_FOR_CLEANUP = "eligible_for_cleanup"
+    CLEARED = "cleared"
+
+
+class WmdRetentionState(str, Enum):
+    """Retention projection for application-owned WMD derived data."""
+
+    ACTIVE = "active"
+    UNREFERENCED = "unreferenced"
+    ELIGIBLE_FOR_CLEANUP = "eligible_for_cleanup"
+    CLEARED = "cleared"
+
+
+class WmdSourceRecoveryState(str, Enum):
+    """Observed state of the authoritative source used for WMD rebuild."""
+
+    AVAILABLE = "available"
+    MISSING = "missing"
+    CHANGED = "changed"
+    INACCESSIBLE = "inaccessible"
+
+
+class WmdReferenceType(str, Enum):
+    """Explicit consumers that retain transient WMD working data."""
+
+    WMD = "wmd"
+    WDV = "wdv"
+    WBV = "wbv"
+    EXPORT = "export"
+    SAVED_WORKSPACE = "saved_workspace"
+
+
+class WmdReferenceBinding(BaseModel):
+    reference_uid: CanonicalUuid7
+    reference_type: WmdReferenceType
+    owner_id: str
+    reason: str | None = None
+    acquired_at: str = Field(default_factory=utc_now_iso)
+
+
 class ManagedSourceKind(str, Enum):
     LAS = "las"
+    DLIS = "dlis"
     CSV_INTERVALS = "csv_intervals"
     RASTER_LOG = "raster_log"
     DOCUMENT = "document"
@@ -143,6 +191,15 @@ class ManagedProductGroupItem(BaseModel):
     viewer_package_id: Optional[str] = None
     wmdp_state: ManagedWmdpState = ManagedWmdpState.REGISTERED
     wdv_state: ManagedWdvState = ManagedWdvState.NOT_LOADED
+    wmd_working_state: WmdWorkingState = WmdWorkingState.AVAILABLE
+    wmd_retention_state: WmdRetentionState = WmdRetentionState.ACTIVE
+    wmd_cleanup_eligible: bool = False
+    wmd_retention_reason: str = "available_in_wmd"
+    wmd_references: list[WmdReferenceBinding] = Field(default_factory=list)
+    wmd_source_recovery_state: WmdSourceRecoveryState = WmdSourceRecoveryState.AVAILABLE
+    wmd_source_checked_at: Optional[str] = None
+    wmd_source_recovery_message: Optional[str] = None
+    wmd_observed_source_fingerprint: Optional[str] = None
     source_intake_candidate_id: Optional[str] = None
     display_layer_type: Optional[str] = None
     depth_reference: Optional[str] = None
@@ -186,6 +243,15 @@ class ManagedWellRecord(BaseModel):
     lifecycle_notes: list[str] = Field(default_factory=list)
     wmdp_state: ManagedWmdpState = ManagedWmdpState.REGISTERED
     wdv_state: ManagedWdvState = ManagedWdvState.NOT_LOADED
+    wmd_working_state: WmdWorkingState = WmdWorkingState.AVAILABLE
+    wmd_retention_state: WmdRetentionState = WmdRetentionState.ACTIVE
+    wmd_cleanup_eligible: bool = False
+    wmd_retention_reason: str = "available_in_wmd"
+    wmd_references: list[WmdReferenceBinding] = Field(default_factory=list)
+    wmd_source_recovery_state: WmdSourceRecoveryState = WmdSourceRecoveryState.AVAILABLE
+    wmd_source_checked_at: Optional[str] = None
+    wmd_source_recovery_message: Optional[str] = None
+    wmd_observed_source_fingerprint: Optional[str] = None
     source_intake_candidate_id: Optional[str] = None
     wmdp_available: bool = True
     created_at: str = Field(default_factory=utc_now_iso)
@@ -219,6 +285,92 @@ class RegisterSeedWellResponse(BaseModel):
     action: str
     record: ManagedWellRecord
 
+
+
+
+class ExecuteWmdCleanupRequest(BaseModel):
+    managed_well_uid: CanonicalUuid7 | None = None
+    managed_well_id: str | None = None
+    managed_product_uids: list[CanonicalUuid7] = Field(default_factory=list)
+    product_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_well_reference(self) -> "ExecuteWmdCleanupRequest":
+        if not self.managed_well_uid and not str(self.managed_well_id or "").strip():
+            raise ValueError("managed_well_uid or managed_well_id is required")
+        return self
+
+    @property
+    def well_reference(self) -> str:
+        return str(self.managed_well_uid or self.managed_well_id)
+
+    @property
+    def product_references(self) -> list[str]:
+        return [*[str(value) for value in self.managed_product_uids], *self.product_ids]
+
+
+class ExecuteWmdCleanupResult(BaseModel):
+    managed_well_id: str
+    cleared_product_ids: list[str] = Field(default_factory=list)
+    cleared_record_payload: bool = False
+    external_sources_touched: bool = False
+
+
+class ExecuteWmdCleanupResponse(BaseModel):
+    ok: bool = True
+    action: str = "wmd_transient_data_cleared"
+    result: ExecuteWmdCleanupResult
+    record: ManagedWellRecord
+
+
+class RebuildWmdPayloadRequest(BaseModel):
+    managed_well_uid: CanonicalUuid7 | None = None
+    managed_well_id: str | None = None
+    managed_product_uids: list[CanonicalUuid7] = Field(default_factory=list)
+    product_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_well_reference(self) -> "RebuildWmdPayloadRequest":
+        if not self.managed_well_uid and not str(self.managed_well_id or "").strip():
+            raise ValueError("managed_well_uid or managed_well_id is required")
+        return self
+
+    @property
+    def well_reference(self) -> str:
+        return str(self.managed_well_uid or self.managed_well_id)
+
+    @property
+    def product_references(self) -> list[str]:
+        return [*[str(value) for value in self.managed_product_uids], *self.product_ids]
+
+
+class RebuildWmdPayloadResult(BaseModel):
+    managed_well_id: str
+    rebuilt_product_ids: list[str] = Field(default_factory=list)
+    source_fingerprints_verified: list[str] = Field(default_factory=list)
+    identities_preserved: bool = True
+    external_sources_touched: bool = False
+
+
+class RebuildWmdPayloadResponse(BaseModel):
+    ok: bool = True
+    action: str = "wmd_transient_payload_rebuilt"
+    result: RebuildWmdPayloadResult
+    record: ManagedWellRecord
+
+
+
+
+class WmdDownstreamRecoveryStatus(BaseModel):
+    managed_well_id: str
+    source_recovery_state: WmdSourceRecoveryState
+    payload_available: bool
+    wdv_load_allowed: bool
+    wbv_load_allowed: bool
+    export_allowed: bool
+    saved_workspace_resume_allowed: bool
+    blocked_product_ids: list[str] = Field(default_factory=list)
+    recovery_message: str | None = None
 
 class LoadManagedWellToWdvRequest(BaseModel):
     managed_well_uid: CanonicalUuid7 | None = None
@@ -304,6 +456,10 @@ class WdvWorkspaceLoadedWellSummary(BaseModel):
     viewer_package_endpoint: str | None = None
 
 
+class SetCommonDepthUnitRequest(BaseModel):
+    common_depth_unit: Literal["m", "ft"]
+
+
 class WdvWorkspaceStateResponse(BaseModel):
     service: str = "wdv_workspace_service"
     contract_version: str = WDV_WORKSPACE_CONTRACT_VERSION
@@ -311,6 +467,7 @@ class WdvWorkspaceStateResponse(BaseModel):
     revision: int = 0
     active_managed_well_id: str | None = None
     active_managed_well_uid: CanonicalUuid7 | None = None
+    common_depth_unit: Literal["m", "ft"] = "m"
     loaded_wells: list[WdvWorkspaceLoadedWellSummary] = Field(default_factory=list)
     active_aoi: dict[str, Any] | None = None
     updated_at: str = Field(default_factory=utc_now_iso)
@@ -488,3 +645,34 @@ class ManagedInventoryMaintenanceStatus(BaseModel):
     managed_well_count: int
     lifecycle_counts: dict[str, int] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list)
+
+
+class WmdConsumerSelection(BaseModel):
+    well_reference: str
+    product_references: list[str] = Field(default_factory=list)
+
+
+class ReconcileExportReferencesRequest(BaseModel):
+    export_uid: CanonicalUuid7
+    selections: list[WmdConsumerSelection] = Field(default_factory=list)
+
+
+class ReleaseConsumerReferencesRequest(BaseModel):
+    owner_uid: str
+
+
+class ResetViewerSessionRequest(BaseModel):
+    owner_id: str = "wbv-session:default"
+
+
+class ReconcileStaleConsumerReferencesRequest(BaseModel):
+    active_export_owner_ids: list[str] = Field(default_factory=list)
+    active_saved_workspace_owner_ids: list[str] = Field(default_factory=list)
+    active_wbv_owner_ids: list[str] = Field(default_factory=lambda: ["wbv-session:default"])
+
+
+class WmdReferenceReconciliationResponse(BaseModel):
+    owner_id: str | None = None
+    touched_well_ids: list[str] = Field(default_factory=list)
+    released_binding_count: int = 0
+    acquired_binding_count: int = 0

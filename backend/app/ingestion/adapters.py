@@ -82,9 +82,9 @@ ADAPTERS: tuple[IngestionAdapter, ...] = (
         source_format=WellLogSourceFormat.DLIS,
         source_category=WellLogSourceCategory.FRAME_CHANNEL,
         extensions=("dlis",),
-        status=IngestionAdapterStatus.PLANNED,
-        capabilities=BASE_DETECTION_CAPABILITY,
-        notes=("Future frame/channel/run adapter. Do not force DLIS into a LAS-only model.",),
+        status=IngestionAdapterStatus.ACTIVE,
+        capabilities=BASE_DETECTION_CAPABILITY + (IngestionCapability.EXTRACT_METADATA, IngestionCapability.EXTRACT_CURVE_INVENTORY),
+        notes=("Lean native DLIS inspection and scalar-curve access for rapid QAQC and visualization.",),
     ),
     IngestionAdapter(
         adapter_id="cgm_vector_log_adapter_v1",

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchWlvJson } from '../../api/wlvBackendClient';
+import { fetchWlvJson, wlvApiBaseUrl } from '../../api/wlvBackendClient';
 
 type SourceRepositoryRecord = {
   repository_id: string;
@@ -291,8 +291,8 @@ const WORKFLOW_LABELS = [
   'Search & Discover',
   'Categorize',
   'QAQC',
-  'Register to Managed Well Inventory',
-  'Stage in WMDP',
+  'Make Available in WMD',
+  'Available in WMD',
   'Load selected data to WDV',
 ];
 
@@ -426,7 +426,9 @@ export function SourceIntakeWorkbench() {
   const [diagnosticLoading, setDiagnosticLoading] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState<string>('');
   const headerSelectRef = useRef<HTMLInputElement | null>(null);
+  const directIngestInputRef = useRef<HTMLInputElement | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [directIngestDragActive, setDirectIngestDragActive] = useState(false);
   const [message, setMessage] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [managedWells, setManagedWells] = useState<ManagedWellSummary[]>([]);
@@ -677,6 +679,21 @@ export function SourceIntakeWorkbench() {
     setMessage('Source Intake workbench refreshed from backend.');
   });
 
+  const ingestDirectFiles = (fileList: FileList | null) => runAction('ingest-files', async () => {
+    const files = fileList ? Array.from(fileList) : [];
+    if (files.length === 0) return;
+
+    const body = new FormData();
+    files.forEach((file) => body.append('files', file, file.name));
+    const scan = await fetchWlvJson<ScanResponse>('/api/wlv/source-intake/ingest-files', {
+      method: 'POST',
+      body,
+    });
+    await loadWorkbench();
+    setSelectedRepositoryId(scan.repository.repository_id);
+    setMessage(`${files.length} file${files.length === 1 ? '' : 's'} ingested.`);
+  });
+
   const resetHumanActionForm = () => {
     setHumanAction('');
     setAssignmentTargetId('');
@@ -871,6 +888,33 @@ export function SourceIntakeWorkbench() {
       setMessage(`Depth normalization resolved to ${targetUnit}.`);
     },
   );
+
+  const exportSelectedOverlays = () => runAction('export-overlays', async () => {
+    const candidateIds = Array.from(selectedCandidateIds);
+    if (candidateIds.length === 0) {
+      throw new Error('Select at least one candidate before exporting QAQC and metadata overlays.');
+    }
+    const response = await fetch(`${wlvApiBaseUrl()}/api/wlv/source-intake/export-overlays`, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ candidate_ids: candidateIds }),
+    });
+    if (!response.ok) {
+      const payload = await response.text();
+      throw new Error(`${response.status} ${response.statusText}: ${payload}`);
+    }
+    const packagePayload = await response.json();
+    const blob = new Blob([JSON.stringify(packagePayload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `wlv-qaqc-metadata-overlays-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    setMessage(`Exported QAQC and metadata overlays for ${candidateIds.length} candidate(s).`);
+  });
 
   const handleRegister = () => runAction('register', async () => {
     const candidateIds = visibleCandidates
@@ -1073,14 +1117,14 @@ export function SourceIntakeWorkbench() {
 
           <div className="wlv-si-button-row">
             <button type="button" className="wlv-si-button wlv-si-button--primary" onClick={handleCreateRepository} disabled={Boolean(busyAction)}>
-              Register Source
+              Add Source
             </button>
             <button type="button" className="wlv-si-button wlv-si-button--primary" onClick={handleScan} disabled={Boolean(busyAction || !selectedRepository)}>
               Scan Source
             </button>
           </div>
 
-          <div className="wlv-si-repository-list">
+          <div className="wlv-si-repository-list wlv-si-repository-list--scrollable">
             <div className="wlv-si-repository-list__header">
               <h3>Repositories</h3>
               <button
@@ -1089,11 +1133,11 @@ export function SourceIntakeWorkbench() {
                 onClick={removeSelectedRepository}
                 disabled={!selectedRepositoryId || Boolean(busyAction)}
               >
-                Remove Source
+                Close Source
               </button>
             </div>
             {repositories.length === 0 ? (
-              <p className="wlv-si-empty">No source repositories registered.</p>
+              <p className="wlv-si-empty">No source locations added.</p>
             ) : repositories.map((repo) => (
               <button
                 type="button"
@@ -1106,6 +1150,45 @@ export function SourceIntakeWorkbench() {
                 <small>{labelize(repo.status)} · {repo.file_count} files · {labelize(repo.last_scan_scope)}</small>
               </button>
             ))}
+          </div>
+
+          <div
+            className={`wlv-si-direct-ingest ${directIngestDragActive ? 'is-drag-active' : ''}`}
+            role="button"
+            tabIndex={0}
+            aria-label="Drop files here to open or click to browse"
+            onClick={() => directIngestInputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                directIngestInputRef.current?.click();
+              }
+            }}
+            onDragEnter={(event) => { event.preventDefault(); setDirectIngestDragActive(true); }}
+            onDragOver={(event) => { event.preventDefault(); setDirectIngestDragActive(true); }}
+            onDragLeave={(event) => {
+              event.preventDefault();
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDirectIngestDragActive(false);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDirectIngestDragActive(false);
+              void ingestDirectFiles(event.dataTransfer.files);
+            }}
+          >
+            <input
+              ref={directIngestInputRef}
+              type="file"
+              multiple
+              hidden
+              onChange={(event) => {
+                void ingestDirectFiles(event.target.files);
+                event.target.value = '';
+              }}
+            />
+            <strong>{busyAction === 'ingest-files' ? 'Opening files…' : 'Drop files here to open'}</strong>
+            <span>LAS, DLIS, CSV and other supported files</span>
+            <small>or click to browse</small>
           </div>
         </aside>
         ) : null}
@@ -1153,7 +1236,7 @@ export function SourceIntakeWorkbench() {
                   <span>Sift / Sort</span>
                   <select value={candidateViewMode} onChange={(event) => setCandidateViewMode(event.currentTarget.value)}>
                     <option value="all">All candidates</option>
-                    <option value="eligible">Sift: ready to register</option>
+                    <option value="eligible">Sift: ready for WMD</option>
                     <option value="review_required">Sift: review required</option>
                     <option value="well_logs">Sift: well-log candidates</option>
                     <option value="wellbore_geometry">Sift: wellbore geometry</option>
@@ -1178,10 +1261,13 @@ export function SourceIntakeWorkbench() {
                   onClick={handleRegister}
                   disabled={Boolean(busyAction || selectedRegisterableCount === 0)}
                 >
-                  Register Selected ({selectedRegisterableCount})
+                  Make Available ({selectedRegisterableCount})
                 </button>
                 <button type="button" className="wlv-si-button" onClick={clearCandidateSelection} disabled={selectedCandidateCount === 0}>
                   Clear Selection
+                </button>
+                <button type="button" className="wlv-si-button" onClick={exportSelectedOverlays} disabled={selectedCandidateCount === 0 || Boolean(busyAction)}>
+                  Export QAQC / Metadata
                 </button>
                 <button type="button" className="wlv-si-button" onClick={handleRefresh} disabled={Boolean(busyAction)}>
                   Refresh
@@ -1351,14 +1437,14 @@ export function SourceIntakeWorkbench() {
                     <th>Curves</th>
                     <th>Parse</th>
                     <th>QAQC</th>
-                    <th>MDP Ready</th>
+                    <th>WMD Available</th>
                     <th>Detail</th>
                   </tr>
                 </thead>
                 <tbody>
                   {visibleCandidates.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="wlv-si-empty-row">No candidates discovered. Register and scan a source repository.</td>
+                      <td colSpan={9} className="wlv-si-empty-row">No candidates discovered. Add and scan a source location.</td>
                     </tr>
                   ) : visibleCandidates.map((candidate) => {
                     const wellName = candidate.resolved_metadata?.well_name?.value ?? '—';
@@ -1409,12 +1495,12 @@ export function SourceIntakeWorkbench() {
                         <td className="wlv-si-cell-mdp-ready wlv-si-status-cell">
                           {registered ? (
                             <div className="wlv-si-status-stack">
-                              <span className="wlv-si-pill is-ok">Staged in MDP</span>
+                              <span className="wlv-si-pill is-ok">Available in WMD</span>
                               <small>{candidate.candidate_role === 'wellbore_geometry_candidate' ? `${candidate.registered_trajectory_count ?? 1} trajectory` : `${candidate.registered_curve_count ?? curveCount} curves`} · {labelize(candidate.wdv_state ?? 'not_loaded')}</small>
                             </div>
                           ) : eligible ? (
                             <div className="wlv-si-status-stack">
-                              <span className="wlv-si-pill is-ok">Ready to register</span>
+                              <span className="wlv-si-pill is-ok">Ready for WMD</span>
                             </div>
                           ) : (
                             <div className="wlv-si-status-stack">
@@ -1523,7 +1609,7 @@ export function SourceIntakeWorkbench() {
                   <dd>{labelize(candidateDiagnostics.qaqc_status.status ?? 'not_checked')}</dd>
                 </div>
                   <div>
-                    <dt>MDP Ready</dt>
+                    <dt>WMD Available</dt>
                     <dd>{labelize(candidateDiagnostics.mdp_ready_status)}</dd>
                   </div>
                 </dl>
@@ -1601,7 +1687,7 @@ export function SourceIntakeWorkbench() {
                 const phaseFlags = candidateDiagnostics.flags.filter((flag) => flag.phase === phase);
                 return (
                   <section className="wlv-si-diagnostic-section" key={phase}>
-                    <h3>{phase === 'mdp_ready' ? 'MDP Ready' : phase.toUpperCase()}</h3>
+                    <h3>{phase === 'mdp_ready' ? 'WMD Available' : phase.toUpperCase()}</h3>
                     {phaseFlags.length === 0 ? (
                       <p className="wlv-si-diagnostic-note">No diagnostic flags reported for this phase.</p>
                     ) : (

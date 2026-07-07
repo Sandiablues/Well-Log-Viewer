@@ -1,25 +1,4 @@
 {
-  "registry_kind": "wbv_runtime_seed_trajectory_registry",
-  "registry_version": "wbv_runtime_seed_trajectory_registry_v1",
-  "packages": [
-    {
-      "package_id": "forge-21-31-downlog-vertical-dlis-0d",
-      "status": "prototype_seed",
-      "description": "Controlled runtime seed trajectory package for the first WBV prototype, extracted from the real FORGE 21-31 Downlog DLIS-derived vertical trajectory preview.",
-      "selectors": {
-        "well_names": [
-          "Forge 21-31",
-          "FORGE 21-31"
-        ],
-        "well_id_suffixes": [
-          "2700190539"
-        ],
-        "managed_well_id_suffixes": [
-          "2700190539"
-        ]
-      },
-      "package_file": "forge_21_31_downlog_vertical_wbv_trajectory_package.json",
-      "reason": "First WBV renderer prototype must use the real DLIS-derived vertical FORGE 21-31 Downlog trajectory and must not synthesize deviation."
-    }
-  ]
+  "schema_version": "wlv_wbv_trajectory_seed_registry_v1",
+  "packages": []
 }

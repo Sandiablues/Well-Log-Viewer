@@ -477,6 +477,7 @@ function createTextSprite(text: string, options?: { color?: string; background?:
   const sprite = new THREE.Sprite(material);
   const scale = options?.scale ?? 0.27;
   sprite.scale.set(scale * 4.0, scale, 1);
+  sprite.userData.baseTextScale = new THREE.Vector3(scale * 4.0, scale, 1);
   return sprite;
 }
 
@@ -1244,7 +1245,24 @@ export function cameraFacingMarkerPosition(
 
 export function markerScaleForZoom(zoom: number): number {
   const safeZoom = Math.max(0.25, Number.isFinite(zoom) ? zoom : 1);
-  return THREE.MathUtils.clamp(Math.pow(safeZoom, -1.35), 0.18, 1.6);
+  return THREE.MathUtils.clamp(Math.pow(safeZoom, -1.1), 0.12, 1.25);
+}
+
+export function surveyStationPointSizeForZoom(zoom: number): number {
+  const safeZoom = Math.max(0.25, Number.isFinite(zoom) ? zoom : 1);
+  return THREE.MathUtils.clamp(4.2 * Math.pow(safeZoom, -0.2), 2.0, 4.8);
+}
+
+export function textSpriteScaleForZoom(zoom: number): number {
+  const safeZoom = Math.max(0.25, Number.isFinite(zoom) ? zoom : 1);
+  return THREE.MathUtils.clamp(Math.pow(safeZoom, -0.82), 0.08, 1.18);
+}
+
+export function markerSmoothingAlpha(deltaMs: number, zoom: number): number {
+  const safeDelta = THREE.MathUtils.clamp(Number.isFinite(deltaMs) ? deltaMs : 16.67, 0, 100);
+  const safeZoom = Math.max(1, Number.isFinite(zoom) ? zoom : 1);
+  const timeConstantMs = THREE.MathUtils.clamp(48 + Math.log2(safeZoom) * 12, 48, 110);
+  return 1 - Math.exp(-safeDelta / timeConstantMs);
 }
 
 export function interpolateCurveValueAtMd(
@@ -1297,7 +1315,7 @@ export function WellboreTrajectoryRenderer({
   showTrajectory = true,
   showBoundingBox = true,
   showDepthLabels = true,
-  showSurveyStations = true,
+  showSurveyStations = false,
   showGroundPlane = false,
   showBottomGrid = false,
   showTopGrid = false,
@@ -1460,6 +1478,8 @@ export function WellboreTrajectoryRenderer({
         scene.add(keyLight);
       }
 
+      const zoomScaledTextSprites: THREE.Sprite[] = [];
+
       if (showDepthLabels) {
         const depthTickPoints: THREE.Vector3[] = [];
         const tickLength = Math.max(
@@ -1475,6 +1495,7 @@ export function WellboreTrajectoryRenderer({
             scale: 0.18,
           });
           label.position.set(box.minX - 0.52, y, box.maxZ + 0.09);
+          zoomScaledTextSprites.push(label);
           group.add(label);
 
           const verticalEdges = [
@@ -1507,19 +1528,20 @@ export function WellboreTrajectoryRenderer({
         }
       }
 
+      let surveyStationMaterial: THREE.PointsMaterial | null = null;
       if (showSurveyStations) {
         const stationGeometry = new THREE.BufferGeometry().setFromPoints(normalizedPoints);
-        const stationMaterial = new THREE.PointsMaterial({
-          color: 0xc6f6ff,
-          size: 5.5,
+        surveyStationMaterial = new THREE.PointsMaterial({
+          color: 0x2f9bff,
+          size: surveyStationPointSizeForZoom(camera.zoom),
           sizeAttenuation: false,
           transparent: true,
-          opacity: 0.96,
+          opacity: 1,
           depthTest: false,
           depthWrite: false,
         });
-        const surveyStations = new THREE.Points(stationGeometry, stationMaterial);
-        surveyStations.renderOrder = 20;
+        const surveyStations = new THREE.Points(stationGeometry, surveyStationMaterial);
+        surveyStations.renderOrder = 120;
         group.add(surveyStations);
       }
 
@@ -1587,20 +1609,20 @@ export function WellboreTrajectoryRenderer({
           const center = 64;
           context.clearRect(0, 0, 128, 128);
           context.beginPath();
-          context.arc(center, center, 48, 0, Math.PI * 2);
-          context.fillStyle = 'rgba(4, 8, 11, 0.82)';
+          context.arc(center, center, 43, 0, Math.PI * 2);
+          context.fillStyle = 'rgba(4, 8, 11, 0.76)';
           context.fill();
           context.strokeStyle = '#e23232';
-          context.lineWidth = 10;
+          context.lineWidth = 6;
           context.beginPath();
-          context.arc(center, center, 42, 0, Math.PI * 2);
+          context.arc(center, center, 38, 0, Math.PI * 2);
           context.stroke();
-          context.lineWidth = 8;
+          context.lineWidth = 5;
           context.beginPath();
-          context.arc(center, center, 21, 0, Math.PI * 2);
+          context.arc(center, center, 19, 0, Math.PI * 2);
           context.stroke();
           context.beginPath();
-          context.arc(center, center, 6, 0, Math.PI * 2);
+          context.arc(center, center, 5, 0, Math.PI * 2);
           context.fillStyle = '#e23232';
           context.fill();
         }
@@ -1619,7 +1641,8 @@ export function WellboreTrajectoryRenderer({
         marker.frustumCulled = false;
         marker.visible = false;
         marker.userData.basePosition = new THREE.Vector3();
-        marker.scale.setScalar(0.16);
+        marker.userData.targetPosition = new THREE.Vector3();
+        marker.scale.setScalar(0.105);
         group.add(marker);
         return marker;
       };
@@ -1636,8 +1659,12 @@ export function WellboreTrajectoryRenderer({
 
       const setMarkerBasePosition = (marker: THREE.Object3D, position: THREE.Vector3) => {
         const basePosition = marker.userData.basePosition as THREE.Vector3;
-        basePosition.copy(position);
-        marker.position.copy(position);
+        const targetPosition = marker.userData.targetPosition as THREE.Vector3;
+        targetPosition.copy(position);
+        if (!marker.visible || !Number.isFinite(basePosition.x + basePosition.y + basePosition.z)) {
+          basePosition.copy(position);
+          marker.position.copy(position);
+        }
       };
 
       const pointAtMd = (md: number): THREE.Vector3 | null => {
@@ -1905,6 +1932,7 @@ export function WellboreTrajectoryRenderer({
         scale: 0.18,
       });
       topLabel.position.set(box.maxX + 0.5, normalizedPoints[0].y, box.maxZ + 0.1);
+      zoomScaledTextSprites.push(topLabel);
       group.add(topLabel);
 
       const baseLabel = createTextSprite(`Base ${formatDepth(renderPoints[renderPoints.length - 1]?.md ?? renderPoints[renderPoints.length - 1]?.tvd, depthUnit)}`, {
@@ -1913,18 +1941,22 @@ export function WellboreTrajectoryRenderer({
         scale: 0.18,
       });
       baseLabel.position.set(box.maxX + 0.52, normalizedPoints[normalizedPoints.length - 1].y, box.maxZ + 0.1);
+      zoomScaledTextSprites.push(baseLabel);
       group.add(baseLabel);
 
       const xLabel = createTextSprite('X / EAST', { color: '#80dcff', scale: 0.18 });
       xLabel.position.set(box.maxX + 0.34, box.minY, box.maxZ + 0.08);
+      zoomScaledTextSprites.push(xLabel);
       group.add(xLabel);
 
       const yLabel = createTextSprite('Y / NORTH', { color: '#80dcff', scale: 0.18 });
       yLabel.position.set(box.minX - 0.34, box.minY, box.maxZ + 0.08);
+      zoomScaledTextSprites.push(yLabel);
       group.add(yLabel);
 
       const zLabel = createTextSprite('Z / TVD', { color: '#80dcff', scale: 0.195 });
       zLabel.position.set(box.maxX + 0.38, box.maxY, box.minZ - 0.08);
+      zoomScaledTextSprites.push(zLabel);
       group.add(zLabel);
 
       const resizeRenderer = () => {
@@ -1994,8 +2026,11 @@ export function WellboreTrajectoryRenderer({
         },
       };
 
-      const renderScene = (frameTime = 0) => {
+      let previousFrameTime = performance.now();
+      const renderScene = (frameTime = performance.now()) => {
         if (!renderer || !controls) return;
+        const deltaMs = Math.max(0, frameTime - previousFrameTime);
+        previousFrameTime = frameTime;
         controls.update();
         if (1 - Math.abs(lastOverlayQuaternion.dot(camera.quaternion)) > 1e-5) {
           lastOverlayQuaternion.copy(camera.quaternion);
@@ -2034,16 +2069,27 @@ export function WellboreTrajectoryRenderer({
             liveReadoutRef.current.hidden = true;
           }
         }
+        const textScale = textSpriteScaleForZoom(camera.zoom);
+        zoomScaledTextSprites.forEach((sprite) => {
+          const baseScale = sprite.userData.baseTextScale as THREE.Vector3 | undefined;
+          if (baseScale) sprite.scale.copy(baseScale).multiplyScalar(textScale);
+        });
         const markerScale = markerScaleForZoom(camera.zoom);
+        const smoothingAlpha = markerSmoothingAlpha(deltaMs, camera.zoom);
         const cameraDirection = new THREE.Vector3();
         camera.getWorldDirection(cameraDirection);
         [selectionMarker, intervalStartMarker, intervalEndMarker].forEach((marker) => {
           if (marker.visible) {
             const basePosition = marker.userData.basePosition as THREE.Vector3;
-            marker.position.copy(cameraFacingMarkerPosition(basePosition, cameraDirection, 0.06));
+            const targetPosition = marker.userData.targetPosition as THREE.Vector3;
+            basePosition.lerp(targetPosition, smoothingAlpha);
+            marker.position.copy(cameraFacingMarkerPosition(basePosition, cameraDirection, 0.045));
           }
-          marker.scale.setScalar(0.16 * markerScale);
+          marker.scale.setScalar(0.105 * markerScale);
         });
+        if (surveyStationMaterial) {
+          surveyStationMaterial.size = surveyStationPointSizeForZoom(camera.zoom);
+        }
         renderer.render(scene, camera);
         animationFrame = window.requestAnimationFrame(renderScene);
         if (!overviewDisabledRef.current && frameTime - lastOverviewUpdate >= 100) {

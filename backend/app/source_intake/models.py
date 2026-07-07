@@ -13,13 +13,14 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.identity import new_uuid7_str
+
 
 WLV_SOURCE_INTAKE_WORKFLOW_STEPS: tuple[str, ...] = (
     "Search & Discover",
     "Categorize",
     "QAQC",
-    "Register to MSI / Managed Well Inventory",
-    "Stage in WMDP",
+    "Make Available in WMD",
     "Load selected data to WDV",
 )
 
@@ -27,6 +28,92 @@ WLV_SOURCE_INTAKE_WORKFLOW_STEPS: tuple[str, ...] = (
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+
+class SourceOwnership(str, Enum):
+    EXTERNAL = "external"
+
+
+class SourceAccessMode(str, Enum):
+    READ_ONLY = "read_only"
+
+
+class SourceMaterialization(str, Enum):
+    """How WLV can access source bytes without taking source ownership."""
+
+    EXTERNAL_REFERENCE = "external_reference"
+    TEMPORARY_UPLOAD = "temporary_upload"
+
+
+class SourceIntakeWorkingDataState(str, Enum):
+    """Workspace-facing availability of a discovered source occurrence."""
+
+    WSI_ONLY = "wsi_only"
+    AVAILABLE_TO_WMD = "available_to_wmd"
+    LOADED_IN_WMD = "loaded_in_wmd"
+    REMOVED_FROM_WMD = "removed_from_wmd"
+
+
+class SourceIntakeRetentionState(str, Enum):
+    """Retention state for application-owned derived working data only."""
+
+    ACTIVE = "active"
+    UNREFERENCED = "unreferenced"
+    ELIGIBLE_FOR_CLEANUP = "eligible_for_cleanup"
+    CLEARED = "cleared"
+
+
+class SourceIntakeWmdAvailabilityStatus(str, Enum):
+    """Transient WMD availability; legacy registration fields remain compatibility aliases."""
+
+    NOT_AVAILABLE = "not_available"
+    AVAILABLE = "available"
+    LOADED = "loaded"
+    REMOVED = "removed"
+
+
+class SourceIntakeReferenceType(str, Enum):
+    """Explicit consumers that can retain WSI-derived working data."""
+
+    WSI = "wsi"
+    WMD = "wmd"
+    WDV = "wdv"
+    WBV = "wbv"
+    EXPORT = "export"
+    SAVED_WORKSPACE = "saved_workspace"
+
+
+class SourceIntakeReferenceBinding(BaseModel):
+    """One backend-owned active reference to a source occurrence."""
+
+    reference_uid: str = Field(default_factory=new_uuid7_str)
+    reference_type: SourceIntakeReferenceType
+    owner_id: str
+    acquired_at: str = Field(default_factory=utc_now_iso)
+    reason: Optional[str] = None
+
+
+class ExternalSourceReference(BaseModel):
+    """Read-only reference to a source owned outside WLV."""
+
+    source_uri: str
+    display_name: str
+    source_format: Optional[str] = None
+    fingerprint: Optional[str] = None
+    ownership: SourceOwnership = SourceOwnership.EXTERNAL
+    access_mode: SourceAccessMode = SourceAccessMode.READ_ONLY
+    accessible: bool = True
+    materialization: SourceMaterialization = SourceMaterialization.EXTERNAL_REFERENCE
+
+
+
+
+class SourceIntakeSourceAccessStatus(str, Enum):
+    """Current accessibility and fingerprint state of an external source."""
+
+    AVAILABLE = "available"
+    MISSING = "missing"
+    CHANGED = "changed"
+    INACCESSIBLE = "inaccessible"
 
 class SourceIntakeRepositoryStatus(str, Enum):
     AVAILABLE = "available"
@@ -175,6 +262,26 @@ class SourceIntakeDlisChannelHeader(BaseModel):
     depth_normalization_reason: Optional[str] = None
 
 
+class SourceIntakeCanonicalMetadataField(BaseModel):
+    canonical_field: str
+    value: Optional[str] = None
+    original_field: str
+    original_value: Optional[str] = None
+    source_section: str
+    parser_id: str
+    source_format: str
+    normalization_rule: Optional[str] = None
+    review_required: bool = False
+
+
+class SourceIntakeCanonicalMetadata(BaseModel):
+    schema_version: str = "source_metadata_v1"
+    source_format: str
+    parser_id: str
+    fields: dict[str, SourceIntakeCanonicalMetadataField] = Field(default_factory=dict)
+    unmapped_header_values: dict[str, Any] = Field(default_factory=dict)
+
+
 class SourceIntakeParsedMetadata(BaseModel):
     parser_id: str
     source_format: str
@@ -188,6 +295,7 @@ class SourceIntakeParsedMetadata(BaseModel):
     warning_count: int = 0
     error_count: int = 0
     warnings: list[str] = Field(default_factory=list)
+    canonical_metadata: Optional[SourceIntakeCanonicalMetadata] = None
 
 
 class SourceIntakeHealth(BaseModel):
@@ -224,6 +332,8 @@ class SourceRepositoryRecord(BaseModel):
     unknown_file_count: int = 0
     review_required_count: int = 0
     warnings: list[str] = Field(default_factory=list)
+    materialization: SourceMaterialization = SourceMaterialization.EXTERNAL_REFERENCE
+    wlv_owned_temporary_storage: bool = False
 
 
 class SourceIntakeEvidenceRecord(BaseModel):
@@ -306,12 +416,21 @@ class SourceIntakeResolvedField(BaseModel):
 
 
 class SourceIntakeResolvedMetadata(BaseModel):
-    resolver_id: str = "wlv_source_intake_metadata_resolver_v1"
+    resolver_id: str = "wlv_source_intake_metadata_resolver_v2"
     well_name: SourceIntakeResolvedField
     uwi: SourceIntakeResolvedField
     operator: SourceIntakeResolvedField
     field: SourceIntakeResolvedField
     block: SourceIntakeResolvedField
+    wellbore_name: Optional[SourceIntakeResolvedField] = None
+    country: Optional[SourceIntakeResolvedField] = None
+    latitude: Optional[SourceIntakeResolvedField] = None
+    longitude: Optional[SourceIntakeResolvedField] = None
+    producer: Optional[SourceIntakeResolvedField] = None
+    product: Optional[SourceIntakeResolvedField] = None
+    version: Optional[SourceIntakeResolvedField] = None
+    creation_date: Optional[SourceIntakeResolvedField] = None
+    run_date: Optional[SourceIntakeResolvedField] = None
     review_required: bool = False
     warning_count: int = 0
     warnings: list[str] = Field(default_factory=list)
@@ -440,6 +559,38 @@ class SourceIntakeResolutionDecision(BaseModel):
 
 class SourceIntakeBulkResolutionRequest(BaseModel):
     decisions: list[SourceIntakeResolutionDecision]
+
+
+class SourceIntakeOverlayExportRequest(BaseModel):
+    candidate_ids: list[str]
+
+
+class SourceIntakeOverlayExportCandidate(BaseModel):
+    candidate_id: str
+    occurrence_id: Optional[str] = None
+    source_reference: ExternalSourceReference
+    source_fingerprint: Optional[str] = None
+    source_format: str
+    parser_status: SourceIntakeParseStatus
+    original_metadata: dict[str, Any] = Field(default_factory=dict)
+    effective_metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata_overlay: dict[str, Any] = Field(default_factory=dict)
+    current_decision: Optional[SourceIntakeCurrentDecision] = None
+    depth_normalization: Optional[SourceIntakeDepthNormalizationContract] = None
+    qaqc: SourceIntakeQaqcResult
+    resolved_finding_codes: list[str] = Field(default_factory=list)
+    unresolved_finding_codes: list[str] = Field(default_factory=list)
+
+
+class SourceIntakeOverlayExportPackage(BaseModel):
+    package_schema: str = "wlv.source-intake.correction-package"
+    schema_version: str = "1.0"
+    exported_at: str = Field(default_factory=utc_now_iso)
+    application: str = "MultiViewer Well Log Viewer"
+    source_policy: str = "external_read_only"
+    source_files_modified: bool = False
+    candidate_count: int = 0
+    candidates: list[SourceIntakeOverlayExportCandidate] = Field(default_factory=list)
 
 
 class SourceIntakeResolutionResult(BaseModel):
@@ -584,6 +735,145 @@ class SourceFileCandidate(BaseModel):
     readiness_state: SourceIntakeReadinessState = SourceIntakeReadinessState.REVIEW_REQUIRED
     readiness_issues: list[str] = Field(default_factory=list)
     available_human_actions: list[str] = Field(default_factory=list)
+    source_reference: Optional[ExternalSourceReference] = None
+    wmd_availability_status: SourceIntakeWmdAvailabilityStatus = SourceIntakeWmdAvailabilityStatus.NOT_AVAILABLE
+    working_data_state: SourceIntakeWorkingDataState = SourceIntakeWorkingDataState.WSI_ONLY
+    retention_state: SourceIntakeRetentionState = SourceIntakeRetentionState.ACTIVE
+    cleanup_eligible: bool = False
+    retention_reason: Optional[str] = None
+    reference_bindings: list[SourceIntakeReferenceBinding] = Field(default_factory=list)
+    reference_counts: dict[str, int] = Field(default_factory=dict)
+    active_reference_count: int = 0
+    source_access_status: SourceIntakeSourceAccessStatus = SourceIntakeSourceAccessStatus.AVAILABLE
+    source_access_checked_at: Optional[str] = None
+    source_access_message: Optional[str] = None
+
+    def acquire_reference(
+        self,
+        reference_type: SourceIntakeReferenceType,
+        owner_id: str,
+        reason: Optional[str] = None,
+    ) -> SourceIntakeReferenceBinding:
+        for binding in self.reference_bindings:
+            if binding.reference_type == reference_type and binding.owner_id == owner_id:
+                return binding
+        binding = SourceIntakeReferenceBinding(
+            reference_type=reference_type,
+            owner_id=owner_id,
+            reason=reason,
+        )
+        self.reference_bindings.append(binding)
+        self.synchronize_reference_summary()
+        return binding
+
+    def release_reference(self, reference_type: SourceIntakeReferenceType, owner_id: str) -> bool:
+        before = len(self.reference_bindings)
+        self.reference_bindings = [
+            binding
+            for binding in self.reference_bindings
+            if not (binding.reference_type == reference_type and binding.owner_id == owner_id)
+        ]
+        changed = len(self.reference_bindings) != before
+        self.synchronize_reference_summary()
+        return changed
+
+    def synchronize_reference_summary(self) -> "SourceFileCandidate":
+        counts = {reference_type.value: 0 for reference_type in SourceIntakeReferenceType}
+        for binding in self.reference_bindings:
+            counts[binding.reference_type.value] += 1
+        self.reference_counts = counts
+        self.active_reference_count = sum(counts.values())
+        if self.active_reference_count > 0:
+            self.retention_state = SourceIntakeRetentionState.ACTIVE
+            self.cleanup_eligible = False
+            self.retention_reason = (
+                f"{self.active_reference_count} active source reference(s); derived data retained."
+            )
+        else:
+            self.retention_state = SourceIntakeRetentionState.ELIGIBLE_FOR_CLEANUP
+            self.cleanup_eligible = True
+            self.retention_reason = (
+                "No active references; WLV-owned temporary and derived data may be cleared."
+            )
+        return self
+
+    def mark_available_to_wmd(self) -> "SourceFileCandidate":
+        """Set transient WMD availability while preserving legacy compatibility fields."""
+        self.wmd_availability_status = SourceIntakeWmdAvailabilityStatus.AVAILABLE
+        self.working_data_state = SourceIntakeWorkingDataState.AVAILABLE_TO_WMD
+        self.registration_status = "registered"
+        return self
+
+    @property
+    def is_available_to_wmd(self) -> bool:
+        return self.wmd_availability_status in {
+            SourceIntakeWmdAvailabilityStatus.AVAILABLE,
+            SourceIntakeWmdAvailabilityStatus.LOADED,
+        }
+
+    def synchronize_transient_lifecycle(self) -> "SourceFileCandidate":
+        """Project the existing WSI/WMD lifecycle into the new transient contract.
+
+        Block 2 is intentionally non-destructive: it records lifecycle truth but
+        does not yet clear cache or alter existing registration/viewer behavior.
+        """
+        wmdp_state = str(self.wmdp_state or "").strip().lower()
+        registration_status = str(self.registration_status or "").strip().lower()
+
+        if wmdp_state == "removed_from_wmdp":
+            self.wmd_availability_status = SourceIntakeWmdAvailabilityStatus.REMOVED
+            self.working_data_state = SourceIntakeWorkingDataState.REMOVED_FROM_WMD
+        elif wmdp_state == "staged_in_wmdp":
+            self.wmd_availability_status = SourceIntakeWmdAvailabilityStatus.LOADED
+            self.working_data_state = SourceIntakeWorkingDataState.LOADED_IN_WMD
+        elif registration_status == "registered":
+            self.wmd_availability_status = SourceIntakeWmdAvailabilityStatus.AVAILABLE
+            self.working_data_state = SourceIntakeWorkingDataState.AVAILABLE_TO_WMD
+        else:
+            self.wmd_availability_status = SourceIntakeWmdAvailabilityStatus.NOT_AVAILABLE
+            self.working_data_state = SourceIntakeWorkingDataState.WSI_ONLY
+
+        inferred_types = {
+            SourceIntakeReferenceType.WSI,
+            SourceIntakeReferenceType.WMD,
+            SourceIntakeReferenceType.WDV,
+        }
+        self.reference_bindings = [
+            binding for binding in self.reference_bindings if binding.reference_type not in inferred_types
+        ]
+        occurrence_owner = self.occurrence_id or self.source_file_id
+        self.acquire_reference(
+            SourceIntakeReferenceType.WSI,
+            occurrence_owner,
+            "Candidate is present in the WSI workbench.",
+        )
+        if self.working_data_state in {
+            SourceIntakeWorkingDataState.AVAILABLE_TO_WMD,
+            SourceIntakeWorkingDataState.LOADED_IN_WMD,
+        }:
+            self.acquire_reference(
+                SourceIntakeReferenceType.WMD,
+                self.managed_well_id or occurrence_owner,
+                "Working data is available to WMD.",
+            )
+        if str(self.wdv_state or "").strip().lower() == "loaded_to_wdv":
+            self.acquire_reference(
+                SourceIntakeReferenceType.WDV,
+                self.managed_well_id or occurrence_owner,
+                "Working data is loaded in WDV.",
+            )
+        return self.synchronize_reference_summary()
+
+    @model_validator(mode="after")
+    def ensure_external_source_reference(self) -> "SourceFileCandidate":
+        if self.source_reference is None:
+            self.source_reference = ExternalSourceReference(
+                source_uri=self.original_path,
+                display_name=self.file_name,
+                source_format=self.detected_file_type.value,
+                fingerprint=self.content_fingerprint or self.checksum or None,
+            )
+        return self.synchronize_transient_lifecycle()
 
 
 class SourceRepositoryScanResult(BaseModel):
@@ -641,6 +931,9 @@ class SourceRepositoryRemoveResponse(BaseModel):
     repository_id: str
     repository_removed: bool = False
     candidate_rows_removed: int = 0
+    derived_cache_entries_cleared: int = 0
+    temporary_materialization_cleared: bool = False
+    cleanup_deferred_count: int = 0
     message: str
     workbench: SourceIntakeWorkbench
 
@@ -717,8 +1010,67 @@ class SourceIntakeClearResponse(BaseModel):
     workbench: SourceIntakeWorkbench
 
 
+class SourceIntakeSourceRecoveryResult(BaseModel):
+    candidate_id: str
+    status: SourceIntakeSourceAccessStatus
+    previous_fingerprint: Optional[str] = None
+    current_fingerprint: Optional[str] = None
+    rebuilt: bool = False
+    cache_invalidated: bool = False
+    message: str
+    candidate: Optional[SourceFileCandidate] = None
+
+
+class SourceIntakeSavedWorkspaceRecoveryResult(BaseModel):
+    workspace_uid: str
+    source_count: int = 0
+    available_count: int = 0
+    changed_count: int = 0
+    missing_count: int = 0
+    inaccessible_count: int = 0
+    results: list[SourceIntakeSourceRecoveryResult] = Field(default_factory=list)
+
+
+class SourceIntakeSavedWorkspaceSource(BaseModel):
+    """Source and QAQC state retained by a saved workspace, never sample data."""
+
+    candidate_id: str
+    source_reference: ExternalSourceReference
+    source_fingerprint: Optional[str] = None
+    source_format: str
+    current_decision: Optional[SourceIntakeCurrentDecision] = None
+    depth_normalization: Optional[SourceIntakeDepthNormalizationContract] = None
+    qaqc: SourceIntakeQaqcResult
+    metadata_overlay: dict[str, Any] = Field(default_factory=dict)
+
+
+class SourceIntakeSavedWorkspaceSaveRequest(BaseModel):
+    workspace_uid: Optional[str] = None
+    name: str
+    candidate_ids: list[str]
+    viewer_state: dict[str, Any] = Field(default_factory=dict)
+
+
+class SourceIntakeSavedWorkspaceRecord(BaseModel):
+    workspace_uid: str = Field(default_factory=new_uuid7_str)
+    name: str
+    source_policy: str = "external_read_only"
+    retain_parsed_samples: bool = False
+    sources: list[SourceIntakeSavedWorkspaceSource] = Field(default_factory=list)
+    viewer_state: dict[str, Any] = Field(default_factory=dict)
+    created_at: str = Field(default_factory=utc_now_iso)
+    updated_at: str = Field(default_factory=utc_now_iso)
+
+
+class SourceIntakeSavedWorkspaceDeleteResponse(BaseModel):
+    ok: bool = True
+    workspace_uid: str
+    released_source_count: int = 0
+
+
 class SourceIntakeSnapshot(BaseModel):
     schema_version: str = "wlv_source_intake_v1"
     repositories: list[SourceRepositoryRecord] = Field(default_factory=list)
     candidates: list[SourceFileCandidate] = Field(default_factory=list)
+    saved_workspaces: list[SourceIntakeSavedWorkspaceRecord] = Field(default_factory=list)
     updated_at: str = Field(default_factory=utc_now_iso)

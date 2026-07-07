@@ -32,7 +32,8 @@ describe("WBV live interaction geometry", () => {
   it("makes the bullseye progressively smaller as camera zoom increases", () => {
     expect(markerScaleForZoom(1)).toBeGreaterThan(markerScaleForZoom(2));
     expect(markerScaleForZoom(2)).toBeGreaterThan(markerScaleForZoom(4));
-    expect(markerScaleForZoom(100)).toBeGreaterThanOrEqual(0.18);
+    expect(markerScaleForZoom(100)).toBeGreaterThanOrEqual(0.12);
+    expect(markerScaleForZoom(100)).toBeLessThanOrEqual(0.2);
   });
 
   it("interpolates active curve-track values at the backend-selected MD", () => {

@@ -189,7 +189,7 @@ def test_revision_guard_and_command_replay(tmp_path: Path):
         )
 
 
-def test_invalid_cross_track_and_unit_pairs_are_rejected(tmp_path: Path):
+def test_cross_track_is_rejected_but_mixed_units_are_allowed(tmp_path: Path):
     well, track, af10, af90, *_rest, session_service, fill_service, current = seeded(tmp_path)
     other_track_uid = new_uuid7_str()
     other = assignment(other_track_uid, well, "GR", "gamma_ray", "api")
@@ -206,11 +206,11 @@ def test_invalid_cross_track_and_unit_pairs_are_rejected(tmp_path: Path):
     )
     with pytest.raises(CanonicalCurveFillCommandError):
         create_conditional(fill_service, well, track, af90, other, current.revision)
-    with pytest.raises(CanonicalCurveFillCommandError, match="compatible engineering units"):
-        create_conditional(fill_service, well, track, af90, _rest[1], current.revision)
+    mixed = create_conditional(fill_service, well, track, af90, _rest[1], current.revision)
+    assert mixed.curve_fills[0].rule_type == RuleType.CONDITIONAL
 
 
-def test_governed_crossover_accepts_only_approved_families(tmp_path: Path):
+def test_generic_crossover_accepts_any_curve_pair(tmp_path: Path):
     well, track, af10, af90, rhoz, nphi, _session_service, fill_service, current = seeded(tmp_path)
     updated = fill_service.create_rule(
         well,
@@ -226,20 +226,20 @@ def test_governed_crossover_accepts_only_approved_families(tmp_path: Path):
         ),
     )
     assert updated.curve_fills[0].rule_type == RuleType.CROSSOVER
-    with pytest.raises(CanonicalCurveFillCommandError, match="incompatible"):
-        fill_service.create_rule(
-            well,
-            CreateCurveFillRuleCommand(
-                expected_revision=updated.revision,
-                track_uid=track,
-                curve_a_assignment_uid=af90.assignment_uid,
-                curve_b_assignment_uid=af10.assignment_uid,
-                rule_type=RuleType.CROSSOVER,
-                overlay_policy_uid="density-neutron-overlay-v1",
-                overlay_policy_revision="approved-2026-07-01",
-                style=style(),
-            ),
-        )
+    second = fill_service.create_rule(
+        well,
+        CreateCurveFillRuleCommand(
+            expected_revision=updated.revision,
+            track_uid=track,
+            curve_a_assignment_uid=af90.assignment_uid,
+            curve_b_assignment_uid=af10.assignment_uid,
+            rule_type=RuleType.CROSSOVER,
+            overlay_policy_uid="generic-visual-crossover-v1",
+            overlay_policy_revision="approved-2026-07-05",
+            style=style(),
+        ),
+    )
+    assert len(second.curve_fills) == 2
 
 
 def test_assignment_track_and_canvas_cleanup_are_atomic(tmp_path: Path):

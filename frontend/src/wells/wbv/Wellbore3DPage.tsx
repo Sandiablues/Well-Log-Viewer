@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { fetchWlvJson } from "../../api/wlvBackendClient";
+import { changeWbvOverlayPackageLifecycle, commandWbvTrackLayout, deleteWbvOverlayPackage, getWbvTrackLayout, listWbvOverlayPackages, publishedWbvRenderPackageUrl, setWbvOverlayPackageActive, updateWbvPresentationOverrides, type WbvLayoutCommand, type WbvLayoutTrack, type WbvOverlayPackage, type WbvPresentationOverrides, type WbvTrackLayout } from "./publicationApi";
 import "./Wellbore3DPage.css";
 import {
   WellboreTrajectoryRenderer,
@@ -48,6 +49,7 @@ type WbvSessionContract = {
   contract_version?: string;
   viewer?: "WBV";
   active_managed_well_id?: string | null;
+  active_managed_well_uid?: string | null;
   well_id?: string | null;
   well_name?: string | null;
   viewer_state?: WbvViewerState;
@@ -239,6 +241,11 @@ type WbvTrackConfig = {
   track_type: "curve" | "reference" | "image" | "interval";
   display_order: number;
   side: "left" | "right" | "center";
+  geometry_type: "legacy_planar" | "camera_ribbon" | "radial_panel";
+  radial_lane: number;
+  angular_position_deg: number;
+  orientation_mode: "follow_trajectory" | "camera_facing";
+  thickness: number;
   width: number;
   background_mode: "transparent" | "black" | "white" | "custom";
   background_color: string;
@@ -435,7 +442,7 @@ type WbvDisplayLayerControls = {
 const initialViewerControls: WbvViewerControls = {
   boundingBox: true,
   depthLabels: true,
-  surveyStations: true,
+  surveyStations: false,
   groundPlane: false,
   bottomGrid: false,
   topGrid: false,
@@ -599,27 +606,182 @@ export function Wellbore3DPage({
   const [displayLayers, setDisplayLayers] = useState<WbvDisplayLayerControls>({ trajectory: true });
   const [displayLayerFiles, setDisplayLayerFiles] = useState<WbvDisplayLayerFilesContract | null>(null);
   const [, setSelectedDisplayLayerFiles] = useState<Partial<Record<WbvDisplayLayerKey, string>>>({});
-  const [curveOverlayProducts, setCurveOverlayProducts] = useState<WbvCurveOverlayProductsContract | null>(null);
+  const [, setCurveOverlayProducts] = useState<WbvCurveOverlayProductsContract | null>(null);
   const [, setSelectedCurveOverlayProductId] = useState("");
   const [, setSelectedCurveProductIds] = useState<string[]>([]);
   const [, setCurveOverlayNormalization] = useState<WbvCurveOverlayNormalizationContract | null>(null);
   const [curveOverlayRenderPackage, setCurveOverlayRenderPackage] = useState<WbvCurveOverlayRenderContract | null>(null);
+  const [publishedOverlayPackages, setPublishedOverlayPackages] = useState<WbvOverlayPackage[]>([]);
+  const [selectedPublishedPackageUid, setSelectedPublishedPackageUid] = useState<string | null>(null);
+  const [publishedPresentationDraft, setPublishedPresentationDraft] = useState<WbvPresentationOverrides | null>(null);
+  const [publishedPresentationSaving, setPublishedPresentationSaving] = useState(false);
+  const [publishedPackageView, setPublishedPackageView] = useState<"available" | "archived">("available");
+  const [pendingPackageAction, setPendingPackageAction] = useState<"archive" | "delete" | null>(null);
+  const [packageLifecycleError, setPackageLifecycleError] = useState<string | null>(null);
+  const [wbvTrackLayout, setWbvTrackLayout] = useState<WbvTrackLayout | null>(null);
+  const [selectedLayoutTrackUid, setSelectedLayoutTrackUid] = useState<string | null>(null);
+  const [layoutCommandSaving, setLayoutCommandSaving] = useState(false);
+  const [newLayoutTrackType, setNewLayoutTrackType] = useState<WbvLayoutTrack["track_type"]>("curve");
   const [layerManagerOpen, setLayerManagerOpen] = useState(false);
   const [activeLayerTab, setActiveLayerTab] = useState<WbvManagerTab>("curve_overlays");
-  const [curveSelectorSearch, setCurveSelectorSearch] = useState("");
+  const [, setCurveSelectorSearch] = useState("");
   const [draftLayerConfigs, setDraftLayerConfigs] = useState<WbvLayerConfig[]>([]);
   const [appliedLayerConfigs, setAppliedLayerConfigs] = useState<WbvLayerConfig[]>([]);
   const [appliedTracks, setAppliedTracks] = useState<WbvTrackConfig[]>([]);
   const [draftTracks, setDraftTracks] = useState<WbvTrackConfig[]>([]);
   const [trackSpacing, setTrackSpacing] = useState(0.05);
   const [draftTrackSpacing, setDraftTrackSpacing] = useState(0.05);
-  const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
+  const [, setSelectedTrackId] = useState<string | null>(null);
   const [layerManagerSaving, setLayerManagerSaving] = useState(false);
-  const [selectedCurveForEditing, setSelectedCurveForEditing] = useState<string | null>(null);
+  const [, setSelectedCurveForEditing] = useState<string | null>(null);
   const [layerManagerExpanded, setLayerManagerExpanded] = useState(false);
   const [layerManagerRect, setLayerManagerRect] = useState<WbvManagerRect>({ left: 180, top: 110, width: 1120, height: 760 });
   const [layerManagerRestoreRect, setLayerManagerRestoreRect] = useState<WbvManagerRect | null>(null);
   const layerManagerRef = useRef<HTMLElement | null>(null);
+
+  const selectedPublishedPackage = publishedOverlayPackages.find(
+    (item) => item.package_uid === selectedPublishedPackageUid,
+  ) ?? null;
+
+  useEffect(() => {
+    setPublishedPresentationDraft(
+      selectedPublishedPackage ? structuredClone(selectedPublishedPackage.wbv_overrides) : null,
+    );
+  }, [selectedPublishedPackage]);
+
+  const refreshPublishedPackages = useCallback(async (managedWellId: string, preferredUid?: string) => {
+    const response = await listWbvOverlayPackages(managedWellId);
+    setPublishedOverlayPackages(response.packages);
+    setSelectedPublishedPackageUid((current) => {
+      if (preferredUid && response.packages.some((item) => item.package_uid === preferredUid)) return preferredUid;
+      if (current && response.packages.some((item) => item.package_uid === current)) return current;
+      return response.packages.find((item) => item.status === "active")?.package_uid ?? response.packages[0]?.package_uid ?? null;
+    });
+  }, []);
+
+  const runLayoutCommand = async (command: Omit<WbvLayoutCommand, "expected_revision">) => {
+    const managedWellUid = state.session?.active_managed_well_uid;
+    if (!managedWellUid || !wbvTrackLayout) return;
+    setLayoutCommandSaving(true);
+    try {
+      const saved = await commandWbvTrackLayout(managedWellUid, { ...command, expected_revision: wbvTrackLayout.revision });
+      setWbvTrackLayout(saved);
+      setSelectedLayoutTrackUid((current) => current && saved.tracks.some((track) => track.track_uid === current) ? current : saved.tracks[0]?.track_uid ?? null);
+      const activePackage = publishedOverlayPackages.find((item) => item.status === "active");
+      if (activePackage) setCurveOverlayRenderPackage(await fetchWlvJson<WbvCurveOverlayRenderContract>(publishedWbvRenderPackageUrl(managedWellUid, activePackage.package_uid)));
+    } finally { setLayoutCommandSaving(false); }
+  };
+
+  const activatePublishedPackage = async (packageUid: string) => {
+    const managedWellUid = state.session?.active_managed_well_uid;
+    if (!managedWellUid) return;
+    setPublishedPresentationSaving(true);
+    try {
+      await setWbvOverlayPackageActive(managedWellUid, packageUid, true);
+      await refreshPublishedPackages(managedWellUid, packageUid);
+      setCurveOverlayRenderPackage(
+        await fetchWlvJson<WbvCurveOverlayRenderContract>(
+          publishedWbvRenderPackageUrl(managedWellUid, packageUid),
+        ),
+      );
+    } finally {
+      setPublishedPresentationSaving(false);
+    }
+  };
+
+  const changePublishedPackageLifecycle = async (
+    packageItem: WbvOverlayPackage,
+    action: "archive" | "restore",
+  ) => {
+    const managedWellUid = state.session?.active_managed_well_uid;
+    if (!managedWellUid) return;
+    setPublishedPresentationSaving(true);
+    setPackageLifecycleError(null);
+    try {
+      const saved = await changeWbvOverlayPackageLifecycle(
+        managedWellUid,
+        packageItem.package_uid,
+        packageItem.package_revision,
+        action,
+      );
+      await refreshPublishedPackages(managedWellUid, saved.package_uid);
+      if (action === "archive") {
+        if (packageItem.status === "active") setCurveOverlayRenderPackage(null);
+        setPublishedPackageView("archived");
+      } else {
+        setPublishedPackageView("available");
+      }
+      setPendingPackageAction(null);
+    } catch (caught) {
+      setPackageLifecycleError(caught instanceof Error ? caught.message : "Unable to update the package.");
+    } finally {
+      setPublishedPresentationSaving(false);
+    }
+  };
+
+  const deletePublishedPackage = async (packageItem: WbvOverlayPackage) => {
+    const managedWellUid = state.session?.active_managed_well_uid;
+    if (!managedWellUid) return;
+    setPublishedPresentationSaving(true);
+    setPackageLifecycleError(null);
+    try {
+      await deleteWbvOverlayPackage(
+        managedWellUid,
+        packageItem.package_uid,
+        packageItem.package_revision,
+      );
+      setPublishedOverlayPackages((current) =>
+        current.filter((item) => item.package_uid !== packageItem.package_uid),
+      );
+      setSelectedPublishedPackageUid((current) =>
+        current === packageItem.package_uid ? null : current,
+      );
+      if (packageItem.status === "active") setCurveOverlayRenderPackage(null);
+      setPendingPackageAction(null);
+      await refreshPublishedPackages(managedWellUid);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Unable to delete the package.";
+      if (message.startsWith("404 Not Found:")) {
+        setPublishedOverlayPackages((current) =>
+          current.filter((item) => item.package_uid !== packageItem.package_uid),
+        );
+        setSelectedPublishedPackageUid((current) =>
+          current === packageItem.package_uid ? null : current,
+        );
+        if (packageItem.status === "active") setCurveOverlayRenderPackage(null);
+        setPendingPackageAction(null);
+        await refreshPublishedPackages(managedWellUid);
+      } else {
+        setPackageLifecycleError(message);
+      }
+    } finally {
+      setPublishedPresentationSaving(false);
+    }
+  };
+
+  const savePublishedPresentation = async () => {
+    const managedWellUid = state.session?.active_managed_well_uid;
+    if (!managedWellUid || !selectedPublishedPackage || !publishedPresentationDraft) return;
+    setPublishedPresentationSaving(true);
+    try {
+      const saved = await updateWbvPresentationOverrides(
+        managedWellUid,
+        selectedPublishedPackage.package_uid,
+        selectedPublishedPackage.package_revision,
+        publishedPresentationDraft,
+      );
+      await refreshPublishedPackages(managedWellUid, saved.package_uid);
+      if (saved.status === "active") {
+        setCurveOverlayRenderPackage(
+          await fetchWlvJson<WbvCurveOverlayRenderContract>(
+            publishedWbvRenderPackageUrl(managedWellUid, saved.package_uid),
+          ),
+        );
+      }
+    } finally {
+      setPublishedPresentationSaving(false);
+    }
+  };
 
   const requestViewPreset = (preset: WbvViewPreset) => {
     setViewPreset(preset);
@@ -634,6 +796,7 @@ export function Wellbore3DPage({
       );
       // The backend-owned WBV session is the sole active-well authority.
       const managedWellId = session.active_managed_well_id;
+      const managedWellUid = session.active_managed_well_uid;
       const viewerPackage = managedWellId
         ? await fetchWlvJson<WbvViewerPackageContract>(
             `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/viewer-package`,
@@ -654,27 +817,52 @@ export function Wellbore3DPage({
             `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/display-layer-configuration`,
           )
         : null;
-      const nextCurveOverlayRenderPackage = managedWellId
-        ? await fetchWlvJson<WbvCurveOverlayRenderContract>(
-            `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/curve-overlays/render-package`,
-          )
+      const nextPublishedPackages = managedWellUid
+        ? await listWbvOverlayPackages(managedWellUid)
         : null;
+      const nextWbvTrackLayout = managedWellUid ? await getWbvTrackLayout(managedWellUid) : null;
+      setWbvTrackLayout(nextWbvTrackLayout);
+      setSelectedLayoutTrackUid((current) => current && nextWbvTrackLayout?.tracks.some((track) => track.track_uid === current) ? current : nextWbvTrackLayout?.tracks[0]?.track_uid ?? null);
+      const activePublishedPackage = nextPublishedPackages?.packages.find((item) => item.status === "active") ?? null;
+      const packageItems = nextPublishedPackages?.packages ?? [];
+      setPublishedOverlayPackages(packageItems);
+      setSelectedPublishedPackageUid((current) => {
+        if (current && packageItems.some((item) => item.package_uid === current)) return current;
+        return packageItems.find((item) => item.status === "active")?.package_uid ?? packageItems[0]?.package_uid ?? null;
+      });
+      const nextCurveOverlayRenderPackage =
+        managedWellUid && activePublishedPackage
+          ? await fetchWlvJson<WbvCurveOverlayRenderContract>(
+              publishedWbvRenderPackageUrl(
+                managedWellUid,
+                activePublishedPackage.package_uid,
+              ),
+            )
+          : null;
       const nextInteraction = managedWellId
         ? await fetchWlvJson<WbvInteractionState>(`/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/interaction`)
         : null;
       if (managedWellId) {
-        const contracts = [
+        const legacyContracts = [
           viewerPackage,
           nextDisplayLayerFiles,
           nextCurveOverlayProducts,
           nextLayerConfiguration,
-          nextCurveOverlayRenderPackage,
         ];
-        contracts.forEach((contract) => {
+        legacyContracts.forEach((contract) => {
           if (contract && contract.managed_well_id !== managedWellId) {
-            throw new Error("WBV rejected mixed managed-well contracts from the backend.");
+            throw new Error("WBV rejected mixed legacy managed-well contracts from the backend.");
           }
         });
+      }
+      if (nextCurveOverlayRenderPackage) {
+        const expectedRenderWellIdentity = activePublishedPackage ? managedWellUid : managedWellId;
+        if (
+          expectedRenderWellIdentity
+          && nextCurveOverlayRenderPackage.managed_well_id !== expectedRenderWellIdentity
+        ) {
+          throw new Error("WBV rejected a curve-overlay render contract for another managed well.");
+        }
       }
       setCurveOverlayRenderPackage(nextCurveOverlayRenderPackage);
       setInteraction(nextInteraction);
@@ -860,41 +1048,6 @@ export function Wellbore3DPage({
     };
   }, [loadWbvSession]);
 
-  const defaultCurveItemConfig = (curveProductId: string, displayOrder: number): WbvCurveItemConfig => ({
-    curve_product_id: curveProductId,
-    display_order: displayOrder,
-    scale: {
-      source: "backend_default",
-      minimum: null,
-      maximum: null,
-      scale_type: "linear",
-      direction: "normal",
-      direction_source: "governed",
-      clamp_outliers: true,
-      show_clipping: true,
-    },
-    appearance: {
-      color: ["#58d39b", "#f0b35a", "#65a7ff", "#df78da", "#e86f6f", "#9ad65b"][displayOrder % 6],
-      line_width: 1.5,
-      opacity: 1,
-      display_mode: "line",
-      radial_lane: 0,
-      track_id: appliedTracks[0]?.track_id ?? "curve-track-0",
-      radial_width: 1,
-      show_label: true,
-      label_position: "top",
-      show_clipped_markers: true,
-      fill_mode: "none",
-      fill_target_curve_product_id: null,
-      fill_side: "positive",
-      fill_color: ["#58d39b", "#f0b35a", "#65a7ff", "#df78da", "#e86f6f", "#9ad65b"][displayOrder % 6],
-      fill_opacity: 0.35,
-      fill_baseline_source: "governed",
-      fill_baseline_value: null,
-      fill_outline: true,
-    },
-  });
-
   const defaultLayerConfig = (layerType: WbvDisplayLayerKey): WbvLayerConfig => ({
     layer_type: layerType,
     visible: false,
@@ -923,7 +1076,26 @@ export function Wellbore3DPage({
         })),
       };
     });
-    const nextTracks: WbvTrackConfig[] = appliedTracks.length > 0 ? appliedTracks.map((track) => ({ ...track })) : [{ track_id: "curve-track-0", display_name: "Track 1", track_type: "curve", display_order: 0, side: "right", width: 1, background_mode: "transparent", background_color: "#000000", background_opacity: 0, border_visible: false, border_color: "#5f6d73", wellbore_offset: 0.15, previous_track_gap: 0.05 }];
+    const nextTracks: WbvTrackConfig[] = appliedTracks.length > 0 ? appliedTracks.map((track) => ({ ...track })) : [{
+      track_id: "curve-track-0",
+      display_name: "Track 1",
+      track_type: "curve",
+      display_order: 0,
+      side: "right",
+      geometry_type: "legacy_planar",
+      radial_lane: 0,
+      angular_position_deg: 0,
+      orientation_mode: "follow_trajectory",
+      thickness: 0.05,
+      width: 1,
+      background_mode: "transparent",
+      background_color: "#000000",
+      background_opacity: 0,
+      border_visible: false,
+      border_color: "#5f6d73",
+      wellbore_offset: 0.15,
+      previous_track_gap: 0.05,
+    }];
     const orderedCurveTracks = nextTracks.filter((track) => track.track_type === "curve").sort((a, b) => a.display_order - b.display_order);
     const synchronizedDrafts = drafts.map((layer) => layer.layer_type !== "curve_overlays" ? layer : {
       ...layer,
@@ -966,114 +1138,6 @@ export function Wellbore3DPage({
       const next = updater(existing);
       return [...current.filter((item) => item.layer_type !== layerType), next];
     });
-  };
-
-  const curveSettingFor = (config: WbvLayerConfig, curveId: string): WbvCurveItemConfig =>
-    config.curve_settings.find((item) => item.curve_product_id === curveId)
-      ?? defaultCurveItemConfig(curveId, config.selected_item_ids.indexOf(curveId));
-
-  const updateDraftCurveSetting = (curveId: string, updater: (current: WbvCurveItemConfig) => WbvCurveItemConfig) => {
-    updateDraftLayer("curve_overlays", (current) => {
-      const existing = curveSettingFor(current, curveId);
-      const nextSettings = [
-        ...current.curve_settings.filter((item) => item.curve_product_id !== curveId),
-        updater(existing),
-      ].sort((a, b) => a.display_order - b.display_order);
-      return { ...current, curve_settings: nextSettings };
-    });
-  };
-
-  const toggleDraftCurve = (curveId: string, selected: boolean) => {
-    updateDraftLayer("curve_overlays", (current) => {
-      if (selected) {
-        if (current.selected_item_ids.includes(curveId)) return current;
-        const selectedIds = [...current.selected_item_ids, curveId];
-        return {
-          ...current,
-          selected_item_ids: selectedIds,
-          curve_settings: [
-            ...current.curve_settings,
-            (() => {
-              const setting = defaultCurveItemConfig(curveId, selectedIds.length - 1);
-              const orderedCurveTracks = [...draftTracks].filter((track) => track.track_type === "curve").sort((a, b) => a.display_order - b.display_order);
-              const activeCurveTrack = orderedCurveTracks.find((track) => track.track_id === selectedTrackId) ?? orderedCurveTracks[0];
-              const activeTrackIndex = activeCurveTrack ? orderedCurveTracks.findIndex((track) => track.track_id === activeCurveTrack.track_id) : -1;
-              return activeCurveTrack ? {
-                ...setting,
-                appearance: { ...setting.appearance, track_id: activeCurveTrack.track_id, radial_lane: Math.max(0, activeTrackIndex) },
-              } : setting;
-            })(),
-          ],
-        };
-      }
-      const selectedIds = current.selected_item_ids.filter((id) => id !== curveId);
-      return {
-        ...current,
-        selected_item_ids: selectedIds,
-        curve_settings: current.curve_settings
-          .filter((item) => item.curve_product_id !== curveId)
-          .map((item, index) => ({
-            ...item,
-            display_order: index,
-            appearance: item.appearance.fill_target_curve_product_id === curveId
-              ? { ...item.appearance, fill_target_curve_product_id: null }
-              : item.appearance,
-          })),
-      };
-    });
-    setSelectedCurveForEditing((current) => selected ? curveId : current === curveId ? null : current);
-  };
-
-  const moveDraftCurve = (curveId: string, direction: -1 | 1) => {
-    updateDraftLayer("curve_overlays", (current) => {
-      const currentSetting = curveSettingFor(current, curveId);
-      const trackId = currentSetting.appearance.track_id;
-      const trackCurveIds = current.selected_item_ids
-        .filter((id) => curveSettingFor(current, id).appearance.track_id === trackId)
-        .sort((a, b) => curveSettingFor(current, a).display_order - curveSettingFor(current, b).display_order);
-      const index = trackCurveIds.indexOf(curveId);
-      const target = index + direction;
-      if (index < 0 || target < 0 || target >= trackCurveIds.length) return current;
-      [trackCurveIds[index], trackCurveIds[target]] = [trackCurveIds[target], trackCurveIds[index]];
-      const trackOrder = new Map(trackCurveIds.map((id, order) => [id, order]));
-      return {
-        ...current,
-        curve_settings: current.curve_settings.map((item) =>
-          trackOrder.has(item.curve_product_id)
-            ? { ...item, display_order: trackOrder.get(item.curve_product_id) ?? item.display_order }
-            : item,
-        ),
-      };
-    });
-  };
-
-  const setDraftCurveTrack = (curveId: string, trackId: string) => {
-    const orderedCurveTracks = draftTracks
-      .filter((track) => track.track_type === "curve")
-      .sort((a, b) => a.display_order - b.display_order);
-    const targetTrackIndex = orderedCurveTracks.findIndex((track) => track.track_id === trackId);
-    if (targetTrackIndex < 0) return;
-    updateDraftLayer("curve_overlays", (current) => ({
-      ...current,
-      curve_settings: current.curve_settings.map((item) => {
-        if (item.curve_product_id === curveId) {
-          return {
-            ...item,
-            display_order: current.selected_item_ids.filter((id) => curveSettingFor(current, id).appearance.track_id === trackId).length,
-            appearance: {
-              ...item.appearance,
-              track_id: trackId,
-              radial_lane: targetTrackIndex,
-              fill_target_curve_product_id: null,
-            },
-          };
-        }
-        if (item.appearance.fill_target_curve_product_id === curveId) {
-          return { ...item, appearance: { ...item.appearance, fill_target_curve_product_id: null } };
-        }
-        return item;
-      }),
-    }));
   };
 
   const beginLayerManagerDrag = (event: ReactPointerEvent<HTMLElement>) => {
@@ -1136,10 +1200,21 @@ export function Wellbore3DPage({
       const curveConfig = layerConfigFor(saved.layers, "curve_overlays");
       setSelectedCurveOverlayProductId(curveConfig.source_product_id ?? "");
       await normalizeSelectedCurves(curveConfig.selected_item_ids);
-      const renderPackage = await fetchWlvJson<WbvCurveOverlayRenderContract>(
-        `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/curve-overlays/render-package`,
+      const managedWellUid = state.session?.active_managed_well_uid;
+      const activePublishedPackage = publishedOverlayPackages.find(
+        (item) => item.status === "active",
       );
-      setCurveOverlayRenderPackage(renderPackage);
+      if (managedWellUid && activePublishedPackage) {
+        const renderPackage = await fetchWlvJson<WbvCurveOverlayRenderContract>(
+          publishedWbvRenderPackageUrl(
+            managedWellUid,
+            activePublishedPackage.package_uid,
+          ),
+        );
+        setCurveOverlayRenderPackage(renderPackage);
+      } else {
+        setCurveOverlayRenderPackage(null);
+      }
       setLayerManagerOpen(false);
     } catch (caught) {
       setState((current) => ({ ...current, error: caught instanceof Error ? caught.message : "Unable to save WBV display layers" }));
@@ -1602,6 +1677,31 @@ export function Wellbore3DPage({
         </aside>
       </div>
 
+      {pendingPackageAction && selectedPublishedPackage ? (
+        <div className="wlv-wbv-confirm-backdrop" role="presentation">
+          <section className="wlv-wbv-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="wbv-package-action-title">
+            <h2 id="wbv-package-action-title">{pendingPackageAction === "delete" ? "Delete this package permanently?" : "Archive this package?"}</h2>
+            <p>{pendingPackageAction === "delete"
+              ? "This permanently deletes the selected WBV package record and cannot be undone."
+              : "This stops rendering the package, clears its WBV track assignments, and retains the published snapshot in Archived."}</p>
+            {packageLifecycleError ? <p className="wlv-wbv-package-action-error" role="alert">{packageLifecycleError}</p> : null}
+            <div>
+              <button type="button" className="wlv-wbv-control-button" onClick={()=>{setPendingPackageAction(null);setPackageLifecycleError(null);}}>Cancel</button>
+              <button
+                type="button"
+                className="wlv-wbv-control-button is-danger"
+                disabled={publishedPresentationSaving}
+                onClick={()=>void (pendingPackageAction === "delete"
+                  ? deletePublishedPackage(selectedPublishedPackage)
+                  : changePublishedPackageLifecycle(selectedPublishedPackage,"archive"))}
+              >
+                {publishedPresentationSaving ? "Working…" : pendingPackageAction === "delete" ? "Delete Permanently" : "Archive Package"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {layerManagerOpen ? (
         <div className="wlv-wbv-modal-backdrop wlv-wbv-modal-backdrop--floating" role="presentation">
           <section
@@ -1613,7 +1713,7 @@ export function Wellbore3DPage({
             style={{ left: layerManagerRect.left, top: layerManagerRect.top, width: layerManagerRect.width, height: layerManagerRect.height }}
           >
             <header className="wlv-wbv-layer-manager-header" onPointerDown={beginLayerManagerDrag}>
-              <div><span className="wlv-wbv-eyebrow">DISPLAY LAYERS</span><h2 id="wbv-layer-manager-title">Manage Display Layers</h2></div>
+              <div><h2 id="wbv-layer-manager-title">Manage Display Layers</h2></div>
               <div className="wlv-wbv-layer-manager-header-actions">
                 <button type="button" className="wlv-wbv-control-button" onClick={toggleLayerManagerExpanded}>{layerManagerExpanded ? "Restore" : "Expand"}</button>
                 <button type="button" className="wlv-wbv-icon-button" aria-label="Close display-layer manager" onClick={() => setLayerManagerOpen(false)}>×</button>
@@ -1625,100 +1725,161 @@ export function Wellbore3DPage({
                 ["completions", "Completions"], ["curve_overlays", "Curve Overlays"], ["borehole_imagery", "Borehole Imagery"],
               ] as Array<[WbvManagerTab, string]>).map(([key,label]) => <button type="button" key={key} className={activeLayerTab===key?"is-active":""} onClick={() => setActiveLayerTab(key)}>{label}</button>)}
             </nav>
-            <div className={["wlv-wbv-layer-manager-body", activeLayerTab === "track_layout" ? "is-track-layout" : ""].filter(Boolean).join(" ")}>
+            <div className={["wlv-wbv-layer-manager-body", activeLayerTab === "track_layout" ? "is-track-layout" : "", activeLayerTab === "curve_overlays" ? "is-curve-overlays" : ""].filter(Boolean).join(" ")}>
               {(() => {
                 if (activeLayerTab === "track_layout") {
-                  const selectedTrack = draftTracks.find((track) => track.track_id === selectedTrackId) ?? draftTracks[0] ?? null;
-                  const sameSideTracks = selectedTrack
-                    ? [...draftTracks].filter((track) => track.side === selectedTrack.side).sort((a, b) => a.display_order - b.display_order)
+                  const tracks = wbvTrackLayout?.tracks ?? [];
+                  const selectedTrack = tracks.find((track) => track.track_uid === selectedLayoutTrackUid) ?? tracks[0] ?? null;
+                  const updateSelected = (patch: Partial<WbvLayoutTrack>) => {
+                    if (!selectedTrack) return;
+                    void runLayoutCommand({ command: "update_track", track_uid: selectedTrack.track_uid, ...patch });
+                  };
+                  const samePositionTracks = selectedTrack
+                    ? tracks.filter((track) => track.position === selectedTrack.position)
                     : [];
-                  const selectedTrackSideIndex = selectedTrack
-                    ? sameSideTracks.findIndex((track) => track.track_id === selectedTrack.track_id)
-                    : -1;
-                  const selectedTrackUsesWellboreOffset = selectedTrack?.side !== "center" && selectedTrackSideIndex === 0;
-                  const selectedTrackGapLabel = selectedTrack?.side === "right"
-                    ? "Gap from track on the left"
-                    : selectedTrack?.side === "left"
-                      ? "Gap from track on the right"
-                      : "Offset from wellbore";
-                  const updateTrack = (trackId: string, updater: (track: WbvTrackConfig) => WbvTrackConfig) => setDraftTracks((current) => current.map((track) => track.track_id === trackId ? updater(track) : track));
-                  const addTrack = () => { const index = draftTracks.length; const track: WbvTrackConfig = { track_id: `curve-track-${Date.now()}`, display_name: `Track ${index + 1}`, track_type: "curve", display_order: index, side: "right", width: 1, background_mode: "transparent", background_color: "#000000", background_opacity: 0, border_visible: false, border_color: "#5f6d73", wellbore_offset: 0.15, previous_track_gap: draftTrackSpacing }; setDraftTracks((current) => [...current, track]); setSelectedTrackId(track.track_id); };
-                  const moveTrack = (direction: -1 | 1) => { if (!selectedTrack) return; setDraftTracks((current) => { const ordered=[...current].sort((a,b)=>a.display_order-b.display_order); const index=ordered.findIndex((track)=>track.track_id===selectedTrack.track_id); const target=index+direction; if(target<0||target>=ordered.length)return current; [ordered[index],ordered[target]]=[ordered[target],ordered[index]]; return ordered.map((track,display_order)=>({...track,display_order})); }); };
-                  return <><section className="wlv-wbv-manager-inventory-panel wlv-wbv-track-layout-list"><div className="wlv-wbv-manager-panel-title"><div><h3>Tracks</h3><span>{draftTracks.length} configured</span></div></div><div className="wlv-wbv-track-list">{[...draftTracks].sort((a,b)=>a.display_order-b.display_order).map((track)=><button type="button" key={track.track_id} className={track.track_id===selectedTrack?.track_id?"is-current":""} onClick={()=>setSelectedTrackId(track.track_id)}><span>{track.display_order+1}</span><strong>{track.display_name}</strong><small>{track.side === "center" ? "center" : track.side} · {track.width.toFixed(2)}</small></button>)}</div><div className="wlv-wbv-track-actions"><button type="button" className="wlv-wbv-control-button" onClick={addTrack}>Add Track</button><button type="button" className="wlv-wbv-control-button" disabled={!selectedTrack} onClick={()=>moveTrack(-1)}>Up</button><button type="button" className="wlv-wbv-control-button" disabled={!selectedTrack} onClick={()=>moveTrack(1)}>Down</button><button type="button" className="wlv-wbv-control-button" disabled={!selectedTrack||draftTracks.length===1||layerConfigFor(draftLayerConfigs,"curve_overlays").selected_item_ids.some((curveId)=>curveSettingFor(layerConfigFor(draftLayerConfigs,"curve_overlays"),curveId).appearance.track_id===selectedTrack.track_id)} title={selectedTrack&&layerConfigFor(draftLayerConfigs,"curve_overlays").selected_item_ids.some((curveId)=>curveSettingFor(layerConfigFor(draftLayerConfigs,"curve_overlays"),curveId).appearance.track_id===selectedTrack.track_id)?"Reassign curves before removing this track":undefined} onClick={()=>{if(!selectedTrack)return; setDraftTracks((current)=>current.filter((track)=>track.track_id!==selectedTrack.track_id).map((track,index)=>({...track,display_order:index}))); setSelectedTrackId(draftTracks.find((track)=>track.track_id!==selectedTrack.track_id)?.track_id??null);}}>Remove</button></div></section><section className="wlv-wbv-manager-selected-panel"><div className="wlv-wbv-manager-panel-title"><div><h3>Layout Defaults</h3><span>Global track geometry</span></div></div><label className="wlv-wbv-field">Default gap for new tracks<input type="number" min="0" max="20" step="0.01" value={draftTrackSpacing} onChange={(event)=>setDraftTrackSpacing(Number(event.target.value))}/></label><p>Track order is measured outward from the wellbore on each side.</p></section><section className="wlv-wbv-manager-properties-panel"><div className="wlv-wbv-manager-panel-title"><div><h3>Track Properties</h3><span>{selectedTrack?.display_name??"Select a track"}</span></div></div>{selectedTrack?<div className="wlv-wbv-properties-scroll"><label className="wlv-wbv-field">Name<input value={selectedTrack.display_name} onChange={(event)=>updateTrack(selectedTrack.track_id,(track)=>({...track,display_name:event.target.value}))}/></label><div className="wlv-wbv-inline-fields"><label className="wlv-wbv-field">Type<select value={selectedTrack.track_type} onChange={(event)=>updateTrack(selectedTrack.track_id,(track)=>({...track,track_type:event.target.value as WbvTrackConfig["track_type"]}))}><option value="curve">Curve Track</option><option value="reference">Reference Track</option><option value="image">Image Track</option><option value="interval">Interval Track</option></select></label><label className="wlv-wbv-field">Position<select value={selectedTrack.side} onChange={(event)=>{const position=event.target.value as WbvTrackConfig["side"]; updateTrack(selectedTrack.track_id,(track)=>({...track,side:position,wellbore_offset:position==="center"?0:track.wellbore_offset}));}}><option value="left">Left</option><option value="center">Center — over wellbore</option><option value="right">Right</option></select></label></div><div className="wlv-wbv-inline-fields"><label className="wlv-wbv-field">Width<input type="number" min="0.1" max="20" step="0.1" value={selectedTrack.width} onChange={(event)=>updateTrack(selectedTrack.track_id,(track)=>({...track,width:Number(event.target.value)}))}/></label><label className="wlv-wbv-field">{selectedTrack.side === "center" || selectedTrackUsesWellboreOffset ? "Offset from wellbore" : selectedTrackGapLabel}<input type="number" min="0" max="20" step="0.01" disabled={selectedTrack.side === "center"} value={selectedTrack.side === "center" ? 0 : selectedTrackUsesWellboreOffset ? selectedTrack.wellbore_offset : selectedTrack.previous_track_gap ?? draftTrackSpacing} onChange={(event)=>updateTrack(selectedTrack.track_id,(track)=>selectedTrackUsesWellboreOffset ? {...track,wellbore_offset:Number(event.target.value)} : {...track,previous_track_gap:Number(event.target.value)})}/></label></div><label className="wlv-wbv-field">Background<select value={selectedTrack.background_mode} onChange={(event)=>updateTrack(selectedTrack.track_id,(track)=>({...track,background_mode:event.target.value as WbvTrackConfig["background_mode"]}))}><option value="transparent">Transparent</option><option value="black">Black</option><option value="white">White</option><option value="custom">Custom</option></select></label>{selectedTrack.background_mode==="custom"?<label className="wlv-wbv-field">Background colour<input type="color" value={selectedTrack.background_color} onChange={(event)=>updateTrack(selectedTrack.track_id,(track)=>({...track,background_color:event.target.value}))}/></label>:null}<label className="wlv-wbv-field">Background opacity<input type="number" min="0" max="1" step="0.05" value={selectedTrack.background_opacity} onChange={(event)=>updateTrack(selectedTrack.track_id,(track)=>({...track,background_opacity:Number(event.target.value)}))}/></label><label className="wlv-wbv-check-row"><input type="checkbox" checked={selectedTrack.border_visible} onChange={(event)=>updateTrack(selectedTrack.track_id,(track)=>({...track,border_visible:event.target.checked}))}/><span>Show track border</span></label></div>:<div className="wlv-wbv-empty-state">Select a track.</div>}</section></>;
+                  const isClosestToWellbore = selectedTrack
+                    ? samePositionTracks[0]?.track_uid === selectedTrack.track_uid
+                    : false;
+                  return <>
+                    <section className="wlv-wbv-manager-inventory-panel wlv-wbv-track-layout-list">
+                      <div className="wlv-wbv-manager-panel-title"><div><h3>WBV Tracks</h3><span>{tracks.length} tracks</span></div></div>
+                      <div className="wlv-wbv-track-toolbar">
+                        <select value={newLayoutTrackType} onChange={(event)=>setNewLayoutTrackType(event.target.value as WbvLayoutTrack["track_type"])}><option value="curve">Curve</option><option value="formation_tops">Formation Tops</option><option value="lithology">Lithology</option><option value="casing_hole">Casing / Hole</option><option value="completions">Completions</option><option value="borehole_imagery">Borehole Imagery</option></select>
+                        <button type="button" className="wlv-wbv-control-button is-primary" disabled={layoutCommandSaving} onClick={()=>void runLayoutCommand({command:"add_track",track_type:newLayoutTrackType})}>+ Add Track</button>
+                      </div>
+                      <div className="wlv-wbv-track-list">{tracks.map((track)=><button type="button" key={track.track_uid} className={track.track_uid===selectedTrack?.track_uid?"is-current":""} onClick={()=>setSelectedLayoutTrackUid(track.track_uid)}><span>{track.display_order+1}</span><strong>{track.display_name}</strong><small>{track.track_type.replace(/_/g, " ")} · {track.position}</small></button>)}</div>
+                    </section>
+                    <section className="wlv-wbv-manager-properties-panel wlv-wbv-simple-track-properties">
+                      <div className="wlv-wbv-manager-panel-title"><div><h3>Track Settings</h3><span>{selectedTrack?.display_name ?? "Select a track"}</span></div></div>
+                      {selectedTrack?<div className="wlv-wbv-properties-scroll">
+                        <label className="wlv-wbv-check-row"><input type="checkbox" checked={selectedTrack.visible} onChange={(e)=>updateSelected({visible:e.target.checked})}/><span>Show track</span></label>
+                        <label className="wlv-wbv-field">Track name<input key={`${selectedTrack.track_uid}-name-${selectedTrack.display_name}`} defaultValue={selectedTrack.display_name} onBlur={(e)=>{const value=e.target.value.trim();if(value&&value!==selectedTrack.display_name)updateSelected({display_name:value});}}/></label>
+                        <div className="wlv-wbv-inline-fields"><label className="wlv-wbv-field">Track type<select value={selectedTrack.track_type} onChange={(e)=>updateSelected({track_type:e.target.value as WbvLayoutTrack["track_type"]})}><option value="curve">Curve</option><option value="formation_tops">Formation Tops</option><option value="lithology">Lithology</option><option value="casing_hole">Casing / Hole</option><option value="completions">Completions</option><option value="borehole_imagery">Borehole Imagery</option></select></label><label className="wlv-wbv-field">Position<select value={selectedTrack.position} onChange={(e)=>updateSelected({position:e.target.value as WbvLayoutTrack["position"]})}><option value="right">Right</option><option value="left">Left</option><option value="center">Center</option></select></label></div>
+                        <div className="wlv-wbv-inline-fields">{isClosestToWellbore?<label className="wlv-wbv-field">Distance from wellbore<input key={`${selectedTrack.track_uid}-distance-${selectedTrack.distance_from_wellbore}`} type="number" min="0" step="0.05" defaultValue={selectedTrack.distance_from_wellbore} onBlur={(e)=>updateSelected({distance_from_wellbore:Number(e.target.value)})}/></label>:<label className="wlv-wbv-field">Gap from previous track<input key={`${selectedTrack.track_uid}-gap-${selectedTrack.previous_track_gap}`} type="number" min="0" step="0.05" defaultValue={selectedTrack.previous_track_gap} onBlur={(e)=>updateSelected({previous_track_gap:Number(e.target.value)})}/></label>}<label className="wlv-wbv-field">Width<input key={`${selectedTrack.track_uid}-width-${selectedTrack.width}`} type="number" min="0.1" step="0.05" defaultValue={selectedTrack.width} onBlur={(e)=>updateSelected({width:Number(e.target.value)})}/></label></div>
+                        <div className="wlv-wbv-inline-fields">
+                          <label className="wlv-wbv-field">Track background<select value={selectedTrack.background_mode} onChange={(e)=>updateSelected({background_mode:e.target.value as WbvLayoutTrack["background_mode"]})}><option value="transparent">Transparent</option><option value="solid">Solid</option></select></label>
+                          <label className="wlv-wbv-field">Background color<input type="color" value={selectedTrack.background_color} disabled={selectedTrack.background_mode==="transparent"} onChange={(e)=>updateSelected({background_color:e.target.value})}/></label>
+                        </div>
+                        <label className="wlv-wbv-check-row"><input type="checkbox" checked={selectedTrack.outline_visible} onChange={(e)=>updateSelected({outline_visible:e.target.checked})}/><span>Track outline</span></label>
+                        <label className="wlv-wbv-field">Track grid<select value={selectedTrack.grid_mode} onChange={(e)=>updateSelected({grid_mode:e.target.value as WbvLayoutTrack["grid_mode"]})}><option value="off">Off</option><option value="linear">Linear</option><option value="logarithmic">Logarithmic</option></select></label>
+                        <label className="wlv-wbv-field">Track opacity<input key={`${selectedTrack.track_uid}-opacity-${selectedTrack.opacity}`} type="number" min="0" max="1" step="0.05" defaultValue={selectedTrack.opacity} onBlur={(e)=>updateSelected({opacity:Number(e.target.value)})}/></label>
+                        <div className="wlv-wbv-inline-action-row"><button type="button" className="wlv-wbv-control-button" disabled={layoutCommandSaving||selectedTrack.display_order===0} onClick={()=>void runLayoutCommand({command:"move_up",track_uid:selectedTrack.track_uid})}>Move Up</button><button type="button" className="wlv-wbv-control-button" disabled={layoutCommandSaving||selectedTrack.display_order===tracks.length-1} onClick={()=>void runLayoutCommand({command:"move_down",track_uid:selectedTrack.track_uid})}>Move Down</button><button type="button" className="wlv-wbv-control-button" disabled={layoutCommandSaving} onClick={()=>void runLayoutCommand({command:"duplicate_track",track_uid:selectedTrack.track_uid})}>Duplicate</button><button type="button" className="wlv-wbv-control-button is-danger" disabled={layoutCommandSaving} onClick={()=>void runLayoutCommand({command:"delete_track",track_uid:selectedTrack.track_uid})}>Delete</button></div>
+                      </div>:<div className="wlv-wbv-empty-state">Add a track.</div>}
+                    </section>
+                  </>;
                 }
                 const config = layerConfigFor(draftLayerConfigs, activeLayerTab);
                 if (activeLayerTab === "curve_overlays") {
-                  const products = curveOverlayProducts?.products ?? [];
-                  const product = products.find((item) => item.curve_product_id === config.source_product_id) ?? null;
-                  const curves = product?.curves ?? [];
-                  const curveById = new Map(curves.map((curve) => [curve.curve_product_id, curve]));
-                  const query = curveSelectorSearch.trim().toLowerCase();
-                  const filtered = curves.filter((curve) => !query || [curve.mnemonic, curve.display_name, curve.description ?? "", curve.unit ?? "", curve.curve_family ?? ""].some((value) => value.toLowerCase().includes(query)));
-                  const grouped = filtered.reduce<Record<string, WbvCurveOverlayCurve[]>>((acc, curve) => {
-                    const family = (curve.curve_family || "Unclassified").trim().toUpperCase();
-                    (acc[family] ??= []).push(curve);
-                    return acc;
-                  }, {});
-                  const selectedCurve = selectedCurveForEditing ? curveById.get(selectedCurveForEditing) ?? null : null;
-                  const selectedSetting = selectedCurveForEditing ? curveSettingFor(config, selectedCurveForEditing) : null;
-                  const coverage = (curve: WbvCurveOverlayCurve) => {
-                    const managedInterval = curve.run_interval?.trim();
-                    if (managedInterval) return managedInterval;
-                    if (curve.depth_start == null && curve.depth_end == null) return "";
-                    const unit = curve.depth_units ?? "";
-                    return `${curve.depth_start ?? "—"}–${curve.depth_end ?? "—"} ${unit}`.trim();
+                  const selectedPackage = selectedPublishedPackage;
+                  const presentation = publishedPresentationDraft;
+                  const tracks = (selectedPackage?.published_snapshot.tracks ?? []).filter((track) => track.assignments.length > 0);
+                  const curveDestinations = (wbvTrackLayout?.tracks ?? []).filter((item) => item.track_type === "curve");
+                  const visiblePackages = publishedOverlayPackages.filter((item) =>
+                    publishedPackageView === "archived" ? item.status === "archived" : item.status !== "archived",
+                  );
+                  const trackOverride = (trackUid: string) =>
+                    presentation?.tracks.find((item) => item.track_uid === trackUid) ?? {
+                      track_uid: trackUid,
+                      destination_track_uid: null,
+                      visible: true,
+                      geometry_type: "radial_panel",
+                      radial_lane: null,
+                      radial_offset: null,
+                      angular_position_deg: null,
+                      radial_width: null,
+                      thickness: null,
+                      orientation_mode: "follow_trajectory",
+                      opacity: null,
+                      label_visible: null,
+                    };
+                  const curveOverride = (assignmentUid: string) =>
+                    presentation?.curves.find((item) => item.assignment_uid === assignmentUid) ?? {
+                      assignment_uid: assignmentUid,
+                      visible: null,
+                      opacity: null,
+                      line_width: null,
+                      radial_exaggeration: null,
+                      label_visible: null,
+                    };
+                  const updateTrackOverride = (trackUid: string, patch: Partial<ReturnType<typeof trackOverride>>) => {
+                    if (!presentation) return;
+                    const existing = trackOverride(trackUid);
+                    setPublishedPresentationDraft({
+                      ...presentation,
+                      tracks: [...presentation.tracks.filter((item) => item.track_uid !== trackUid), { ...existing, ...patch }],
+                    });
                   };
-                  const curveMetadataTitle = (curve: WbvCurveOverlayCurve) => [
-                    curve.description || curve.display_name,
-                    coverage(curve),
-                    curve.run_number ? `Run ${curve.run_number}` : "",
-                    curve.run_date ?? "",
-                    curve.curve_family ?? "",
-                    curve.classification_source ?? "",
-                    curve.classification_confidence ?? "",
-                    curve.review_required ? "Review required" : "",
-                    curve.unit ?? "",
-                  ].filter(Boolean).join(" · ");
+                  const updateCurveOverride = (assignmentUid: string, patch: Partial<ReturnType<typeof curveOverride>>) => {
+                    if (!presentation) return;
+                    const existing = curveOverride(assignmentUid);
+                    setPublishedPresentationDraft({
+                      ...presentation,
+                      curves: [...presentation.curves.filter((item) => item.assignment_uid !== assignmentUid), { ...existing, ...patch }],
+                    });
+                  };
+                  const packageDisplayName = (item: WbvOverlayPackage) => {
+                    const packageTracks = item.published_snapshot.tracks.filter((track) => track.assignments.length > 0);
+                    const mnemonics = packageTracks.flatMap((track) => track.assignments.map((curve) => curve.observed_mnemonic)).slice(0, 4);
+                    const wellName = viewerPackage?.well_name ?? session?.well_name ?? "Published curves";
+                    return `${wellName} — ${mnemonics.length ? mnemonics.join(" / ") : "Curve package"}`;
+                  };
+                  const availableDestinations = (trackUid: string) => {
+                    const currentDestination = trackOverride(trackUid).destination_track_uid;
+                    const usedByOtherTracks = new Set(
+                      tracks
+                        .filter((track) => track.track_uid !== trackUid)
+                        .map((track) => trackOverride(track.track_uid).destination_track_uid)
+                        .filter((uid): uid is string => Boolean(uid)),
+                    );
+                    return curveDestinations.filter(
+                      (destination) => destination.track_uid === currentDestination || !usedByOtherTracks.has(destination.track_uid),
+                    );
+                  };
                   return <>
-                    <section className="wlv-wbv-manager-inventory-panel">
-                      <div className="wlv-wbv-manager-panel-title"><div><h3>Curve Inventory</h3><span>{curves.length} available · {config.selected_item_ids.length} selected</span></div></div>
-                      <label className="wlv-wbv-field">Source product<select value={config.source_product_id ?? ""} onChange={(event) => updateDraftLayer(activeLayerTab, (current) => ({...current, source_product_id:event.target.value||null, selected_item_ids:[], curve_settings:[]}))}><option value="">Select registered curve product</option>{products.map((item)=><option key={item.curve_product_id} value={item.curve_product_id}>{item.display_name} ({item.curve_count})</option>)}</select></label>
-                      <div className="wlv-wbv-curve-inventory-toolbar"><input type="search" value={curveSelectorSearch} onChange={(event)=>setCurveSelectorSearch(event.target.value)} placeholder="Filter curves"/><button type="button" className="wlv-wbv-control-button" onClick={()=>updateDraftLayer(activeLayerTab,(current)=>({...current,selected_item_ids:curves.map((curve)=>curve.curve_product_id),curve_settings:curves.map((curve,index)=>current.curve_settings.find((item)=>item.curve_product_id===curve.curve_product_id) ?? defaultCurveItemConfig(curve.curve_product_id,index))}))}>Select all</button><button type="button" className="wlv-wbv-control-button" onClick={()=>{updateDraftLayer(activeLayerTab,(current)=>({...current,selected_item_ids:[],curve_settings:[]}));setSelectedCurveForEditing(null);}}>Clear all</button></div>
-                      <div className="wlv-wbv-wdv-curve-inventory">
-                        {Object.entries(grouped).sort(([a],[b])=>a.localeCompare(b)).map(([family, familyCurves]) => <section key={family} className="wlv-wbv-curve-family-group"><h4>{family}</h4>{familyCurves.map((curve) => {
-                          const isSelected = config.selected_item_ids.includes(curve.curve_product_id);
-                          return <label key={curve.curve_product_id} className={["wlv-wbv-wdv-curve-row", selectedCurveForEditing===curve.curve_product_id?"is-current":""].filter(Boolean).join(" ")} onClick={()=>isSelected&&setSelectedCurveForEditing(curve.curve_product_id)} title={curveMetadataTitle(curve)}><input type="checkbox" checked={isSelected} onChange={(event)=>toggleDraftCurve(curve.curve_product_id,event.target.checked)}/><strong>{curve.mnemonic}</strong><span>{curve.description || curve.display_name}{coverage(curve)?` · ${coverage(curve)}`:""}{curve.run_number?` · Run ${curve.run_number}`:""}</span><em>{curve.unit??"—"}</em></label>;
-                        })}</section>)}
-                        {filtered.length===0?<div className="wlv-wbv-empty-state">No curves match this filter.</div>:null}
+                    <section className="wlv-wbv-manager-inventory-panel wlv-wbv-published-package-panel">
+                      <div className="wlv-wbv-manager-panel-title"><div><h3>Published Curve Packages</h3><span>{visiblePackages.length} shown</span></div><div className="wlv-wbv-package-filters"><button type="button" className={publishedPackageView==="available"?"is-active":""} onClick={()=>setPublishedPackageView("available")}>Available</button><button type="button" className={publishedPackageView==="archived"?"is-active":""} onClick={()=>setPublishedPackageView("archived")}>Archived</button></div></div>
+                      <div className="wlv-wbv-published-package-cards">
+                        {visiblePackages.map((item) => {
+                          const itemTracks = item.published_snapshot.tracks.filter((track) => track.assignments.length > 0);
+                          const itemCurveCount = itemTracks.reduce((total, track) => total + track.assignments.length, 0);
+                          const isSelected = item.package_uid === selectedPublishedPackageUid;
+                          return <article key={item.package_uid} className={isSelected ? "is-current" : ""}>
+                            <button type="button" className="wlv-wbv-package-card-heading" onClick={()=>setSelectedPublishedPackageUid(item.package_uid)}>
+                              <span className="wlv-wbv-package-status">{item.status}</span>
+                              <strong>{packageDisplayName(item)}</strong>
+                              <small>{itemTracks.length} curve tracks · {itemCurveCount} curves · WDV revision {item.source_wdv_revision}</small>
+                            </button>
+                          </article>;
+                        })}
+                        {visiblePackages.length===0?<div className="wlv-wbv-empty-state">{publishedPackageView==="archived"?"No archived packages.":"No WDV curve package has been published to this well."}</div>:null}
                       </div>
                     </section>
-                    <section className="wlv-wbv-manager-selected-panel">
-                      <div className="wlv-wbv-manager-panel-title"><div><h3>Curves by Track</h3><span>Assignments follow Track Layout</span></div></div>
-                      <div className="wlv-wbv-selected-curve-list">{draftTracks.filter((track)=>track.track_type==="curve").sort((a,b)=>a.display_order-b.display_order).map((track)=>{const trackCurveIds=config.selected_item_ids.filter((curveId)=>curveSettingFor(config,curveId).appearance.track_id===track.track_id).sort((a,b)=>curveSettingFor(config,a).display_order-curveSettingFor(config,b).display_order);const selectedCurveTrackId=selectedCurveForEditing?curveSettingFor(config,selectedCurveForEditing).appearance.track_id:null;return <section className={["wlv-wbv-lane-group",selectedTrackId===track.track_id?"is-target":""].filter(Boolean).join(" ")} key={track.track_id}><header onClick={()=>setSelectedTrackId(track.track_id)}><strong>{track.display_name}</strong><div className="wlv-wbv-track-group-tools"><span>{trackCurveIds.length} curve{trackCurveIds.length===1?"":"s"}</span><button type="button" disabled={!selectedCurveForEditing||selectedCurveTrackId===track.track_id} onClick={(event)=>{event.stopPropagation();if(selectedCurveForEditing)setDraftCurveTrack(selectedCurveForEditing,track.track_id);}}>Move selected here</button></div></header>{trackCurveIds.length===0?<div className="wlv-wbv-empty-track">No curves assigned. Select a curve in another track, then choose “Move selected here”.</div>:trackCurveIds.map((curveId,index)=>{const curve=curveById.get(curveId);return <div role="button" tabIndex={0} key={curveId} className={selectedCurveForEditing===curveId?"is-current":""} onClick={()=>setSelectedCurveForEditing(curveId)} onKeyDown={(event)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();setSelectedCurveForEditing(curveId);}}}><span className="wlv-wbv-lane-order">{index+1}</span><strong>{curve?.mnemonic??curveId}</strong><small>{curve?.unit??"—"}</small><select className="wlv-wbv-curve-track-select" aria-label={`Assign ${curve?.mnemonic??curveId} to track`} value={track.track_id} onClick={(event)=>event.stopPropagation()} onChange={(event)=>{event.stopPropagation();setDraftCurveTrack(curveId,event.target.value);}}>{draftTracks.filter((candidate)=>candidate.track_type==="curve").sort((a,b)=>a.display_order-b.display_order).map((candidate)=><option key={candidate.track_id} value={candidate.track_id}>{candidate.display_name}</option>)}</select><span className="wlv-wbv-selected-curve-actions"><button type="button" aria-label="Move curve up in track" disabled={index===0} onClick={(event)=>{event.stopPropagation();moveDraftCurve(curveId,-1);}}>↑</button><button type="button" aria-label="Move curve down in track" disabled={index===trackCurveIds.length-1} onClick={(event)=>{event.stopPropagation();moveDraftCurve(curveId,1);}}>↓</button><button type="button" aria-label="Remove curve" onClick={(event)=>{event.stopPropagation();toggleDraftCurve(curveId,false);}}>×</button></span></div>})}</section>})}{draftTracks.filter((track)=>track.track_type==="curve").length===0?<div className="wlv-wbv-empty-state">Create a Curve Track in Track Layout before assigning curves.</div>:null}{config.selected_item_ids.length===0?<div className="wlv-wbv-empty-state">Select a destination track, then select curves from the inventory.</div>:null}</div>
-                    </section>
-                    <section className="wlv-wbv-manager-properties-panel">
-                      <div className="wlv-wbv-manager-panel-title"><div><h3>Properties</h3><span>{selectedCurve ? `${selectedCurve.mnemonic} · ${selectedCurve.unit??"—"}` : "Select a curve to edit"}</span></div></div>
-                      {selectedCurve && selectedSetting ? <div className="wlv-wbv-curve-properties">
-                        <fieldset><legend>Scale</legend>
-                          <label className="wlv-wbv-field">Range source<select value={selectedSetting.scale.source} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,scale:{...current.scale,source:event.target.value as WbvCurveScaleSource}}))}><option value="backend_default">Backend / KR governed</option><option value="kr_curve">KR curve rule</option><option value="kr_family">KR family rule</option><option value="robust_p5_p95">Robust P5–P95</option><option value="manual">Manual</option></select></label>
-                          <div className="wlv-wbv-inline-fields"><label className="wlv-wbv-field">Minimum<input type="number" step="any" disabled={selectedSetting.scale.source!=="manual"} value={selectedSetting.scale.minimum??""} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,scale:{...current.scale,minimum:event.target.value===""?null:Number(event.target.value)}}))}/></label><label className="wlv-wbv-field">Maximum<input type="number" step="any" disabled={selectedSetting.scale.source!=="manual"} value={selectedSetting.scale.maximum??""} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,scale:{...current.scale,maximum:event.target.value===""?null:Number(event.target.value)}}))}/></label></div>
-                          <div className="wlv-wbv-inline-fields"><label className="wlv-wbv-field">Scale type<select value={selectedSetting.scale.scale_type} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,scale:{...current.scale,scale_type:event.target.value as "linear"|"logarithmic"}}))}><option value="linear">Linear</option><option value="logarithmic">Logarithmic</option></select></label><label className="wlv-wbv-field">Direction<select value={selectedSetting.scale.direction} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,scale:{...current.scale,direction:event.target.value as "normal"|"reversed",direction_source:"manual"}}))}><option value="normal">Normal</option><option value="reversed">Reverse</option></select></label></div>
-                          <label className="wlv-wbv-check-row"><input type="checkbox" checked={selectedSetting.scale.clamp_outliers} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,scale:{...current.scale,clamp_outliers:event.target.checked}}))}/><span>Clamp outliers to display envelope</span></label>
-                          <label className="wlv-wbv-check-row"><input type="checkbox" checked={selectedSetting.scale.show_clipping} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,scale:{...current.scale,show_clipping:event.target.checked}}))}/><span>Show clipped-value indicators</span></label>
-                        </fieldset>
-                        <fieldset><legend>Appearance</legend>
-                          <label className="wlv-wbv-field">Colour<input type="color" value={selectedSetting.appearance.color} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,color:event.target.value}}))}/></label>
-                          <div className="wlv-wbv-inline-fields"><label className="wlv-wbv-field">Line width<input type="number" min="0.1" max="20" step="0.1" value={selectedSetting.appearance.line_width} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,line_width:Number(event.target.value)}}))}/></label><label className="wlv-wbv-field">Opacity<input type="number" min="0" max="1" step="0.05" value={selectedSetting.appearance.opacity} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,opacity:Number(event.target.value)}}))}/></label></div>
-                          <div className="wlv-wbv-inline-fields"><label className="wlv-wbv-field">Display mode<select value={selectedSetting.appearance.display_mode} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,display_mode:event.target.value as "line"|"ribbon"}}))}><option value="line">Line</option><option value="ribbon">Ribbon</option></select></label><label className="wlv-wbv-field">Track<select value={selectedSetting.appearance.track_id ?? ""} onChange={(event)=>setDraftCurveTrack(selectedCurve.curve_product_id,event.target.value)}>{draftTracks.filter((track)=>track.track_type==="curve").sort((a,b)=>a.display_order-b.display_order).map((track)=><option key={track.track_id} value={track.track_id}>{track.display_name}</option>)}</select></label></div>
-                          <label className="wlv-wbv-field">Radial width<input type="number" min="0.1" max="10" step="0.1" value={selectedSetting.appearance.radial_width} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,radial_width:Number(event.target.value)}}))}/></label>
-                          <label className="wlv-wbv-field">Label position<select value={selectedSetting.appearance.label_position} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,label_position:event.target.value as "top"|"base"|"both"|"none",show_label:event.target.value!=="none"}}))}><option value="top">Top</option><option value="base">Base</option><option value="both">Top and base</option><option value="none">Hidden</option></select></label>
-                          <label className="wlv-wbv-check-row"><input type="checkbox" checked={selectedSetting.appearance.show_clipped_markers} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,show_clipped_markers:event.target.checked}}))}/><span>Show clipped-value markers</span></label>
-                          <div className="wlv-wbv-inline-fields"><label className="wlv-wbv-field">Fill<select value={selectedSetting.appearance.fill_mode} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,fill_mode:event.target.value as "none"|"to_baseline"|"between_curves",fill_target_curve_product_id:null}}))}><option value="none">None</option><option value="to_baseline">To baseline</option><option value="between_curves">Between curves</option></select></label>{selectedSetting.appearance.fill_mode==="between_curves"?<label className="wlv-wbv-field">Fill to curve<select value={selectedSetting.appearance.fill_target_curve_product_id??""} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,fill_target_curve_product_id:event.target.value||null}}))}><option value="">Choose curve</option>{config.selected_item_ids.filter((curveId)=>curveId!==selectedCurve.curve_product_id&&curveSettingFor(config,curveId).appearance.track_id===selectedSetting.appearance.track_id).map((curveId)=><option key={curveId} value={curveId}>{curveById.get(curveId)?.mnemonic??curveId}</option>)}</select></label>:<label className="wlv-wbv-field">Fill side<select disabled={selectedSetting.appearance.fill_mode!=="to_baseline"} value={selectedSetting.appearance.fill_side} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,fill_side:event.target.value as "positive"|"negative"}}))}><option value="positive">Positive</option><option value="negative">Negative</option></select></label>}</div>
-                          <div className="wlv-wbv-inline-fields"><label className="wlv-wbv-field">Fill colour<input type="color" disabled={selectedSetting.appearance.fill_mode==="none"} value={selectedSetting.appearance.fill_color} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,fill_color:event.target.value}}))}/></label><label className="wlv-wbv-field">Fill opacity<input type="number" min="0" max="1" step="0.05" disabled={selectedSetting.appearance.fill_mode==="none"} value={selectedSetting.appearance.fill_opacity} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,fill_opacity:Number(event.target.value)}}))}/></label></div>
-                          <div className="wlv-wbv-inline-fields"><label className="wlv-wbv-field">Baseline<select disabled={selectedSetting.appearance.fill_mode!=="to_baseline"} value={selectedSetting.appearance.fill_baseline_source} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,fill_baseline_source:event.target.value as "governed"|"manual"}}))}><option value="governed">Governed default</option><option value="manual">Manual</option></select></label><label className="wlv-wbv-field">Baseline value<input type="number" step="any" disabled={selectedSetting.appearance.fill_mode!=="to_baseline"||selectedSetting.appearance.fill_baseline_source!=="manual"} value={selectedSetting.appearance.fill_baseline_value??""} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,fill_baseline_value:event.target.value===""?null:Number(event.target.value)}}))}/></label></div>
-                          <label className="wlv-wbv-check-row"><input type="checkbox" disabled={selectedSetting.appearance.fill_mode==="none"} checked={selectedSetting.appearance.fill_outline} onChange={(event)=>updateDraftCurveSetting(selectedCurve.curve_product_id,(current)=>({...current,appearance:{...current.appearance,fill_outline:event.target.checked}}))}/><span>Show fill outline</span></label>
-                        </fieldset>
-                      </div>:<div className="wlv-wbv-empty-state">Choose a selected curve to configure its scale and appearance.</div>}
+                    <section className="wlv-wbv-manager-properties-panel wlv-wbv-published-post-panel">
+                      <div className="wlv-wbv-manager-panel-title"><div><h3>WBV Post-production</h3><span>{selectedPackage ? packageDisplayName(selectedPackage) : "Select a package"}</span></div></div>
+                      {selectedPackage && presentation ? <div className="wlv-wbv-properties-scroll">
+                        <div className="wlv-wbv-post-package-controls">
+                          <label className="wlv-wbv-check-row"><input type="checkbox" checked={presentation.package_visible} onChange={(event)=>setPublishedPresentationDraft({...presentation,package_visible:event.target.checked})}/><span>Show published package</span></label>
+                          <div className="wlv-wbv-inline-fields">
+                            <label className="wlv-wbv-field">Depth clip minimum<input type="number" step="any" value={presentation.depth_clip_min ?? ""} onChange={(event)=>setPublishedPresentationDraft({...presentation,depth_clip_min:event.target.value===""?null:Number(event.target.value)})}/></label>
+                            <label className="wlv-wbv-field">Depth clip maximum<input type="number" step="any" value={presentation.depth_clip_max ?? ""} onChange={(event)=>setPublishedPresentationDraft({...presentation,depth_clip_max:event.target.value===""?null:Number(event.target.value)})}/></label>
+                          </div>
+                        </div>
+                        <div className="wlv-wbv-post-track-list">
+                          {tracks.map((track) => {
+                            const destinationUid = trackOverride(track.track_uid).destination_track_uid;
+                            const destination = curveDestinations.find((item)=>item.track_uid===destinationUid);
+                            return <fieldset className="wlv-wbv-combined-curve-track-card" key={track.track_uid}>
+                              <legend>{track.track_name || "Curve track"}</legend>
+                              <div className="wlv-wbv-combined-track-header">
+                                <div><strong>{track.assignments.map((curve)=>curve.observed_mnemonic).join(" · ")}</strong><span>{destination ? `Displayed in ${destination.display_name}` : "Not assigned"}</span></div>
+                                <label>Display in<select value={destinationUid ?? ""} onChange={(event)=>updateTrackOverride(track.track_uid,{destination_track_uid:event.target.value||null})}><option value="">Not displayed</option>{availableDestinations(track.track_uid).map((item)=><option key={item.track_uid} value={item.track_uid}>{item.display_name} · {item.position}</option>)}</select></label>
+                              </div>
+                              {track.assignments.map((curve) => { const curveEdit=curveOverride(curve.assignment_uid); return <div className="wlv-wbv-published-curve-edit" key={curve.assignment_uid}><strong>{curve.observed_mnemonic}</strong><label><span>Visible</span><input type="checkbox" checked={curveEdit.visible ?? true} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{visible:event.target.checked})}/></label><label><span>Width</span><input type="number" min="0.1" step="0.1" value={curveEdit.line_width ?? ""} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{line_width:event.target.value===""?null:Number(event.target.value)})}/></label><label><span>Opacity</span><input type="number" min="0" max="1" step="0.05" value={curveEdit.opacity ?? ""} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{opacity:event.target.value===""?null:Number(event.target.value)})}/></label><label><span>Exaggeration</span><input type="number" min="0.01" step="0.1" value={curveEdit.radial_exaggeration ?? ""} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{radial_exaggeration:event.target.value===""?null:Number(event.target.value)})}/></label></div>;})}
+                            </fieldset>;
+                          })}
+                        </div>
+                        <button type="button" className="wlv-wbv-control-button is-primary" disabled={publishedPresentationSaving} onClick={()=>void savePublishedPresentation()}>{publishedPresentationSaving?"Saving…":"Save WBV Presentation"}</button>
+                      </div>:<div className="wlv-wbv-empty-state">Select a retained publication package.</div>}
                     </section>
                   </>;
                 }
@@ -1730,7 +1891,17 @@ export function Wellbore3DPage({
                 </>;
               })()}
             </div>
-            <footer className="wlv-wbv-layer-manager-footer"><button type="button" className="wlv-wbv-control-button" onClick={() => { if(activeLayerTab==="track_layout"){setDraftTracks(appliedTracks.map((track)=>({...track})));setDraftTrackSpacing(trackSpacing);}else{setDraftLayerConfigs((current)=>current.map((item)=>item.layer_type===activeLayerTab?defaultLayerConfig(activeLayerTab):item));} }}>Reset Tab</button><div><button type="button" className="wlv-wbv-control-button" onClick={()=>setLayerManagerOpen(false)}>Cancel</button><button type="button" className="wlv-wbv-control-button is-primary" disabled={layerManagerSaving} onClick={()=>void applyLayerManager()}>{layerManagerSaving?"Applying…":"Apply"}</button></div></footer>
+            <footer className="wlv-wbv-layer-manager-footer">
+              <div className="wlv-wbv-footer-left">
+                <button type="button" className="wlv-wbv-control-button" onClick={() => { if(activeLayerTab==="track_layout"){setDraftTracks(appliedTracks.map((track)=>({...track})));setDraftTrackSpacing(trackSpacing);}else{setDraftLayerConfigs((current)=>current.map((item)=>item.layer_type===activeLayerTab?defaultLayerConfig(activeLayerTab):item));} }}>Reset Tab</button>
+                {activeLayerTab === "curve_overlays" ? <div className="wlv-wbv-package-global-actions" aria-label="Selected package actions">
+                  <button type="button" className="wlv-wbv-control-button is-primary" disabled={!selectedPublishedPackage || selectedPublishedPackage.status === "active" || selectedPublishedPackage.status === "archived" || publishedPresentationSaving} onClick={()=>selectedPublishedPackage&&void activatePublishedPackage(selectedPublishedPackage.package_uid)}>Promote</button>
+                  <button type="button" className="wlv-wbv-control-button" disabled={!selectedPublishedPackage || selectedPublishedPackage.status === "archived" || publishedPresentationSaving} onClick={()=>{setPackageLifecycleError(null);setPendingPackageAction("archive");}}>Archive</button>
+                  <button type="button" className="wlv-wbv-control-button is-danger" disabled={!selectedPublishedPackage || publishedPresentationSaving} onClick={()=>{setPackageLifecycleError(null);setPendingPackageAction("delete");}}>Delete</button>
+                </div> : null}
+              </div>
+              <div><button type="button" className="wlv-wbv-control-button" onClick={()=>setLayerManagerOpen(false)}>Cancel</button><button type="button" className="wlv-wbv-control-button is-primary" disabled={layerManagerSaving} onClick={()=>void applyLayerManager()}>{layerManagerSaving?"Applying…":"Apply"}</button></div>
+            </footer>
           </section>
         </div>
       ) : null}

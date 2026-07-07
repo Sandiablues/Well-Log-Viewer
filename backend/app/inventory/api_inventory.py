@@ -16,6 +16,10 @@ from .models import (
     ManagedInventoryStatus,
     LoadManagedWellToWdvRequest,
     LoadManagedWellToWdvResponse,
+    ExecuteWmdCleanupRequest,
+    ExecuteWmdCleanupResponse,
+    RebuildWmdPayloadRequest,
+    RebuildWmdPayloadResponse,
     BulkLoadWdvWorkspaceRequest,
     BulkLoadWdvWorkspaceResponse,
     BulkUnloadWdvWorkspaceRequest,
@@ -29,7 +33,14 @@ from .models import (
     RegisterSeedWellResponse,
     ViewerPackageReference,
     SetActiveWdvWellRequest,
+    SetCommonDepthUnitRequest,
     WdvWorkspaceStateResponse,
+    WmdDownstreamRecoveryStatus,
+    ReconcileExportReferencesRequest,
+    ReleaseConsumerReferencesRequest,
+    ResetViewerSessionRequest,
+    ReconcileStaleConsumerReferencesRequest,
+    WmdReferenceReconciliationResponse,
 )
 from .repository import ManagedInventoryStoreError, ManagedWellNotFoundError
 from .service import ManagedWellInventoryService
@@ -95,6 +106,20 @@ def get_wdv_workspace() -> WdvWorkspaceStateResponse:
 
 
 @router.put(
+    "/wdv-workspace/common-depth-unit",
+    response_model=WdvWorkspaceStateResponse,
+    summary="Set the backend-owned Common Depth Unit for the WDV workspace",
+)
+def set_common_depth_unit(request: SetCommonDepthUnitRequest) -> WdvWorkspaceStateResponse:
+    try:
+        return _service.set_common_depth_unit(request.common_depth_unit)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+
+@router.put(
     "/wdv-workspace/active-well",
     response_model=WdvWorkspaceStateResponse,
     summary="Set the active well within the loaded multi-well WDV workspace",
@@ -150,6 +175,129 @@ def bulk_unload_wdv_workspace(request: BulkUnloadWdvWorkspaceRequest) -> BulkUnl
     except ManagedInventoryStoreError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
+
+
+@router.post(
+    "/references/export/reconcile",
+    response_model=WmdReferenceReconciliationResponse,
+    summary="Reconcile WMD references for one active export job",
+)
+def reconcile_export_references(
+    request: ReconcileExportReferencesRequest,
+) -> WmdReferenceReconciliationResponse:
+    try:
+        mapping = {item.well_reference: item.product_references for item in request.selections}
+        records = _service.reconcile_export_references(str(request.export_uid), mapping)
+        return WmdReferenceReconciliationResponse(
+            owner_id=str(request.export_uid),
+            touched_well_ids=[record.managed_well_id for record in records],
+        )
+    except ManagedWellNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/references/export/release",
+    response_model=WmdReferenceReconciliationResponse,
+    summary="Release all WMD references owned by one export job",
+)
+def release_export_references(
+    request: ReleaseConsumerReferencesRequest,
+) -> WmdReferenceReconciliationResponse:
+    records = _service.release_export_references(request.owner_uid)
+    return WmdReferenceReconciliationResponse(
+        owner_id=request.owner_uid,
+        touched_well_ids=[record.managed_well_id for record in records],
+    )
+
+
+@router.post(
+    "/references/viewer-session/reset",
+    response_model=WmdReferenceReconciliationResponse,
+    summary="Release ephemeral WBV viewer-session references",
+)
+def reset_viewer_session_references(
+    request: ResetViewerSessionRequest,
+) -> WmdReferenceReconciliationResponse:
+    records = _service.reset_viewer_session_references(owner_id=request.owner_id)
+    return WmdReferenceReconciliationResponse(
+        owner_id=request.owner_id,
+        touched_well_ids=[record.managed_well_id for record in records],
+    )
+
+
+@router.post(
+    "/references/stale/reconcile",
+    response_model=WmdReferenceReconciliationResponse,
+    summary="Release stale export, saved-workspace, and WBV references",
+)
+def reconcile_stale_consumer_references(
+    request: ReconcileStaleConsumerReferencesRequest,
+) -> WmdReferenceReconciliationResponse:
+    records = _service.reconcile_stale_consumer_references(
+        active_export_owner_ids=set(request.active_export_owner_ids),
+        active_saved_workspace_owner_ids=set(request.active_saved_workspace_owner_ids),
+        active_wbv_owner_ids=set(request.active_wbv_owner_ids),
+    )
+    return WmdReferenceReconciliationResponse(
+        touched_well_ids=[record.managed_well_id for record in records],
+    )
+
+
+@router.post(
+    "/wmd/cleanup",
+    response_model=ExecuteWmdCleanupResponse,
+    summary="Clear eligible WLV-owned transient WMD viewer payloads",
+)
+def execute_wmd_cleanup(request: ExecuteWmdCleanupRequest) -> ExecuteWmdCleanupResponse:
+    try:
+        return _service.execute_wmd_cleanup(
+            managed_well_id=request.well_reference,
+            product_ids=request.product_references or None,
+        )
+    except ManagedWellNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Managed well not found: {exc.args[0]}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+        ) from exc
+
+
+@router.post(
+    "/wmd/rebuild",
+    response_model=RebuildWmdPayloadResponse,
+    summary="Rebuild cleared transient WMD payloads from retained source provenance",
+)
+def rebuild_wmd_payload(request: RebuildWmdPayloadRequest) -> RebuildWmdPayloadResponse:
+    try:
+        return _service.rebuild_wmd_payload(
+            managed_well_id=request.well_reference,
+            product_ids=request.product_references or None,
+        )
+    except ManagedWellNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Managed well not found: {exc.args[0]}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+        ) from exc
+
+
 @router.post(
     "/load-to-wdv",
     response_model=LoadManagedWellToWdvResponse,
@@ -166,6 +314,8 @@ def load_managed_well_to_wdv(request: LoadManagedWellToWdvRequest) -> LoadManage
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Managed well not found: {exc.args[0]}",
         ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ManagedInventoryStoreError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
@@ -233,6 +383,27 @@ def get_well(managed_well_id: str) -> ManagedWellRecord:
     except ManagedInventoryStoreError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 
+
+
+@router.get(
+    "/wells/{managed_well_id}/downstream-recovery",
+    response_model=WmdDownstreamRecoveryStatus,
+    summary="Return backend-owned WMD downstream recovery status",
+)
+def get_wmd_downstream_recovery_status(
+    managed_well_id: str,
+    product_id: list[str] = Query(default=[]),
+) -> WmdDownstreamRecoveryStatus:
+    try:
+        return _service.get_wmd_downstream_recovery_status(managed_well_id, product_id)
+    except ManagedWellNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Managed well not found: {exc.args[0]}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
 @router.get(
     "/wells/{managed_well_id}/viewer-package",
     response_model=dict[str, Any],
@@ -246,6 +417,8 @@ def get_managed_well_viewer_package(managed_well_id: str) -> dict[str, Any]:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Managed well viewer package not found: {exc.args[0]}",
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ManagedInventoryStoreError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
 

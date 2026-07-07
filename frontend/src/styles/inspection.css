@@ -906,3 +906,49 @@ html, body, #root {
   min-height: 62px;
 }
 
+
+/* WLV-WSI-DIRECT-FILE-INGEST-1 */
+.wlv-si-card--setup {
+  overflow: hidden;
+}
+
+.wlv-si-repository-list--scrollable {
+  flex: 1 1 auto;
+  min-height: 90px;
+  overflow-y: auto;
+}
+
+.wlv-si-direct-ingest {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 88px;
+  padding: 12px;
+  border: 1px dashed var(--wlv-si-border);
+  border-radius: 8px;
+  background: var(--wlv-si-surface-2);
+  color: var(--wlv-si-text);
+  cursor: pointer;
+  text-align: center;
+}
+
+.wlv-si-direct-ingest:hover,
+.wlv-si-direct-ingest:focus-visible,
+.wlv-si-direct-ingest.is-drag-active {
+  border-color: var(--wlv-si-blue);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--wlv-si-blue) 18%, transparent);
+}
+
+.wlv-si-direct-ingest strong {
+  font-size: 12px;
+}
+
+.wlv-si-direct-ingest span,
+.wlv-si-direct-ingest small {
+  color: var(--wlv-si-muted);
+  font-size: 10px;
+}

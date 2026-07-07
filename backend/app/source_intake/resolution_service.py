@@ -59,11 +59,17 @@ def classify_initial_resolution(candidate: SourceFileCandidate) -> SourceIntakeR
     return SourceIntakeResolutionState.AUTO_INGESTIBLE
 
 
-def is_ingestible(candidate: SourceFileCandidate) -> bool:
+def is_wmd_eligible(candidate: SourceFileCandidate) -> bool:
+    """Return whether current review state permits transient WMD availability."""
     return candidate.resolution_state in {
         SourceIntakeResolutionState.AUTO_INGESTIBLE,
         SourceIntakeResolutionState.RESOLVED,
     }
+
+
+def is_ingestible(candidate: SourceFileCandidate) -> bool:
+    """Compatibility alias for callers not yet migrated to WMD terminology."""
+    return is_wmd_eligible(candidate)
 
 
 class SourceIntakeResolutionService:
@@ -207,6 +213,28 @@ class SourceIntakeResolutionService:
             results=results,
         )
 
+    def mark_available_to_wmd(
+        self,
+        candidate: SourceFileCandidate,
+        *,
+        actor: str | None = None,
+        reason: str | None = None,
+    ) -> None:
+        """Record transient WMD availability in the legacy resolution state slot."""
+        if candidate.resolution_state == SourceIntakeResolutionState.REGISTERED:
+            return
+        if not is_wmd_eligible(candidate):
+            raise SourceIntakeResolutionError(
+                f"Candidate resolution state is not WMD-eligible: {candidate.resolution_state.value}."
+            )
+        now = utc_now_iso()
+        # REGISTERED is retained only as the serialized compatibility value.
+        candidate.resolution_state = SourceIntakeResolutionState.REGISTERED
+        candidate.resolved_by = actor or candidate.resolved_by
+        candidate.resolved_at = now
+        candidate.resolution_reason = reason or candidate.resolution_reason
+        candidate.resolution_version += 1
+
     def mark_registered(
         self,
         candidate: SourceFileCandidate,
@@ -214,19 +242,8 @@ class SourceIntakeResolutionService:
         actor: str | None = None,
         reason: str | None = None,
     ) -> None:
-        if candidate.resolution_state == SourceIntakeResolutionState.REGISTERED:
-            return
-        if not is_ingestible(candidate):
-            raise SourceIntakeResolutionError(
-                f"Candidate resolution state is not ingestible: {candidate.resolution_state.value}."
-            )
-        previous = candidate.resolution_state
-        now = utc_now_iso()
-        candidate.resolution_state = SourceIntakeResolutionState.REGISTERED
-        candidate.resolved_by = actor or candidate.resolved_by
-        candidate.resolved_at = now
-        candidate.resolution_reason = reason or candidate.resolution_reason
-        candidate.resolution_version += 1
+        """Compatibility alias for the former permanent-registration terminology."""
+        self.mark_available_to_wmd(candidate, actor=actor, reason=reason)
 
 
     @staticmethod
@@ -326,7 +343,7 @@ class SourceIntakeResolutionService:
             occurrence_id=decision.occurrence_id,
             previous_state=previous,
             next_state=next_state,
-            ingestible=is_ingestible(candidate),
+            ingestible=is_wmd_eligible(candidate),
             message=f"Resolution state changed from {previous.value} to {next_state.value}.",
         )
 

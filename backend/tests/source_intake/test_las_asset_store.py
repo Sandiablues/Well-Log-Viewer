@@ -38,7 +38,9 @@ def test_asset_store_preserves_original_and_source_ordered_samples(tmp_path: Pat
     stored = store.preserve_path(source, source_id="source:test", filename=source.name)
 
     assert stored.source_fingerprint == hashlib.sha256(payload).hexdigest()
-    assert Path(stored.original_uri).read_bytes() == payload
+    assert Path(stored.original_uri) == source.resolve()
+    assert source.read_bytes() == payload
+    assert not list((tmp_path / "assets").rglob("original.las"))
     manifest = json.loads(Path(stored.manifest_uri).read_text())
     assert manifest["curve_count"] == 2
     assert manifest["sample_count"] == 2

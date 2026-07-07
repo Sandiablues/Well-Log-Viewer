@@ -130,21 +130,23 @@ def test_capabilities_are_assignment_addressed_and_backend_resolved(tmp_path):
     conditional = next(mode for mode in result.modes if mode.rule_type == RuleType.CONDITIONAL)
     by_uid = {item.assignment_uid: item for item in conditional.curve_b_operands}
     assert by_uid[af10.assignment_uid].eligible is True
-    assert by_uid[gr.assignment_uid].eligible is False
-    assert by_uid[gr.assignment_uid].disable_reason == "engineering_units_incompatible_or_unknown"
+    assert by_uid[gr.assignment_uid].eligible is True
+    assert by_uid[gr.assignment_uid].disable_reason is None
     crossover = next(mode for mode in result.modes if mode.rule_type == RuleType.CROSSOVER)
-    assert crossover.eligible is False
-    assert crossover.overlay_policy_uid == "density-neutron-overlay-v1"
+    assert crossover.eligible is True
+    assert crossover.overlay_policy_uid == "generic-visual-crossover-v1"
+    assert all(item.eligible for item in crossover.curve_b_operands)
 
 
-def test_density_capabilities_expose_only_approved_neutron_pair(tmp_path):
+def test_density_capabilities_expose_every_curve_pair(tmp_path):
     well, track, af10, af90, rhoz, nphi, gr, *_rest, capabilities, _current = seeded(tmp_path)
     result = capabilities.get_capabilities(well, track_uid=track, curve_a_assignment_uid=rhoz.assignment_uid)
     crossover = next(mode for mode in result.modes if mode.rule_type == RuleType.CROSSOVER)
     operands = {item.assignment_uid: item for item in crossover.curve_b_operands}
     assert crossover.eligible is True
     assert operands[nphi.assignment_uid].eligible is True
-    assert operands[af10.assignment_uid].eligible is False
+    assert operands[af10.assignment_uid].eligible is True
+    assert all(item.disable_reason is None for item in operands.values())
 
 
 def test_create_workflow_returns_resolved_session_and_only_new_geometry(tmp_path):

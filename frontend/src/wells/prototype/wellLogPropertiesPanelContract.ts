@@ -2,10 +2,15 @@ import type {
   CurveAssignment,
   CurveCatalogItem,
   SelectionRef,
-  WellHeader,
   WellLogTrack,
 } from './trackLayoutModel';
 import { curveById, orderedCurves, resolveTrackLattice } from './trackLayoutModel';
+import type { WdvIdentityMetadataContract, WdvMetadataSection, WdvMetadataValue } from '../contracts/wdvIdentityMetadataContract';
+import { metadataSection } from '../contracts/wdvIdentityMetadataContract';
+import type {
+  ManagedCurveSampleContractsByCurveId,
+  ManagedCurveSamplesPayload,
+} from './managedCurveSamples';
 
 export type PropertiesPanelTabKey = 'design' | 'info';
 
@@ -44,15 +49,14 @@ export interface PropertiesPanelContract {
   };
 }
 
-export type CurveSampleTuple = readonly [number, number];
-
 export interface ResolvePrototypePropertiesPanelArgs {
   tracks: WellLogTrack[];
   selection: SelectionRef;
   curveCatalog: CurveCatalogItem[];
-  wellHeader: WellHeader;
-  curveSamplesByCurveId: Record<string, CurveSampleTuple[]>;
-  fullDepthRange: { min: number; max: number };
+  managedSampleContractsByCurveId: ManagedCurveSampleContractsByCurveId;
+  managedSampleErrorsByCurveId: Record<string, string>;
+  wdvIdentityMetadata: WdvIdentityMetadataContract | null;
+  wdvIdentityMetadataError: string | null;
 }
 
 function valueText(value: unknown): string {
@@ -76,60 +80,33 @@ function selectedAssignmentFrom(track: WellLogTrack, selection: SelectionRef): C
   return orderedCurves(track)[0] ?? null;
 }
 
-function sampleStats(samples: CurveSampleTuple[] | undefined) {
-  if (!samples || samples.length === 0) {
-    return {
-      count: '0',
-      depthRange: 'Not supplied',
-      valueRange: 'Not supplied',
-      sampleStep: 'Not supplied',
-      nullStatus: 'Not parsed in current fixture',
-    };
+function compactNumber(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'Not supplied';
+  return Number(value.toPrecision(7)).toString();
+}
+
+function contractForAssignment(
+  assignment: CurveAssignment,
+  contracts: ManagedCurveSampleContractsByCurveId,
+): ManagedCurveSamplesPayload | null {
+  const keys = [
+    assignment.curveId,
+    assignment.curveUid,
+  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+  for (const key of keys) {
+    const contract = contracts[key];
+    if (contract) return contract;
   }
+  return null;
+}
 
-  let minDepth = Number.POSITIVE_INFINITY;
-  let maxDepth = Number.NEGATIVE_INFINITY;
-  let minValue = Number.POSITIVE_INFINITY;
-  let maxValue = Number.NEGATIVE_INFINITY;
-
-  samples.forEach(([depth, value]) => {
-    if (Number.isFinite(depth)) {
-      minDepth = Math.min(minDepth, depth);
-      maxDepth = Math.max(maxDepth, depth);
-    }
-
-    if (Number.isFinite(value)) {
-      minValue = Math.min(minValue, value);
-      maxValue = Math.max(maxValue, value);
-    }
-  });
-
-  let sampleStep = 'Not supplied';
-  if (samples.length > 1) {
-    const diffs: number[] = [];
-    for (let i = 1; i < Math.min(samples.length, 200); i += 1) {
-      const diff = samples[i][0] - samples[i - 1][0];
-      if (Number.isFinite(diff) && diff > 0) diffs.push(Number(diff.toFixed(6)));
-    }
-
-    if (diffs.length > 0) {
-      const sorted = [...diffs].sort((a, b) => a - b);
-      const median = sorted[Math.floor(sorted.length / 2)];
-      sampleStep = String(Number(median.toFixed(4)));
-    }
-  }
-
-  return {
-    count: String(samples.length),
-    depthRange: Number.isFinite(minDepth) && Number.isFinite(maxDepth)
-      ? `${minDepth.toFixed(1)}–${maxDepth.toFixed(1)}`
-      : 'Not supplied',
-    valueRange: Number.isFinite(minValue) && Number.isFinite(maxValue)
-      ? `${Number(minValue.toFixed(4))}–${Number(maxValue.toFixed(4))}`
-      : 'Not supplied',
-    sampleStep,
-    nullStatus: 'Null count not parsed in current fixture',
-  };
+function backendSampleStatus(contract: ManagedCurveSamplesPayload): string {
+  const rejected = contract.rejected_sample_count ?? 0;
+  const nulls = contract.rejected_null_count ?? 0;
+  const sentinels = contract.rejected_sentinel_count ?? 0;
+  const nonfinite = contract.rejected_nonfinite_count ?? 0;
+  return `${rejected} rejected (${nulls} null, ${sentinels} sentinel, ${nonfinite} non-finite)`;
 }
 
 function selectedEntityFor(
@@ -261,134 +238,139 @@ function curveMetadataSection(
   track: WellLogTrack,
   assignment: CurveAssignment | null,
   curveCatalog: CurveCatalogItem[],
-  curveSamplesByCurveId: Record<string, CurveSampleTuple[]>,
+  contracts: ManagedCurveSampleContractsByCurveId,
+  errors: Record<string, string>,
 ): PropertiesPanelSection | null {
   if (track.trackType !== 'curve' || !assignment) return null;
 
   const curve = curveById(curveCatalog, assignment.curveId);
-  const stats = sampleStats(curveSamplesByCurveId[curve.curveId]);
+  const sampleContract = contractForAssignment(assignment, contracts);
+  const contractError = errors[assignment.curveUid ?? ''] ?? errors[assignment.curveId] ?? null;
+
+  if (!sampleContract) {
+    return {
+      sectionId: 'curve-metadata',
+      title: 'Curve Metadata',
+      rows: [{
+        label: 'Contract status',
+        value: contractError ?? 'Backend curve sample contract not yet available',
+        source: 'Backend curve sample contract',
+      }],
+    };
+  }
+
+  const mnemonic = sampleContract.observed_mnemonic
+    ?? assignment.observedMnemonic
+    ?? curve.mnemonic;
+  const description = assignment.displayName
+    ?? sampleContract.display_name
+    ?? curve.description;
+  const unit = sampleContract.value_unit ?? assignment.unit ?? curve.unit;
+  const family = sampleContract.curve_family
+    ?? assignment.curveFamily
+    ?? curve.curveClass;
+  const sampleSource = sampleContract.provenance?.sample_source ?? 'managed curve sample service';
 
   return {
     sectionId: 'curve-metadata',
     title: 'Curve Metadata',
     rows: [
-      { label: 'Mnemonic', value: curve.mnemonic, source: 'LAS curve section' },
-      { label: 'Description', value: curve.description, source: 'LAS curve section' },
-      { label: 'Unit', value: curve.unit, source: 'LAS curve section' },
-      { label: 'Curve class', value: curve.curveClass, source: 'Prototype classification' },
-      { label: 'Recognized', value: valueText(curve.recognised), source: 'Prototype classification' },
-      { label: 'Sample count', value: stats.count, source: 'LAS sample fixture' },
-      { label: 'Sample value range', value: stats.valueRange, unit: curve.unit, source: 'LAS sample fixture' },
-      { label: 'Null status', value: stats.nullStatus, source: 'Current parser limitation' },
+      { label: 'Mnemonic', value: valueText(mnemonic), source: 'Backend curve sample contract' },
+      { label: 'Description', value: valueText(description), source: 'Backend WDV assignment contract' },
+      { label: 'Unit', value: valueText(unit), source: 'Backend curve sample contract' },
+      { label: 'Curve family', value: valueText(family), source: 'Backend curve sample contract' },
+      { label: 'Managed curve UID', value: valueText(sampleContract.managed_curve_uid), source: 'Backend curve sample contract' },
+      { label: 'Sample count', value: valueText(sampleContract.sample_count), source: 'Backend curve sample contract' },
+      { label: 'Raw numeric count', value: valueText(sampleContract.raw_numeric_sample_count), source: 'Backend curve sample contract' },
+      {
+        label: 'Curve depth range',
+        value: `${compactNumber(sampleContract.depth_min)}–${compactNumber(sampleContract.depth_max)}`,
+        unit: sampleContract.depth_unit ?? undefined,
+        source: 'Backend curve sample contract',
+      },
+      {
+        label: 'Sample value range',
+        value: `${compactNumber(sampleContract.value_min)}–${compactNumber(sampleContract.value_max)}`,
+        unit: unit ?? undefined,
+        source: 'Backend curve sample contract',
+      },
+      {
+        label: 'Robust value range (P5–P95)',
+        value: `${compactNumber(sampleContract.robust_value_min)}–${compactNumber(sampleContract.robust_value_max)}`,
+        unit: unit ?? undefined,
+        source: 'Backend curve sample contract',
+      },
+      { label: 'Rejected samples', value: backendSampleStatus(sampleContract), source: 'Backend curve sample contract' },
+      { label: 'Decimation stride', value: valueText(sampleContract.decimation_stride), source: 'Backend curve sample contract' },
+      { label: 'Sample source', value: valueText(sampleSource), source: 'Backend curve sample provenance' },
     ],
   };
+}
+
+function contractValueText(item: WdvMetadataValue): string {
+  return valueText(item.value);
+}
+
+function contractRows(
+  section: WdvMetadataSection | null,
+  source = 'Backend WDV metadata contract',
+): PropertiesPanelRow[] {
+  if (!section) return [];
+  return section.values.map((item) => ({
+    label: item.label,
+    value: contractValueText(item),
+    unit: item.unit ?? undefined,
+    source,
+  }));
+}
+
+function unavailableMetadataRows(error: string | null): PropertiesPanelRow[] {
+  return [{
+    label: 'Contract status',
+    value: error ?? 'Backend metadata not yet available',
+    source: 'Backend WDV metadata contract',
+  }];
 }
 
 function logMetadataSection(
-  wellHeader: WellHeader,
-  fullDepthRange: { min: number; max: number },
-  selectedAssignment: CurveAssignment | null,
-  curveSamplesByCurveId: Record<string, CurveSampleTuple[]>,
+  metadata: WdvIdentityMetadataContract | null,
+  error: string | null,
 ): PropertiesPanelSection {
-  const stats = selectedAssignment ? sampleStats(curveSamplesByCurveId[selectedAssignment.curveId]) : null;
-
-  const rows: PropertiesPanelRow[] = [
-    { label: 'Source LAS file', value: valueText(wellHeader.sourceFile), source: 'LAS fixture' },
-    { label: 'LAS version', value: valueText(wellHeader.lasVersion), source: 'LAS ~VERSION' },
-    { label: 'Wrap mode', value: valueText(wellHeader.lasWrap), source: 'LAS ~VERSION' },
-    { label: 'LAS producer', value: valueText(wellHeader.lasProducer), source: 'LAS ~VERSION' },
-    { label: 'LAS program', value: valueText(wellHeader.lasProgram), source: 'LAS ~VERSION' },
-    { label: 'LAS creation date', value: valueText(wellHeader.lasCreationDate), source: 'LAS ~VERSION' },
-    { label: 'DLIS creation date', value: valueText(wellHeader.dlisCreationDate), source: 'LAS ~VERSION' },
-    { label: 'DLIS source name', value: valueText(wellHeader.dlisSourceName), source: 'LAS ~VERSION' },
-    { label: 'Log date', value: valueText(wellHeader.logDate), source: 'LAS ~WELL' },
-    { label: 'Service company', value: valueText(wellHeader.serviceCompany), source: 'LAS ~WELL' },
-    { label: 'Run number', value: valueText(wellHeader.runNumber), source: 'LAS ~PARAMETER' },
-    { label: 'Logging unit location', value: valueText(wellHeader.loggingUnitLocation), source: 'LAS ~PARAMETER' },
-    { label: 'Logging unit number', value: valueText(wellHeader.loggingUnitNumber), source: 'LAS ~PARAMETER' },
-    { label: 'Service order number', value: valueText(wellHeader.serviceOrderNumber), source: 'LAS ~PARAMETER' },
-    { label: 'Start depth', value: valueText(wellHeader.startDepth ?? wellHeader.logStart), source: 'LAS STRT' },
-    { label: 'Stop depth', value: valueText(wellHeader.stopDepth ?? wellHeader.logEnd), source: 'LAS STOP' },
-    { label: 'Step', value: valueText(wellHeader.step), source: 'LAS STEP' },
-    { label: 'Null value', value: valueText(wellHeader.nullValue), source: 'LAS NULL' },
-    { label: 'Top log interval', value: valueText(wellHeader.topLogInterval), source: 'LAS TLI' },
-    { label: 'Bottom log interval', value: valueText(wellHeader.bottomLogInterval), source: 'LAS BLI' },
-    { label: 'Driller TD', value: valueText(wellHeader.drillerTotalDepth), source: 'LAS TDD' },
-    { label: 'Logger TD', value: valueText(wellHeader.loggerTotalDepth), source: 'LAS TDL' },
-    { label: 'Drilling measured from', value: valueText(wellHeader.drillingMeasuredFrom), source: 'LAS DMF' },
-    { label: 'Logging measured from', value: valueText(wellHeader.loggingMeasuredFrom), source: 'LAS LMF' },
-    { label: 'Depth reference above permanent datum', value: valueText(wellHeader.depthReferenceAbovePermanentDatum), source: 'LAS APD' },
-    { label: 'Full fixture MD range', value: `${fullDepthRange.min}–${fullDepthRange.max}`, unit: 'ft', source: 'Parsed sample fixture' },
+  const rows = [
+    ...contractRows(metadataSection(metadata, 'source')),
+    ...contractRows(metadataSection(metadata, 'depth')),
   ];
-
-  if (stats) {
-    rows.push(
-      { label: 'Selected-curve MD range', value: stats.depthRange, unit: 'ft', source: 'LAS sample fixture' },
-      { label: 'Selected-curve sample step', value: stats.sampleStep, unit: 'ft', source: 'Derived from samples' },
-    );
-  }
-
   return {
     sectionId: 'log-metadata',
     title: 'Log Metadata',
-    rows,
+    rows: rows.length > 0 ? rows : unavailableMetadataRows(error),
   };
 }
 
-function wellMetadataSection(wellHeader: WellHeader): PropertiesPanelSection {
+function wellMetadataSection(
+  metadata: WdvIdentityMetadataContract | null,
+  error: string | null,
+): PropertiesPanelSection {
+  const rows = contractRows(metadataSection(metadata, 'well'));
   return {
     sectionId: 'well-metadata',
     title: 'Well Metadata',
-    rows: [
-      { label: 'Well', value: valueText(wellHeader.wellName), source: 'LAS WELL / WN' },
-      { label: 'Wellbore', value: valueText(wellHeader.wellboreName), source: 'Prototype assignment' },
-      { label: 'Field', value: valueText(wellHeader.field), source: 'LAS FLD / FN' },
-      { label: 'Operator / company', value: valueText(wellHeader.operator ?? wellHeader.companyName), source: 'LAS COMP / CN' },
-      { label: 'Country', value: valueText(wellHeader.country), source: 'LAS CTRY / NATI' },
-      { label: 'State', value: valueText(wellHeader.state), source: 'LAS STAT' },
-      { label: 'County', value: valueText(wellHeader.county), source: 'LAS CNTY / COUN' },
-      { label: 'Location', value: valueText(wellHeader.fieldLocation), source: 'LAS LOC / FL' },
-      { label: 'Location line 1', value: valueText(wellHeader.fieldLocationLine1), source: 'LAS FL1' },
-      { label: 'API number', value: valueText(wellHeader.apiNumber), source: 'LAS API / APIN' },
-      { label: 'UWI', value: valueText(wellHeader.uniqueWellId), source: 'LAS UWI' },
-      { label: 'Latitude', value: valueText(wellHeader.latitude), source: 'LAS LATI' },
-      { label: 'Longitude', value: valueText(wellHeader.longitude), source: 'LAS LONG' },
-      { label: 'Permanent datum', value: valueText(wellHeader.permanentDatum), source: 'LAS PDAT' },
-      { label: 'Ground level elevation', value: valueText(wellHeader.groundElevation ?? wellHeader.gl), source: 'LAS EGL / EPD' },
-      { label: 'KB elevation', value: valueText(wellHeader.kbElevation ?? wellHeader.kb), source: 'LAS EKB' },
-      { label: 'Permanent datum elevation', value: valueText(wellHeader.permanentDatumElevation), source: 'LAS EPD' },
-      { label: 'TVD status', value: valueText(wellHeader.tvdStatus), source: 'Prototype normalization' },
-      { label: 'MSI identity', value: valueText(wellHeader.msiIdentity), source: 'Prototype MSI status' },
-    ],
+    rows: rows.length > 0 ? rows : unavailableMetadataRows(error),
   };
 }
 
 function qaqcMetadataSection(
-  track: WellLogTrack,
-  assignment: CurveAssignment | null,
-  curveCatalog: CurveCatalogItem[],
+  metadata: WdvIdentityMetadataContract | null,
+  error: string | null,
 ): PropertiesPanelSection {
-  const rows: PropertiesPanelRow[] = [
-    { label: 'Metadata scope', value: 'Prototype LAS fixture with verified header fields', source: 'Current implementation' },
-    { label: 'Backend authority', value: 'Planned MSI / well-log metadata service', source: 'Architecture target' },
-  ];
-
-  if (track.trackType === 'curve' && assignment) {
-    const curve = curveById(curveCatalog, assignment.curveId);
-    rows.push(
-      { label: 'Curve recognition', value: curve.recognised ? 'Recognized' : 'Unrecognized', source: 'Prototype classification' },
-      { label: 'Display scale source', value: 'Current viewer assignment', source: 'Viewer layout contract' },
-    );
-  }
-
-  rows.push(
-    { label: 'Known parser gap', value: 'Header parser should populate these fields automatically from LAS, not hard-coded fixture data', source: 'WLV-METADATA-1' },
+  const rows = contractRows(
+    metadataSection(metadata, 'registration'),
+    'Backend registration/provenance contract',
   );
-
   return {
     sectionId: 'qaqc-metadata',
     title: 'QAQC / Derived Metadata',
-    rows,
+    rows: rows.length > 0 ? rows : unavailableMetadataRows(error),
   };
 }
 
@@ -398,10 +380,10 @@ export function resolvePrototypePropertiesPanelContract(args: ResolvePrototypePr
   const selectedEntity = selectedEntityFor(selectedTrack, selectedAssignment, args.curveCatalog);
 
   const infoSections: PropertiesPanelSection[] = [
-    curveMetadataSection(selectedTrack, selectedAssignment, args.curveCatalog, args.curveSamplesByCurveId),
-    logMetadataSection(args.wellHeader, args.fullDepthRange, selectedAssignment, args.curveSamplesByCurveId),
-    wellMetadataSection(args.wellHeader),
-    qaqcMetadataSection(selectedTrack, selectedAssignment, args.curveCatalog),
+    curveMetadataSection(selectedTrack, selectedAssignment, args.curveCatalog, args.managedSampleContractsByCurveId, args.managedSampleErrorsByCurveId),
+    logMetadataSection(args.wdvIdentityMetadata, args.wdvIdentityMetadataError),
+    wellMetadataSection(args.wdvIdentityMetadata, args.wdvIdentityMetadataError),
+    qaqcMetadataSection(args.wdvIdentityMetadata, args.wdvIdentityMetadataError),
   ].filter((section): section is PropertiesPanelSection => Boolean(section));
 
   return {

@@ -20,6 +20,7 @@ from typing import Any, Optional
 from .alias_enrichment_models import AliasEnrichmentRecord
 from .managed_models import AliasRecord, CurveDefinitionRecord, DisplayRuleRecord
 from .runtime_resolver import ApprovedKnowledgeRuntimeResolver, RuntimeKnowledgePolicy
+from .contextual_curve_resolver import ContextualResolution, resolve_contextual_curve
 
 KR_CLASSIFY_1_VERSION = "kr-classify-1"
 
@@ -29,6 +30,7 @@ _CLASSIFICATION_STATUS_REQUIRES_REVIEW = "requires_review"
 
 _RESOLUTION_SOURCE_ALIAS = "runtime_alias"
 _RESOLUTION_SOURCE_CANONICAL = "runtime_canonical"
+_RESOLUTION_SOURCE_CONTEXTUAL = "runtime_contextual_consensus"
 _RESOLUTION_SOURCE_UNRESOLVED = "unresolved"
 
 
@@ -245,10 +247,17 @@ class RuntimeCurveClassificationService:
                 enrichment=None,
             )
 
+        contextual = resolve_contextual_curve(
+            source_mnemonic=curve.source_mnemonic,
+            description=curve.description,
+            unit=curve.unit,
+            curve_definitions=curve_defs,
+        )
+        if contextual is not None:
+            return self._contextual_result(curve, normalized, policy, contextual, display_rules)
+
         return self._unknown_result(
-            curve,
-            normalized,
-            policy,
+            curve, normalized, policy,
             warnings=["No approved runtime knowledge match found"],
         )
 
@@ -365,6 +374,23 @@ class RuntimeCurveClassificationService:
             display_rule=display_rule,
             warnings=[],
             knowledge_policy=policy.as_dict(),
+        )
+
+    @staticmethod
+    def _contextual_result(curve, normalized, policy, contextual: ContextualResolution, display_rules):
+        display_rule = RuntimeCurveClassificationService._display_rule_for(display_rules, contextual.canonical_curve_id) if contextual.canonical_curve_id else None
+        warnings = list(contextual.warnings)
+        if contextual.supporting_record_ids:
+            warnings.append("Supporting approved KR records: " + ", ".join(contextual.supporting_record_ids[:8]))
+        return CurveClassificationResult(
+            curve_id=curve.curve_id, source_curve_index=curve.source_curve_index,
+            source_mnemonic=curve.source_mnemonic, normalized_mnemonic=normalized,
+            status=_CLASSIFICATION_STATUS_RESOLVED, resolved=True, requires_review=False,
+            canonical_curve_id=contextual.canonical_curve_id, display_name=contextual.display_name,
+            family=contextual.family, product_group=contextual.product_group, product_subgroup=contextual.product_subgroup,
+            default_unit=contextual.default_unit, confidence=contextual.confidence,
+            resolution_source=_RESOLUTION_SOURCE_CONTEXTUAL, knowledge_record_id=contextual.knowledge_record_id,
+            display_rule=display_rule, warnings=warnings, knowledge_policy=policy.as_dict(),
         )
 
     @staticmethod

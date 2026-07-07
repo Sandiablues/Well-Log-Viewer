@@ -19,6 +19,7 @@ from .models import ManagedProductGroupItem, ManagedWellRecord
 from .repository import ManagedWellInventoryRepository, ManagedWellNotFoundError
 
 from .dlis_sample_reader import DlisSampleReaderError, read_dlis_curve_samples
+from app.source_intake.depth_units import clean_depth_value, convert_depth_to_target
 
 
 class CurveSampleServiceError(ValueError):
@@ -44,8 +45,12 @@ class CurveSampleService:
             provenance_path = sample_store
         elif source_path is not None:
             parsed, sample_source = _read_source_curve_samples(
-                source_path=source_path, curve_mnemonic=item.curve_name or item.display_name,
-                max_samples=max_samples, source_kind=item.source_kind, provenance=item.provenance,
+                source_path=source_path,
+                curve_mnemonic=item.curve_name or item.display_name,
+                max_samples=max_samples,
+                source_kind=item.source_kind,
+                provenance=item.provenance,
+                target_depth_unit=record.depth_unit,
             )
             provenance_path = source_path
         else:
@@ -229,7 +234,15 @@ def _read_managed_las_curve_samples(sample_store: Path, source_curve_index: int,
 
 
 
-def _read_source_curve_samples(*, source_path: Path, curve_mnemonic: str, max_samples: int, source_kind: str | None = None, provenance: dict[str, Any] | None = None) -> tuple[dict[str, Any], str]:
+def _read_source_curve_samples(
+    *,
+    source_path: Path,
+    curve_mnemonic: str,
+    max_samples: int,
+    source_kind: str | None = None,
+    provenance: dict[str, Any] | None = None,
+    target_depth_unit: str | None = None,
+) -> tuple[dict[str, Any], str]:
     provenance = provenance if isinstance(provenance, dict) else {}
     kind = str(source_kind or provenance.get("source_format") or "").lower()
     if kind == "dlis":
@@ -238,11 +251,22 @@ def _read_source_curve_samples(*, source_path: Path, curve_mnemonic: str, max_sa
             logical_file_id=str(provenance.get("dlis_logical_file_id") or "") or None,
             frame_id=str(provenance.get("dlis_frame_id") or "") or None,
             channel_mnemonic=str(provenance.get("dlis_channel_mnemonic") or curve_mnemonic),
+            target_depth_unit=target_depth_unit,
         ), "dlis_original_path"
-    return _read_las_curve_samples(source_path, curve_mnemonic, max_samples), "las_original_path"
+    return _read_las_curve_samples(
+        source_path,
+        curve_mnemonic,
+        max_samples,
+        target_depth_unit=target_depth_unit,
+    ), "las_original_path"
 
 
-def _read_las_curve_samples(source_path: Path, curve_mnemonic: str, max_samples: int) -> dict[str, Any]:
+def _read_las_curve_samples(
+    source_path: Path,
+    curve_mnemonic: str,
+    max_samples: int,
+    target_depth_unit: str | None = None,
+) -> dict[str, Any]:
     text = source_path.read_text(encoding="utf-8", errors="replace")
     sections = _split_las_sections(text)
     curve_lines = _parse_curve_section(sections.get("C") or sections.get("CURVE") or [])
@@ -300,7 +324,15 @@ def _read_las_curve_samples(source_path: Path, curve_mnemonic: str, max_samples:
             rejected_plausibility_count += 1
             continue
 
-        samples.append([depth, value])
+        render_depth = (
+            clean_depth_value(convert_depth_to_target(depth, depth_unit, target_depth_unit))
+            if target_depth_unit is not None
+            else depth
+        )
+        samples.append([render_depth, value])
+
+    if target_depth_unit is not None:
+        depth_unit = str(target_depth_unit).strip().casefold()
 
     if not samples:
         raise CurveSampleServiceError(f"No valid numeric samples found for curve {curve_mnemonic}: {source_path}")

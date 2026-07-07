@@ -8,7 +8,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.curve_fill_v2.models import Boundary, Comparison, RuleType
-from app.curve_fill_v2.policy import DENSITY_NEUTRON_V1
+from app.curve_fill_v2.policy import GENERIC_VISUAL_CROSSOVER_V1
 from app.curve_fill_v2.paint_catalog import PATTERNS, load_rasters
 from app.identity.wdv_contract_v2 import WdvCanonicalAssignment
 from app.wdv_session.canonical_service import CanonicalWdvSessionService
@@ -103,25 +103,8 @@ class CanonicalCurveFillCapabilityService:
             raise CurveFillCapabilityError("Curve A assignment is not in the target track")
 
         others = tuple(item for item in track.assignments if item.assignment_uid != assignment_a.assignment_uid)
-        conditional = []
-        for item in others:
-            unit_a = (assignment_a.unit or "").strip().lower()
-            unit_b = (item.unit or "").strip().lower()
-            eligible = bool(unit_a and unit_b and unit_a == unit_b)
-            reason = None if eligible else "engineering_units_incompatible_or_unknown"
-            conditional.append(self._operand(item, eligible=eligible, reason=reason))
-
-        family_a = (assignment_a.curve_family or "").strip().lower()
-        crossover = []
-        for item in others:
-            family_b = (item.curve_family or "").strip().lower()
-            eligible = family_a in DENSITY_NEUTRON_V1.primary_families and family_b in DENSITY_NEUTRON_V1.comparison_families
-            reason = None if eligible else "not_approved_for_density_neutron_overlay"
-            crossover.append(self._operand(item, eligible=eligible, reason=reason))
-
-        conditional_ok = any(item.eligible for item in conditional)
-        crossover_ok = any(item.eligible for item in crossover)
-        between = tuple(self._operand(item, eligible=True) for item in others)
+        operands = tuple(self._operand(item, eligible=True) for item in others)
+        has_curve_b = bool(operands)
         modes = (
             CurveFillModeCapability(
                 rule_type=RuleType.TO_BOUNDARY,
@@ -130,24 +113,24 @@ class CanonicalCurveFillCapabilityService:
             ),
             CurveFillModeCapability(
                 rule_type=RuleType.BETWEEN_CURVES,
-                eligible=bool(between),
-                disable_reason=None if between else "no_curve_b_assignment",
-                curve_b_operands=between,
+                eligible=has_curve_b,
+                disable_reason=None if has_curve_b else "no_curve_b_assignment",
+                curve_b_operands=operands,
             ),
             CurveFillModeCapability(
                 rule_type=RuleType.CONDITIONAL,
-                eligible=conditional_ok,
-                disable_reason=None if conditional_ok else "no_unit_compatible_curve_b_assignment",
+                eligible=has_curve_b,
+                disable_reason=None if has_curve_b else "no_curve_b_assignment",
                 comparisons=(Comparison.GREATER_THAN, Comparison.LESS_THAN),
-                curve_b_operands=tuple(conditional),
+                curve_b_operands=operands,
             ),
             CurveFillModeCapability(
                 rule_type=RuleType.CROSSOVER,
-                eligible=crossover_ok,
-                disable_reason=None if crossover_ok else "no_backend_approved_crossover_pair",
-                overlay_policy_uid=DENSITY_NEUTRON_V1.uid,
-                overlay_policy_revision=DENSITY_NEUTRON_V1.revision,
-                curve_b_operands=tuple(crossover),
+                eligible=has_curve_b,
+                disable_reason=None if has_curve_b else "no_curve_b_assignment",
+                overlay_policy_uid=GENERIC_VISUAL_CROSSOVER_V1.uid,
+                overlay_policy_revision=GENERIC_VISUAL_CROSSOVER_V1.revision,
+                curve_b_operands=operands,
             ),
         )
         return CurveFillCapabilities(

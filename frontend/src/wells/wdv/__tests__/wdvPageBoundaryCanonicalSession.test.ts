@@ -12,6 +12,9 @@
  * 12.    WdvPageBoundary component export regression guard
  */
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   looksLikeUuid,
@@ -997,5 +1000,24 @@ describe('Curve Fill workflow interaction preservation', () => {
         'depth-track',
       ),
     ).toEqual({ kind: 'track', trackId: 'depth-track' });
+  });
+});
+
+
+describe('WDV curve-property selection persistence', () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const source = readFileSync(resolve(here, '../WdvPageBoundary.tsx'), 'utf8');
+
+  it('preserves the selected curve when an assignment property mutation returns a canonical session', () => {
+    expect(source).toContain('applyCanonicalSession(rawSession, { preserveInteraction: true });');
+  });
+
+  it('preserves the selected curve when an assignment property mutation resolves a 409 refresh', () => {
+    expect(source).toContain('await refreshCanonicalSession({ preserveInteraction: true });');
+  });
+
+  it('does not globally force interaction preservation for unrelated canonical workflows', () => {
+    expect(source).toContain('options: Readonly<{ preserveInteraction?: boolean }> = {}');
+    expect(source).toContain('if (fresh) applyCanonicalSession(fresh, options);');
   });
 });

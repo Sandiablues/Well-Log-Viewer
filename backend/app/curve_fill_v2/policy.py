@@ -26,13 +26,24 @@ DENSITY_NEUTRON_V1 = OverlayPolicy(
     polarity="a_right_of_b",
 )
 
+GENERIC_VISUAL_CROSSOVER_V1 = OverlayPolicy(
+    uid="generic-visual-crossover-v1",
+    revision="approved-2026-07-05",
+    primary_families=frozenset(),
+    comparison_families=frozenset(),
+    polarity="a_right_of_b",
+)
+
 
 class CurveFillPolicyError(ValueError):
     pass
 
 
 class CurveFillPolicyRegistry:
-    _policies = {(DENSITY_NEUTRON_V1.uid, DENSITY_NEUTRON_V1.revision): DENSITY_NEUTRON_V1}
+    _policies = {
+        (DENSITY_NEUTRON_V1.uid, DENSITY_NEUTRON_V1.revision): DENSITY_NEUTRON_V1,
+        (GENERIC_VISUAL_CROSSOVER_V1.uid, GENERIC_VISUAL_CROSSOVER_V1.revision): GENERIC_VISUAL_CROSSOVER_V1,
+    }
 
     @classmethod
     def require(cls, uid: str, revision: str) -> OverlayPolicy:

@@ -12,6 +12,7 @@ import math
 
 from app.inventory.models import ManagedProductGroupItem, ManagedWdvState, ManagedWmdpState, ManagedWellRecord, utc_now_iso
 from app.inventory.repository import ManagedWellInventoryRepository
+from app.inventory.service import ManagedWellInventoryService
 from app.inventory.wdv_workspace import WdvWorkspaceService
 from app.inventory.curve_sample_service import CurveSampleService
 from app.curve_display.contract_service import (
@@ -67,6 +68,7 @@ class WbvService:
         self.repository = repository or ManagedWellInventoryRepository()
         self.curve_sample_service = CurveSampleService(self.repository)
         self.curve_display_contract_service = BackendCurveDisplayContractService()
+        self.inventory_service = ManagedWellInventoryService(repository=self.repository)
         self._workspace_service: WdvWorkspaceService | None = None
 
     def _workspace(self) -> WdvWorkspaceService:
@@ -90,6 +92,7 @@ class WbvService:
         workspace = self._workspace().get_workspace()
         managed_well_id = workspace.active_managed_well_id
         if not managed_well_id:
+            self.inventory_service.reconcile_wbv_session_reference(None)
             return WbvSessionContract(
                 viewer_state=WbvViewerState.NOT_LOADED,
                 warnings=[
@@ -102,10 +105,13 @@ class WbvService:
                 ],
             )
 
-        record = self.repository.get_record(managed_well_id)
+        record = self.inventory_service.reconcile_wbv_session_reference(managed_well_id)
+        if record is None:
+            raise ValueError("Backend WDV workspace did not resolve an active WBV well.")
         state, coordinate_mode, warnings = self._viewer_state_for_record(record)
         return WbvSessionContract(
             active_managed_well_id=record.managed_well_id,
+            active_managed_well_uid=record.managed_well_uid,
             well_id=record.well_id,
             well_name=record.well_name,
             viewer_state=state,
@@ -123,7 +129,17 @@ class WbvService:
         return self.get_session()
 
     def get_viewer_package(self, managed_well_id: str) -> WbvViewerPackageContract:
-        record = self.repository.get_record(managed_well_id)
+        workspace = self._workspace().get_workspace()
+        if workspace.active_managed_well_id is None:
+            # Preserve the existing read-only NOT_LOADED package contract. No WBV
+            # lifecycle reference is acquired without a backend-owned active well.
+            record = self.repository.get_record(managed_well_id)
+        else:
+            if workspace.active_managed_well_id != managed_well_id:
+                raise ValueError("WBV viewer package must match the backend-owned active WDV workspace well.")
+            record = self.inventory_service.reconcile_wbv_session_reference(managed_well_id)
+            if record is None:
+                raise ValueError("Backend WDV workspace did not resolve an active WBV well.")
         state, coordinate_mode, warnings = self._viewer_state_for_record(record)
         source_unit = self._source_depth_unit(record)
         display_unit = self._display_depth_unit(record, source_unit)

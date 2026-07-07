@@ -1,12 +1,14 @@
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { curveCatalog, defaultDepthRange, fullDepthRange } from '../prototype/realLasTrackLayoutData';
+import { curveCatalog } from '../prototype/realLasTrackLayoutData';
 import { WellLogPropertiesPanelSlot } from '../prototype/WellLogPropertiesPanelSlot';
 import { loadBackendViewerPackageWithFallback, type BackendViewerPackageLoadResult } from '../prototype/backendViewerPackageAdapter';
 import { buildWdvPackageState, emptyWdvPackageState, type WdvLoadedCurveItem, type WdvPackageState } from '../prototype/wdvPackageState';
-import { indexManagedCurveSamples, parseManagedCurveSamples, type ManagedCurveSampleLoadResult, type ManagedCurveSamplesByCurveId, type ManagedCurveSamplesPayload } from '../prototype/managedCurveSamples';
+import { indexManagedCurveSamples, parseManagedCurveSamples, type ManagedCurveSampleContractsByCurveId, type ManagedCurveSampleLoadResult, type ManagedCurveSamplesByCurveId, type ManagedCurveSamplesPayload } from '../prototype/managedCurveSamples';
 import type { CurveAssignment, CurveCatalogItem, DragCurvePayload, SelectionRef, WellLogTrack } from '../prototype/trackLayoutModel';
 import { makeCurveAssignment, orderedCurves } from '../prototype/trackLayoutModel';
 import { managedWellIdentityFromPayload, sameManagedWellIdentity, type ManagedWellIdentity } from '../identity/managedWellIdentity';
+import { parseWdvIdentityMetadataContract, type WdvIdentityMetadataContract } from '../contracts/wdvIdentityMetadataContract';
+import { listWbvOverlayPackages, previewWbvPackageUpdate, previewWdvPublication, publishWdvAsNewWbvPackage, updateExistingWbvPackage, type WbvOverlayPackage } from '../wbv/publicationApi';
 import {
     buildCurveIdentityIndex,
     canonicalizeCurveIdentitySet,
@@ -15,6 +17,7 @@ import {
 } from '../identity/curveIdentityIndex';
 import { AddTrackDraft, CURVE_TRACK_MAX_WIDTH, CURVE_TRACK_MIN_WIDTH, CurveInventory, CurveInventoryWellContext, DepthViewRange, IntervalSelectionState, RightPanel, Toolbar, TrackBackdropMode, TrackCanvas, WdvCanonicalTemplateApplySession, WdvRecommendedCurve, WdvTemplateRecommendationItem, WdvTemplateRecommendationModal, WdvWorkspaceLoadedWell, buildWdvTemplateRecommendationRequest, clampCurveTrackWidth, clampValue, fetchWlvJson, sortTracks } from './WdvPresentationPrimitives';
 import { useWdvLayoutSource } from './useWdvLayoutSource';
+import { replaceManagedWellDepthRanges } from './depthRangeState';
 import type { CanonicalLayoutResult } from './useWdvLayoutSource';
 import { buildCompleteLasLoadRequest, buildCompleteLasLoadUrl } from './completeLasWorkflow';
 import {
@@ -54,15 +57,15 @@ type TrackResizeState = {
     startWidth: number;
 };
 
-const FULL_DEPTH_RANGE: DepthViewRange = fullDepthRange;
-
-const DEFAULT_DEPTH_RANGE: DepthViewRange = defaultDepthRange;
+// Transient empty-canvas state only. Loaded-well depth authority comes from
+// the backend viewer package and is never replaced by a frontend default.
+const EMPTY_DEPTH_RANGE: DepthViewRange = { min: 0, max: 0 };
 
 const CURVE_TRACK_RESET_WIDTH = 220;
 
 const GO_TO_REVIEW_WINDOW_M = 600;
 
-function clampDepthRange(range: DepthViewRange, fullRange: DepthViewRange = FULL_DEPTH_RANGE): DepthViewRange {
+function clampDepthRange(range: DepthViewRange, fullRange: DepthViewRange): DepthViewRange {
     const span = Math.max(50, range.max - range.min);
     let min = range.min;
     let max = range.max;
@@ -124,7 +127,7 @@ function rangesEqual(a: DepthViewRange, b: DepthViewRange): boolean {
     return a.min === b.min && a.max === b.max;
 }
 
-export function unionDepthRanges(ranges: DepthViewRange[], fallback: DepthViewRange = FULL_DEPTH_RANGE): DepthViewRange {
+export function unionDepthRanges(ranges: DepthViewRange[], fallback: DepthViewRange): DepthViewRange {
     const valid = ranges.filter((range) => Number.isFinite(range.min) && Number.isFinite(range.max) && range.max > range.min);
     if (valid.length === 0) return { ...fallback };
     return {
@@ -270,6 +273,7 @@ type WdvWorkspaceState = {
     revision: number;
     active_managed_well_id?: string | null;
     active_managed_well_uid?: string | null;
+    common_depth_unit: 'm' | 'ft';
     loaded_wells: WdvWorkspaceLoadedWell[];
     updated_at?: string | null;
 };
@@ -690,9 +694,16 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
   const [wdvWorkspaceError, setWdvWorkspaceError] = useState<string | null>(null);
   const [, setViewerPackageLoad] = useState<BackendViewerPackageLoadResult | null>(null);
   const [wdvPackageState, setWdvPackageState] = useState<WdvPackageState>(() => emptyWdvPackageState());
+  const [wdvIdentityMetadata, setWdvIdentityMetadata] = useState<WdvIdentityMetadataContract | null>(null);
+  const [wdvIdentityMetadataError, setWdvIdentityMetadataError] = useState<string | null>(null);
   const [managedSamplesByCurveId, setManagedSamplesByCurveId] = useState<ManagedCurveSamplesByCurveId>({});
+  const [managedSampleContractsByCurveId, setManagedSampleContractsByCurveId] = useState<ManagedCurveSampleContractsByCurveId>({});
   const [managedSampleErrorsByCurveId, setManagedSampleErrorsByCurveId] = useState<Record<string, string>>({});
   const [managedSamplesLoading, setManagedSamplesLoading] = useState(false);
+  const [wbvPublishBusy, setWbvPublishBusy] = useState(false);
+  const [wbvPublishMessage, setWbvPublishMessage] = useState<string | null>(null);
+  const [wbvPublishPanelOpen, setWbvPublishPanelOpen] = useState(false);
+  const [wbvPublishedPackages, setWbvPublishedPackages] = useState<WbvOverlayPackage[]>([]);
   const [recommendationRefreshRevision, setRecommendationRefreshRevision] = useState(0);
   const [viewerPackageRefreshRevision, setViewerPackageRefreshRevision] = useState(0);
   const viewerPackageAbortRef = useRef<AbortController | null>(null);
@@ -747,6 +758,32 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
               viewerPackageAbortRef.current = null;
       };
   }, [activeView, managedViewerWellId, viewerPackageRefreshRevision]);
+  useEffect(() => {
+      if (!managedViewerWellUid) {
+          setWdvIdentityMetadata(null);
+          setWdvIdentityMetadataError(null);
+          return undefined;
+      }
+      const controller = new AbortController();
+      setWdvIdentityMetadata(null);
+      setWdvIdentityMetadataError(null);
+      void fetchWlvJson<unknown>(
+          `/api/wlv/v2/viewer-packages/${encodeURIComponent(managedViewerWellUid)}/metadata`,
+          { signal: controller.signal },
+      )
+          .then((payload) => parseWdvIdentityMetadataContract(payload, managedViewerWellUid))
+          .then((contract) => {
+              if (!controller.signal.aborted) setWdvIdentityMetadata(contract);
+          })
+          .catch((error) => {
+              if (controller.signal.aborted || isAbortError(error)) return;
+              setWdvIdentityMetadata(null);
+              setWdvIdentityMetadataError(
+                  error instanceof Error ? error.message : 'Backend WDV metadata unavailable',
+              );
+          });
+      return () => controller.abort();
+  }, [managedViewerWellUid, viewerPackageRefreshRevision]);
   const [tracks, setTracks] = useState<WellLogTrack[]>([]);
   const tracksRef = useRef<WellLogTrack[]>([]);
   useEffect(() => { tracksRef.current = tracks; }, [tracks]);
@@ -760,7 +797,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
       assignmentId: string;
   } | null>(null);
   const [fullDepthRangesByWellUid, setFullDepthRangesByWellUid] = useState<Record<string, DepthViewRange>>({});
-  const [viewDepthRange, setViewDepthRange] = useState<DepthViewRange>(DEFAULT_DEPTH_RANGE);
+  const [viewDepthRange, setViewDepthRange] = useState<DepthViewRange>(EMPTY_DEPTH_RANGE);
   const previousCanvasFullDepthRangeRef = useRef<DepthViewRange | null>(null);
   const [, setViewHistory] = useState<DepthViewRange[]>([]);
   const [goToDepthValue, setGoToDepthValue] = useState('');
@@ -813,6 +850,20 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
       curveFillHydrationKeyRef.current = null;
   }, [managedViewerWellUid]);
 
+  useEffect(() => {
+      const commonDepthUnit = wdvWorkspace?.common_depth_unit;
+      if (!commonDepthUnit) return;
+      setTracks((current) => {
+          let changed = false;
+          const next = current.map((track) => {
+              if (track.trackType !== 'depth' || track.unit === commonDepthUnit) return track;
+              changed = true;
+              return { ...track, unit: commonDepthUnit };
+          });
+          return changed ? next : current;
+      });
+  }, [wdvWorkspace?.common_depth_unit]);
+
   const selectedTrackForDepth = tracks.find((track) => track.trackId === selection.trackId) ?? null;
   const representedWellUids = useMemo(() => Array.from(new Set(
       tracks.map((track) => track.managedWellUid).filter((value): value is string => Boolean(value)),
@@ -821,9 +872,38 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
       const representedRanges = representedWellUids
           .map((wellUid) => fullDepthRangesByWellUid[wellUid])
           .filter((range): range is DepthViewRange => Boolean(range));
-      if (representedRanges.length > 0) return unionDepthRanges(representedRanges, FULL_DEPTH_RANGE);
-      return wdvPackageState.depthRange ? { ...wdvPackageState.depthRange } : { ...FULL_DEPTH_RANGE };
+      if (representedRanges.length > 0) {
+          return unionDepthRanges(representedRanges, wdvPackageState.depthRange ?? EMPTY_DEPTH_RANGE);
+      }
+      return wdvPackageState.depthRange
+          ? { ...wdvPackageState.depthRange }
+          : { ...EMPTY_DEPTH_RANGE };
   }, [fullDepthRangesByWellUid, representedWellUids, wdvPackageState.depthRange]);
+  const canvasAssignedCurveDepthRange = useMemo(() => {
+      const ranges: DepthViewRange[] = [];
+      for (const track of tracks) {
+          if (track.trackType !== 'curve') continue;
+          for (const assignment of track.curves) {
+              const contract = managedSampleContractsByCurveId[
+                  assignment.curveUid ?? assignment.curveId
+              ] ?? managedSampleContractsByCurveId[assignment.curveId];
+              const min = contract?.depth_min;
+              const max = contract?.depth_max;
+              if (
+                  typeof min === 'number'
+                  && Number.isFinite(min)
+                  && typeof max === 'number'
+                  && Number.isFinite(max)
+                  && max > min
+              ) {
+                  ranges.push({ min, max });
+              }
+          }
+      }
+      return ranges.length > 0
+          ? unionDepthRanges(ranges, canvasFullDepthRange)
+          : canvasFullDepthRange;
+  }, [canvasFullDepthRange, managedSampleContractsByCurveId, tracks]);
   const visibleDepthTicks = useMemo(() => makeDepthTicks(viewDepthRange), [viewDepthRange]);
   useEffect(() => {
       const previousFull = previousCanvasFullDepthRangeRef.current;
@@ -1041,6 +1121,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
       const unique = Array.from(new Map(requests.map((item) => [item.managedCurveUid, item])).values());
       if (activeView !== 'log-viewer' || unique.length === 0) {
           setManagedSamplesByCurveId({});
+          setManagedSampleContractsByCurveId({});
           setManagedSampleErrorsByCurveId({});
           setManagedSamplesLoading(false);
           return () => controller.abort();
@@ -1067,21 +1148,23 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
                           body: JSON.stringify({
                               managed_well_uid: managedWellUid,
                               managed_curve_uid: managedCurveUid,
+                              target_depth_unit: wdvWorkspace?.common_depth_unit ?? 'm',
                               max_samples: 12000,
                           }),
                           signal: controller.signal,
                       },
                   );
                   const samples = parseManagedCurveSamples(payload);
-                  return { request, samples, error: samples.length ? null : `No usable samples returned for ${assignment.curveId}` };
+                  return { request, contract: payload, samples, error: samples.length ? null : `No usable samples returned for ${assignment.curveId}` };
               } catch (error) {
-                  return { request, samples: [], error: error instanceof Error ? error.message : `Unable to load ${assignment.curveId}` };
+                  return { request, contract: null, samples: [], error: error instanceof Error ? error.message : `Unable to load ${assignment.curveId}` };
               }
           },
       ).then((results) => {
           if (controller.signal.aborted || sampleLoadGenerationRef.current !== generation) return;
           const indexed = indexManagedCurveSamples(results);
           setManagedSamplesByCurveId(indexed.samplesByCurveId);
+          setManagedSampleContractsByCurveId(indexed.contractsByCurveId);
           setManagedSampleErrorsByCurveId(indexed.errorsByCurveId);
           const sampledRanges = new Map<string, DepthViewRange>();
           results.forEach((result) => {
@@ -1095,19 +1178,15 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
                   : range);
           });
           if (sampledRanges.size > 0) {
-              setFullDepthRangesByWellUid((current) => {
-                  const next = { ...current };
-                  sampledRanges.forEach((range, wellUid) => {
-                      if (!next[wellUid]) next[wellUid] = range;
-                  });
-                  return next;
-              });
+              setFullDepthRangesByWellUid((current) =>
+                  replaceManagedWellDepthRanges(current, sampledRanges),
+              );
           }
       }).finally(() => {
           if (!controller.signal.aborted && sampleLoadGenerationRef.current === generation) setManagedSamplesLoading(false);
       });
       return () => controller.abort();
-  }, [activeView, tracks]);
+  }, [activeView, tracks, wdvWorkspace?.common_depth_unit]);
 
   const wdvSessionKey = useMemo(() => {
       if (!managedViewerWellId)
@@ -1219,12 +1298,14 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
     [activeCurveCatalog, ownerWellNames],
   );
 
-  const refreshCanonicalSession = useCallback(async (): Promise<void> => {
+  const refreshCanonicalSession = useCallback(async (
+    options: Readonly<{ preserveInteraction?: boolean }> = {},
+  ): Promise<void> => {
     if (!managedViewerWellUid) return;
     const fresh = await fetchWlvJson<RawCanonicalSession>(
       `/api/wlv/v2/wdv/sessions/${encodeURIComponent(managedViewerWellUid)}`,
     ).catch(() => null);
-    if (fresh) applyCanonicalSession(fresh);
+    if (fresh) applyCanonicalSession(fresh, options);
   }, [managedViewerWellUid, applyCanonicalSession]);
 
   const applyCurveFillWorkflowResult = useCallback((result: CurveFillWorkflowResultV2<RawCanonicalSession>): void => {
@@ -1333,6 +1414,20 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
           setCompleteLasPending(false);
       }
   }, [applyCanonicalSession, completeLasIncludeReview, completeLasSourceId, managedViewerWellUid, refreshCanonicalSession]);
+
+  const changeCommonDepthUnit = useCallback(async (commonDepthUnit: 'm' | 'ft'): Promise<void> => {
+      try {
+          const workspace = await fetchWlvJson<WdvWorkspaceState>('/api/wlv/inventory/wdv-workspace/common-depth-unit', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ common_depth_unit: commonDepthUnit }),
+          });
+          setWdvWorkspace(workspace);
+          setWdvWorkspaceError(null);
+      } catch (error) {
+          setWdvWorkspaceError(error instanceof Error ? error.message : 'Unable to change Common Depth Unit');
+      }
+  }, []);
 
   const refreshWdvWorkspace = async () => {
       try {
@@ -1592,10 +1687,10 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
                           ...rangeCommandBody,
                       },
                   );
-                  applyCanonicalSession(rawSession);
+                  applyCanonicalSession(rawSession, { preserveInteraction: true });
               } catch (error) {
                   if (error instanceof Error && error.message.startsWith('409 ')) {
-                      await refreshCanonicalSession();
+                      await refreshCanonicalSession({ preserveInteraction: true });
                   } else {
                       console.error('[WdvPageBoundary] updateCurveAssignment range command failed:', error);
                   }
@@ -1762,7 +1857,11 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
       });
   };
   const fitDepth = () => {
-      setDepthView(canvasFullDepthRange);
+      setIntervalZoomActive(false);
+      setIntervalSelection(null);
+      setDragPanState(null);
+      setGoToDepthMarker(null);
+      setDepthView(canvasAssignedCurveDepthRange);
   };
   const resetDepthView = () => {
       setViewDepthRange(canvasFullDepthRange);
@@ -1826,33 +1925,16 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
           ? { ...current, currentDepth: depth, currentY: y }
           : current);
   };
-  const armIntervalSelection = (depth: number, y: number) => {
-      setIntervalSelection((current) => current
-          ? { ...current, currentDepth: depth, currentY: y, dragging: false }
-          : {
-              startDepth: depth,
-              currentDepth: depth,
-              startY: y,
-              currentY: y,
-              dragging: false,
-          });
-  };
-  const completeIntervalSelection = (depth: number, y: number) => {
+  const completeIntervalSelection = (depth: number) => {
       if (!intervalSelection)
           return;
       const nextMin = Math.min(intervalSelection.startDepth, depth);
       const nextMax = Math.max(intervalSelection.startDepth, depth);
-      if (nextMax - nextMin < 25) {
-          setIntervalSelection({
-              ...intervalSelection,
-              currentDepth: depth,
-              currentY: y,
-              dragging: false,
-          });
+      if (nextMax <= nextMin) {
+          setIntervalSelection(null);
           return;
       }
       setDepthView({ min: nextMin, max: nextMax });
-      setIntervalZoomActive(false);
       setIntervalSelection(null);
   };
   const toggleCurveForSelectedTrack = (curveId: string, checked: boolean) => {
@@ -1884,6 +1966,85 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
           }
       })();
   };
+  const refreshWbvPublishedPackages = useCallback(async () => {
+    if (!managedViewerWellUid) {
+      setWbvPublishedPackages([]);
+      return [] as WbvOverlayPackage[];
+    }
+    const response = await listWbvOverlayPackages(managedViewerWellUid);
+    setWbvPublishedPackages(response.packages);
+    return response.packages;
+  }, [managedViewerWellUid]);
+
+  const openWbvPublishPanel = useCallback(async () => {
+    if (!managedViewerWellUid || wbvPublishBusy) return;
+    setWbvPublishMessage(null);
+    setWbvPublishPanelOpen((open) => !open);
+    if (!wbvPublishPanelOpen) {
+      try {
+        await refreshWbvPublishedPackages();
+      } catch (error) {
+        setWbvPublishMessage(error instanceof Error ? error.message : 'Unable to read WBV publications');
+      }
+    }
+  }, [managedViewerWellUid, refreshWbvPublishedPackages, wbvPublishBusy, wbvPublishPanelOpen]);
+
+  const publishCurrentWdvAsNewWbvPackage = useCallback(async () => {
+    if (!managedViewerWellUid || wbvPublishBusy) return;
+    setWbvPublishBusy(true);
+    setWbvPublishMessage(null);
+    try {
+      const packageName = `WDV ${managedViewerWellId ?? managedViewerWellUid} ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
+      const preview = await previewWdvPublication(managedViewerWellUid, packageName);
+      if (!preview.publishable) {
+        throw new Error(preview.warnings.join('; ') || 'The current WDV session is not publishable.');
+      }
+      const published = await publishWdvAsNewWbvPackage(managedViewerWellUid, packageName);
+      await refreshWbvPublishedPackages();
+      setWbvPublishPanelOpen(false);
+      setWbvPublishMessage(`Published new WBV package · revision ${published.package_revision} · WDV ${published.source_wdv_revision}`);
+    } catch (error) {
+      setWbvPublishMessage(error instanceof Error ? error.message : 'Unable to publish WDV content to WBV');
+    } finally {
+      setWbvPublishBusy(false);
+    }
+  }, [managedViewerWellId, managedViewerWellUid, refreshWbvPublishedPackages, wbvPublishBusy]);
+
+  const updateExistingWbvPublication = useCallback(async (target: WbvOverlayPackage) => {
+    if (!managedViewerWellUid || wbvPublishBusy) return;
+    setWbvPublishBusy(true);
+    setWbvPublishMessage(null);
+    try {
+      const preview = await previewWbvPackageUpdate(managedViewerWellUid, target.package_uid);
+      if (!preview.publishable) {
+        throw new Error(preview.warnings.join('; ') || 'The current WDV session cannot update this WBV package.');
+      }
+      if (!preview.update_available) {
+        setWbvPublishPanelOpen(false);
+        setWbvPublishMessage(`WBV package is already current · WDV revision ${preview.source_revision}`);
+        return;
+      }
+      const result = await updateExistingWbvPackage(
+        managedViewerWellUid,
+        target.package_uid,
+        preview.package_revision,
+      );
+      await refreshWbvPublishedPackages();
+      setWbvPublishPanelOpen(false);
+      const changeCount =
+        result.changes.tracks_added.length + result.changes.tracks_removed.length + result.changes.tracks_changed.length
+        + result.changes.assignments_added.length + result.changes.assignments_removed.length + result.changes.assignments_changed.length
+        + result.changes.fills_added.length + result.changes.fills_removed.length + result.changes.fills_changed.length;
+      setWbvPublishMessage(`Updated WBV package · revision ${result.package.package_revision} · ${changeCount} source change${changeCount === 1 ? '' : 's'}`);
+    } catch (error) {
+      setWbvPublishMessage(error instanceof Error ? error.message : 'Unable to update the WBV package');
+    } finally {
+      setWbvPublishBusy(false);
+    }
+  }, [managedViewerWellUid, refreshWbvPublishedPackages, wbvPublishBusy]);
+
+  const activeWbvPublishedPackage = wbvPublishedPackages.find((item) => item.status === 'active') ?? wbvPublishedPackages[0] ?? null;
+
   const moveCurveToTrack = (payload: DragCurvePayload, toTrackId: string, toIndex?: number) => {
       if (!payload.assignmentId || !looksLikeUuid(payload.assignmentId) || !looksLikeUuid(toTrackId)) return;
       void (async () => {
@@ -1940,9 +2101,39 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
         <div className="wlv-app-title">
           <strong>Well Log Viewer</strong>
         </div>
-        <button type="button" className="wlv-wdv-3d-badge" onClick={() => onOpenWellbore3D()} title="Open 3D Wellbore Viewer" aria-label="Open 3D Wellbore Viewer">
-          3D
-        </button>
+        <div className="wlv-wdv-wbv-publish-actions" style={{ position: 'relative' }}>
+          {wbvPublishMessage ? <span role="status">{wbvPublishMessage}</span> : null}
+          <button type="button" className="wlv-wdv-3d-badge" disabled={!managedViewerWellUid || wbvPublishBusy || tracks.length === 0} onClick={() => void openWbvPublishPanel()} title="Publish or update backend-owned WDV content in WBV" aria-expanded={wbvPublishPanelOpen} aria-haspopup="dialog">
+            {wbvPublishBusy ? 'Working…' : 'Send to WBV'}
+          </button>
+          {wbvPublishPanelOpen ? (
+            <div role="dialog" aria-label="Send WDV content to WBV" style={{ position: 'absolute', right: 46, top: 'calc(100% + 6px)', zIndex: 1000, minWidth: 310, maxWidth: 420, padding: 12, border: '1px solid rgba(255,255,255,0.22)', borderRadius: 6, background: '#171717', boxShadow: '0 10px 28px rgba(0,0,0,0.5)', display: 'grid', gap: 10 }}>
+              <div style={{ display: 'grid', gap: 3 }}>
+                <strong>Send WDV content to WBV</strong>
+                <span style={{ opacity: 0.76, fontSize: 12 }}>WBV retains each published package independently until you explicitly update it.</span>
+              </div>
+              {activeWbvPublishedPackage ? (
+                <div style={{ display: 'grid', gap: 4, padding: 8, border: '1px solid rgba(255,255,255,0.14)', borderRadius: 4 }}>
+                  <span style={{ fontSize: 12, opacity: 0.72 }}>Current retained package</span>
+                  <strong style={{ fontSize: 13 }}>{activeWbvPublishedPackage.package_name}</strong>
+                  <span style={{ fontSize: 12, opacity: 0.72 }}>Package revision {activeWbvPublishedPackage.package_revision} · source WDV revision {activeWbvPublishedPackage.source_wdv_revision}</span>
+                </div>
+              ) : (
+                <span style={{ fontSize: 12, opacity: 0.76 }}>No retained WBV package exists for this well.</span>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button type="button" className="wlv-wdv-3d-badge" onClick={() => setWbvPublishPanelOpen(false)} disabled={wbvPublishBusy}>Cancel</button>
+                {activeWbvPublishedPackage ? (
+                  <button type="button" className="wlv-wdv-3d-badge" onClick={() => void updateExistingWbvPublication(activeWbvPublishedPackage)} disabled={wbvPublishBusy}>Update existing</button>
+                ) : null}
+                <button type="button" className="wlv-wdv-3d-badge" onClick={() => void publishCurrentWdvAsNewWbvPackage()} disabled={wbvPublishBusy}>Publish as new</button>
+              </div>
+            </div>
+          ) : null}
+          <button type="button" className="wlv-wdv-3d-badge" onClick={() => onOpenWellbore3D()} title="Open 3D Wellbore Viewer" aria-label="Open 3D Wellbore Viewer">
+            3D
+          </button>
+        </div>
       </header>
 
       {!hasLoadedViewerWell && (<section className="wlv-empty-viewer-top-banner" aria-label="Well Data Viewer empty state">
@@ -1954,7 +2145,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
 
 
 
-      <Toolbar selectedTrack={selectedTrack} pendingAddTrackCurveCount={pendingAddTrackCurveIds.length} viewDepthRange={viewDepthRange} fullDepthRange={canvasFullDepthRange} viewDepthReadoutEnabled={tracks.length > 0} intervalZoomActive={intervalZoomActive} goToDepthValue={goToDepthValue} onGoToDepthValueChange={setGoToDepthValue} trackBackdropMode={trackBackdropMode} onTrackBackdropModeChange={setTrackBackdropMode} onAddTrack={addTrack} onDeleteTrack={deleteSelectedTrack} onClearCanvas={clearCanvas} onMoveSelectedTrack={moveSelectedTrack} canMoveSelectedTrackLeft={canMoveSelectedTrackLeft} canMoveSelectedTrackRight={canMoveSelectedTrackRight} canAdjustSelectedCurveTrackWidthDown={canAdjustSelectedCurveTrackWidthDown} canAdjustSelectedCurveTrackWidthUp={canAdjustSelectedCurveTrackWidthUp} onAdjustSelectedCurveTrackWidth={adjustSelectedCurveTrackWidth} onResetCurveTrackWidths={resetCurveTrackWidths} onZoomIn={() => zoomDepth(0.75)} onZoomOut={() => zoomDepth(1.33)} onPreviousView={previousDepthView} onFitDepth={fitDepth} onSpecifyDepthRange={(range) => {
+      <Toolbar commonDepthUnit={wdvWorkspace?.common_depth_unit ?? 'm'} onCommonDepthUnitChange={(unit) => void changeCommonDepthUnit(unit)} selectedTrack={selectedTrack} pendingAddTrackCurveCount={pendingAddTrackCurveIds.length} viewDepthRange={viewDepthRange} fullDepthRange={canvasAssignedCurveDepthRange} viewDepthReadoutEnabled={tracks.length > 0} intervalZoomActive={intervalZoomActive} goToDepthValue={goToDepthValue} onGoToDepthValueChange={setGoToDepthValue} trackBackdropMode={trackBackdropMode} onTrackBackdropModeChange={setTrackBackdropMode} onAddTrack={addTrack} onDeleteTrack={deleteSelectedTrack} onClearCanvas={clearCanvas} onMoveSelectedTrack={moveSelectedTrack} canMoveSelectedTrackLeft={canMoveSelectedTrackLeft} canMoveSelectedTrackRight={canMoveSelectedTrackRight} canAdjustSelectedCurveTrackWidthDown={canAdjustSelectedCurveTrackWidthDown} canAdjustSelectedCurveTrackWidthUp={canAdjustSelectedCurveTrackWidthUp} onAdjustSelectedCurveTrackWidth={adjustSelectedCurveTrackWidth} onResetCurveTrackWidths={resetCurveTrackWidths} onZoomIn={() => zoomDepth(0.75)} onZoomOut={() => zoomDepth(1.33)} onPreviousView={previousDepthView} onFitDepth={fitDepth} onSpecifyDepthRange={(range) => {
         setOpenCurveMenu(null);
         setIntervalZoomActive(false);
         setIntervalSelection(null);
@@ -2038,7 +2229,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
               </div>
             </section>) : (<section className="wlv-track-canvas wlv-track-canvas-empty-active" aria-label="Blank Well Data Viewer track canvas">
               <div className="wlv-track-strip" aria-hidden="true"/>
-            </section>)) : (<TrackCanvas tracks={tracks} selection={selection} openCurveMenu={openCurveMenu} depthTicks={visibleDepthTicks} viewDepthRange={viewDepthRange} goToDepthMarker={goToDepthMarker} intervalZoomActive={intervalZoomActive} intervalSelection={intervalSelection} dragPanActive={Boolean(dragPanState)} onSelectTrack={selectCanvasTrack} onSelectCurve={selectCanvasCurve} onReorderCurve={reorderCurve} onMoveCurveToTrack={moveCurveToTrack} onOpenCurveMenu={(trackId, assignmentId) => setOpenCurveMenu({ trackId, assignmentId })} onCloseCurveMenu={() => setOpenCurveMenu(null)} onRemoveCurveFromTrack={removeCurveFromTrack} onStartIntervalSelection={startIntervalSelection} onUpdateIntervalSelection={updateIntervalSelection} onArmIntervalSelection={armIntervalSelection} onCompleteIntervalSelection={completeIntervalSelection} onStartDragPan={startDragPan} onUpdateDragPan={updateDragPan} onEndDragPan={endDragPan} onStartCurveTrackResize={startCurveTrackResize} resizingTrackId={trackResizeState?.trackId ?? null} managedSamplesByCurveId={managedSamplesByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} curveCatalogItems={activeCurveCatalog} curveFillGeometryByRuleUid={curveFillFeatureEnabled ? curveFillGeometryByRuleUid : new Map()}/>)}
+            </section>)) : (<TrackCanvas tracks={tracks} selection={selection} openCurveMenu={openCurveMenu} depthTicks={visibleDepthTicks} viewDepthRange={viewDepthRange} goToDepthMarker={goToDepthMarker} intervalZoomActive={intervalZoomActive} intervalSelection={intervalSelection} dragPanActive={Boolean(dragPanState)} onSelectTrack={selectCanvasTrack} onSelectCurve={selectCanvasCurve} onReorderCurve={reorderCurve} onMoveCurveToTrack={moveCurveToTrack} onOpenCurveMenu={(trackId, assignmentId) => setOpenCurveMenu({ trackId, assignmentId })} onCloseCurveMenu={() => setOpenCurveMenu(null)} onRemoveCurveFromTrack={removeCurveFromTrack} onStartIntervalSelection={startIntervalSelection} onUpdateIntervalSelection={updateIntervalSelection} onCompleteIntervalSelection={completeIntervalSelection} onStartDragPan={startDragPan} onUpdateDragPan={updateDragPan} onEndDragPan={endDragPan} onStartCurveTrackResize={startCurveTrackResize} resizingTrackId={trackResizeState?.trackId ?? null} managedSamplesByCurveId={managedSamplesByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} curveCatalogItems={activeCurveCatalog} curveFillGeometryByRuleUid={curveFillFeatureEnabled ? curveFillGeometryByRuleUid : new Map()}/>)}
         {tracks.length === 0 ? (<aside className="wlv-right-panel wlv-ready-properties-panel" aria-label="Track properties unavailable">
             <div className="wlv-panel-heading">
               <h2>Track Properties</h2>
@@ -2046,13 +2237,13 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
             <div className="wlv-ready-properties-copy">
               Create or select a visible track to edit display properties.
             </div>
-          </aside>) : (<WellLogPropertiesPanelSlot tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment} curveFillV2={{ enabled: curveFillFeatureEnabled, managedWellUid: managedViewerWellUid, revision: canonicalSession?.revision ?? canonicalRevisionRef.current, rules: canonicalSession?.curve_fills ?? [], pending: curveFillPending, error: curveFillError, onCreateRule: createCurveFillRule, onUpdateRule: updateCurveFillRule, onRemoveRule: removeCurveFillRule, onReorderRules: reorderCurveFillRules }} legacyPanel={(<RightPanel tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment}/>)}/>)}
+          </aside>) : (<WellLogPropertiesPanelSlot tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} managedSampleContractsByCurveId={managedSampleContractsByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} wdvIdentityMetadata={wdvIdentityMetadata} wdvIdentityMetadataError={wdvIdentityMetadataError} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment} curveFillV2={{ enabled: curveFillFeatureEnabled, managedWellUid: managedViewerWellUid, revision: canonicalSession?.revision ?? canonicalRevisionRef.current, rules: canonicalSession?.curve_fills ?? [], pending: curveFillPending, error: curveFillError, onCreateRule: createCurveFillRule, onUpdateRule: updateCurveFillRule, onRemoveRule: removeCurveFillRule, onReorderRules: reorderCurveFillRules }} legacyPanel={(<RightPanel tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment}/>)}/>)}
       </div>
 
       <footer className="wlv-status-footer">
-        <span>WL-PROTOTYPE-010B shared depth ruler geometry</span>
-        <span>Track terminology only</span>
-        <span>Mock frontend layout draft — no LAS parsing or MSI persistence</span>
+        <span>Backend-managed WDV workspace</span>
+        <span>Backend-owned depth and curve contracts</span>
+        <span>Portable local and enterprise deployment</span>
       </footer>
         </div>;
 }

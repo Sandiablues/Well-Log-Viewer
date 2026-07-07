@@ -1,9 +1,10 @@
 import { type ReactElement, useEffect, useRef, useState } from "react";
-import {
-  fullDepthRange,
-  realCurveSamplesByCurveId,
-  wellHeader,
-} from "./realLasTrackLayoutData";
+import type {
+  WdvIdentityMetadataContract,
+} from "../contracts/wdvIdentityMetadataContract";
+import type {
+  ManagedCurveSampleContractsByCurveId,
+} from "./managedCurveSamples";
 import type {
   CurveAssignment,
   CurveCatalogItem,
@@ -716,13 +717,8 @@ function CurveFillV2Controls({
       .then((value) => {
         if (cancelled) return;
         setCapabilities(value);
-        const selectedMode = value.modes.find(
-          (item) => item.rule_type === ruleType,
-        );
-        const first = selectedMode?.curve_b_operands.find(
-          (item) => item.eligible,
-        );
-        setCurveB(first?.assignment_uid ?? "");
+        // Curve B is selected explicitly by the operator.
+        setCurveB("");
       })
       .catch((error) => {
         if (!cancelled)
@@ -898,11 +894,17 @@ function CurveFillV2Controls({
             </select>
           </label>
         ) : (
-          <div className="wlv-curve-fill-expression wlv-curve-fill-expression-compact">
-            <span>Curve A</span>
-            <strong>{curveAMnemonic}</strong>
+          <div className="wlv-curve-fill-expression wlv-curve-fill-expression-compact wlv-compact-curve-pair">
+            <div
+              className="wlv-compact-curve-box wlv-compact-host-curve"
+              aria-label={`Curve A host curve ${curveAMnemonic}`}
+              title="Host curve"
+            >
+              {curveAMnemonic}
+            </div>
             {ruleType === "conditional" ? (
               <select
+                className="wlv-compact-curve-operator"
                 aria-label="New conditional operator"
                 value={comparison}
                 onChange={(event) =>
@@ -913,24 +915,27 @@ function CurveFillV2Controls({
                 <option value="less_than">&lt;</option>
               </select>
             ) : ruleType === "crossover" ? (
-              <span className="wlv-curve-fill-policy-label">crossover</span>
+              <span className="wlv-curve-fill-policy-label wlv-compact-curve-operator-label">
+                crossover
+              </span>
             ) : (
-              <span className="wlv-curve-fill-policy-label">to</span>
+              <span className="wlv-curve-fill-policy-label wlv-compact-curve-operator-label">
+                to
+              </span>
             )}
-            <label>
-              Curve B
-              <select
-                value={curveB}
-                onChange={(event) => setCurveB(event.target.value)}
-              >
-                <option value="">Select curve</option>
-                {operands.map((item) => (
-                  <option key={item.assignment_uid} value={item.assignment_uid}>
-                    {item.mnemonic}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <select
+              className="wlv-compact-curve-box wlv-compact-curve-b"
+              aria-label="Curve B"
+              value={curveB}
+              onChange={(event) => setCurveB(event.target.value)}
+            >
+              <option value="">Curve B</option>
+              {operands.map((item) => (
+                <option key={item.assignment_uid} value={item.assignment_uid}>
+                  {item.mnemonic}
+                </option>
+              ))}
+            </select>
           </div>
         )}
         <div className="wlv-curve-fill-paint-editor">
@@ -1344,6 +1349,10 @@ export function WellLogPropertiesPanelSlot({
   tracks,
   selection,
   curveCatalogItems,
+  managedSampleContractsByCurveId,
+  managedSampleErrorsByCurveId,
+  wdvIdentityMetadata,
+  wdvIdentityMetadataError,
   updateTrack,
   updateCurveAssignment,
   curveFillV2,
@@ -1352,6 +1361,10 @@ export function WellLogPropertiesPanelSlot({
   tracks: WellLogTrack[];
   selection: SelectionRef;
   curveCatalogItems: CurveCatalogItem[];
+  managedSampleContractsByCurveId: ManagedCurveSampleContractsByCurveId;
+  managedSampleErrorsByCurveId: Record<string, string>;
+  wdvIdentityMetadata: WdvIdentityMetadataContract | null;
+  wdvIdentityMetadataError: string | null;
   updateTrack: (trackId: string, patch: Partial<WellLogTrack>) => void;
   updateCurveAssignment: (
     trackId: string,
@@ -1393,9 +1406,10 @@ export function WellLogPropertiesPanelSlot({
     tracks,
     selection: normalizedSelection,
     curveCatalog: curveCatalogItems,
-    wellHeader,
-    curveSamplesByCurveId: realCurveSamplesByCurveId,
-    fullDepthRange,
+    managedSampleContractsByCurveId,
+    managedSampleErrorsByCurveId,
+    wdvIdentityMetadata,
+    wdvIdentityMetadataError,
   });
 
   useEffect(() => {

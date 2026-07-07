@@ -120,11 +120,6 @@ class CurveFillResolutionService:
                 raise CurveFillResolutionError("Curve B identity does not match the rule")
             if series_a.depth_unit.strip().lower() != series_b.depth_unit.strip().lower():
                 raise CurveFillResolutionError("Curve operands require one depth unit")
-            if rule.rule_type == RuleType.CONDITIONAL:
-                ua = (series_a.value_unit or "").strip().lower()
-                ub = (series_b.value_unit or "").strip().lower()
-                if ua and ub and ua != ub:
-                    raise CurveFillResolutionError("Conditional comparison requires compatible engineering units")
         if transform_a.track_width_px != (transform_b.track_width_px if transform_b else transform_a.track_width_px):
             raise CurveFillResolutionError("Both operands must resolve in the same track width")
 
@@ -178,7 +173,10 @@ class CurveFillResolutionService:
                 result.append(None)
                 continue
             if rule.rule_type == RuleType.CONDITIONAL:
-                delta = av - bv
+                # Conditional fill is a visual comparison in track space, not
+                # an engineering-unit comparison. This makes it available to
+                # every curve pair while respecting each curve's own scale.
+                delta = xa - xb
             elif rule.rule_type == RuleType.BETWEEN_CURVES:
                 delta = 1.0
             else:

@@ -13,7 +13,7 @@ from .models import (
     SourceIntakeHumanDecision,
     SourceIntakeWellAssignmentMode,
 )
-from .resolution_service import is_ingestible
+from .resolution_service import is_wmd_eligible
 
 
 _USABLE_PARSE = {
@@ -62,18 +62,18 @@ def _has_existing_well_assignment(candidate: SourceFileCandidate) -> bool:
     )
 
 
-def evaluate_registration_readiness(
+def evaluate_wmd_availability_readiness(
     candidate: SourceFileCandidate,
 ) -> SourceFileCandidate:
     """Set one current readiness state.
 
     QAQC findings remain available for review and display. Once a human has made
     an explicit resolution decision, those non-hard findings do not become a
-    second hidden registration gate. Only technical failure, unsupported data,
+    second hidden WMD availability gate. Only technical failure, unsupported data,
     missing required payload, or unresolved identity blocks progression.
     """
     if (
-        candidate.registration_status == "registered"
+        candidate.is_available_to_wmd
         or candidate.resolution_state == SourceIntakeResolutionState.REGISTERED
     ):
         candidate.readiness_state = SourceIntakeReadinessState.REGISTERED
@@ -99,7 +99,7 @@ def evaluate_registration_readiness(
 
     if candidate.candidate_role not in _SUPPORTED_ROLES:
         hard_issues.append(
-            "Candidate role is not supported for registration: "
+            "Candidate role is not supported for WMD availability: "
             f"{candidate.candidate_role.value}."
         )
 
@@ -136,7 +136,7 @@ def evaluate_registration_readiness(
             )
         elif not candidate.geometry_preview.stations_preview:
             hard_issues.append(
-                "Geometry candidate has no station payload to register."
+                "Geometry candidate has no station payload to make available."
             )
 
     if hard_issues:
@@ -160,9 +160,9 @@ def evaluate_registration_readiness(
             "A human must assign or confirm the destination well."
         )
 
-    if not is_ingestible(candidate):
+    if not is_wmd_eligible(candidate):
         review_issues.append(
-            "A human decision is required before registration."
+            "A human decision is required before WMD availability."
         )
 
     if review_issues:
@@ -180,3 +180,10 @@ def evaluate_registration_readiness(
     candidate.readiness_issues = []
     candidate.available_human_actions = []
     return candidate
+
+
+def evaluate_registration_readiness(
+    candidate: SourceFileCandidate,
+) -> SourceFileCandidate:
+    """Compatibility alias for the former registration-oriented contract."""
+    return evaluate_wmd_availability_readiness(candidate)

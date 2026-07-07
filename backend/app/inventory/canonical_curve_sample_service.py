@@ -40,7 +40,8 @@ class CanonicalCurveSampleService:
 
         parsed, sample_source = _read_source_curve_samples(
             source_path=source_path, curve_mnemonic=product.curve_name or product.display_name,
-            max_samples=request.max_samples, source_kind=product.source_kind, provenance=provenance,
+            max_samples=request.max_samples, source_kind=product.source_kind,
+            provenance=provenance, target_depth_unit=request.target_depth_unit or resolved.well.depth_unit,
         )
         samples = tuple((float(depth), float(value)) for depth, value in parsed["samples"])
         return WdvCurveSampleResponse(

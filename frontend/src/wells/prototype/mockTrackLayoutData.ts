@@ -101,16 +101,16 @@ export const initialTracks: WellLogTrack[] = [
 ];
 
 export const wellHeader: WellHeader = {
-  wellName: '34/10-23 S',
-  wellboreName: '34/10-23 SA',
-  field: 'Example Field',
-  operator: 'Example Operator',
-  country: 'Norway',
-  kb: '25.4 m',
-  gl: '0.0 m',
-  logStart: '2340.0 m MD',
-  logEnd: '4582.5 m MD',
-  sourceFile: '341023S_SA.las',
-  msiIdentity: 'msi-wellbore-34-10-23-sa',
-  tvdStatus: 'Available in mock trajectory',
+  wellName: '',
+  wellboreName: '',
+  field: '',
+  operator: '',
+  country: '',
+  kb: '',
+  gl: '',
+  logStart: '',
+  logEnd: '',
+  sourceFile: '',
+  msiIdentity: '',
+  tvdStatus: '',
 };

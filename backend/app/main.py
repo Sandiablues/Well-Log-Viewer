@@ -15,6 +15,8 @@ from .wells.api_wlv import router as wlv_router
 from .system.api_system import router as system_router
 from .inventory.api_inventory import router as inventory_router
 from .wbv.router import router as wbv_router
+from .wbv_publication.router import router as wbv_publication_router
+from .wbv_layout.router import router as wbv_layout_router
 from .ingestion.api_ingestion import router as ingestion_router
 from .source_intake.router import router as source_intake_router
 from .wdv_templates.router import router as wdv_template_router
@@ -63,6 +65,8 @@ app.include_router(resolve_knowledge_router)
 app.include_router(managed_instruction_router)
 app.include_router(inventory_router)
 app.include_router(wbv_router)
+app.include_router(wbv_publication_router)
+app.include_router(wbv_layout_router)
 app.include_router(ingestion_router)
 app.include_router(source_intake_router)
 app.include_router(wdv_session_router)

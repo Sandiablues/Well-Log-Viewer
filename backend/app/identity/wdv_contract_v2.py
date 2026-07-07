@@ -362,6 +362,7 @@ class WdvCurveSampleRequest(BaseModel):
     managed_well_uid: CanonicalUuid7
     managed_curve_uid: CanonicalUuid7
     sample_revision: str | None = None
+    target_depth_unit: Literal["m", "ft"] | None = None
     max_samples: int = Field(default=12000, ge=2, le=100000)
 
 

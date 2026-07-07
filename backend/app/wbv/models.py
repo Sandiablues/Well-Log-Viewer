@@ -80,6 +80,7 @@ class WbvSessionContract(BaseModel):
     contract_version: str = "wbv_session_v1"
     viewer: Literal["WBV"] = "WBV"
     active_managed_well_id: str | None = None
+    active_managed_well_uid: CanonicalUuid7 | None = None
     well_id: str | None = None
     well_name: str | None = None
     viewer_state: WbvViewerState = WbvViewerState.NOT_LOADED
@@ -232,12 +233,19 @@ class WbvTrackConfiguration(BaseModel):
     track_type: Literal["curve", "reference", "image", "interval"] = "curve"
     display_order: int = Field(default=0, ge=0)
     side: Literal["left", "right", "center"] = "right"
+    geometry_type: Literal["legacy_planar", "camera_ribbon", "radial_panel"] = "legacy_planar"
+    radial_lane: int = Field(default=0, ge=0)
+    angular_position_deg: float = Field(default=0.0, ge=-360.0, le=360.0)
+    orientation_mode: Literal["follow_trajectory", "camera_facing"] = "camera_facing"
+    thickness: float = Field(default=0.05, gt=0.0, le=20.0)
     width: float = Field(default=1.0, ge=0.1, le=20.0)
     background_mode: Literal["transparent", "black", "white", "custom"] = "transparent"
     background_color: str = "#000000"
     background_opacity: float = Field(default=0.0, ge=0.0, le=1.0)
     border_visible: bool = False
     border_color: str = "#5f6d73"
+    grid_mode: Literal["off", "linear", "logarithmic"] = "off"
+    grid_color: str = "#44545d"
     wellbore_offset: float = Field(default=0.15, ge=0.0, le=20.0)
     previous_track_gap: float = Field(default=0.05, ge=0.0, le=20.0)
 
@@ -254,7 +262,7 @@ class WbvCurveOverlayRenderCurve(BaseModel):
     color: str = "#58d39b"
     line_width: float = 1.5
     opacity: float = 1.0
-    fill_mode: Literal["none", "to_baseline", "between_curves"] = "none"
+    fill_mode: Literal["none", "to_baseline", "between_curves", "crossover"] = "none"
     fill_target_curve_product_id: str | None = None
     fill_side: Literal["positive", "negative"] = "positive"
     fill_color: str = "#58d39b"

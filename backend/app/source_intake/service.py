@@ -25,18 +25,25 @@ from app.inventory.models import (
     ManagedWmdpState,
 )
 from app.wbv.models import WbvCoordinateMode, WbvManagedTrajectoryRecord, WbvManagedTrajectoryStatus
+from app.identity import new_uuid7_str
 
 
 from .metadata_resolver import resolve_candidate_metadata
+from .lifecycle_service import SourceIntakeLifecycleService
+from .las_asset_store import LasAssetStore
+from .canonical_metadata import (
+    canonical_metadata_from_dlis_values,
+    canonical_metadata_from_las_header,
+)
 from .identity_gate import apply_identity_gate
 from .qaqc import run_source_intake_qaqc
 from .qaqc_recompute import recompute_qaqc_after_resolution
-from .registration import register_candidate_to_inventory, registration_block_reason
-from .readiness import evaluate_registration_readiness
+from .registration import register_candidate_to_inventory, wmd_availability_block_reason
+from .readiness import evaluate_wmd_availability_readiness
 from .resolution_service import (
     SourceIntakeResolutionError,
     SourceIntakeResolutionService,
-    is_ingestible,
+    is_wmd_eligible,
     occurrence_identity,
 )
 from .depth_units import convert_depth_to_target
@@ -73,6 +80,15 @@ from .models import (
     SourceIntakeBulkResolutionRequest,
     SourceIntakeBulkResolutionResponse,
     SourceIntakeOccurrenceAccounting,
+    SourceIntakeOverlayExportCandidate,
+    SourceIntakeOverlayExportPackage,
+    SourceIntakeSavedWorkspaceDeleteResponse,
+    SourceIntakeSavedWorkspaceRecord,
+    SourceIntakeSavedWorkspaceSaveRequest,
+    SourceIntakeSavedWorkspaceRecoveryResult,
+    SourceIntakeSourceAccessStatus,
+    SourceIntakeSourceRecoveryResult,
+    SourceIntakeSavedWorkspaceSource,
     SourceIntakeRepositoryStatus,
     SourceIntakeWellHeader,
     SourceIntakeCurveHeader,
@@ -82,6 +98,10 @@ from .models import (
     SourceIntakeDepthNormalizationOption,
     SourceIntakeDepthNormalizationRequest,
     SourceIntakeDepthNormalizationStatus,
+    SourceIntakeReferenceBinding,
+    SourceIntakeReferenceType,
+    SourceMaterialization,
+    ExternalSourceReference,
     SourceIntakeSnapshot,
     SourceIntakeWorkbench,
     SourceIntakeWorkbenchSummary,
@@ -107,6 +127,7 @@ class WlvSourceIntakeService:
         self.storage_path = storage_path
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         self.resolution_service = SourceIntakeResolutionService()
+        self.lifecycle_service = SourceIntakeLifecycleService()
 
     def health(self) -> dict[str, object]:
         snapshot = self._load_snapshot()
@@ -157,6 +178,50 @@ class WlvSourceIntakeService:
     def list_repositories(self) -> list[SourceRepositoryRecord]:
         return self._load_snapshot().repositories
 
+    def ingest_uploaded_files(self, files: list[tuple[str, bytes]]) -> SourceRepositoryScanResult:
+        """Materialize browser uploads in an isolated WLV-owned temporary batch.
+
+        Browsers provide bytes rather than a durable external path. The batch is
+        explicitly temporary, never treated as a managed source, and is scanned
+        independently so prior uploads cannot leak into a new result.
+        """
+        if not files:
+            raise SourceIntakeError("Select at least one file to ingest.")
+
+        upload_root = (self.storage_path.parent / "temporary_uploads").resolve()
+        upload_root.mkdir(parents=True, exist_ok=True)
+        batch_root = (upload_root / new_uuid7_str()).resolve()
+        batch_root.mkdir(parents=True, exist_ok=False)
+
+        try:
+            for original_name, content in files:
+                file_name = Path(original_name or "").name
+                if not file_name or file_name in {".", ".."}:
+                    raise SourceIntakeError("Every uploaded file must have a valid filename.")
+                if not content:
+                    raise SourceIntakeError(f"Uploaded file is empty: {file_name}")
+                target = (batch_root / file_name).resolve()
+                if target.parent != batch_root:
+                    raise SourceIntakeError(f"Unsafe uploaded filename: {file_name}")
+                target.write_bytes(content)
+        except Exception:
+            self.lifecycle_service.clear_temporary_materialization(batch_root, upload_root)
+            raise
+
+        repository = self.create_repository(
+            SourceRepositoryCreateRequest(
+                name="Direct file ingest",
+                root_path=str(batch_root),
+                include_subfolders=True,
+            )
+        )
+        snapshot = self._load_snapshot()
+        stored = self._get_repository(snapshot, repository.repository_id)
+        stored.materialization = SourceMaterialization.TEMPORARY_UPLOAD
+        stored.wlv_owned_temporary_storage = True
+        self._save_snapshot(snapshot)
+        return self.scan_repository(repository.repository_id, include_subfolders=True)
+
     def remove_repository(self, repository_id: str) -> SourceRepositoryRemoveResponse:
         # WLV-WSI-REMOVE-SOURCE-1:
         # "Remove Source" removes the Source Intake repository record and its
@@ -167,9 +232,45 @@ class WlvSourceIntakeService:
         if repository is None:
             raise SourceIntakeError(f"Source repository not found: {repository_id}")
 
-        candidate_rows_removed = sum(
-            1 for candidate in snapshot.candidates if candidate.repository_id == repository_id
-        )
+        repository_candidates = [
+            candidate for candidate in snapshot.candidates if candidate.repository_id == repository_id
+        ]
+        candidate_rows_removed = len(repository_candidates)
+        cleanup_deferred_count = 0
+        derived_cache_entries_cleared = 0
+        cleared_fingerprints: set[str] = set()
+
+        las_cache_root = LasAssetStore().storage_root
+        for candidate in repository_candidates:
+            self.lifecycle_service.prepare_for_wsi_close(candidate)
+            if not candidate.cleanup_eligible:
+                cleanup_deferred_count += 1
+                continue
+            fingerprint = str(
+                candidate.content_fingerprint or candidate.checksum or ""
+            ).strip().lower()
+            if fingerprint and fingerprint not in cleared_fingerprints:
+                if self.lifecycle_service.clear_candidate_derived_data(
+                    candidate,
+                    las_storage_root=las_cache_root,
+                ):
+                    derived_cache_entries_cleared += 1
+                cleared_fingerprints.add(fingerprint)
+            self.lifecycle_service.mark_cleared(candidate)
+
+        temporary_materialization_cleared = False
+        if (
+            repository.materialization == SourceMaterialization.TEMPORARY_UPLOAD
+            and repository.wlv_owned_temporary_storage
+            and cleanup_deferred_count == 0
+        ):
+            upload_root = (self.storage_path.parent / "temporary_uploads").resolve()
+            temporary_materialization_cleared = (
+                self.lifecycle_service.clear_temporary_materialization(
+                    Path(repository.root_path), upload_root
+                )
+            )
+
         snapshot.repositories = [
             repo for repo in snapshot.repositories if repo.repository_id != repository_id
         ]
@@ -183,11 +284,18 @@ class WlvSourceIntakeService:
             repository_id=repository_id,
             repository_removed=True,
             candidate_rows_removed=candidate_rows_removed,
+            derived_cache_entries_cleared=derived_cache_entries_cleared,
+            temporary_materialization_cleared=temporary_materialization_cleared,
+            cleanup_deferred_count=cleanup_deferred_count,
             message=(
                 f"Removed source repository {repository.name} from Source Intake. "
                 f"Removed {candidate_rows_removed} associated candidate row"
                 f"{'s' if candidate_rows_removed != 1 else ''}. "
-                "Source files and managed inventory were not deleted."
+                f"Cleared {derived_cache_entries_cleared} unreferenced derived cache entr"
+                f"{'ies' if derived_cache_entries_cleared != 1 else 'y'}. "
+                f"Deferred cleanup for {cleanup_deferred_count} candidate"
+                f"{'s' if cleanup_deferred_count != 1 else ''} still referenced downstream. "
+                "External source files and managed inventory were not deleted."
             ),
             workbench=self.get_workbench(),
         )
@@ -207,7 +315,7 @@ class WlvSourceIntakeService:
         scan_id = self._scan_id(repository_id=repository_id, root=root, scan_scope=scan_scope)
 
         files = list(self._iter_files(root, include_subfolders=use_subfolders))
-        candidates = [self._candidate_for_file(repository.repository_id, scan_id, root, file_path) for file_path in files]
+        candidates = [self._candidate_for_file(repository, scan_id, root, file_path) for file_path in files]
         apply_identity_gate(candidates)
         for candidate in candidates:
             candidate.qaqc_status = run_source_intake_qaqc(candidate)
@@ -251,7 +359,7 @@ class WlvSourceIntakeService:
         repository.updated_at = utc_now_iso()
 
         self._save_snapshot(snapshot)
-        candidates = [evaluate_registration_readiness(candidate) for candidate in candidates]
+        candidates = [evaluate_wmd_availability_readiness(candidate) for candidate in candidates]
         return SourceRepositoryScanResult(
             ok=True,
             repository=repository,
@@ -289,6 +397,13 @@ class WlvSourceIntakeService:
         fresh.managed_well_name = existing.managed_well_name
         fresh.wmdp_state = existing.wmdp_state
         fresh.wdv_state = existing.wdv_state
+        fresh.working_data_state = existing.working_data_state
+        fresh.retention_state = existing.retention_state
+        fresh.cleanup_eligible = existing.cleanup_eligible
+        fresh.retention_reason = existing.retention_reason
+        fresh.reference_bindings = list(existing.reference_bindings)
+        fresh.reference_counts = dict(existing.reference_counts)
+        fresh.active_reference_count = existing.active_reference_count
         fresh.registered_product_count = existing.registered_product_count
         fresh.registered_curve_count = existing.registered_curve_count
         fresh.registered_trajectory_count = existing.registered_trajectory_count
@@ -320,9 +435,65 @@ class WlvSourceIntakeService:
         """Replay durable human intent without restoring stale inferred state."""
         SourceIntakeResolutionService().reapply_current_decision(candidate)
 
+    def rebuild_candidate_from_external_source(self, candidate_id: str) -> SourceFileCandidate:
+        """Reparse one candidate from its external source reference.
+
+        The original file remains authoritative and read-only. A changed
+        fingerprint produces a fresh occurrence and does not inherit prior
+        human decisions or downstream lifecycle bindings.
+        """
+        snapshot = self._load_snapshot()
+        existing = next(
+            (item for item in snapshot.candidates if item.source_file_id == candidate_id),
+            None,
+        )
+        if existing is None:
+            raise SourceIntakeError(f"Source Intake candidate not found: {candidate_id}")
+        repository = self._get_repository(snapshot, existing.repository_id)
+        root = Path(repository.root_path).expanduser().resolve()
+        source_path = Path(existing.original_path).expanduser().resolve()
+        if not source_path.is_file():
+            raise SourceIntakeError(f"External source file is unavailable: {source_path}")
+        try:
+            source_path.relative_to(root)
+        except ValueError as exc:
+            raise SourceIntakeError(
+                "Candidate source path is outside its external repository."
+            ) from exc
+
+        fresh = self._candidate_for_file(
+            repository,
+            self._scan_id(
+                repository_id=repository.repository_id,
+                root=root,
+                scan_scope=repository.last_scan_scope or "root_only",
+            ),
+            root,
+            source_path,
+        )
+        same_content = (fresh.content_fingerprint or fresh.checksum) == (
+            existing.content_fingerprint or existing.checksum
+        )
+        if same_content:
+            fresh = self._preserve_candidate_lifecycle(fresh, existing)
+            self._reapply_current_human_decision(fresh)
+        else:
+            fresh.retention_reason = (
+                "External source fingerprint changed; prior derived data and "
+                "workspace decisions were invalidated before reparse."
+            )
+
+        snapshot.candidates = [
+            fresh if item.source_file_id == candidate_id else item
+            for item in snapshot.candidates
+        ]
+        snapshot.updated_at = utc_now_iso()
+        self._save_snapshot(snapshot)
+        return fresh
+
     def get_workbench(self) -> SourceIntakeWorkbench:
         snapshot = self._load_snapshot()
-        candidates = [evaluate_registration_readiness(candidate) for candidate in snapshot.candidates]
+        candidates = [evaluate_wmd_availability_readiness(candidate) for candidate in snapshot.candidates]
         return SourceIntakeWorkbench(
             summary=self._summary(snapshot.repositories, candidates),
             repositories=snapshot.repositories,
@@ -361,7 +532,7 @@ class WlvSourceIntakeService:
                 continue
             recompute_qaqc_after_resolution(candidate, candidate.current_decision)
         for candidate in snapshot.candidates:
-            evaluate_registration_readiness(candidate)
+            evaluate_wmd_availability_readiness(candidate)
         self._save_snapshot(snapshot)
         return response
 
@@ -390,7 +561,7 @@ class WlvSourceIntakeService:
         self._reapply_depth_normalization(candidate)
         candidate.qaqc_status = run_source_intake_qaqc(candidate)
         candidate.review_required = candidate.qaqc_status.review_required
-        evaluate_registration_readiness(candidate)
+        evaluate_wmd_availability_readiness(candidate)
         self._save_snapshot(snapshot)
         return candidate
 
@@ -423,6 +594,248 @@ class WlvSourceIntakeService:
             parsed.log_header.depth_unit = target
         parsed.well_header.depth_unit = target
         contract.status = SourceIntakeDepthNormalizationStatus.HUMAN_RESOLVED
+
+    def export_overlay_package(self, candidate_ids: list[str]) -> SourceIntakeOverlayExportPackage:
+        """Build a read-only QAQC and metadata-overlay sidecar package."""
+        selected_ids = [value for value in dict.fromkeys(candidate_ids) if str(value or "").strip()]
+        if not selected_ids:
+            raise SourceIntakeError("Select at least one Source Intake candidate to export.")
+        snapshot = self._load_snapshot()
+        by_id = {candidate.source_file_id: candidate for candidate in snapshot.candidates}
+        missing = [candidate_id for candidate_id in selected_ids if candidate_id not in by_id]
+        if missing:
+            raise SourceIntakeError(f"Source Intake candidate not found: {missing[0]}")
+
+        exported: list[SourceIntakeOverlayExportCandidate] = []
+        for candidate_id in selected_ids:
+            candidate = by_id[candidate_id]
+            if candidate.source_reference is None:
+                raise SourceIntakeError(f"Candidate has no external source reference: {candidate_id}")
+            owner_id = f"overlay-export:{candidate_id}"
+            self.lifecycle_service.acquire_reference(
+                candidate,
+                SourceIntakeReferenceType.EXPORT,
+                owner_id,
+                "QAQC and metadata-overlay sidecar export.",
+            )
+            try:
+                original: dict[str, object] = {}
+                parsed = candidate.parsed_metadata
+                if parsed is not None:
+                    if parsed.well_header is not None:
+                        original = parsed.well_header.model_dump(mode="json")
+                effective: dict[str, object] = dict(original)
+                resolved = candidate.resolved_metadata
+                if resolved is not None:
+                    for field_name in (
+                        "well_name", "uwi", "operator", "field", "block", "wellbore_name",
+                        "country", "latitude", "longitude", "producer", "product", "version",
+                        "creation_date", "run_date",
+                    ):
+                        field = getattr(resolved, field_name, None)
+                        if field is not None and field.value is not None:
+                            effective[field_name] = field.value
+                decision = candidate.current_decision
+                overlay = dict(decision.corrected_values) if decision is not None else {}
+                effective.update(overlay)
+                accepted = set(decision.accepted_finding_codes if decision is not None else [])
+                all_codes = [check.check_id for check in candidate.qaqc_status.checks]
+                unresolved = [code for code in all_codes if code not in accepted]
+                exported.append(SourceIntakeOverlayExportCandidate(
+                    candidate_id=candidate.source_file_id,
+                    occurrence_id=candidate.occurrence_id,
+                    source_reference=candidate.source_reference,
+                    source_fingerprint=candidate.content_fingerprint or candidate.checksum,
+                    source_format=candidate.detected_file_type.value,
+                    parser_status=candidate.parser_status,
+                    original_metadata=original,
+                    effective_metadata=effective,
+                    metadata_overlay=overlay,
+                    current_decision=decision,
+                    depth_normalization=candidate.depth_normalization,
+                    qaqc=candidate.qaqc_status,
+                    resolved_finding_codes=sorted(accepted),
+                    unresolved_finding_codes=unresolved,
+                ))
+            finally:
+                self.lifecycle_service.release_reference(candidate, SourceIntakeReferenceType.EXPORT, owner_id)
+        self._save_snapshot(snapshot)
+        return SourceIntakeOverlayExportPackage(candidate_count=len(exported), candidates=exported)
+
+    def save_workspace(self, request: SourceIntakeSavedWorkspaceSaveRequest) -> SourceIntakeSavedWorkspaceRecord:
+        """Persist source references and working decisions, never parsed samples."""
+        name = str(request.name or "").strip()
+        if not name:
+            raise SourceIntakeError("Saved workspace name is required.")
+        selected_ids = [value for value in dict.fromkeys(request.candidate_ids) if str(value or "").strip()]
+        if not selected_ids:
+            raise SourceIntakeError("Select at least one Source Intake candidate for the workspace.")
+
+        snapshot = self._load_snapshot()
+        by_id = {candidate.source_file_id: candidate for candidate in snapshot.candidates}
+        missing = [candidate_id for candidate_id in selected_ids if candidate_id not in by_id]
+        if missing:
+            raise SourceIntakeError(f"Source Intake candidate not found: {missing[0]}")
+
+        workspace_uid = str(request.workspace_uid or "").strip() or new_uuid7_str()
+        existing = next(
+            (item for item in snapshot.saved_workspaces if item.workspace_uid == workspace_uid),
+            None,
+        )
+        if existing is not None:
+            previous_ids = {source.candidate_id for source in existing.sources}
+            for candidate_id in previous_ids - set(selected_ids):
+                candidate = by_id.get(candidate_id)
+                if candidate is not None:
+                    self.lifecycle_service.release_reference(
+                        candidate,
+                        SourceIntakeReferenceType.SAVED_WORKSPACE,
+                        workspace_uid,
+                    )
+
+        sources: list[SourceIntakeSavedWorkspaceSource] = []
+        for candidate_id in selected_ids:
+            candidate = by_id[candidate_id]
+            if candidate.source_reference is None:
+                raise SourceIntakeError(f"Candidate has no external source reference: {candidate_id}")
+            self.lifecycle_service.acquire_reference(
+                candidate,
+                SourceIntakeReferenceType.SAVED_WORKSPACE,
+                workspace_uid,
+                "Saved workspace retains source reference and working decisions.",
+            )
+            decision = candidate.current_decision
+            sources.append(
+                SourceIntakeSavedWorkspaceSource(
+                    candidate_id=candidate.source_file_id,
+                    source_reference=candidate.source_reference,
+                    source_fingerprint=candidate.content_fingerprint or candidate.checksum,
+                    source_format=candidate.detected_file_type.value,
+                    current_decision=decision,
+                    depth_normalization=candidate.depth_normalization,
+                    qaqc=candidate.qaqc_status,
+                    metadata_overlay=(dict(decision.corrected_values) if decision is not None else {}),
+                )
+            )
+
+        now = utc_now_iso()
+        record = SourceIntakeSavedWorkspaceRecord(
+            workspace_uid=workspace_uid,
+            name=name,
+            sources=sources,
+            viewer_state=dict(request.viewer_state),
+            created_at=existing.created_at if existing is not None else now,
+            updated_at=now,
+        )
+        snapshot.saved_workspaces = [
+            item for item in snapshot.saved_workspaces if item.workspace_uid != workspace_uid
+        ]
+        snapshot.saved_workspaces.append(record)
+        self._save_snapshot(snapshot)
+        return record
+
+    def list_saved_workspaces(self) -> list[SourceIntakeSavedWorkspaceRecord]:
+        return self._load_snapshot().saved_workspaces
+
+    def get_saved_workspace(self, workspace_uid: str) -> SourceIntakeSavedWorkspaceRecord:
+        normalized = str(workspace_uid or "").strip()
+        snapshot = self._load_snapshot()
+        record = next(
+            (item for item in snapshot.saved_workspaces if item.workspace_uid == normalized),
+            None,
+        )
+        if record is None:
+            raise SourceIntakeError(f"Saved workspace not found: {normalized}")
+        return record
+
+    def delete_saved_workspace(self, workspace_uid: str) -> SourceIntakeSavedWorkspaceDeleteResponse:
+        normalized = str(workspace_uid or "").strip()
+        snapshot = self._load_snapshot()
+        record = next(
+            (item for item in snapshot.saved_workspaces if item.workspace_uid == normalized),
+            None,
+        )
+        if record is None:
+            raise SourceIntakeError(f"Saved workspace not found: {normalized}")
+        by_id = {candidate.source_file_id: candidate for candidate in snapshot.candidates}
+        released = 0
+        for source in record.sources:
+            candidate = by_id.get(source.candidate_id)
+            if candidate is not None and self.lifecycle_service.release_reference(
+                candidate,
+                SourceIntakeReferenceType.SAVED_WORKSPACE,
+                normalized,
+            ):
+                released += 1
+        snapshot.saved_workspaces = [
+            item for item in snapshot.saved_workspaces if item.workspace_uid != normalized
+        ]
+        self._save_snapshot(snapshot)
+        return SourceIntakeSavedWorkspaceDeleteResponse(
+            workspace_uid=normalized,
+            released_source_count=released,
+        )
+
+    def recover_candidate_source(self, candidate_id: str, *, rebuild_changed: bool = True) -> SourceIntakeSourceRecoveryResult:
+        """Validate one external source and optionally reparse changed content."""
+        snapshot = self._load_snapshot()
+        candidate = next((item for item in snapshot.candidates if item.source_file_id == candidate_id), None)
+        if candidate is None:
+            raise SourceIntakeError(f"Source Intake candidate not found: {candidate_id}")
+        previous = candidate.content_fingerprint or candidate.checksum
+        status, current, message = self.lifecycle_service.inspect_external_source(candidate)
+        if status != SourceIntakeSourceAccessStatus.CHANGED or not rebuild_changed:
+            self._save_snapshot(snapshot)
+            return SourceIntakeSourceRecoveryResult(
+                candidate_id=candidate.source_file_id, status=status, previous_fingerprint=previous,
+                current_fingerprint=current, rebuilt=False, cache_invalidated=False, message=message, candidate=candidate,
+            )
+
+        old_id = candidate.source_file_id
+        old_bindings = list(candidate.reference_bindings)
+        fresh = self.rebuild_candidate_from_external_source(old_id)
+        refreshed = self._load_snapshot()
+        rebuilt = next((item for item in refreshed.candidates if item.source_file_id == fresh.source_file_id), fresh)
+        # Preserve the stable workspace candidate key and saved-workspace retention only.
+        rebuilt.source_file_id = old_id
+        rebuilt.reference_bindings = [
+            binding for binding in old_bindings
+            if binding.reference_type in {SourceIntakeReferenceType.WSI, SourceIntakeReferenceType.SAVED_WORKSPACE}
+        ]
+        rebuilt.current_decision = None
+        rebuilt.depth_normalization = None
+        rebuilt.source_access_status = SourceIntakeSourceAccessStatus.AVAILABLE
+        rebuilt.source_access_checked_at = utc_now_iso()
+        rebuilt.source_access_message = "Changed external source reparsed; prior transient decisions and derived state invalidated."
+        rebuilt.synchronize_reference_summary()
+        refreshed.candidates = [rebuilt if item.source_file_id == fresh.source_file_id else item for item in refreshed.candidates]
+        for workspace in refreshed.saved_workspaces:
+            for source in workspace.sources:
+                if source.candidate_id == old_id:
+                    source.source_fingerprint = current
+                    source.source_reference = rebuilt.source_reference or source.source_reference
+                    source.current_decision = None
+                    source.depth_normalization = None
+                    source.metadata_overlay = {}
+                    source.qaqc = rebuilt.qaqc_status
+        self._save_snapshot(refreshed)
+        return SourceIntakeSourceRecoveryResult(
+            candidate_id=old_id, status=SourceIntakeSourceAccessStatus.CHANGED,
+            previous_fingerprint=previous, current_fingerprint=current, rebuilt=True,
+            cache_invalidated=True, message=rebuilt.source_access_message or message, candidate=rebuilt,
+        )
+
+    def recover_saved_workspace(self, workspace_uid: str, *, rebuild_changed: bool = True) -> SourceIntakeSavedWorkspaceRecoveryResult:
+        record = self.get_saved_workspace(workspace_uid)
+        results = [self.recover_candidate_source(source.candidate_id, rebuild_changed=rebuild_changed) for source in record.sources]
+        return SourceIntakeSavedWorkspaceRecoveryResult(
+            workspace_uid=workspace_uid, source_count=len(results),
+            available_count=sum(item.status == SourceIntakeSourceAccessStatus.AVAILABLE for item in results),
+            changed_count=sum(item.status == SourceIntakeSourceAccessStatus.CHANGED for item in results),
+            missing_count=sum(item.status == SourceIntakeSourceAccessStatus.MISSING for item in results),
+            inaccessible_count=sum(item.status == SourceIntakeSourceAccessStatus.INACCESSIBLE for item in results),
+            results=results,
+        )
 
     def get_occurrence_accounting(self) -> SourceIntakeOccurrenceAccounting:
         snapshot = self._load_snapshot()
@@ -633,7 +1046,7 @@ class WlvSourceIntakeService:
                     approved_by=request.approval.approved_by,
                     approval_note=request.approval.approval_note,
                 )
-                candidate.registration_status = "registered"
+                candidate.mark_available_to_wmd()
                 candidate.managed_well_id = record.managed_well_id
                 candidate.managed_well_name = record.well_name
                 candidate.wmdp_state = record.wmdp_state.value if hasattr(record.wmdp_state, "value") else str(record.wmdp_state)
@@ -642,7 +1055,7 @@ class WlvSourceIntakeService:
                 candidate.registered_curve_count = 0
                 candidate.registered_trajectory_count = trajectory_count
                 try:
-                    self.resolution_service.mark_registered(
+                    self.resolution_service.mark_available_to_wmd(
                         candidate,
                         actor=request.approval.approved_by,
                         reason=request.approval.approval_note,
@@ -698,7 +1111,7 @@ class WlvSourceIntakeService:
                 for group in record.product_groups
             )
             registered_product_count = sum(1 for group in record.product_groups if group.items)
-            candidate.registration_status = "registered"
+            candidate.mark_available_to_wmd()
             candidate.managed_well_id = record.managed_well_id
             candidate.managed_well_name = record.well_name
             candidate.wmdp_state = record.wmdp_state.value if hasattr(record.wmdp_state, "value") else str(record.wmdp_state)
@@ -706,7 +1119,7 @@ class WlvSourceIntakeService:
             candidate.registered_product_count = registered_product_count
             candidate.registered_curve_count = registered_curve_count
             try:
-                self.resolution_service.mark_registered(
+                self.resolution_service.mark_available_to_wmd(
                     candidate,
                     actor=request.approval.approved_by,
                     reason=request.approval.approval_note,
@@ -740,13 +1153,13 @@ class WlvSourceIntakeService:
     def _registration_block_reason(self, candidate: SourceFileCandidate) -> str | None:
         if candidate.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
             return self._geometry_registration_block_reason(candidate)
-        return registration_block_reason(candidate)
+        return wmd_availability_block_reason(candidate)
 
     def _geometry_registration_block_reason(self, candidate: SourceFileCandidate) -> str | None:
         if candidate.candidate_role != SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
             return f"Only wellbore_geometry_candidate records can use geometry registration; got {candidate.candidate_role.value}."
-        if candidate.registration_status == "registered":
-            return "Candidate is already registered to Managed Well Inventory."
+        if candidate.is_available_to_wmd:
+            return "Candidate is already available in WMD."
         if candidate.parser_status not in {SourceIntakeParseStatus.PARSED, SourceIntakeParseStatus.PARSED_WITH_WARNINGS}:
             return f"Geometry candidate parser_status is not registration-ready: {candidate.parser_status.value}."
         if candidate.geometry_preview is None:
@@ -761,7 +1174,7 @@ class WlvSourceIntakeService:
             return f"Geometry candidate QAQC status is not registration-ready: {candidate.qaqc_status.status.value}."
         if candidate.qaqc_status.failure_count > 0:
             return "Geometry candidate QAQC has failures and cannot be registered."
-        if not is_ingestible(candidate):
+        if not is_wmd_eligible(candidate):
             return (
                 "Geometry candidate resolution state is not registration-ready: "
                 f"{candidate.resolution_state.value}. Resolve the candidate first."
@@ -1320,7 +1733,7 @@ class WlvSourceIntakeService:
         return flags
 
     def _mdp_diagnostic_flags(self, candidate: SourceFileCandidate) -> list[SourceIntakeDiagnosticFlag]:
-        if candidate.registration_status == "registered":
+        if candidate.is_available_to_wmd:
             return [
                 SourceIntakeDiagnosticFlag(
                     phase=SourceIntakeDiagnosticPhase.MDP_READY,
@@ -1404,14 +1817,14 @@ class WlvSourceIntakeService:
             )
 
         blocked_reason = self._registration_block_reason(candidate)
-        if blocked_reason is None and candidate.registration_status != "registered":
+        if blocked_reason is None and not candidate.is_available_to_wmd:
             actions.append(
                 SourceIntakeDiagnosticAction(
                     phase=SourceIntakeDiagnosticPhase.MDP_READY,
                     action_key="register_candidate",
-                    label="Register selected",
+                    label="Make Available",
                     enabled=False,
-                    reason="Use the table Select + Register Selected controls for this workflow.",
+                    reason="Use the table selection and Make Available controls for this workflow.",
                 )
             )
 
@@ -1429,7 +1842,7 @@ class WlvSourceIntakeService:
         return actions
 
     def _mdp_ready_status(self, candidate: SourceFileCandidate) -> str:
-        if candidate.registration_status == "registered":
+        if candidate.is_available_to_wmd:
             return "registered"
         blocked_reason = self._registration_block_reason(candidate)
         if blocked_reason is None:
@@ -1452,6 +1865,58 @@ class WlvSourceIntakeService:
             return candidate.parsed_metadata.well_header.well_name
         return candidate.managed_well_name
 
+    def synchronize_managed_well_reference_state(self, record: Any) -> int:
+        """Synchronize WSI lifecycle state from authoritative inventory state.
+
+        The lifecycle service owns matching and state projection. Cleanup
+        remains disabled in this block.
+        """
+        snapshot = self._load_snapshot()
+        matched = self.lifecycle_service.synchronize_inventory_record(snapshot.candidates, record)
+        if matched:
+            snapshot.updated_at = utc_now_iso()
+            self._save_snapshot(snapshot)
+        return matched
+
+    def acquire_candidate_reference(
+        self,
+        candidate_id: str,
+        reference_type: SourceIntakeReferenceType,
+        owner_id: str,
+        reason: str | None = None,
+    ) -> SourceIntakeReferenceBinding:
+        """Acquire an explicit retention reference without changing viewer behavior."""
+        snapshot = self._load_snapshot()
+        candidate = next(
+            (item for item in snapshot.candidates if item.source_file_id == candidate_id),
+            None,
+        )
+        if candidate is None:
+            raise SourceIntakeError(f"Source Intake candidate not found: {candidate_id}")
+        binding = self.lifecycle_service.acquire_reference(candidate, reference_type, owner_id, reason)
+        snapshot.updated_at = utc_now_iso()
+        self._save_snapshot(snapshot)
+        return binding
+
+    def release_candidate_reference(
+        self,
+        candidate_id: str,
+        reference_type: SourceIntakeReferenceType,
+        owner_id: str,
+    ) -> SourceFileCandidate:
+        """Release one explicit reference; cleanup remains disabled during reference integration."""
+        snapshot = self._load_snapshot()
+        candidate = next(
+            (item for item in snapshot.candidates if item.source_file_id == candidate_id),
+            None,
+        )
+        if candidate is None:
+            raise SourceIntakeError(f"Source Intake candidate not found: {candidate_id}")
+        self.lifecycle_service.release_reference(candidate, reference_type, owner_id)
+        snapshot.updated_at = utc_now_iso()
+        self._save_snapshot(snapshot)
+        return candidate
+
     def _load_snapshot(self) -> SourceIntakeSnapshot:
         if not self.storage_path.exists():
             return SourceIntakeSnapshot()
@@ -1459,9 +1924,13 @@ class WlvSourceIntakeService:
         return SourceIntakeSnapshot(**data)
 
     def _save_snapshot(self, snapshot: SourceIntakeSnapshot) -> None:
+        # WLV-WSI-TRANSIENT-LIFECYCLE-2: keep the additive lifecycle contract
+        # synchronized with existing registration/WMD state before persistence.
+        # Cleanup remains disabled until explicit reference tracking lands.
+        self.lifecycle_service.synchronize_snapshot(snapshot)
         snapshot.updated_at = utc_now_iso()
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         if hasattr(snapshot, "model_dump_json"):
             payload = snapshot.model_dump_json(indent=2)
         else:
@@ -1481,7 +1950,7 @@ class WlvSourceIntakeService:
             key=lambda path: str(path).lower(),
         )
 
-    def _candidate_for_file(self, repository_id: str, scan_id: str, root: Path, file_path: Path) -> SourceFileCandidate:
+    def _candidate_for_file(self, repository: SourceRepositoryRecord, scan_id: str, root: Path, file_path: Path) -> SourceFileCandidate:
         checksum = self._sha256(file_path)
         detected_file_type, candidate_role = self._classify_file(file_path)
         review_required = candidate_role in {
@@ -1500,11 +1969,11 @@ class WlvSourceIntakeService:
 
         candidate = SourceFileCandidate(
             source_file_id=occurrence_identity(
-                repository_id=repository_id,
+                repository_id=repository.repository_id,
                 relative_path=relative_path,
                 checksum=checksum,
             ),
-            repository_id=repository_id,
+            repository_id=repository.repository_id,
             scan_id=scan_id,
             file_name=file_path.name,
             original_path=str(file_path),
@@ -1517,6 +1986,13 @@ class WlvSourceIntakeService:
             checksum=checksum,
             review_required=review_required,
             warnings=warnings,
+            source_reference=ExternalSourceReference(
+                source_uri=str(file_path),
+                display_name=file_path.name,
+                source_format=detected_file_type.value,
+                fingerprint=checksum,
+                materialization=repository.materialization,
+            ),
         )
 
         # WLV-WSI-PARSE-STATUS-FILENAME-1:
@@ -1605,6 +2081,16 @@ class WlvSourceIntakeService:
         candidate.parsed_metadata = SourceIntakeParsedMetadata(
             parser_id=inspection.parser_id,
             source_format=inspection.source_format,
+            canonical_metadata=canonical_metadata_from_dlis_values(
+                {
+                    "well_name": inspection.well_name,
+                    "uwi": inspection.uwi,
+                    "operator": inspection.operator,
+                    "field": inspection.field,
+                    "producer": inspection.service_company,
+                },
+                parser_id=inspection.parser_id,
+            ),
             well_header=SourceIntakeWellHeader(
                 well_name=inspection.well_name, uwi=inspection.uwi,
                 operator=inspection.operator, field=inspection.field,
@@ -1712,9 +2198,14 @@ class WlvSourceIntakeService:
         warning_messages = [finding.message for finding in package.qaqc_findings if getattr(finding.severity, "value", finding.severity) == "warning"]
         error_messages = [finding.message for finding in package.qaqc_findings if getattr(finding.severity, "value", finding.severity) == "error"]
 
+        parser_id = getattr(LasSourceAdapter, "adapter_id", "las_numeric_curve_adapter_v1")
         parsed = SourceIntakeParsedMetadata(
-            parser_id=getattr(LasSourceAdapter, "adapter_id", "las_numeric_curve_adapter_v1"),
+            parser_id=parser_id,
             source_format="LAS",
+            canonical_metadata=canonical_metadata_from_las_header(
+                well_header_raw,
+                parser_id=parser_id,
+            ),
             well_header=SourceIntakeWellHeader(
                 well_name=package.well_name,
                 uwi=_first_header_text(well_header_raw, "UWI", "API", "WELLID", "WELL_ID"),

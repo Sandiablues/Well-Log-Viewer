@@ -41,9 +41,14 @@ from app.inventory.well_identity import (
 )
 
 from .identity_gate import clean_identity_value
+from .depth_units import (
+    UnsupportedDepthUnitError,
+    convert_depth_range_to_target,
+    depth_unit_conversion,
+)
 from .las_asset_store import LasAssetStore, LasAssetStoreError, StoredLasAsset
 from .dlis_asset_store import DlisAssetStore, DlisAssetStoreError, StoredDlisAsset
-from .readiness import evaluate_registration_readiness
+from .readiness import evaluate_wmd_availability_readiness
 from .models import (
     SourceFileCandidate,
     SourceIntakeCandidateRole,
@@ -55,7 +60,7 @@ from .models import (
     SourceIntakeFileType,
     SourceIntakeWellAssignmentMode,
 )
-from .resolution_service import is_ingestible
+from .resolution_service import is_wmd_eligible
 
 _ALLOWED_REGISTER_QAQC_STATUSES = {
     SourceIntakeQaqcStatus.PASS,
@@ -64,43 +69,43 @@ _ALLOWED_REGISTER_QAQC_STATUSES = {
 }
 
 
-def registration_block_reason(candidate: SourceFileCandidate) -> str | None:
+def wmd_availability_block_reason(candidate: SourceFileCandidate) -> str | None:
     """Return the established registration diagnostic for an ineligible candidate.
 
     Structured eligibility is computed by readiness.py. This function preserves
     the existing public/tested rejection wording consumed by registration callers.
     """
-    evaluate_registration_readiness(candidate)
+    evaluate_wmd_availability_readiness(candidate)
     if candidate.readiness_state == SourceIntakeReadinessState.READY:
         return None
 
     depth_contract = candidate.depth_normalization
     if depth_contract is not None and getattr(depth_contract.status, "value", depth_contract.status) != "human_resolved":
-        return "Depth target unit must be resolved to metres or feet before registration."
+        return "Depth target unit must be resolved to metres or feet before WMD availability."
 
-    if candidate.registration_status == "registered" or candidate.resolution_state == SourceIntakeResolutionState.REGISTERED:
-        return "Candidate is already registered to Managed Well Inventory."
+    if candidate.is_available_to_wmd or candidate.resolution_state == SourceIntakeResolutionState.REGISTERED:
+        return "Candidate is already available in WMD."
 
     if candidate.resolution_state == SourceIntakeResolutionState.DUPLICATE:
-        return "Candidate is an exact-content duplicate and cannot be registered again."
+        return "Candidate is an exact-content duplicate and cannot be made available again."
 
     if candidate.resolution_state == SourceIntakeResolutionState.EXCLUDED:
-        return "Candidate is excluded from ingestion. Reopen it before registration."
+        return "Candidate is excluded from ingestion. Reopen it before WMD availability."
 
     if candidate.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
         if candidate.parser_status not in {SourceIntakeParseStatus.PARSED, SourceIntakeParseStatus.PARSED_WITH_WARNINGS}:
-            return f"Geometry candidate parser_status is not registration-ready: {candidate.parser_status.value}."
+            return f"Geometry candidate parser_status is not WMD-ready: {candidate.parser_status.value}."
         if candidate.geometry_preview is None:
             return "Geometry candidate has no parsed deviation-survey preview."
         if not candidate.geometry_preview.stations_preview:
             return "Geometry candidate preview has no station payload to register."
         if candidate.qaqc_status.status not in _ALLOWED_REGISTER_QAQC_STATUSES:
-            return f"Geometry candidate QAQC status is not registration-ready: {candidate.qaqc_status.status.value}."
+            return f"Geometry candidate QAQC status is not WMD-ready: {candidate.qaqc_status.status.value}."
         if candidate.qaqc_status.failure_count > 0:
-            return "Geometry candidate QAQC has failures and cannot be registered."
-        if not is_ingestible(candidate):
+            return "Geometry candidate QAQC has failures and cannot be made available."
+        if not is_wmd_eligible(candidate):
             return (
-                "Geometry candidate resolution state is not registration-ready: "
+                "Geometry candidate resolution state is not WMD-ready: "
                 f"{candidate.resolution_state.value}. Resolve the candidate first."
             )
         return candidate.readiness_issues[0] if candidate.readiness_issues else None
@@ -109,30 +114,37 @@ def registration_block_reason(candidate: SourceFileCandidate) -> str | None:
         return f"Only well_log_candidate records can be registered; got {candidate.candidate_role.value}."
 
     if candidate.parser_status not in {SourceIntakeParseStatus.PARSED, SourceIntakeParseStatus.PARSED_WITH_WARNINGS}:
-        return f"Candidate parser_status is not registration-ready: {candidate.parser_status.value}."
+        return f"Candidate parser_status is not WMD-ready: {candidate.parser_status.value}."
 
     if candidate.parsed_metadata is None:
         return "Candidate has no parsed well-log metadata."
 
     if candidate.qaqc_status.status not in _ALLOWED_REGISTER_QAQC_STATUSES:
-        return f"Candidate QAQC status is not registration-ready: {candidate.qaqc_status.status.value}."
+        return f"Candidate QAQC status is not WMD-ready: {candidate.qaqc_status.status.value}."
 
     if candidate.qaqc_status.failure_count > 0:
-        return "Candidate QAQC has failures and cannot be registered."
+        return "Candidate QAQC has failures and cannot be made available."
 
     well_name = _resolved_value(candidate, "well_name") or candidate.parsed_metadata.well_header.well_name
     if clean_identity_value(well_name) is None:
         return "Candidate has no resolved well name."
 
-    if not is_ingestible(candidate):
+    if not is_wmd_eligible(candidate):
         return (
-            "Candidate resolution state is not registration-ready: "
+            "Candidate resolution state is not WMD-ready: "
             f"{candidate.resolution_state.value}. Resolve or explicitly disposition the candidate first."
         )
 
-    return candidate.readiness_issues[0] if candidate.readiness_issues else "Candidate is not registration-ready."
+    return candidate.readiness_issues[0] if candidate.readiness_issues else "Candidate is not WMD-ready."
+
+
+def registration_block_reason(candidate: SourceFileCandidate) -> str | None:
+    """Compatibility alias for legacy API and test callers."""
+    return wmd_availability_block_reason(candidate)
 
 def _source_intake_provenance(candidate: SourceFileCandidate) -> dict[str, object]:
+    depth_contract = candidate.depth_normalization
+    depth_decision = depth_contract.decision if depth_contract is not None else None
     return {
         "source_intake_candidate_id": candidate.source_file_id,
         "repository_id": candidate.repository_id,
@@ -143,6 +155,21 @@ def _source_intake_provenance(candidate: SourceFileCandidate) -> dict[str, objec
         "parser_status": candidate.parser_status.value,
         "qaqc_status": candidate.qaqc_status.model_dump(mode="json"),
         "resolved_metadata": candidate.resolved_metadata.model_dump(mode="json") if candidate.resolved_metadata else None,
+        "depth_normalization": (
+            {
+                "raw_unit": depth_contract.raw_unit,
+                "raw_start_depth": depth_contract.raw_start_depth,
+                "raw_stop_depth": depth_contract.raw_stop_depth,
+                "status": getattr(depth_contract.status, "value", depth_contract.status),
+                "reason": depth_contract.reason,
+                "selected_target_unit": depth_decision.target_unit if depth_decision is not None else None,
+                "decision_actor": depth_decision.actor if depth_decision is not None else None,
+                "decision_timestamp": str(depth_decision.decided_at) if depth_decision is not None else None,
+                "decision_reason": depth_decision.reason if depth_decision is not None else None,
+            }
+            if depth_contract is not None
+            else None
+        ),
     }
 
 
@@ -154,7 +181,7 @@ def register_candidate_to_inventory(
     approval_note: str | None = None,
 ) -> tuple[str, ManagedWellRecord]:
     """Create/update one Managed Well Inventory record from an intake candidate."""
-    blocked = registration_block_reason(candidate)
+    blocked = wmd_availability_block_reason(candidate)
     if blocked is not None:
         raise ValueError(blocked)
 
@@ -293,24 +320,46 @@ def register_candidate_to_inventory(
         try:
             dlis_asset = DlisAssetStore().preserve_path(Path(candidate.original_path), source_id=candidate.source_file_id, filename=candidate.file_name)
         except DlisAssetStoreError as exc:
-            raise ValueError(f"Original DLIS asset preservation failed: {exc}") from exc
+            raise ValueError(f"External DLIS source reference failed: {exc}") from exc
         asset_payload = dlis_asset.as_dict()
         provenance = {**provenance, "dlis_asset": asset_payload, "source_format": "DLIS"}
         source_kind = ManagedSourceKind.DLIS
-        source_metadata = {**provenance, "parsed_metadata": parsed.model_dump(mode="json"), "storage_uri": dlis_asset.original_uri, "dlis_asset_id": dlis_asset.asset_id}
+        source_metadata = {
+            **provenance,
+            "parsed_metadata": parsed.model_dump(mode="json"),
+            "canonical_source_metadata": (
+                parsed.canonical_metadata.model_dump(mode="json")
+                if parsed.canonical_metadata is not None
+                else None
+            ),
+            "storage_uri": dlis_asset.original_uri,
+            "dlis_asset_id": dlis_asset.asset_id,
+        }
         source_fingerprint = dlis_asset.source_fingerprint
     else:
         try:
             las_asset = LasAssetStore().preserve_path(Path(candidate.original_path), source_id=candidate.source_file_id, filename=candidate.file_name)
         except LasAssetStoreError as exc:
-            raise ValueError(f"Original LAS asset preservation failed: {exc}") from exc
+            raise ValueError(f"External LAS source reference failed: {exc}") from exc
         asset_payload = las_asset.as_dict()
         provenance = {**provenance, "las_asset": asset_payload, "source_format": "LAS"}
         source_kind = ManagedSourceKind.LAS
-        source_metadata = {**provenance, "parsed_metadata": parsed.model_dump(mode="json"), "storage_uri": las_asset.original_uri, "las_manifest_uri": las_asset.manifest_uri, "las_samples_uri": las_asset.samples_uri, "las_asset_id": las_asset.asset_id}
+        source_metadata = {
+            **provenance,
+            "parsed_metadata": parsed.model_dump(mode="json"),
+            "canonical_source_metadata": (
+                parsed.canonical_metadata.model_dump(mode="json")
+                if parsed.canonical_metadata is not None
+                else None
+            ),
+            "storage_uri": las_asset.original_uri,
+            "las_manifest_uri": las_asset.manifest_uri,
+            "las_samples_uri": las_asset.samples_uri,
+            "las_asset_id": las_asset.asset_id,
+        }
         source_fingerprint = las_asset.source_fingerprint
     if candidate.checksum and candidate.checksum != source_fingerprint:
-        raise ValueError("Source Intake checksum does not match the preserved source content fingerprint.")
+        raise ValueError("Source Intake checksum does not match the external source content fingerprint.")
     source_reference = ManagedSourceReference(
         source_id=candidate.source_file_id, source_kind=source_kind, display_name=candidate.file_name,
         original_path=candidate.original_path, file_name=candidate.file_name,
@@ -331,7 +380,21 @@ def register_candidate_to_inventory(
     if existing is not None:
         created_at = existing.created_at
 
-    next_product_groups = _product_groups_from_candidate(candidate, las_asset=las_asset, dlis_asset=dlis_asset)
+    managed_depth_unit, managed_top_depth, managed_base_depth = _managed_depth_range(
+        candidate=candidate,
+        existing=existing,
+        log_header=log_header,
+        fallback_unit=canonical_metadata["depth_unit"],
+    )
+
+    next_product_groups = _product_groups_from_candidate(
+        candidate,
+        las_asset=las_asset,
+        dlis_asset=dlis_asset,
+        managed_depth_unit=managed_depth_unit,
+        managed_top_depth=managed_top_depth,
+        managed_base_depth=managed_base_depth,
+    )
     merged_product_groups = _merge_product_groups(existing.product_groups if existing else [], next_product_groups)
 
     record = ManagedWellRecord(
@@ -342,15 +405,9 @@ def register_candidate_to_inventory(
         field=field,
         block=block,
         country=canonical_metadata["country"],
-        depth_unit=canonical_metadata["depth_unit"] or "ft",
-        top_depth=_merged_top_depth(
-            existing.top_depth if existing else None,
-            log_header.start_depth if log_header else None,
-        ),
-        base_depth=_merged_base_depth(
-            existing.base_depth if existing else None,
-            log_header.stop_depth if log_header else None,
-        ),
+        depth_unit=managed_depth_unit,
+        top_depth=managed_top_depth,
+        base_depth=managed_base_depth,
         status=lifecycle_state,
         lifecycle_state=lifecycle_state,
         wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,
@@ -405,6 +462,9 @@ def _product_groups_from_candidate(
     *,
     las_asset: StoredLasAsset | None = None,
     dlis_asset: StoredDlisAsset | None = None,
+    managed_depth_unit: str,
+    managed_top_depth: float | None,
+    managed_base_depth: float | None,
 ) -> list[ManagedProductGroup]:
     parsed = candidate.parsed_metadata
     log_header = parsed.log_header if parsed else None
@@ -412,7 +472,11 @@ def _product_groups_from_candidate(
     items_by_group: dict[str, list[ManagedProductGroupItem]] = {
         definition.group_key: [] for definition in PRODUCT_GROUP_ORDER
     }
-    run_interval = _run_interval(log_header)
+    run_interval = _managed_run_interval(
+        managed_top_depth,
+        managed_base_depth,
+        managed_depth_unit,
+    )
     run_date = log_header.run_date if log_header and log_header.run_date else "—"
     run_number = log_header.run_number if log_header and log_header.run_number else "—"
     context_terms = [
@@ -473,7 +537,17 @@ def _product_groups_from_candidate(
                     "source_curve_position": index,
                     "source_curve_name": curve.source_curve_name,
                     "las_samples_uri": las_asset.samples_uri if las_asset else None,
-                    **(_dlis_curve_provenance(curve, parsed) if dlis_asset is not None else {}),
+                    **(
+                        _dlis_curve_provenance(
+                            curve,
+                            parsed,
+                            managed_depth_unit=managed_depth_unit,
+                            managed_top_depth=managed_top_depth,
+                            managed_base_depth=managed_base_depth,
+                        )
+                        if dlis_asset is not None
+                        else {}
+                    ),
                 },
             )
         )
@@ -489,7 +563,14 @@ def _product_groups_from_candidate(
 
 
 
-def _dlis_curve_provenance(curve, parsed) -> dict[str, object]:
+def _dlis_curve_provenance(
+    curve,
+    parsed,
+    *,
+    managed_depth_unit: str,
+    managed_top_depth: float | None,
+    managed_base_depth: float | None,
+) -> dict[str, object]:
     parts = str(curve.source_curve_name or "").split("|", 2)
     if len(parts) != 3:
         return {}
@@ -511,6 +592,12 @@ def _dlis_curve_provenance(curve, parsed) -> dict[str, object]:
             "dlis_index_channel": channel.index_channel,
             "dlis_channel_sample_count": channel.sample_count,
             "dlis_channel_supported": channel.supported,
+            "dlis_raw_depth_unit": channel.raw_depth_unit,
+            "dlis_depth_scale_factor": channel.depth_scale_factor,
+            "dlis_parser_normalized_depth_unit": channel.normalized_depth_unit,
+            "managed_depth_unit": managed_depth_unit,
+            "managed_top_depth": managed_top_depth,
+            "managed_base_depth": managed_base_depth,
         })
     return payload
 
@@ -518,7 +605,7 @@ def _dlis_curve_provenance(curve, parsed) -> dict[str, object]:
 def _runtime_classifications_for_curves(*, curve_headers, context_terms: Iterable[str | None]) -> list[CurveClassificationResult]:
     # KR-MDP-CLASSIFICATION-1:
     # Source Intake registration must consume the governed runtime KR resolver
-    # before falling back to the legacy limited classifier. The runtime resolver
+    # before falling back to the compatibility classifier. The runtime resolver
     # uses only seed + approved managed knowledge; candidate knowledge remains
     # excluded from production classification.
     classifier = RuntimeCurveClassificationService(
@@ -725,6 +812,46 @@ def _resolved_value(candidate: SourceFileCandidate, field_name: str) -> str | No
     return value if isinstance(value, str) and value.strip() else None
 
 
+def _managed_depth_range(
+    *,
+    candidate: SourceFileCandidate,
+    existing: ManagedWellRecord | None,
+    log_header,
+    fallback_unit: str | None,
+) -> tuple[str, float | None, float | None]:
+    """Normalize an incoming range before combining it with a managed well."""
+    contract = candidate.depth_normalization
+    selected_target = (
+        contract.decision.target_unit.strip().casefold()
+        if contract is not None and contract.decision is not None
+        else None
+    )
+
+    existing_unit = str(existing.depth_unit or "").strip().casefold() if existing else None
+    target_unit = existing_unit or selected_target
+    if target_unit not in {"m", "ft"}:
+        fallback = depth_unit_conversion(fallback_unit)
+        if not fallback.supported or fallback.normalized_unit not in {"m", "ft"}:
+            raise ValueError(f"Cannot establish managed depth unit from {fallback_unit!r}.")
+        target_unit = fallback.normalized_unit
+
+    incoming_top = log_header.start_depth if log_header is not None else None
+    incoming_base = log_header.stop_depth if log_header is not None else None
+    incoming_unit = log_header.depth_unit if log_header is not None else target_unit
+
+    try:
+        normalized_top, normalized_base = convert_depth_range_to_target(
+            incoming_top, incoming_base, incoming_unit, target_unit
+        )
+    except UnsupportedDepthUnitError as exc:
+        raise ValueError(str(exc)) from exc
+
+    return (
+        target_unit,
+        _merged_top_depth(existing.top_depth if existing else None, normalized_top),
+        _merged_base_depth(existing.base_depth if existing else None, normalized_base),
+    )
+
 def _merged_top_depth(
     existing_value: float | None,
     incoming_value: float | None,
@@ -747,6 +874,18 @@ def _merged_base_depth(
         if value is not None
     ]
     return max(values) if values else None
+
+
+def _managed_run_interval(
+    top_depth: float | None,
+    base_depth: float | None,
+    depth_unit: str,
+) -> str:
+    if top_depth is None or base_depth is None:
+        return "—"
+    if depth_unit not in {"m", "ft"}:
+        raise ValueError(f"Unsupported managed depth unit: {depth_unit!r}")
+    return f"{top_depth:g}–{base_depth:g} {depth_unit}"
 
 
 def _run_interval(log_header) -> str:

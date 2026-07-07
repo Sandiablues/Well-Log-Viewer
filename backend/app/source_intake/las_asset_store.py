@@ -1,8 +1,7 @@
-"""Durable original-LAS asset and parsed-sample storage.
+"""Read-only external LAS reference plus disposable parsed representation.
 
-This repository is content-addressed by SHA-256. The original source bytes are
-preserved byte-for-byte, while the parsed backend contract is stored separately
-for managed reconstruction. Frontend code never writes or interprets this data.
+The authoritative LAS source remains at its external path. WLV fingerprints and
+parses it read-only, then stores only derived manifest/sample cache data.
 """
 from __future__ import annotations
 
@@ -49,7 +48,7 @@ class StoredLasAsset:
 
 
 class LasAssetStore:
-    """Content-addressed repository for original LAS and parsed representation."""
+    """External LAS reference with content-addressed derived cache."""
 
     def __init__(self, storage_root: Path | None = None, parser: LasImportService | None = None) -> None:
         if storage_root is None:
@@ -70,35 +69,35 @@ class LasAssetStore:
             source_bytes,
             MsiSourceRef(source_id=source_id, filename=filename or path.name),
         )
-        return self.preserve_result(result, filename=filename or path.name)
+        return self.preserve_result(
+            result, filename=filename or path.name, source_uri=str(path)
+        )
 
-    def preserve_result(self, result: LasImportResult, *, filename: str) -> StoredLasAsset:
+    def preserve_result(
+        self, result: LasImportResult, *, filename: str, source_uri: str | None = None
+    ) -> StoredLasAsset:
         fingerprint = hashlib.sha256(result.source_bytes).hexdigest()
         if fingerprint != result.source_fingerprint:
             raise LasAssetStoreError("LAS parser fingerprint does not match original source bytes.")
         asset_id = f"las-asset:sha256:{fingerprint}"
         asset_dir = self.storage_root / fingerprint[:2] / fingerprint
-        original_path = asset_dir / "original.las"
+        external_uri = str(Path(source_uri).expanduser().resolve()) if source_uri else ""
         manifest_path = asset_dir / "manifest.json"
         samples_path = asset_dir / "samples.json.gz"
-        created = not original_path.exists()
+        created = not manifest_path.exists()
         asset_dir.mkdir(parents=True, exist_ok=True)
-
-        if original_path.exists():
-            existing = original_path.read_bytes()
-            if hashlib.sha256(existing).hexdigest() != fingerprint:
-                raise LasAssetStoreError(f"Stored LAS asset fingerprint mismatch: {original_path}")
-        else:
-            self._atomic_write_bytes(original_path, result.source_bytes)
 
         manifest = result.as_dict(include_samples=False)
         manifest.update({
             "asset_id": asset_id,
             "original_filename": filename,
-            "original_uri": str(original_path),
+            "original_uri": external_uri,
             "samples_uri": str(samples_path),
             "byte_size": len(result.source_bytes),
-            "storage_contract": "wlv_las_asset_v1",
+            "storage_contract": "wlv_external_las_reference_v1",
+            "source_ownership": "external",
+            "access_mode": "read_only",
+            "source_copied": False,
         })
         samples = {
             "storage_contract": "wlv_las_samples_v1",
@@ -115,7 +114,7 @@ class LasAssetStore:
         return StoredLasAsset(
             asset_id=asset_id,
             source_fingerprint=fingerprint,
-            original_uri=str(original_path),
+            original_uri=external_uri,
             manifest_uri=str(manifest_path),
             samples_uri=str(samples_path),
             byte_size=len(result.source_bytes),
@@ -123,12 +122,6 @@ class LasAssetStore:
             sample_count=result.sample_count,
             created=created,
         )
-
-    @staticmethod
-    def _atomic_write_bytes(path: Path, payload: bytes) -> None:
-        temp = path.with_suffix(path.suffix + ".tmp")
-        temp.write_bytes(payload)
-        os.replace(temp, path)
 
     @staticmethod
     def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:

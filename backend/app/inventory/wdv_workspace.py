@@ -62,6 +62,13 @@ class WdvWorkspaceService:
         records = self.repository.list_records()
         return self.reconcile(records)
 
+    def set_common_depth_unit(self, common_depth_unit: str) -> WdvWorkspaceStateResponse:
+        unit = str(common_depth_unit).strip().casefold()
+        if unit not in {"m", "ft"}:
+            raise ValueError("Common Depth Unit must be m or ft.")
+        records = self.repository.list_records()
+        return self.reconcile(records, preferred_common_depth_unit=unit)
+
     def set_active_well(self, managed_well_reference: str) -> WdvWorkspaceStateResponse:
         records = self.repository.list_records()
         target = self._resolve_reference(managed_well_reference, records)
@@ -74,6 +81,7 @@ class WdvWorkspaceService:
         self,
         records: list[ManagedWellRecord] | None = None,
         preferred_active: str | None = None,
+        preferred_common_depth_unit: str | None = None,
     ) -> WdvWorkspaceStateResponse:
         records = records if records is not None else self.repository.list_records()
         summaries = [self._summary(record) for record in records if self._loaded_product_ids(record)]
@@ -87,6 +95,10 @@ class WdvWorkspaceService:
             stored = self._read_store()
             previous_active_uid = str(stored.get("active_managed_well_uid") or "") or None
             previous_active_id = str(stored.get("active_managed_well_id") or "") or None
+            stored_common_depth_unit = str(stored.get("common_depth_unit") or "m").casefold()
+            if stored_common_depth_unit not in {"m", "ft"}:
+                stored_common_depth_unit = "m"
+            common_depth_unit = preferred_common_depth_unit or stored_common_depth_unit
 
             preferred_summary = by_uid.get(str(preferred_active or "")) or by_id.get(str(preferred_active or ""))
             previous_summary = by_uid.get(str(previous_active_uid or "")) or by_id.get(str(previous_active_id or ""))
@@ -101,6 +113,7 @@ class WdvWorkspaceService:
                 or str(active_uid or "") != str(previous_active_uid or "")
                 or loaded_ids != previous_loaded_ids
                 or loaded_uids != previous_loaded_uids
+                or common_depth_unit != stored_common_depth_unit
                 or stored.get("schema_version") != WDV_WORKSPACE_CONTRACT_VERSION
             )
             revision = int(stored.get("revision", 0) or 0) + (1 if changed else 0)
@@ -112,6 +125,7 @@ class WdvWorkspaceService:
                 "revision": revision,
                 "active_managed_well_id": active_id,
                 "active_managed_well_uid": str(active_uid) if active_uid else None,
+                "common_depth_unit": common_depth_unit,
                 "loaded_managed_well_ids": loaded_ids,
                 "loaded_managed_well_uids": loaded_uids,
                 "updated_at": updated_at,
@@ -123,6 +137,7 @@ class WdvWorkspaceService:
             revision=revision,
             active_managed_well_id=active_id,
             active_managed_well_uid=active_uid,
+            common_depth_unit=common_depth_unit,
             loaded_wells=summaries,
             active_aoi=stored.get("active_aoi") if isinstance(stored.get("active_aoi"), dict) else None,
             updated_at=updated_at,
@@ -183,6 +198,7 @@ class WdvWorkspaceService:
                 "revision": 0,
                 "active_managed_well_id": None,
                 "active_managed_well_uid": None,
+                "common_depth_unit": "m",
                 "loaded_managed_well_ids": [],
                 "loaded_managed_well_uids": [],
                 "updated_at": utc_now_iso(),
@@ -196,6 +212,7 @@ class WdvWorkspaceService:
                 "revision": 0,
                 "active_managed_well_id": None,
                 "active_managed_well_uid": None,
+                "common_depth_unit": "m",
                 "loaded_managed_well_ids": [],
                 "loaded_managed_well_uids": [],
                 "updated_at": utc_now_iso(),

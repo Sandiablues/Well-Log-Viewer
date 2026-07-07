@@ -6,6 +6,13 @@ from pathlib import Path
 from typing import Any, Iterable
 import math
 
+from app.source_intake.depth_units import (
+    UnsupportedDepthUnitError,
+    clean_depth_value,
+    convert_depth_to_target,
+    require_depth_unit_conversion,
+)
+
 try:
     from dlisio import dlis
 except ImportError:  # pragma: no cover - exercised by deployment validation
@@ -24,6 +31,7 @@ def read_dlis_curve_samples(
     logical_file_id: str | None = None,
     frame_id: str | None = None,
     channel_mnemonic: str | None = None,
+    target_depth_unit: str | None = None,
 ) -> dict[str, Any]:
     """Read one scalar DLIS channel and return the common WDV statistics contract.
 
@@ -65,11 +73,23 @@ def read_dlis_curve_samples(
             curves = frame.curves(strict=False)
             depths = curves[index_name]
             values = curves[target_name]
-            depth_factor, depth_unit = _depth_conversion(getattr(index_channel, "units", None))
+            raw_depth_unit = getattr(index_channel, "units", None)
+            source_conversion = require_depth_unit_conversion(raw_depth_unit)
+            depth_unit = (
+                str(target_depth_unit).strip().casefold()
+                if target_depth_unit is not None
+                else source_conversion.normalized_unit
+            )
+            if depth_unit not in {"m", "ft"}:
+                raise DlisSampleReaderError(
+                    f"Unsupported managed depth unit: {depth_unit!r}"
+                )
             value_unit = _clean_optional_text(getattr(channel, "units", None))
             null_values = _channel_null_values(channel)
     except DlisSampleReaderError:
         raise
+    except UnsupportedDepthUnitError as exc:
+        raise DlisSampleReaderError(str(exc)) from exc
     except Exception as exc:
         raise DlisSampleReaderError(
             f"DLIS samples are unreadable for {target_name}: {source}"
@@ -84,7 +104,9 @@ def read_dlis_curve_samples(
 
     for raw_depth, raw_value in _paired_values(depths, values):
         try:
-            depth = _scalar_float(raw_depth) * depth_factor
+            depth = clean_depth_value(
+                convert_depth_to_target(_scalar_float(raw_depth), raw_depth_unit, depth_unit)
+            )
             value = _scalar_float(raw_value)
         except (TypeError, ValueError, OverflowError):
             rejected_row_count += 1
@@ -263,20 +285,6 @@ def _decimate(samples: list[list[float]], max_samples: int) -> tuple[list[list[f
         returned.append(samples[-1])
     return returned, stride
 
-
-def _depth_conversion(unit: object) -> tuple[float, str]:
-    token = str(unit or "").strip().lower()
-    if token == "mm":
-        return 0.001, "m"
-    if token == "cm":
-        return 0.01, "m"
-    if token in {"m", "meter", "metre", "meters", "metres"}:
-        return 1.0, "m"
-    if token in {"in", "inch", "inches"}:
-        return 1.0 / 12.0, "ft"
-    if token in {"ft", "f", "foot", "feet"}:
-        return 1.0, "ft"
-    return 1.0, str(unit or "ft")
 
 
 def _clean_optional_text(value: object) -> str | None:

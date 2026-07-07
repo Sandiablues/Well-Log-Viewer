@@ -1010,7 +1010,7 @@ export function CurveInventory({ availableCurves, curveUsageCounts, visibleTrack
       <div className="wlv-panel-heading">
         <h2>Well Data Inventory</h2>
       </div>
-      {activeInventoryTab === 'all' && (<div className="wlv-inventory-control-stack">
+      <div className="wlv-inventory-control-stack">
         <section className="wlv-inventory-control-section">
           {sectionHeader('Well Selection', wellSectionExpanded, () => setWellSectionExpanded((value) => !value))}
           {wellSectionExpanded && (<div className="wlv-inventory-section-body">
@@ -1021,12 +1021,12 @@ export function CurveInventory({ availableCurves, curveUsageCounts, visibleTrack
             </select>
           </div>)}
         </section>
-        <section className="wlv-inventory-control-section">
+        {lasSources.length > 0 && (<section className="wlv-inventory-control-section">
           {sectionHeader('LAS Inventory', lasSectionExpanded, () => setLasSectionExpanded((value) => !value), lasSources.length)}
           {lasSectionExpanded && (<div className="wlv-inventory-section-body">
             <div className="wlv-las-inventory-row">
-              <select aria-label="LAS file selection" value={selectedLasSourceId} disabled={lasSources.length === 0 || lasPending} onChange={(event) => onLasSourceChange(event.target.value)}>
-                {lasSources.length === 0 ? <option value="">No managed LAS files</option> : lasSources.map((source) => (
+              <select aria-label="LAS file selection" value={selectedLasSourceId} disabled={lasPending} onChange={(event) => onLasSourceChange(event.target.value)}>
+                {lasSources.map((source) => (
                   <option key={source.sourceId} value={source.sourceId}>{source.label} · {source.curveCount + 1} channels</option>
                 ))}
               </select>
@@ -1035,13 +1035,13 @@ export function CurveInventory({ availableCurves, curveUsageCounts, visibleTrack
               </button>
             </div>
             <label className="wlv-inventory-inline-toggle">
-              <input type="checkbox" checked={lasIncludeReviewRequired} disabled={lasPending || lasSources.length === 0} onChange={(event) => onLasIncludeReviewRequiredChange(event.target.checked)}/>
+              <input type="checkbox" checked={lasIncludeReviewRequired} disabled={lasPending} onChange={(event) => onLasIncludeReviewRequiredChange(event.target.checked)}/>
               Include review-required curves
             </label>
             {lasMessage ? <div className="wlv-inventory-status">{lasMessage}</div> : null}
           </div>)}
-        </section>
-      </div>)}
+        </section>)}
+      </div>
       <section className="wlv-inventory-control-section wlv-curve-inventory-section">
         {sectionHeader('Curve Inventory', curveSectionExpanded, () => setCurveSectionExpanded((value) => !value), inventoryCount)}
         {curveSectionExpanded && (<div className="wlv-inventory-section-body wlv-curve-inventory-body">
@@ -1273,7 +1273,9 @@ export const defaultAddTrackDraft: AddTrackDraft = {
     scaleMode: 'per_curve',
 };
 export type TrackBackdropMode = 'light' | 'dark';
-export function Toolbar({ selectedTrack, pendingAddTrackCurveCount, viewDepthRange, fullDepthRange, viewDepthReadoutEnabled, intervalZoomActive, goToDepthValue, onGoToDepthValueChange, trackBackdropMode, onTrackBackdropModeChange, onAddTrack, onDeleteTrack, onClearCanvas, onMoveSelectedTrack, canMoveSelectedTrackLeft, canMoveSelectedTrackRight, canAdjustSelectedCurveTrackWidthDown, canAdjustSelectedCurveTrackWidthUp, onAdjustSelectedCurveTrackWidth, onResetCurveTrackWidths, onZoomIn, onZoomOut, onPreviousView, onFitDepth, onSpecifyDepthRange, onResetView, onToggleIntervalZoom, onGoToDepth, onAddTrackCurveSelectionModeChange, layoutRecommendations, layoutRecommendationsLoading, layoutRecommendationsError, selectedLayoutRecommendationKey, onLayoutRecommendationChange, onRefreshLayoutRecommendations, }: {
+export function Toolbar({ commonDepthUnit, onCommonDepthUnitChange, selectedTrack, pendingAddTrackCurveCount, viewDepthRange, fullDepthRange, viewDepthReadoutEnabled, intervalZoomActive, goToDepthValue, onGoToDepthValueChange, trackBackdropMode, onTrackBackdropModeChange, onAddTrack, onDeleteTrack, onClearCanvas, onMoveSelectedTrack, canMoveSelectedTrackLeft, canMoveSelectedTrackRight, canAdjustSelectedCurveTrackWidthDown, canAdjustSelectedCurveTrackWidthUp, onAdjustSelectedCurveTrackWidth, onResetCurveTrackWidths, onZoomIn, onZoomOut, onPreviousView, onFitDepth, onSpecifyDepthRange, onResetView, onToggleIntervalZoom, onGoToDepth, onAddTrackCurveSelectionModeChange, layoutRecommendations, layoutRecommendationsLoading, layoutRecommendationsError, selectedLayoutRecommendationKey, onLayoutRecommendationChange, onRefreshLayoutRecommendations, }: {
+    commonDepthUnit: 'm' | 'ft';
+    onCommonDepthUnitChange: (unit: 'm' | 'ft') => void;
     selectedTrack: WellLogTrack | null;
     pendingAddTrackCurveCount: number;
     viewDepthRange: DepthViewRange;
@@ -1613,6 +1615,16 @@ export function Toolbar({ selectedTrack, pendingAddTrackCurveCount, viewDepthRan
           <button type="button" className="wlv-layout-preset-refresh" title="Refresh backend KR template recommendations" aria-label="Refresh backend KR template recommendations" disabled={layoutRecommendationsLoading} onClick={onRefreshLayoutRecommendations}>
             ↻
           </button>
+        </div>
+      </div>
+
+      <div className="wlv-toolbar-group wlv-toolbar-group-depth-unit">
+        <span>Depth Unit</span>
+        <div className="wlv-toolbar-actions">
+          <select aria-label="Depth Unit" value={commonDepthUnit} onChange={(event) => onCommonDepthUnitChange(event.target.value as 'm' | 'ft')}>
+            <option value="m">m</option>
+            <option value="ft">ft</option>
+          </select>
         </div>
       </div>
 
@@ -2095,7 +2107,7 @@ export function TrackView({ track, sharedHeaderHeightPx, selected, selectedAssig
       </div>
     </section>);
 }
-export function TrackCanvas({ tracks, selection, openCurveMenu, depthTicks, viewDepthRange, goToDepthMarker, intervalZoomActive, intervalSelection, dragPanActive, onSelectTrack, onSelectCurve, onReorderCurve, onMoveCurveToTrack, onOpenCurveMenu, onCloseCurveMenu, onRemoveCurveFromTrack, onStartIntervalSelection, onUpdateIntervalSelection, onArmIntervalSelection, onCompleteIntervalSelection, onStartDragPan, onUpdateDragPan, onEndDragPan, onStartCurveTrackResize, resizingTrackId, managedSamplesByCurveId, managedSampleErrorsByCurveId, curveCatalogItems, curveFillGeometryByRuleUid = new Map(), }: {
+export function TrackCanvas({ tracks, selection, openCurveMenu, depthTicks, viewDepthRange, goToDepthMarker, intervalZoomActive, intervalSelection, dragPanActive, onSelectTrack, onSelectCurve, onReorderCurve, onMoveCurveToTrack, onOpenCurveMenu, onCloseCurveMenu, onRemoveCurveFromTrack, onStartIntervalSelection, onUpdateIntervalSelection, onCompleteIntervalSelection, onStartDragPan, onUpdateDragPan, onEndDragPan, onStartCurveTrackResize, resizingTrackId, managedSamplesByCurveId, managedSampleErrorsByCurveId, curveCatalogItems, curveFillGeometryByRuleUid = new Map(), }: {
     tracks: WellLogTrack[];
     selection: SelectionRef;
     openCurveMenu: {
@@ -2117,7 +2129,6 @@ export function TrackCanvas({ tracks, selection, openCurveMenu, depthTicks, view
     onRemoveCurveFromTrack: (trackId: string, assignmentId: string) => void;
     onStartIntervalSelection: (depth: number, y: number) => void;
     onUpdateIntervalSelection: (depth: number, y: number) => void;
-    onArmIntervalSelection: (depth: number, y: number) => void;
     onCompleteIntervalSelection: (depth: number, y: number) => void;
     onStartDragPan: (startY: number) => void;
     onUpdateDragPan: (currentY: number, canvasHeight: number) => void;
@@ -2215,10 +2226,6 @@ export function TrackCanvas({ tracks, selection, openCurveMenu, depthTicks, view
                 event.preventDefault();
                 event.stopPropagation();
                 const point = pointFromEvent(event);
-                if (intervalSelection && !intervalSelection.dragging) {
-                    onCompleteIntervalSelection(point.depth, point.y);
-                    return;
-                }
                 onStartIntervalSelection(point.depth, point.y);
                 return;
             }
@@ -2242,24 +2249,11 @@ export function TrackCanvas({ tracks, selection, openCurveMenu, depthTicks, view
                 event.preventDefault();
                 event.stopPropagation();
                 const point = pointFromEvent(event);
-                if (Math.abs(point.y - intervalSelection.startY) >= 8) {
-                    onCompleteIntervalSelection(point.depth, point.y);
-                    return;
-                }
-                onArmIntervalSelection(point.depth, point.y);
+                onCompleteIntervalSelection(point.depth, point.y);
                 return;
             }
             // Drag-pan mouseup is handled by document-level listeners once MB1 drag starts.
         }}>
-      {intervalBand && (<div className={`wlv-interval-selection-band ${intervalSelection?.dragging ? 'dragging' : 'armed'}`} style={{ top: bodyTopOffset + intervalBand.top, height: intervalBand.height }}>
-          <span>
-            {intervalSelection?.dragging
-                ? `${Math.round(intervalBand.startDepth)}–${Math.round(intervalBand.endDepth)} m`
-                : intervalSelection
-                    ? `Start ${Math.round(intervalSelection.startDepth)} m — click end depth`
-                    : 'Click first depth to start interval'}
-          </span>
-        </div>)}
       <div className="wlv-shared-depth-grid-overlay" aria-hidden="true">
         {sharedDepthGridLines.map(({ depth, y }) => (<div key={`shared-grid-${depth}`} className="wlv-shared-depth-grid-line" style={{ top: y }}/>))}
       </div>
@@ -2268,6 +2262,9 @@ export function TrackCanvas({ tracks, selection, openCurveMenu, depthTicks, view
         </div>)}
       <div className="wlv-track-strip">
         {orderedTracks.map((track) => (<TrackView key={track.trackId} track={track} sharedHeaderHeightPx={sharedHeaderHeight} selected={selection.kind === 'track' && selection.trackId === track.trackId || selection.kind === 'curve' && selection.trackId === track.trackId} selectedAssignmentId={selection.kind === 'curve' && selection.trackId === track.trackId ? selection.assignmentId : null} openCurveMenu={openCurveMenu} depthTicks={depthTicks} viewDepthRange={viewDepthRange} onSelectTrack={onSelectTrack} onSelectCurve={onSelectCurve} onReorderCurve={onReorderCurve} onMoveCurveToTrack={onMoveCurveToTrack} onOpenCurveMenu={onOpenCurveMenu} onCloseCurveMenu={onCloseCurveMenu} onRemoveCurveFromTrack={onRemoveCurveFromTrack} onStartCurveTrackResize={onStartCurveTrackResize} resizingTrackId={resizingTrackId} trackBodyHeightPx={trackBodyHeightPx} managedSamplesByCurveId={managedSamplesByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} curveCatalogItems={curveCatalogItems} curveFillGeometryByRuleUid={curveFillGeometryByRuleUid}/>))}
+        {intervalBand && (<div className="wlv-interval-selection-band dragging" style={{ top: bodyTopOffset + intervalBand.top, height: intervalBand.height }}>
+            <span>{Math.round(intervalBand.startDepth)}–{Math.round(intervalBand.endDepth)} m</span>
+          </div>)}
       </div>
     </main>);
 }

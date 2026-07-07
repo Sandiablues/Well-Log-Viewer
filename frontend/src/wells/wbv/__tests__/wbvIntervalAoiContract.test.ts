@@ -24,7 +24,7 @@ describe("WBV interval AOI controls", () => {
     expect(renderer).toContain("#e23232");
     expect(renderer).toContain("marker.renderOrder = 200");
     expect(renderer).toContain("markerScaleForZoom(camera.zoom)");
-    expect(renderer).toContain("THREE.MathUtils.clamp(Math.pow(safeZoom, -1.35), 0.18, 1.6)");
+    expect(renderer).toContain("THREE.MathUtils.clamp(Math.pow(safeZoom, -1.1), 0.12, 1.25)");
     expect(renderer).not.toContain("new THREE.RingGeometry");
   });
 });

@@ -934,24 +934,6 @@ button:disabled {
   box-shadow: inset 0 0 0 3px rgba(183, 121, 31, 0.35);
 }
 
-.wlv-track-canvas.interval-zoom-active::before {
-  content: "Interval zoom mode active";
-  position: sticky;
-  top: 10px;
-  left: 10px;
-  z-index: 20;
-  display: inline-flex;
-  margin: 10px;
-  padding: 5px 8px;
-  border: 1px solid var(--wlv-amber);
-  border-radius: 4px;
-  background: #fff8e8;
-  color: var(--wlv-amber);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-
 /* WL-PROTOTYPE-003C — Interval zoom selection */
 .wlv-track-canvas.interval-zoom-active {
   cursor: crosshair;
@@ -7339,46 +7321,46 @@ button.wlv-view-range-readout,
 }
 
 .wlv-source-intake .wlv-si-candidate-table {
-  width: 1490px !important;
-  min-width: 1490px !important;
-  max-width: 1490px !important;
+  width: 1280px !important;
+  min-width: 1280px !important;
+  max-width: 1280px !important;
   table-layout: fixed !important;
 }
 
 .wlv-source-intake .wlv-si-candidate-table .wlv-si-col-select {
-  width: 48px !important;
+  width: 44px !important;
 }
 
 .wlv-source-intake .wlv-si-candidate-table .wlv-si-col-name {
-  width: 360px !important;
+  width: 300px !important;
 }
 
 .wlv-source-intake .wlv-si-candidate-table .wlv-si-col-well {
-  width: 140px !important;
+  width: 120px !important;
 }
 
 .wlv-source-intake .wlv-si-candidate-table .wlv-si-col-role {
-  width: 200px !important;
+  width: 160px !important;
 }
 
 .wlv-source-intake .wlv-si-candidate-table .wlv-si-col-curves {
-  width: 72px !important;
+  width: 60px !important;
 }
 
 .wlv-source-intake .wlv-si-candidate-table .wlv-si-col-parse {
-  width: 250px !important;
+  width: 200px !important;
 }
 
 .wlv-source-intake .wlv-si-candidate-table .wlv-si-col-qaqc {
-  width: 190px !important;
+  width: 160px !important;
 }
 
 .wlv-source-intake .wlv-si-candidate-table .wlv-si-col-mdp-ready {
-  width: 140px !important;
+  width: 160px !important;
 }
 
 .wlv-source-intake .wlv-si-candidate-table .wlv-si-col-detail {
-  width: 90px !important;
+  width: 76px !important;
 }
 
 /* Reset cell widths so semantic colgroup is authoritative. */
@@ -7400,8 +7382,8 @@ button.wlv-view-range-readout,
 .wlv-source-intake .wlv-si-candidate-table td:nth-child(7),
 .wlv-source-intake .wlv-si-candidate-table th:nth-child(8),
 .wlv-source-intake .wlv-si-candidate-table td:nth-child(8) {
-  padding-left: 10px !important;
-  padding-right: 10px !important;
+  padding-left: 6px !important;
+  padding-right: 6px !important;
 }
 
 /* Column-specific content behavior. */
@@ -8781,3 +8763,538 @@ button.wlv-view-range-readout,
 .wlv-curve-fill-layer-summary { cursor: pointer; position: relative; }
 .wlv-curve-fill-layer-summary-button { position: relative; z-index: 1; cursor: pointer; }
 .wlv-curve-fill-layer-toggle { position: relative; z-index: 2; cursor: default; }
+
+/* WLV-WSI-CANDIDATE-TABLE-COMPACTION-1
+   Compact semantic widths, efficient use of workspace, and table-local overflow. */
+.wlv-si-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: visible;
+  overscroll-behavior-inline: contain;
+}
+
+.wlv-si-candidate-table {
+  width: 100%;
+  min-width: 820px;
+  table-layout: fixed;
+}
+
+.wlv-si-candidate-table .wlv-si-col-select {
+  width: 32px;
+}
+
+.wlv-si-candidate-table .wlv-si-col-name {
+  width: 24%;
+}
+
+.wlv-si-candidate-table .wlv-si-col-well {
+  width: 15%;
+}
+
+.wlv-si-candidate-table .wlv-si-col-role {
+  width: 116px;
+}
+
+.wlv-si-candidate-table .wlv-si-col-curves {
+  width: 58px;
+}
+
+.wlv-si-candidate-table .wlv-si-col-parse {
+  width: 76px;
+}
+
+.wlv-si-candidate-table .wlv-si-col-qaqc {
+  width: 90px;
+}
+
+.wlv-si-candidate-table .wlv-si-col-mdp-ready {
+  width: 104px;
+}
+
+.wlv-si-candidate-table .wlv-si-col-detail {
+  width: 64px;
+}
+
+.wlv-si-candidate-table th,
+.wlv-si-candidate-table td {
+  box-sizing: border-box;
+  padding-inline: 8px;
+}
+
+.wlv-si-candidate-table th {
+  white-space: nowrap;
+}
+
+.wlv-si-candidate-table .wlv-si-file-cell,
+.wlv-si-candidate-table .wlv-si-cell-well,
+.wlv-si-candidate-table .wlv-si-cell-role,
+.wlv-si-candidate-table .wlv-si-cell-parse,
+.wlv-si-candidate-table .wlv-si-cell-qaqc,
+.wlv-si-candidate-table .wlv-si-cell-mdp-ready,
+.wlv-si-candidate-table .wlv-si-cell-detail {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.wlv-si-candidate-table .wlv-si-file-cell strong,
+.wlv-si-candidate-table .wlv-si-cell-well {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-si-candidate-table .wlv-si-cell-role .wlv-si-pill,
+.wlv-si-candidate-table .wlv-si-cell-parse .wlv-si-pill,
+.wlv-si-candidate-table .wlv-si-cell-mdp-ready .wlv-si-pill {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-si-candidate-table .wlv-si-status-stack {
+  min-width: 0;
+  gap: 3px;
+}
+
+.wlv-si-candidate-table .wlv-si-status-stack small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-si-diagnostic-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 24px;
+  row-gap: 14px;
+}
+
+.wlv-si-diagnostic-summary > div {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .wlv-si-candidate-table {
+    min-width: 780px;
+  }
+
+  .wlv-si-diagnostic-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* WLV-WSI-SUMMARY-CARDS-SINGLE-ROW-1
+   Keep all eight Source Intake summary cards compact and on one row. */
+.wlv-si-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(92px, 1fr));
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin-block: 0 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+}
+
+.wlv-si-summary-tile {
+  min-width: 0;
+  min-height: 54px;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.wlv-si-summary-tile__value {
+  display: block;
+  font-size: 20px;
+  line-height: 1;
+  margin-bottom: 7px;
+}
+
+.wlv-si-summary-tile__label {
+  display: block;
+  font-size: 9px;
+  line-height: 1.15;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 1100px) {
+  .wlv-si-summary-grid {
+    min-width: 840px;
+  }
+}
+
+/* WLV COMPACT INFILL CURVE PAIR START */
+/* One normal-height row: host curve | operator | Curve B. */
+.wlv-curve-fill-editor .wlv-curve-fill-expression.wlv-curve-fill-expression-compact.wlv-compact-curve-pair {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr) !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+
+.wlv-curve-fill-editor .wlv-compact-curve-pair > .wlv-compact-curve-box,
+.wlv-curve-fill-editor .wlv-compact-curve-pair > .wlv-compact-curve-operator {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  margin: 0 !important;
+  line-height: 1 !important;
+}
+
+.wlv-curve-fill-editor .wlv-compact-curve-pair > .wlv-compact-curve-box {
+  border: 1px solid #47515f !important;
+  border-radius: 6px !important;
+  background: #191919 !important;
+  color: #f1f3f5 !important;
+  font-family: inherit !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  white-space: nowrap !important;
+}
+
+.wlv-curve-fill-editor .wlv-compact-curve-pair > .wlv-compact-host-curve {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 8px !important;
+  overflow: hidden !important;
+  text-overflow: clip !important;
+}
+
+.wlv-curve-fill-editor .wlv-compact-curve-pair > .wlv-compact-curve-b {
+  justify-self: stretch !important;
+  padding: 0 26px 0 8px !important;
+  overflow: hidden !important;
+  text-overflow: clip !important;
+}
+
+.wlv-curve-fill-editor .wlv-compact-curve-pair > .wlv-compact-curve-operator {
+  justify-self: stretch !important;
+  padding: 0 6px !important;
+  font-size: 13px !important;
+}
+
+.wlv-curve-fill-editor .wlv-compact-curve-pair > .wlv-compact-curve-operator-label {
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 44px !important;
+  min-width: 44px !important;
+  max-width: 44px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  margin: 0 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  font-size: 12px !important;
+}
+/* WLV COMPACT INFILL CURVE PAIR END */
+
+
+/* WDV presentation alignment — Add Track, modal controls, drag zoom */
+.wlv-add-track-button {
+  border-color: #21d17f !important;
+  background: rgba(16, 185, 129, 0.16) !important;
+  color: #39e495 !important;
+  box-shadow: inset 0 0 0 1px rgba(57, 228, 149, 0.18);
+}
+
+.wlv-add-track-button:hover:not(:disabled) {
+  border-color: #5af0aa !important;
+  background: rgba(16, 185, 129, 0.26) !important;
+  color: #7dffc3 !important;
+}
+
+.wlv-add-track-builder,
+.wlv-add-track-builder-draggable {
+  border-color: #4b5563;
+  background: #17191d;
+  color: #e5e7eb;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.58);
+}
+
+.wlv-add-track-builder-draggable .builder-drag-handle {
+  border-bottom-color: #3f4650;
+  background: #22262c;
+  color: #f3f4f6;
+}
+
+.wlv-add-track-builder .builder-section {
+  padding-top: 10px;
+  border-top: 1px solid #303640;
+}
+
+.wlv-add-track-builder .builder-section:first-of-type {
+  border-top: 0;
+}
+
+.wlv-add-track-builder .builder-label {
+  color: #aeb7c3;
+}
+
+.wlv-add-track-builder button,
+.wlv-add-track-builder select {
+  min-height: 34px;
+  border: 1px solid #596270;
+  border-radius: 4px;
+  background: #111318;
+  color: #e5e7eb;
+  font: inherit;
+}
+
+.wlv-add-track-builder button:hover:not(:disabled),
+.wlv-add-track-builder select:hover:not(:disabled) {
+  border-color: #7a8798;
+  background: #1d2229;
+}
+
+.wlv-add-track-builder button.active,
+.wlv-add-track-builder .builder-primary {
+  border-color: #20c97a;
+  background: rgba(16, 185, 129, 0.18);
+  color: #5df0aa;
+  font-weight: 800;
+}
+
+.wlv-add-track-builder button:disabled {
+  border-color: #333842;
+  background: #1b1e23;
+  color: #646b75;
+  opacity: 1;
+}
+
+.wlv-add-track-builder select {
+  width: 100%;
+  padding: 0 10px;
+  color-scheme: dark;
+}
+
+.wlv-add-track-builder .builder-actions {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #3f4650;
+}
+
+.wlv-add-track-builder .builder-note {
+  color: #8d96a3;
+}
+
+.wlv-track-strip {
+  position: relative;
+}
+
+.wlv-track-strip .wlv-interval-selection-band {
+  left: 0;
+  right: 0;
+  width: auto;
+  overflow: visible;
+}
+
+.wlv-track-strip .wlv-interval-selection-band span {
+  left: 8px;
+  top: 4px;
+  border-color: rgba(54, 132, 207, 0.95);
+  background: #111820;
+  color: #8ec8ff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.38);
+}
+
+.wlv-track-canvas.interval-zoom-active .wlv-track-strip {
+  cursor: crosshair;
+}
+
+
+/* WDV Add Track typography normalization */
+.wlv-add-track-builder,
+.wlv-add-track-builder-draggable {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.wlv-add-track-builder-draggable .builder-drag-handle {
+  min-height: 42px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.wlv-add-track-builder .builder-section {
+  gap: 8px;
+}
+
+.wlv-add-track-builder .builder-label {
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.wlv-add-track-builder button,
+.wlv-add-track-builder select {
+  min-height: 32px;
+  font-family: inherit !important;
+  font-size: 13px !important;
+  line-height: 1.2 !important;
+  font-weight: 500;
+}
+
+.wlv-add-track-builder button.active,
+.wlv-add-track-builder .builder-primary {
+  font-size: 13px !important;
+  font-weight: 800;
+}
+
+.wlv-add-track-builder .builder-actions button {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 13px !important;
+}
+
+.wlv-add-track-builder .builder-note {
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+/* Drag Zoom overlay must sit above all curve-track content. */
+.wlv-track-strip {
+  isolation: isolate;
+}
+
+.wlv-track-strip .wlv-interval-selection-band {
+  z-index: 1000;
+}
+
+.wlv-track-strip .wlv-interval-selection-band span {
+  z-index: 1001;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+/* WLV-WSI-DIRECT-FILE-INGEST-1 */
+.wlv-si-card--setup {
+  overflow: hidden;
+}
+
+.wlv-si-repository-list--scrollable {
+  flex: 1 1 auto;
+  min-height: 90px;
+  overflow-y: auto;
+}
+
+.wlv-si-direct-ingest {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 88px;
+  padding: 12px;
+  border: 1px dashed var(--wlv-si-border);
+  border-radius: 8px;
+  background: var(--wlv-si-surface-2);
+  color: var(--wlv-si-text);
+  cursor: pointer;
+  text-align: center;
+}
+
+.wlv-si-direct-ingest:hover,
+.wlv-si-direct-ingest:focus-visible,
+.wlv-si-direct-ingest.is-drag-active {
+  border-color: var(--wlv-si-blue);
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--wlv-si-blue) 18%, transparent);
+}
+
+.wlv-si-direct-ingest strong {
+  font-size: 12px;
+}
+
+.wlv-si-direct-ingest span,
+.wlv-si-direct-ingest small {
+  color: var(--wlv-si-muted);
+  font-size: 10px;
+}
+
+/* WLV-WMDP-RIGHT-EDGE-ALIGNMENT-START
+   Keep the table inside its margin box and align the two terminal columns. */
+.wlv-wmdp-table-wrap {
+  width: calc(100% - 28px) !important;
+  max-width: calc(100% - 28px) !important;
+  min-width: 0 !important;
+}
+
+.wlv-wmdp-table th:nth-child(9),
+.wlv-wmdp-table td:nth-child(9) {
+  width: 108px !important;
+  text-align: right !important;
+}
+
+.wlv-wmdp-table th:nth-child(10),
+.wlv-wmdp-table td:nth-child(10) {
+  width: 224px !important;
+  min-width: 224px !important;
+  text-align: right !important;
+  padding-right: 12px !important;
+}
+
+.wlv-wmdp-row-actions {
+  width: 100% !important;
+  min-width: 0 !important;
+  justify-content: flex-end !important;
+}
+/* WLV-WMDP-RIGHT-EDGE-ALIGNMENT-END */
+
+/* WMD Block 8: render backend-owned downstream recovery state. */
+.wlv-wmd-recovery-banner {
+  margin: 10px 18px 0;
+  padding: 9px 12px;
+  border: 1px solid rgba(194, 130, 54, 0.55);
+  border-radius: 4px;
+  background: rgba(194, 130, 54, 0.12);
+  font-size: 12px;
+}
+
+.wlv-wmd-recovery-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.wlv-wmd-recovery-chip.is-available { opacity: 0.72; }
+.wlv-wmd-recovery-chip.is-blocked { font-weight: 800; }
+
+.wlv-wmd-recovery-blocked-view { min-height: 100%; }
+.wlv-wmd-recovery-blocked-body {
+  max-width: 720px;
+  margin: 36px auto;
+  padding: 24px;
+  border: 1px solid rgba(194, 130, 54, 0.55);
+  border-radius: 6px;
+}
+.wlv-wmd-recovery-blocked-body p { margin: 0 0 12px; }

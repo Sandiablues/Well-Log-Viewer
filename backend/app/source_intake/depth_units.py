@@ -168,3 +168,27 @@ def convert_depth_to_target(value: float, unit: object, target_unit: str) -> flo
     if target == "m":
         return physical_ft * 0.3048
     raise UnsupportedDepthUnitError(f"Unsupported target depth unit: {target_unit!r}")
+
+def clean_depth_value(value: float) -> float:
+    """Remove insignificant binary floating-point noise from display/sample depths."""
+    number = float(value)
+    if not math.isfinite(number):
+        return number
+    return round(number, 8)
+
+
+def convert_depth_range_to_target(
+    start_depth: float | None,
+    stop_depth: float | None,
+    source_unit: object,
+    target_unit: str,
+) -> tuple[float | None, float | None]:
+    return (
+        clean_depth_value(convert_depth_to_target(start_depth, source_unit, target_unit))
+        if start_depth is not None
+        else None,
+        clean_depth_value(convert_depth_to_target(stop_depth, source_unit, target_unit))
+        if stop_depth is not None
+        else None,
+    )
+

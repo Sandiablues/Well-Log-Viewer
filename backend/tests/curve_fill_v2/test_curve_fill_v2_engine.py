@@ -231,3 +231,32 @@ def test_approved_pattern_catalog_is_backend_owned() -> None:
     assert pattern_by_uid("dots-v1").label == "Dots"
     with pytest.raises(ValueError):
         pattern_by_uid("frontend-invented-pattern")
+
+
+
+def test_conditional_fill_compares_rendered_positions_across_different_value_units() -> None:
+    a = CurveSeries(
+        managed_well_uid=WELL_UID,
+        managed_curve_uid="rhob",
+        sample_revision="1",
+        depth_unit="ft",
+        value_unit="g/cm3",
+        samples=((1000.0, 2.0), (1001.0, 2.5), (1002.0, 3.0)),
+    )
+    b = CurveSeries(
+        managed_well_uid=WELL_UID,
+        managed_curve_uid="nphi",
+        sample_revision="1",
+        depth_unit="ft",
+        value_unit="v/v",
+        samples=((1000.0, 0.45), (1001.0, 0.15), (1002.0, -0.15)),
+    )
+    rule = _conditional(a, b)
+    geometry = CurveFillResolutionService().resolve(
+        rule=rule,
+        series_a=a,
+        transform_a=_transform(a, minimum=1.95, maximum=2.95),
+        series_b=b,
+        transform_b=_transform(b, minimum=0.45, maximum=-0.15),
+    )
+    assert geometry.polygons

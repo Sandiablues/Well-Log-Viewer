@@ -1,102 +1,148 @@
 """Evidence-backed metadata resolution for WLV Source Intake.
 
-This module resolves parsed source metadata into backend-owned metadata fields
-with evidence, confidence, and review flags. It does not promote records into
-MSI/WMDP and does not create viewer representations.
+Canonical values are resolved only from explicit parser-native source metadata
+or explicit human corrections applied elsewhere in the intake workflow.
+Missing values remain missing. No path, filename, geographic, or external
+knowledge inference is permitted.
 """
 
 from __future__ import annotations
 
-import re
-from pathlib import Path
 from typing import Optional
 
 from .identity_gate import clean_identity_value
+from .canonical_metadata import canonical_value
 from .models import (
     SourceFileCandidate,
+    SourceIntakeCanonicalMetadataField,
     SourceIntakeEvidenceRecord,
     SourceIntakeResolvedField,
     SourceIntakeResolvedMetadata,
 )
 
 _REQUIRED_REVIEW_FIELDS = {"well_name", "uwi"}
-_FIELD_SOURCE_LABELS = {
-    "well_name": "LAS ~Well WELL field",
-    "uwi": "LAS ~Well UWI/API field",
-    "operator": "LAS ~Well COMP/OPERATOR field",
-    "field": "LAS ~Well FLD/FIELD field",
-    "block": "LAS ~Well BLOCK/LICENSE field",
-}
+_CANONICAL_FIELDS = (
+    "well_name",
+    "wellbore_name",
+    "uwi",
+    "operator",
+    "field",
+    "block",
+    "country",
+    "latitude",
+    "longitude",
+    "producer",
+    "product",
+    "version",
+    "creation_date",
+    "run_date",
+)
 
 
-def resolve_candidate_metadata(candidate: SourceFileCandidate) -> Optional[SourceIntakeResolvedMetadata]:
-    """Resolve parsed LAS metadata into evidence-backed source-intake metadata.
-
-    The LAS header remains authoritative for extracted well identity values.
-    Folder/path hints are treated only as low-confidence conflict evidence; they
-    must not replace LAS header values.
-    """
+def resolve_candidate_metadata(
+    candidate: SourceFileCandidate,
+) -> Optional[SourceIntakeResolvedMetadata]:
     parsed = candidate.parsed_metadata
     if parsed is None:
         return None
 
-    well_header = parsed.well_header
     fields = {
-        "well_name": _resolved_field("well_name", well_header.well_name, candidate),
-        "uwi": _resolved_field("uwi", well_header.uwi, candidate),
-        "operator": _resolved_field("operator", well_header.operator, candidate),
-        "field": _resolved_field("field", well_header.field, candidate),
-        "block": _resolved_field("block", well_header.block, candidate),
+        field_name: _resolved_field(
+            field_name,
+            parsed.canonical_metadata.fields.get(field_name)
+            if parsed.canonical_metadata is not None
+            else None,
+            candidate,
+        )
+        for field_name in _CANONICAL_FIELDS
     }
 
-    warnings: list[str] = []
-    for field in fields.values():
-        warnings.extend(field.warnings)
+    # Compatibility for pre-v2 parsed records: use only explicit parsed header
+    # values. This is not inference.
+    compatibility = {
+        "well_name": parsed.well_header.well_name,
+        "uwi": parsed.well_header.uwi,
+        "operator": parsed.well_header.operator,
+        "field": parsed.well_header.field,
+        "block": parsed.well_header.block,
+        "country": parsed.well_header.country,
+        "producer": parsed.log_header.service_company if parsed.log_header else None,
+        "run_date": parsed.log_header.run_date if parsed.log_header else None,
+    }
+    for field_name, value in compatibility.items():
+        if fields[field_name].value is None and value is not None:
+            fields[field_name] = _explicit_compatibility_field(
+                field_name,
+                value,
+                parsed.parser_id,
+                parsed.source_format,
+                candidate,
+            )
 
-    _apply_path_identity_conflict(candidate, fields["well_name"], warnings)
-
+    warnings = [
+        warning
+        for field in fields.values()
+        for warning in field.warnings
+    ]
     evidence_count = sum(len(field.evidence) for field in fields.values())
-    review_required = any(field.review_required for field in fields.values()) or bool(warnings)
 
     return SourceIntakeResolvedMetadata(
         well_name=fields["well_name"],
+        wellbore_name=fields["wellbore_name"],
         uwi=fields["uwi"],
         operator=fields["operator"],
         field=fields["field"],
         block=fields["block"],
-        review_required=review_required,
+        country=fields["country"],
+        latitude=fields["latitude"],
+        longitude=fields["longitude"],
+        producer=fields["producer"],
+        product=fields["product"],
+        version=fields["version"],
+        creation_date=fields["creation_date"],
+        run_date=fields["run_date"],
+        review_required=any(field.review_required for field in fields.values()),
         warning_count=len(warnings),
         warnings=warnings,
         evidence_count=evidence_count,
     )
 
 
-def _resolved_field(field_name: str, value: Optional[str], candidate: SourceFileCandidate) -> SourceIntakeResolvedField:
-    clean_value = _clean(value)
-    source_label = _FIELD_SOURCE_LABELS[field_name]
-
-    if clean_value:
-        evidence = SourceIntakeEvidenceRecord(
-            field_name=field_name,
-            value=clean_value,
-            source=source_label,
-            source_path=candidate.relative_path,
-            confidence="high",
-        )
+def _resolved_field(
+    field_name: str,
+    field: SourceIntakeCanonicalMetadataField | None,
+    candidate: SourceFileCandidate,
+) -> SourceIntakeResolvedField:
+    if field is not None and clean_identity_value(field.value):
+        value = clean_identity_value(field.value)
+        source = f"{field.source_format} {field.source_section} {field.original_field}"
         return SourceIntakeResolvedField(
             field_name=field_name,
-            value=clean_value,
-            source=source_label,
+            value=value,
+            source=source,
             confidence="high",
-            review_required=False,
-            evidence=[evidence],
+            review_required=field.review_required,
+            evidence=[
+                SourceIntakeEvidenceRecord(
+                    field_name=field_name,
+                    value=value,
+                    source=source,
+                    source_path=candidate.relative_path,
+                    confidence="high",
+                    message=(
+                        f"Explicit source field {field.original_field!r}; "
+                        f"normalization={field.normalization_rule or 'none'}."
+                    ),
+                )
+            ],
         )
 
     review_required = field_name in _REQUIRED_REVIEW_FIELDS
-    warnings = []
+    warnings: list[str] = []
     if review_required:
-        label = "UWI/API" if field_name == "uwi" else "well name"
-        warnings.append(f"Missing {label} in LAS well header; review required.")
+        warnings.append(
+            f"Missing {field_name} in authoritative source metadata; review required."
+        )
 
     return SourceIntakeResolvedField(
         field_name=field_name,
@@ -111,64 +157,40 @@ def _resolved_field(field_name: str, value: Optional[str], candidate: SourceFile
                 source="missing",
                 source_path=candidate.relative_path,
                 confidence="missing",
-                message=warnings[0] if warnings else f"No {field_name} evidence found in parsed LAS metadata.",
+                message=(
+                    f"No explicit {field_name} value was supplied by the source."
+                ),
             )
         ],
         warnings=warnings,
     )
 
 
-def _apply_path_identity_conflict(
+def _explicit_compatibility_field(
+    field_name: str,
+    value: str,
+    parser_id: str,
+    source_format: str,
     candidate: SourceFileCandidate,
-    well_name_field: SourceIntakeResolvedField,
-    warnings: list[str],
-) -> None:
-    if not well_name_field.value:
-        return
-
-    path_hint = _parent_folder_hint(candidate.relative_path)
-    if not path_hint:
-        return
-
-    if _normalize_identity(path_hint) == _normalize_identity(well_name_field.value):
-        return
-
-    message = (
-        "Path-derived well hint conflicts with LAS well header; "
-        "LAS header value was retained and review is required."
+) -> SourceIntakeResolvedField:
+    clean_value = clean_identity_value(value)
+    if clean_value is None:
+        return _resolved_field(field_name, None, candidate)
+    source = f"{source_format} parsed header compatibility field"
+    return SourceIntakeResolvedField(
+        field_name=field_name,
+        value=clean_value,
+        source=source,
+        confidence="high",
+        review_required=False,
+        evidence=[
+            SourceIntakeEvidenceRecord(
+                field_name=field_name,
+                value=clean_value,
+                source=source,
+                source_path=candidate.relative_path,
+                confidence="high",
+                message=f"Explicit value emitted by parser {parser_id}.",
+            )
+        ],
     )
-    warning = f"{message} path_hint={path_hint!r}; las_well={well_name_field.value!r}"
-    warnings.append(warning)
-    well_name_field.review_required = True
-    well_name_field.warnings.append(warning)
-    well_name_field.evidence.append(
-        SourceIntakeEvidenceRecord(
-            field_name="well_name",
-            value=path_hint,
-            source="relative path parent folder hint",
-            source_path=candidate.relative_path,
-            confidence="low_conflict",
-            message=message,
-        )
-    )
-
-
-def _parent_folder_hint(relative_path: str) -> Optional[str]:
-    parent = Path(relative_path).parent
-    if str(parent) in {"", "."}:
-        return None
-    parts = [part for part in parent.parts if part not in {"", "."}]
-    if not parts:
-        return None
-    hint = parts[-1].replace("_", " ").replace("-", " ").strip()
-    if not hint or _normalize_identity(hint) in {"logs", "las", "data", "welllogs", "welllogdata"}:
-        return None
-    return hint
-
-
-def _normalize_identity(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", value.lower())
-
-
-def _clean(value: Optional[str]) -> Optional[str]:
-    return clean_identity_value(value)

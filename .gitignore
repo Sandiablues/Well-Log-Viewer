@@ -2,26 +2,21 @@
 # WL-BUILD source review cloned dependency repos
 reports/source_review/videx-wellog/
 reports/source_review/webviz-subsurface-components/
-
 # Python cache/runtime files
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
-
 # Frontend generated/runtime files
 frontend/node_modules/
 frontend/dist/
-
 backups/
-
 # WLV runtime/generated artifacts
 .wlv_vite.pid
 backend/.wlv_backend.pid
 logs/
 backend/runtime/
 backend/well_log_viewer_backend.egg-info/
-
 # WLV local runtime, backup, validation, and data artifacts
 .wlv_*.log
 .wlv_*.pid
@@ -30,6 +25,12 @@ backend/well_log_viewer_backend.egg-info/
 wlv_*_validation.log
 wlv_*.log
 backend/data/
-
 # WLV local launchd runtime
 .wlv_runtime/
+# Local WLV patch, runtime, and transient validation artifacts
+.wlv_patch_backups/
+.wlv_runtime_logs/
+.wlv_retired_frontend_authority/
+.wlv_freeze_evidence/
+backend.log
+frontend.log
