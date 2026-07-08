@@ -52,6 +52,7 @@ class _FamilyPolicyIndex:
     # Exact curve-level display rules — approved, runtime_eligible=True only.
     # Keyed by canonical_curve_id.  Populated from display_rule records.
     curve_display_rules: dict[str, DisplayRuleRecord]
+    standard_mnemonic_to_canonical: dict[str, str]
     alias_to_canonical: dict[str, str]
     curve_definitions: dict[str, Any]
 
@@ -254,6 +255,7 @@ class ManagedKrFamilyDisplayPolicyResolver:
             # excluded here.  They remain in the C1 semantic revision hash under
             # the existing is-False filter — that filter is unchanged by C2.
             curve_display_rules: dict[str, DisplayRuleRecord] = {}
+            standard_mnemonic_to_canonical: dict[str, str] = {}
             alias_to_canonical: dict[str, str] = {}
             curve_definitions: dict[str, Any] = {}
 
@@ -283,6 +285,15 @@ class ManagedKrFamilyDisplayPolicyResolver:
                         )
                         if family:
                             family_defaults[family] = record
+                    elif record_type == "standard_mnemonic":
+                        mnemonic = cls._normalize_alias(
+                            str(getattr(record, "mnemonic", "") or getattr(record, "standard_mnemonic", "") or "")
+                        )
+                        canonical = str(
+                            getattr(record, "canonical_curve_id", "") or ""
+                        ).strip()
+                        if mnemonic and canonical:
+                            standard_mnemonic_to_canonical[mnemonic] = canonical
                     elif record_type == "alias":
                         alias = cls._normalize_alias(
                             str(getattr(record, "alias", "") or "")
@@ -305,6 +316,7 @@ class ManagedKrFamilyDisplayPolicyResolver:
                 file_size=stat.st_size,
                 family_defaults=family_defaults,
                 curve_display_rules=curve_display_rules,
+                standard_mnemonic_to_canonical=standard_mnemonic_to_canonical,
                 alias_to_canonical=alias_to_canonical,
                 curve_definitions=curve_definitions,
             )
@@ -328,7 +340,10 @@ class ManagedKrFamilyDisplayPolicyResolver:
             item.curve_name,
         ):
             alias = cls._normalize_alias(str(raw or ""))
-            canonical = index.alias_to_canonical.get(alias)
+            canonical = (
+                index.standard_mnemonic_to_canonical.get(alias)
+                or index.alias_to_canonical.get(alias)
+            )
             if canonical:
                 canonical_candidates.append(canonical)
 

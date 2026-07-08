@@ -20,6 +20,8 @@ import { useWdvLayoutSource } from './useWdvLayoutSource';
 import { replaceManagedWellDepthRanges } from './depthRangeState';
 import type { CanonicalLayoutResult } from './useWdvLayoutSource';
 import { buildCompleteLasLoadRequest, buildCompleteLasLoadUrl } from './completeLasWorkflow';
+import { openQuickViewFile, sendQuickViewFileToWsi, isQuickViewFile, type QuickViewCurve, type QuickViewPackage } from './quickViewWorkflow';
+import { QuickViewCanvas } from './QuickViewCanvas';
 import {
     applyCurveFillGeometryDeltaV2,
     createCurveFillRuleV2,
@@ -686,6 +688,80 @@ export interface WdvPageBoundaryProps {
   onOpenWellbore3D(): void;
 }
 
+
+
+const QUICK_VIEW_INVENTORY_COLORS = [
+  '#7CFC00',
+  '#45D6FF',
+  '#FF4FD8',
+  '#FFD84D',
+  '#FF9F43',
+  '#C084FC',
+  '#7EE7C1',
+  '#FF7A7A',
+  '#5EA2FF',
+  '#B9E769',
+] as const;
+
+
+
+
+
+function cleanQuickViewCurveDescription(raw: string | null | undefined): string {
+    return String(raw || '')
+        .replace(/\s*\{\s*[A-Z]\d+(?:\.\d+)?\s*\}\s*/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function quickViewScaleStatus(curve: QuickViewCurve): string {
+    const catalogue = String((curve as any).catalogue_status || '').trim();
+    const decision = String((curve as any).scale_decision || '').trim();
+    if (catalogue && decision) return `${catalogue} · ${decision}`;
+    const scaleSource = String((curve as any).scale_source || '').toLowerCase();
+    if (scaleSource.includes('managed_knowledge_curve_rule') || scaleSource.includes('governed')) return 'KR exact · Governed';
+    if (scaleSource.includes('resistivity_log')) return 'Unit domain · Unit-log fallback';
+    if (scaleSource.includes('fallback_unit_domain')) return 'Unit domain · Unit-linear fallback';
+    return 'Unknown · Generic fallback';
+}
+
+function quickViewInventoryDescription(curve: QuickViewCurve, fallback: string): string {
+    const cleaned = cleanQuickViewCurveDescription(curve.description || fallback || curve.mnemonic);
+    return `${cleaned || curve.mnemonic} · ${quickViewScaleStatus(curve)}`;
+}
+
+function QuickViewCurveInventory({ pkg }: { pkg: QuickViewPackage }) {
+    const curves = pkg.tracks.flatMap((track, trackIndex) => track.curves.map((curve, curveIndex) => ({
+        curve,
+        trackTitle: track.title,
+        key: `${track.track_id}:${curve.curve_id}:${trackIndex}:${curveIndex}`,
+        color: QUICK_VIEW_INVENTORY_COLORS[(trackIndex + curveIndex) % QUICK_VIEW_INVENTORY_COLORS.length],
+    })));
+    const count = curves.length;
+
+    return (<aside className="wlv-curve-inventory wlv-qv-curve-inventory wlv-qv-curve-inventory-compact">
+      <div className="wlv-inventory-control-stack">
+        <section className="wlv-inventory-control-section wlv-curve-inventory-section">
+          <button type="button" className="wlv-inventory-section-toggle" aria-expanded="true">
+            <span>Curve Inventory</span>
+            <span className="wlv-inventory-section-toggle-meta">{count}<b>▾</b></span>
+          </button>
+          <div className="wlv-inventory-section-body wlv-curve-inventory-body">
+            <div className="wlv-inventory-list wlv-qv-curve-list-compact">
+              {curves.map(({ curve, trackTitle, key, color }) => {
+                  const description = quickViewInventoryDescription(curve, trackTitle);
+                  return (<div key={key} className="wlv-qv-curve-row-compact" title={description}>
+                    <strong style={{ color }}>{curve.mnemonic}</strong>
+                    <span>{description}</span>
+                  </div>);
+              })}
+            </div>
+          </div>
+        </section>
+      </div>
+    </aside>);
+}
+
 export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpenWellbore3D }: WdvPageBoundaryProps) {
   const managedViewerWellId = managedViewerWell?.managedWellId ?? null;
   const managedViewerWellUid = managedViewerWell?.managedWellUid ?? null;
@@ -834,6 +910,182 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
   const [completeLasPending, setCompleteLasPending] = useState(false);
   const [completeLasError, setCompleteLasError] = useState<string | null>(null);
   const [completeLasResult, setCompleteLasResult] = useState<string | null>(null);
+
+const [quickViewPackage, setQuickViewPackage] = useState<QuickViewPackage | null>(null);
+const [quickViewSourceFile, setQuickViewSourceFile] = useState<File | null>(null);
+const [quickViewElevatePending, setQuickViewElevatePending] = useState(false);
+const [quickViewElevateMessage, setQuickViewElevateMessage] = useState<string | null>(null);
+const [quickViewDragActive, setQuickViewDragActive] = useState(false);
+const [quickViewPending, setQuickViewPending] = useState(false);
+const [quickViewError, setQuickViewError] = useState<string | null>(null);
+const [quickViewDepthUnit, setQuickViewDepthUnit] = useState<'m' | 'ft'>('m');
+const [quickViewRange, setQuickViewRange] = useState<DepthViewRange>(EMPTY_DEPTH_RANGE);
+const [, setQuickViewHistory] = useState<DepthViewRange[]>([]);
+const [quickViewIntervalZoomActive, setQuickViewIntervalZoomActive] = useState(false);
+const [quickViewGoToDepthValue, setQuickViewGoToDepthValue] = useState('');
+const [quickViewSelectedDepth, setQuickViewSelectedDepth] = useState<number | null>(null);
+const handleQuickViewDrop = useCallback(async (file: File) => {
+  if (!isQuickViewFile(file)) { setQuickViewError('Quick View accepts LAS or DLIS files.'); return; }
+  setQuickViewPending(true); setQuickViewError(null);
+  try {
+    const pkg = await openQuickViewFile(file);
+    const unit = pkg.depth_unit_label?.toLowerCase() === 'ft' ? 'ft' : 'm';
+    const factor = pkg.depth_unit_label?.toLowerCase() === 'ft' && unit === 'm' ? 1 / 3.280839895013123 : 1;
+    setCurveInventoryCollapsed(false);
+    setQuickViewPackage(pkg);
+    setQuickViewSourceFile(file);
+    setQuickViewDepthUnit(unit);
+    setQuickViewRange({ min: pkg.depth_min * factor, max: pkg.depth_max * factor });
+    setQuickViewHistory([]);
+    setQuickViewIntervalZoomActive(false);
+    setQuickViewGoToDepthValue('');
+    setQuickViewSelectedDepth(null);
+    setQuickViewElevateMessage(null);
+  }
+  catch (error) { setQuickViewError(error instanceof Error ? error.message : 'Unable to display file'); }
+  finally { setQuickViewPending(false); }
+}, []);
+
+const handleQuickViewElevate = useCallback(async () => {
+  if (!quickViewSourceFile) return;
+  setQuickViewElevatePending(true);
+  setQuickViewElevateMessage(null);
+  try {
+    const result = await sendQuickViewFileToWsi(quickViewSourceFile);
+    setQuickViewElevateMessage(result.message);
+  } catch (error) {
+    setQuickViewElevateMessage(error instanceof Error ? error.message : 'Unable to send file to WSI');
+  } finally {
+    setQuickViewElevatePending(false);
+  }
+}, [quickViewSourceFile]);
+
+const quickViewSourceUnit = quickViewPackage?.depth_unit_label?.toLowerCase() === 'ft' ? 'ft'
+  : quickViewPackage?.depth_unit_label?.toLowerCase() === 'm' ? 'm'
+  : null;
+const quickViewFullRange = useMemo<DepthViewRange>(() => {
+  if (!quickViewPackage) return EMPTY_DEPTH_RANGE;
+  const convert = (value: number): number => {
+    if (!quickViewSourceUnit || quickViewSourceUnit === quickViewDepthUnit) return value;
+    return quickViewSourceUnit === 'm' ? value * 3.280839895013123 : value / 3.280839895013123;
+  };
+  return { min: convert(quickViewPackage.depth_min), max: convert(quickViewPackage.depth_max) };
+}, [quickViewPackage, quickViewSourceUnit, quickViewDepthUnit]);
+const setQuickViewDepthWindow = useCallback((range: DepthViewRange, remember = true) => {
+  if (!quickViewPackage) return;
+  const min = Math.max(quickViewFullRange.min, Math.min(range.min, range.max));
+  const max = Math.min(quickViewFullRange.max, Math.max(range.min, range.max));
+  if (!(max > min)) return;
+  if (remember) setQuickViewHistory((history) => [...history, quickViewRange]);
+  setQuickViewRange({ min, max });
+}, [quickViewPackage, quickViewFullRange.min, quickViewFullRange.max, quickViewRange]);
+const changeQuickViewDepthUnit = useCallback((unit: 'm' | 'ft') => {
+  if (!quickViewSourceUnit || unit === quickViewDepthUnit) return;
+  const factor = quickViewDepthUnit === 'm' ? 3.280839895013123 : 1 / 3.280839895013123;
+  setQuickViewDepthUnit(unit);
+  setQuickViewRange((range) => ({ min: range.min * factor, max: range.max * factor }));
+  setQuickViewHistory((history) => history.map((range) => ({ min: range.min * factor, max: range.max * factor })));
+  setQuickViewSelectedDepth((depth) => depth === null ? null : depth * factor);
+  setQuickViewGoToDepthValue('');
+}, [quickViewSourceUnit, quickViewDepthUnit]);
+const zoomQuickView = useCallback((factor: number) => {
+  const center = (quickViewRange.min + quickViewRange.max) / 2;
+  const half = (quickViewRange.max - quickViewRange.min) * factor / 2;
+  setQuickViewDepthWindow({ min: center - half, max: center + half });
+}, [quickViewRange, setQuickViewDepthWindow]);
+const previousQuickView = useCallback(() => {
+  setQuickViewHistory((history) => {
+    if (!history.length) return history;
+    const previous = history[history.length - 1];
+    setQuickViewRange(previous);
+    return history.slice(0, -1);
+  });
+}, []);
+const goToQuickViewDepth = useCallback(() => {
+  const depth = Number.parseFloat(quickViewGoToDepthValue);
+  if (!Number.isFinite(depth)) return;
+  if (depth < quickViewFullRange.min || depth > quickViewFullRange.max) {
+    setQuickViewError(`Measured depth must be between ${quickViewFullRange.min} and ${quickViewFullRange.max}.`);
+    return;
+  }
+
+  const currentSpan = quickViewRange.max - quickViewRange.min;
+  const reviewWindow = quickViewDepthUnit === 'ft'
+    ? GO_TO_REVIEW_WINDOW_M * 3.280839895013123
+    : GO_TO_REVIEW_WINDOW_M;
+  const requestedSpan = Math.min(currentSpan, reviewWindow);
+  const fullSpan = quickViewFullRange.max - quickViewFullRange.min;
+  const span = Math.min(requestedSpan, fullSpan);
+
+  let min = depth - span / 2;
+  let max = depth + span / 2;
+  if (min < quickViewFullRange.min) {
+    max += quickViewFullRange.min - min;
+    min = quickViewFullRange.min;
+  }
+  if (max > quickViewFullRange.max) {
+    min -= max - quickViewFullRange.max;
+    max = quickViewFullRange.max;
+  }
+
+  setQuickViewSelectedDepth(depth);
+  setQuickViewDepthWindow({ min, max });
+  setQuickViewError(null);
+}, [quickViewGoToDepthValue, quickViewRange, quickViewFullRange, quickViewDepthUnit, setQuickViewDepthWindow]);
+
+const closeQuickView = useCallback(() => {
+  setQuickViewPackage(null);
+  setQuickViewSourceFile(null);
+  setQuickViewHistory([]);
+  setQuickViewIntervalZoomActive(false);
+  setQuickViewGoToDepthValue('');
+  setQuickViewSelectedDepth(null);
+  setQuickViewElevateMessage(null);
+}, []);
+
+useEffect(() => {
+  if (activeView !== 'log-viewer') return undefined;
+
+  const containsFile = (transfer: DataTransfer | null): boolean => {
+    if (!transfer) return false;
+    if (transfer.files.length > 0) return true;
+    return Array.from(transfer.items).some((item) => item.kind === 'file');
+  };
+
+  const onWindowDragOver = (event: globalThis.DragEvent): void => {
+    if (!containsFile(event.dataTransfer)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    setQuickViewDragActive(true);
+  };
+
+  const onWindowDragLeave = (event: globalThis.DragEvent): void => {
+    if (event.relatedTarget === null) setQuickViewDragActive(false);
+  };
+
+  const onWindowDrop = (event: globalThis.DragEvent): void => {
+    if (!containsFile(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setQuickViewDragActive(false);
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (files.length !== 1) {
+      setQuickViewError('Drop one LAS or DLIS file at a time.');
+      return;
+    }
+    void handleQuickViewDrop(files[0]);
+  };
+
+  window.addEventListener('dragover', onWindowDragOver, true);
+  window.addEventListener('dragleave', onWindowDragLeave, true);
+  window.addEventListener('drop', onWindowDrop, true);
+  return () => {
+    window.removeEventListener('dragover', onWindowDragOver, true);
+    window.removeEventListener('dragleave', onWindowDragLeave, true);
+    window.removeEventListener('drop', onWindowDrop, true);
+  };
+}, [activeView, handleQuickViewDrop]);
+
   const [logImageSourceOptions, setLogImageSourceOptions] = useState<LogImageSourceOption[]>([]);
   const [selectedLogImageSourceId, setSelectedLogImageSourceId] = useState('');
   useEffect(() => {
@@ -2136,7 +2388,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
         </div>
       </header>
 
-      {!hasLoadedViewerWell && (<section className="wlv-empty-viewer-top-banner" aria-label="Well Data Viewer empty state">
+      {!hasLoadedViewerWell && !quickViewPackage && (<section className="wlv-empty-viewer-top-banner" aria-label="Well Data Viewer empty state">
           <strong>No data loaded in the Well Data Viewer</strong>
           <span>
             The WDV is ready. Load a managed well or selected products from the WMDP using Bulk Action → Load selected to Data Viewer.
@@ -2145,18 +2397,37 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
 
 
 
-      <Toolbar commonDepthUnit={wdvWorkspace?.common_depth_unit ?? 'm'} onCommonDepthUnitChange={(unit) => void changeCommonDepthUnit(unit)} selectedTrack={selectedTrack} pendingAddTrackCurveCount={pendingAddTrackCurveIds.length} viewDepthRange={viewDepthRange} fullDepthRange={canvasAssignedCurveDepthRange} viewDepthReadoutEnabled={tracks.length > 0} intervalZoomActive={intervalZoomActive} goToDepthValue={goToDepthValue} onGoToDepthValueChange={setGoToDepthValue} trackBackdropMode={trackBackdropMode} onTrackBackdropModeChange={setTrackBackdropMode} onAddTrack={addTrack} onDeleteTrack={deleteSelectedTrack} onClearCanvas={clearCanvas} onMoveSelectedTrack={moveSelectedTrack} canMoveSelectedTrackLeft={canMoveSelectedTrackLeft} canMoveSelectedTrackRight={canMoveSelectedTrackRight} canAdjustSelectedCurveTrackWidthDown={canAdjustSelectedCurveTrackWidthDown} canAdjustSelectedCurveTrackWidthUp={canAdjustSelectedCurveTrackWidthUp} onAdjustSelectedCurveTrackWidth={adjustSelectedCurveTrackWidth} onResetCurveTrackWidths={resetCurveTrackWidths} onZoomIn={() => zoomDepth(0.75)} onZoomOut={() => zoomDepth(1.33)} onPreviousView={previousDepthView} onFitDepth={fitDepth} onSpecifyDepthRange={(range) => {
+      <Toolbar commonDepthUnit={quickViewPackage ? quickViewDepthUnit : (wdvWorkspace?.common_depth_unit ?? 'm')} onCommonDepthUnitChange={(unit) => quickViewPackage ? changeQuickViewDepthUnit(unit) : void changeCommonDepthUnit(unit)} managedLayoutDisabled={Boolean(quickViewPackage)} depthUnitDisabled={Boolean(quickViewPackage && !quickViewSourceUnit)} selectedTrack={quickViewPackage ? null : selectedTrack} pendingAddTrackCurveCount={pendingAddTrackCurveIds.length} viewDepthRange={quickViewPackage ? quickViewRange : viewDepthRange} fullDepthRange={quickViewPackage ? quickViewFullRange : canvasAssignedCurveDepthRange} viewDepthReadoutEnabled={quickViewPackage ? true : tracks.length > 0} intervalZoomActive={quickViewPackage ? quickViewIntervalZoomActive : intervalZoomActive} goToDepthValue={quickViewPackage ? quickViewGoToDepthValue : goToDepthValue} onGoToDepthValueChange={quickViewPackage ? setQuickViewGoToDepthValue : setGoToDepthValue} trackBackdropMode={trackBackdropMode} onTrackBackdropModeChange={setTrackBackdropMode} onAddTrack={addTrack} onDeleteTrack={deleteSelectedTrack} onClearCanvas={clearCanvas} onMoveSelectedTrack={moveSelectedTrack} canMoveSelectedTrackLeft={canMoveSelectedTrackLeft} canMoveSelectedTrackRight={canMoveSelectedTrackRight} canAdjustSelectedCurveTrackWidthDown={canAdjustSelectedCurveTrackWidthDown} canAdjustSelectedCurveTrackWidthUp={canAdjustSelectedCurveTrackWidthUp} onAdjustSelectedCurveTrackWidth={adjustSelectedCurveTrackWidth} onResetCurveTrackWidths={resetCurveTrackWidths} onZoomIn={() => quickViewPackage ? zoomQuickView(0.75) : zoomDepth(0.75)} onZoomOut={() => quickViewPackage ? zoomQuickView(1.33) : zoomDepth(1.33)} onPreviousView={quickViewPackage ? previousQuickView : previousDepthView} onFitDepth={() => quickViewPackage ? setQuickViewDepthWindow(quickViewFullRange) : fitDepth()} onSpecifyDepthRange={(range) => {
+        if (quickViewPackage) {
+            setQuickViewIntervalZoomActive(false);
+            setQuickViewDepthWindow(range);
+            return;
+        }
         setOpenCurveMenu(null);
         setIntervalZoomActive(false);
         setIntervalSelection(null);
         setDragPanState(null);
         setDepthView(range);
-    }} onResetView={resetDepthView} onToggleIntervalZoom={() => {
+    }} onResetView={() => {
+        if (quickViewPackage) {
+            setQuickViewHistory([]);
+            setQuickViewRange(quickViewFullRange);
+            setQuickViewIntervalZoomActive(false);
+            setQuickViewGoToDepthValue('');
+            setQuickViewSelectedDepth(null);
+            return;
+        }
+        resetDepthView();
+    }} onToggleIntervalZoom={() => {
+        if (quickViewPackage) {
+            setQuickViewIntervalZoomActive((active) => !active);
+            return;
+        }
         setOpenCurveMenu(null);
         setIntervalSelection(null);
         setDragPanState(null);
         setIntervalZoomActive((active) => !active);
-    }} onGoToDepth={goToDepth} onAddTrackCurveSelectionModeChange={(active) => {
+    }} onGoToDepth={quickViewPackage ? goToQuickViewDepth : goToDepth} onAddTrackCurveSelectionModeChange={(active) => {
         setAddTrackCurveSelectionMode(active);
         if (active) {
             setPendingAddTrackCurveIds([]);
@@ -2166,11 +2437,14 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
       {wdvTemplateModalOpen && selectedWdvTemplateRecommendation ? (<WdvTemplateRecommendationModal recommendation={selectedWdvTemplateRecommendation} loadedCurveItems={wdvPackageState.loadedCurveItems} managedWellId={managedViewerWellId} managedWellUid={managedViewerWellUid} getCanonicalRevision={() => canonicalRevisionRef.current} onClose={() => setWdvTemplateModalOpen(false)} onApplied={handleWdvTemplateApplied}/>) : null}
 
       <div className={`wlv-prototype-workspace wlv-track-backdrop-${trackBackdropMode} ${curveInventoryResizeState ? 'curve-inventory-resize-active' : ''} ${curveInventoryCollapsed ? 'curve-inventory-collapsed' : ''}`} style={{ gridTemplateColumns: `${curveInventoryCollapsed ? 38 : curveInventoryWidthPx}px minmax(0, 1fr) 330px` }}>
+        {(quickViewDragActive || quickViewPending) && <div className="wlv-qv-drop-overlay"><strong>{quickViewPending ? 'Reading file…' : 'Drop LAS or DLIS to view'}</strong></div>}
+        {quickViewError && <div className="wlv-qv-status-message" role="status">{quickViewError}</div>}
         <div className={`wlv-curve-inventory-shell ${curveInventoryCollapsed ? 'collapsed' : ''}`} style={{ width: curveInventoryCollapsed ? 38 : curveInventoryWidthPx }}>
         <button type="button" className="wlv-curve-inventory-collapse-toggle" onClick={() => setCurveInventoryCollapsed((collapsed) => !collapsed)} aria-expanded={!curveInventoryCollapsed} aria-label={curveInventoryCollapsed ? 'Expand Curve Inventory' : 'Collapse Curve Inventory'} title={curveInventoryCollapsed ? 'Expand Curve Inventory' : 'Collapse Curve Inventory'}>
           {curveInventoryCollapsed ? '›' : '‹'}
         </button>
         {curveInventoryCollapsed ? (<div className="wlv-curve-inventory-collapsed-label" aria-hidden="true">Curves</div>) : (<>
+        {quickViewPackage ? (<QuickViewCurveInventory pkg={quickViewPackage}/>) : (<>
         {wdvWorkspaceError && <div className="wlv-workspace-error">{wdvWorkspaceError}</div>}
         <CurveInventory availableCurves={activeViewerCurves} curveUsageCounts={curveUsageCounts} visibleTrackCurveIds={visibleTrackCurveIds} selectedTrackCurveIds={addTrackCurveSelectionMode ? pendingAddTrackCanonicalIds : selectedTrackCurveIds} selectedCurveIds={visibleTrackCurveIds} assignmentEnabled={addTrackCurveSelectionMode || selectedTrack?.trackType === 'curve'} preferredInventoryTab={tracks.length > 0 ? 'selected' : 'all'} loadedWells={wdvWorkspace?.loaded_wells ?? []} activeWell={activeInventoryWell} curveRunMetadata={activeCurveRunMetadata} lasSources={completeLasSources} selectedLasSourceId={completeLasSourceId} lasPending={completeLasPending} lasIncludeReviewRequired={completeLasIncludeReview} lasMessage={completeLasError ?? completeLasResult} onLasSourceChange={(sourceId) => { setCompleteLasSourceId(sourceId); setCompleteLasError(null); setCompleteLasResult(null); }} onLasIncludeReviewRequiredChange={setCompleteLasIncludeReview} onAddCompleteLas={() => void loadCompleteLas()} logImageSources={logImageSourceOptions} selectedLogImageSourceId={selectedLogImageSourceId} onLogImageSourceChange={setSelectedLogImageSourceId} onActiveWellChange={(managedWellId) => {
             const selectedIdentityPayload = wdvWorkspace?.loaded_wells.find(
@@ -2203,11 +2477,13 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
             }
         }}/>
         </>)}
+        </>)}
         {!curveInventoryCollapsed && (<button type="button" className="wlv-curve-inventory-resize-handle" aria-label="Resize curve inventory panel" title="Drag to widen Curve Inventory" onMouseDown={(event) => {
             event.preventDefault();
             setCurveInventoryResizeState({ startX: event.clientX, startWidth: curveInventoryWidthPx });
         }} onDoubleClick={() => setCurveInventoryWidthPx(CURVE_INVENTORY_DEFAULT_WIDTH_PX)}/>)}
         </div>
+        {quickViewPackage ? (<QuickViewCanvas pkg={quickViewPackage} onClose={closeQuickView} onElevate={handleQuickViewElevate} elevatePending={quickViewElevatePending} elevateMessage={quickViewElevateMessage} viewDepthRange={quickViewRange} displayDepthUnit={quickViewDepthUnit} selectedDepth={quickViewSelectedDepth} intervalZoomActive={quickViewIntervalZoomActive} onIntervalSelected={(range) => { setQuickViewIntervalZoomActive(false); setQuickViewDepthWindow(range); }} />) : (<>
         {tracks.length === 0 ? (hasLoadedViewerWell ? (<section className="wlv-loaded-curves-ready-state" aria-label="Loaded curves ready">
               <div className="wlv-loaded-curves-ready-card">
                 <h2>Loaded curves are ready</h2>
@@ -2230,14 +2506,23 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
             </section>) : (<section className="wlv-track-canvas wlv-track-canvas-empty-active" aria-label="Blank Well Data Viewer track canvas">
               <div className="wlv-track-strip" aria-hidden="true"/>
             </section>)) : (<TrackCanvas tracks={tracks} selection={selection} openCurveMenu={openCurveMenu} depthTicks={visibleDepthTicks} viewDepthRange={viewDepthRange} goToDepthMarker={goToDepthMarker} intervalZoomActive={intervalZoomActive} intervalSelection={intervalSelection} dragPanActive={Boolean(dragPanState)} onSelectTrack={selectCanvasTrack} onSelectCurve={selectCanvasCurve} onReorderCurve={reorderCurve} onMoveCurveToTrack={moveCurveToTrack} onOpenCurveMenu={(trackId, assignmentId) => setOpenCurveMenu({ trackId, assignmentId })} onCloseCurveMenu={() => setOpenCurveMenu(null)} onRemoveCurveFromTrack={removeCurveFromTrack} onStartIntervalSelection={startIntervalSelection} onUpdateIntervalSelection={updateIntervalSelection} onCompleteIntervalSelection={completeIntervalSelection} onStartDragPan={startDragPan} onUpdateDragPan={updateDragPan} onEndDragPan={endDragPan} onStartCurveTrackResize={startCurveTrackResize} resizingTrackId={trackResizeState?.trackId ?? null} managedSamplesByCurveId={managedSamplesByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} curveCatalogItems={activeCurveCatalog} curveFillGeometryByRuleUid={curveFillFeatureEnabled ? curveFillGeometryByRuleUid : new Map()}/>)}
-        {tracks.length === 0 ? (<aside className="wlv-right-panel wlv-ready-properties-panel" aria-label="Track properties unavailable">
+        </>)}
+        {quickViewPackage ? (<aside className="wlv-right-panel wlv-ready-properties-panel" aria-label="Quick View information">
+            <div className="wlv-panel-heading"><h2>Quick View</h2></div>
+            <div className="wlv-ready-properties-copy">
+              <p><strong>{quickViewPackage.filename}</strong></p>
+              <p>{quickViewPackage.source_format}</p>
+              <p>{quickViewPackage.tracks.reduce((count, track) => count + track.curves.length, 0)} renderable curves</p>
+              <p>Temporary display only. Nothing was added to WSI or WMD.</p>
+            </div>
+          </aside>) : (tracks.length === 0 ? (<aside className="wlv-right-panel wlv-ready-properties-panel" aria-label="Track properties unavailable">
             <div className="wlv-panel-heading">
               <h2>Track Properties</h2>
             </div>
             <div className="wlv-ready-properties-copy">
               Create or select a visible track to edit display properties.
             </div>
-          </aside>) : (<WellLogPropertiesPanelSlot tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} managedSampleContractsByCurveId={managedSampleContractsByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} wdvIdentityMetadata={wdvIdentityMetadata} wdvIdentityMetadataError={wdvIdentityMetadataError} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment} curveFillV2={{ enabled: curveFillFeatureEnabled, managedWellUid: managedViewerWellUid, revision: canonicalSession?.revision ?? canonicalRevisionRef.current, rules: canonicalSession?.curve_fills ?? [], pending: curveFillPending, error: curveFillError, onCreateRule: createCurveFillRule, onUpdateRule: updateCurveFillRule, onRemoveRule: removeCurveFillRule, onReorderRules: reorderCurveFillRules }} legacyPanel={(<RightPanel tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment}/>)}/>)}
+          </aside>) : (<WellLogPropertiesPanelSlot tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} managedSampleContractsByCurveId={managedSampleContractsByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} wdvIdentityMetadata={wdvIdentityMetadata} wdvIdentityMetadataError={wdvIdentityMetadataError} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment} curveFillV2={{ enabled: curveFillFeatureEnabled, managedWellUid: managedViewerWellUid, revision: canonicalSession?.revision ?? canonicalRevisionRef.current, rules: canonicalSession?.curve_fills ?? [], pending: curveFillPending, error: curveFillError, onCreateRule: createCurveFillRule, onUpdateRule: updateCurveFillRule, onRemoveRule: removeCurveFillRule, onReorderRules: reorderCurveFillRules }} legacyPanel={(<RightPanel tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment}/>)}/>))}
       </div>
 
       <footer className="wlv-status-footer">
