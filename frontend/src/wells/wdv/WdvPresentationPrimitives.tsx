@@ -4,7 +4,7 @@ import { resolvedCurveFillPaintV2, type CurveFillGeometryV2 } from './curveFillV
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 import { depthUnitLabel, realCurveSamplesByCurveId, wellHeader } from '../prototype/realLasTrackLayoutData';
 import { lithologyIntervals21_31, lithologySource } from '../prototype/lithologyTrackData';
 import type { WdvLoadedCurveItem } from '../prototype/wdvPackageState';
@@ -233,8 +233,14 @@ export type IntervalSelectionState = {
 export const CURVE_TRACK_MIN_WIDTH = 120;
 export const CURVE_TRACK_MAX_WIDTH = 420;
 export const CURVE_TRACK_WIDTH_STEP = 24;
-export function depthRangeLabel(range: DepthViewRange): string {
-    return `${range.min}–${range.max} ${depthUnitLabel} MD`;
+export function formatDepthLabelValue(value: number): string {
+    if (!Number.isFinite(value)) return '';
+    const rounded = Math.round(value * 100) / 100;
+    return rounded.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+}
+
+export function depthRangeLabel(range: DepthViewRange, unit: 'm' | 'ft' = depthUnitLabel as 'm' | 'ft'): string {
+    return `${formatDepthLabelValue(range.min)}–${formatDepthLabelValue(range.max)} ${unit} MD`;
 }
 export function wlvApiBaseUrl(): string {
     // WLV-MDP-API-PORT-8001-1:
@@ -1273,9 +1279,11 @@ export const defaultAddTrackDraft: AddTrackDraft = {
     scaleMode: 'per_curve',
 };
 export type TrackBackdropMode = 'light' | 'dark';
-export function Toolbar({ commonDepthUnit, onCommonDepthUnitChange, selectedTrack, pendingAddTrackCurveCount, viewDepthRange, fullDepthRange, viewDepthReadoutEnabled, intervalZoomActive, goToDepthValue, onGoToDepthValueChange, trackBackdropMode, onTrackBackdropModeChange, onAddTrack, onDeleteTrack, onClearCanvas, onMoveSelectedTrack, canMoveSelectedTrackLeft, canMoveSelectedTrackRight, canAdjustSelectedCurveTrackWidthDown, canAdjustSelectedCurveTrackWidthUp, onAdjustSelectedCurveTrackWidth, onResetCurveTrackWidths, onZoomIn, onZoomOut, onPreviousView, onFitDepth, onSpecifyDepthRange, onResetView, onToggleIntervalZoom, onGoToDepth, onAddTrackCurveSelectionModeChange, layoutRecommendations, layoutRecommendationsLoading, layoutRecommendationsError, selectedLayoutRecommendationKey, onLayoutRecommendationChange, onRefreshLayoutRecommendations, }: {
+export function Toolbar({ commonDepthUnit, onCommonDepthUnitChange, managedLayoutDisabled = false, depthUnitDisabled = false, selectedTrack, pendingAddTrackCurveCount, viewDepthRange, fullDepthRange, viewDepthReadoutEnabled, intervalZoomActive, goToDepthValue, onGoToDepthValueChange, trackBackdropMode, onTrackBackdropModeChange, onAddTrack, onDeleteTrack, onClearCanvas, onMoveSelectedTrack, canMoveSelectedTrackLeft, canMoveSelectedTrackRight, canAdjustSelectedCurveTrackWidthDown, canAdjustSelectedCurveTrackWidthUp, onAdjustSelectedCurveTrackWidth, onResetCurveTrackWidths, onZoomIn, onZoomOut, onPreviousView, onFitDepth, onSpecifyDepthRange, onResetView, onToggleIntervalZoom, onGoToDepth, onAddTrackCurveSelectionModeChange, layoutRecommendations, layoutRecommendationsLoading, layoutRecommendationsError, selectedLayoutRecommendationKey, onLayoutRecommendationChange, onRefreshLayoutRecommendations, wbvPublishAction, }: {
     commonDepthUnit: 'm' | 'ft';
     onCommonDepthUnitChange: (unit: 'm' | 'ft') => void;
+    managedLayoutDisabled?: boolean;
+    depthUnitDisabled?: boolean;
     selectedTrack: WellLogTrack | null;
     pendingAddTrackCurveCount: number;
     viewDepthRange: DepthViewRange;
@@ -1311,6 +1319,7 @@ export function Toolbar({ commonDepthUnit, onCommonDepthUnitChange, selectedTrac
     selectedLayoutRecommendationKey: string;
     onLayoutRecommendationChange: (templateKey: string) => void;
     onRefreshLayoutRecommendations: () => void;
+    wbvPublishAction?: ReactNode;
 }) {
     const [builderOpen, setBuilderOpen] = useState(false);
     const [draft, setDraft] = useState<AddTrackDraft>(defaultAddTrackDraft);
@@ -1488,7 +1497,7 @@ export function Toolbar({ commonDepthUnit, onCommonDepthUnitChange, selectedTrac
             ? 'Template service unavailable'
             : layoutRecommendationOptions.length > 0
                 ? 'Layout Preset ▾'
-                : 'No KR presets available';
+                : 'Not Available';
     const addTrackBuilder = builderOpen ? createPortal(<div className="wlv-add-track-builder wlv-add-track-builder-draggable" role="dialog" aria-label="Add Track Builder" style={{ top: panelPosition.top, left: panelPosition.left }}>
       <div className="builder-heading builder-drag-handle" onMouseDown={startPanelDrag}>
         <strong>Add Track</strong>
@@ -1578,41 +1587,48 @@ export function Toolbar({ commonDepthUnit, onCommonDepthUnitChange, selectedTrac
         <span>Add / Delete Tracks</span>
         <div className="wlv-toolbar-actions">
           <div className="wlv-add-track-control">
-            <button type="button" className="wlv-add-track-button" onClick={toggleAddTrackBuilder} aria-expanded={builderOpen}>
+            <button type="button" className="wlv-add-track-button" disabled={managedLayoutDisabled} onClick={toggleAddTrackBuilder} aria-expanded={builderOpen}>
               + Add Track ▾
             </button>
           </div>
           {addTrackBuilder}
-          <button type="button" disabled={!selectedTrack} onClick={onDeleteTrack}>Delete</button>
-          <button type="button" onClick={onClearCanvas}>Clear Canvas</button>
+          <button type="button" disabled={managedLayoutDisabled || !selectedTrack} onClick={onDeleteTrack}>Delete</button>
+          <button type="button" disabled={managedLayoutDisabled} onClick={onClearCanvas}>Clear Canvas</button>
         </div>
       </div>
 
       <div className="wlv-toolbar-group wlv-toolbar-group-arrange">
         <span>Track Layout</span>
         <div className="wlv-toolbar-actions">
-          <button type="button" disabled={!canMoveSelectedTrackLeft} title={selectedTrack ? 'Move selected track left' : 'Select a track first'} aria-label="Move selected track left" onClick={() => onMoveSelectedTrack(-1)}>
+          <button type="button" disabled={managedLayoutDisabled || !canMoveSelectedTrackLeft} title={selectedTrack ? 'Move selected track left' : 'Select a track first'} aria-label="Move selected track left" onClick={() => onMoveSelectedTrack(-1)}>
             ←
           </button>
-          <button type="button" disabled={!canMoveSelectedTrackRight} title={selectedTrack ? 'Move selected track right' : 'Select a track first'} aria-label="Move selected track right" onClick={() => onMoveSelectedTrack(1)}>
+          <button type="button" disabled={managedLayoutDisabled || !canMoveSelectedTrackRight} title={selectedTrack ? 'Move selected track right' : 'Select a track first'} aria-label="Move selected track right" onClick={() => onMoveSelectedTrack(1)}>
             →
           </button>
-          <button type="button" disabled={!canAdjustSelectedCurveTrackWidthDown} title={selectedTrack?.trackType === 'curve' ? 'Contract selected curve track' : 'Select a curve track first'} onClick={() => onAdjustSelectedCurveTrackWidth(-CURVE_TRACK_WIDTH_STEP)}>
+          <button type="button" disabled={managedLayoutDisabled || !canAdjustSelectedCurveTrackWidthDown} title={selectedTrack?.trackType === 'curve' ? 'Contract selected curve track' : 'Select a curve track first'} onClick={() => onAdjustSelectedCurveTrackWidth(-CURVE_TRACK_WIDTH_STEP)}>
             − Width
           </button>
-          <button type="button" disabled={!canAdjustSelectedCurveTrackWidthUp} title={selectedTrack?.trackType === 'curve' ? 'Widen selected curve track' : 'Select a curve track first'} onClick={() => onAdjustSelectedCurveTrackWidth(CURVE_TRACK_WIDTH_STEP)}>
+          <button type="button" disabled={managedLayoutDisabled || !canAdjustSelectedCurveTrackWidthUp} title={selectedTrack?.trackType === 'curve' ? 'Widen selected curve track' : 'Select a curve track first'} onClick={() => onAdjustSelectedCurveTrackWidth(CURVE_TRACK_WIDTH_STEP)}>
             + Width
           </button>
-          <button type="button" onClick={onResetCurveTrackWidths} title="Reset all curve tracks to uniform width; depth tracks remain unchanged">
+          <button type="button" disabled={managedLayoutDisabled} onClick={onResetCurveTrackWidths} title="Reset all curve tracks to uniform width; depth tracks remain unchanged">
             Reset
           </button>
-          <select aria-label="Layout preset" className="wlv-layout-preset-select" value={selectedLayoutRecommendationKey} disabled={layoutRecommendationsLoading || layoutRecommendationOptions.length === 0} title={layoutRecommendationsError ?? 'Backend-approved KR layout presets'} onChange={(event) => onLayoutRecommendationChange(event.target.value)}>
+        </div>
+
+      </div>
+
+      <div className="wlv-toolbar-group wlv-toolbar-group-presets">
+        <span>Presets</span>
+        <div className="wlv-toolbar-actions">
+          <select aria-label="Layout preset" className="wlv-layout-preset-select" style={{ minWidth: layoutRecommendationOptions.length > 0 ? 260 : 150 }} value={selectedLayoutRecommendationKey} disabled={managedLayoutDisabled || layoutRecommendationsLoading || layoutRecommendationOptions.length === 0} title={layoutRecommendationsError ?? 'Backend-approved KR layout presets'} onChange={(event) => onLayoutRecommendationChange(event.target.value)}>
             <option value="">{layoutPresetPlaceholder}</option>
             {layoutRecommendationOptions.map((item) => (<option key={item.template_key} value={item.template_key}>
                 {item.template_label}
               </option>))}
           </select>
-          <button type="button" className="wlv-layout-preset-refresh" title="Refresh backend KR template recommendations" aria-label="Refresh backend KR template recommendations" disabled={layoutRecommendationsLoading} onClick={onRefreshLayoutRecommendations}>
+          <button type="button" className="wlv-layout-preset-refresh" title="Refresh backend KR template recommendations" aria-label="Refresh backend KR template recommendations" disabled={managedLayoutDisabled || layoutRecommendationsLoading} onClick={onRefreshLayoutRecommendations}>
             ↻
           </button>
         </div>
@@ -1621,7 +1637,7 @@ export function Toolbar({ commonDepthUnit, onCommonDepthUnitChange, selectedTrac
       <div className="wlv-toolbar-group wlv-toolbar-group-depth-unit">
         <span>Depth Unit</span>
         <div className="wlv-toolbar-actions">
-          <select aria-label="Depth Unit" value={commonDepthUnit} onChange={(event) => onCommonDepthUnitChange(event.target.value as 'm' | 'ft')}>
+          <select aria-label="Depth Unit" value={commonDepthUnit} disabled={depthUnitDisabled} onChange={(event) => onCommonDepthUnitChange(event.target.value as 'm' | 'ft')}>
             <option value="m">m</option>
             <option value="ft">ft</option>
           </select>
@@ -1665,11 +1681,10 @@ export function Toolbar({ commonDepthUnit, onCommonDepthUnitChange, selectedTrac
                 </div>
               </div>, document.body) : null}
           </div>
-          <button type="button" onClick={onPreviousView}>Prev</button>
           <button type="button" onClick={onFitDepth}>Full</button>
           <button type="button" onClick={onResetView}>Reset</button>
-          {viewDepthReadoutEnabled ? (<strong className="wlv-depth-readout" title={`Full range ${depthRangeLabel(fullDepthRange)}`}>
-              View: {depthRangeLabel(viewDepthRange)}
+          {viewDepthReadoutEnabled ? (<strong className="wlv-depth-readout" title={`Full range ${depthRangeLabel(fullDepthRange, commonDepthUnit)}`}>
+              View: {depthRangeLabel(viewDepthRange, commonDepthUnit)}
             </strong>) : null}
           <input className="wlv-go-to-depth-input" aria-label="Go to depth" value={goToDepthValue} placeholder="Go to MD" onChange={(event) => onGoToDepthValueChange(event.target.value)} onKeyDown={(event) => {
             if (event.key === 'Enter')
@@ -1678,6 +1693,7 @@ export function Toolbar({ commonDepthUnit, onCommonDepthUnitChange, selectedTrac
           <button type="button" className={`wlv-go-to-depth-button ${goToDepthValue.trim() ? 'ready' : ''}`} onClick={onGoToDepth} title="Go to entered measured depth" aria-label="Go to entered measured depth">
             ✓
           </button>
+          {wbvPublishAction ? <span className="wlv-inline-wbv-publish-action" style={{ display: 'inline-flex', alignItems: 'center', position: 'relative', flex: '0 0 auto', height: 28 }}>{wbvPublishAction}</span> : null}
         </div>
       </div>
 

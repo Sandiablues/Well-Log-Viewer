@@ -2,6 +2,16 @@ import { useMemo, useRef, useState } from 'react';
 import type { DepthViewRange } from './WdvPresentationPrimitives';
 import type { QuickViewCurve, QuickViewPackage, QuickViewSample } from './quickViewWorkflow';
 
+
+const WDV_QV_SHARED_HEADER_TEXT_STYLE = {
+  color: '#dfe6f1',
+  fontSize: 11,
+  fontWeight: 720,
+  letterSpacing: '0.115em',
+  lineHeight: 1,
+  textTransform: 'uppercase' as const,
+};
+
 export const QUICK_VIEW_SINGLE_TRACK_WIDTH = 156;
 export const QUICK_VIEW_MULTI_TRACK_WIDTH = 168;
 export const QUICK_VIEW_DENSE_TRACK_WIDTH = 180;
@@ -205,10 +215,24 @@ export function QuickViewCanvas({
   }, [dragStartY, dragCurrentY]);
 
   return <section className="wlv-qv-canvas" aria-label="Direct Quick View">
-    <div className="wlv-qv-toolbar">
-      <strong>{pkg.well_name}</strong>
-      <span>{pkg.filename}</span>
-      <div className="wlv-qv-toolbar-actions"><button type="button" onClick={onElevate} disabled={elevatePending}>{elevatePending ? 'Sending…' : 'Send to WSI'}</button><button type="button" onClick={onClose}>Close Quick View</button>{elevateMessage ? <small>{elevateMessage}</small> : null}</div>
+    <div className="wlv-qv-toolbar" style={{ minHeight: 42, display: 'flex', alignItems: 'center' }}>
+      <span
+        className="wlv-qv-toolbar-title"
+        style={{
+          minWidth: 0,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          color: '#cbd4e1',
+          fontSize: 11,
+          fontWeight: 400,
+          lineHeight: 1,
+        }}
+      >
+        <span className="wlv-qv-shared-header-text" style={WDV_QV_SHARED_HEADER_TEXT_STYLE}>QUICK VIEW:</span>{' '}
+        <span style={{ color: '#cbd4e1', fontSize: 11, fontWeight: 400, letterSpacing: 0, lineHeight: 1 }}>{pkg.filename}</span>
+      </span>
+      <div className="wlv-qv-toolbar-actions"><button type="button" onClick={onElevate} disabled={elevatePending}>{elevatePending ? 'Sending…' : 'Send Quick View to Sources'}</button><button type="button" onClick={onClose}>Close Quick View</button>{elevateMessage ? <small>{elevateMessage}</small> : null}</div>
     </div>
 
     <div

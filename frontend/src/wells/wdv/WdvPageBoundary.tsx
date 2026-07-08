@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type Dispatch, type ReactNode, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { curveCatalog } from '../prototype/realLasTrackLayoutData';
 import { WellLogPropertiesPanelSlot } from '../prototype/WellLogPropertiesPanelSlot';
 import { loadBackendViewerPackageWithFallback, type BackendViewerPackageLoadResult } from '../prototype/backendViewerPackageAdapter';
@@ -20,7 +20,7 @@ import { useWdvLayoutSource } from './useWdvLayoutSource';
 import { replaceManagedWellDepthRanges } from './depthRangeState';
 import type { CanonicalLayoutResult } from './useWdvLayoutSource';
 import { buildCompleteLasLoadRequest, buildCompleteLasLoadUrl } from './completeLasWorkflow';
-import { openQuickViewFile, sendQuickViewFileToWsi, isQuickViewFile, type QuickViewCurve, type QuickViewPackage } from './quickViewWorkflow';
+import { openQuickViewFile, sendQuickViewFileToWsi, isQuickViewFile, type QuickViewCurve, type QuickViewPackage, type QuickViewMetadataValue, type QuickViewQaqcFlag } from './quickViewWorkflow';
 import { QuickViewCanvas } from './QuickViewCanvas';
 import {
     applyCurveFillGeometryDeltaV2,
@@ -690,6 +690,17 @@ export interface WdvPageBoundaryProps {
 
 
 
+
+const WDV_QV_SHARED_HEADER_TEXT_STYLE = {
+    margin: 0,
+    color: '#dfe6f1',
+    fontSize: 11,
+    fontWeight: 720,
+    letterSpacing: '0.115em',
+    lineHeight: 1,
+    textTransform: 'uppercase' as const,
+};
+
 const QUICK_VIEW_INVENTORY_COLORS = [
   '#7CFC00',
   '#45D6FF',
@@ -730,6 +741,263 @@ function quickViewInventoryDescription(curve: QuickViewCurve, fallback: string):
     return `${cleaned || curve.mnemonic} · ${quickViewScaleStatus(curve)}`;
 }
 
+
+function quickViewMetaDisplay(value: QuickViewMetadataValue | undefined | null, fallback = 'Not supplied'): string {
+    if (!value || value.value === null || value.value === undefined || value.value === '') return fallback;
+    const rendered = typeof value.value === 'boolean' ? (value.value ? 'Yes' : 'No') : String(value.value);
+    return value.unit ? `${rendered} ${value.unit}` : rendered;
+}
+
+const QUICK_VIEW_HEADER_PLACEHOLDERS = new Set([
+    'WELL',
+    'FIELD',
+    'COMPANY',
+    'COUNTRY',
+    'STATE',
+    'COUNTY',
+    'COUNTRY / STATE / COUNTY',
+    'UNIQUE WELL ID / API NUMBER',
+    'UNIQUE WELL ID',
+    'API NUMBER',
+]);
+
+function quickViewIsHeaderPlaceholder(value: string): boolean {
+    const normalized = value.trim().replace(/\s+/g, ' ').toUpperCase();
+    return QUICK_VIEW_HEADER_PLACEHOLDERS.has(normalized);
+}
+
+function quickViewWellMetaDisplay(value: QuickViewMetadataValue | undefined | null): string {
+    const rendered = quickViewMetaDisplay(value, 'Not available');
+    if (rendered === 'Not supplied') return 'Not available';
+    return quickViewIsHeaderPlaceholder(rendered) ? 'Not available' : rendered;
+}
+
+function quickViewCompactRange(pkg: QuickViewPackage): string {
+    const index = pkg.quick_view_metadata?.curve_info.index;
+    if (!index) {
+        const unit = pkg.depth_unit_label ? ` ${pkg.depth_unit_label}` : '';
+        return `${pkg.depth_min.toFixed(0)} – ${pkg.depth_max.toFixed(0)}${unit}`;
+    }
+    return `${quickViewMetaDisplay(index.start, '—')} – ${quickViewMetaDisplay(index.stop, '—')}`;
+}
+
+function quickViewNormalizeEmpty(value: string): string {
+    const cleaned = value.trim();
+    return cleaned.length ? cleaned : 'Not supplied';
+}
+
+function quickViewStatusTone(value: string): 'neutral' | 'ok' | 'warning' | 'error' {
+    const normalized = value.toLowerCase();
+    if (normalized.includes('error') || normalized.includes('failed')) return 'error';
+    if (normalized.includes('warning') || normalized.includes('mismatch')) return 'warning';
+    if (normalized.includes('parsed') || normalized.includes('governed')) return 'ok';
+    return 'neutral';
+}
+
+function quickViewToneColor(tone: 'neutral' | 'ok' | 'warning' | 'error'): string {
+    if (tone === 'error') return '#ff9a9a';
+    return '#cbd4e1';
+}
+
+function QuickViewMetadataRow({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'ok' | 'warning' | 'error' }) {
+    return <div
+        className="wlv-qv-metadata-row"
+        style={{
+            display: 'grid',
+            gridTemplateColumns: '118px minmax(0, 1fr)',
+            columnGap: 8,
+            alignItems: 'baseline',
+            padding: '2px 0',
+            borderBottom: '1px solid rgba(116, 132, 158, 0.09)',
+        }}
+    >
+        <dt style={{ margin: 0, color: '#8f98a8', fontSize: 9.5, fontWeight: 650, letterSpacing: '0.055em', textTransform: 'uppercase' }}>{label}</dt>
+        <dd
+            className={`wlv-qv-metadata-value wlv-qv-metadata-${tone}`}
+            style={{ margin: 0, minWidth: 0, color: quickViewToneColor(tone), fontSize: 10.5, fontWeight: 520, lineHeight: 1.22, overflowWrap: 'anywhere' }}
+        >
+            {quickViewNormalizeEmpty(value)}
+        </dd>
+    </div>;
+}
+
+function QuickViewMetadataSection({ title, children, meta }: { title: string; children: ReactNode; meta?: string }) {
+    return <section
+        className="wlv-property-section wlv-qv-metadata-card"
+        style={{
+            margin: '0 0 7px',
+            padding: '8px 10px',
+            border: '1px solid rgba(116, 132, 158, 0.24)',
+            borderRadius: 7,
+            background: 'rgba(12, 15, 20, 0.64)',
+        }}
+    >
+        <div className="wlv-qv-metadata-card-heading" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+            <h3 style={{ margin: 0, color: '#dfe6f1', fontSize: 11, fontWeight: 720, letterSpacing: '0.095em', textTransform: 'uppercase' }}>{title}</h3>
+            {meta ? <span style={{ color: quickViewStatusTone(meta) === 'warning' ? '#d8b957' : '#9aa6b8', fontSize: 9.5, fontWeight: 650, letterSpacing: '0.055em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{meta.replace(/_/g, ' ')}</span> : null}
+        </div>
+        {children}
+    </section>;
+}
+
+function QuickViewMetadataList({ children }: { children: ReactNode }) {
+    return <dl className="wlv-qv-metadata-list" style={{ margin: 0, padding: 0 }}>{children}</dl>;
+}
+
+function QuickViewNotice({ children }: { children: ReactNode }) {
+    return <div
+        className="wlv-property-note wlv-qv-metadata-notice"
+        style={{ marginTop: 6, padding: '5px 7px', border: '1px dashed rgba(116, 132, 158, 0.30)', borderRadius: 7, color: '#aeb7c6', fontSize: 10.5, fontWeight: 500, lineHeight: 1.28 }}
+    >
+        {children}
+    </div>;
+}
+
+function QuickViewSummaryPill({ label, value, tone = 'neutral' }: { label: string; value: number | string; tone?: 'neutral' | 'ok' | 'warning' | 'error' }) {
+    return <span
+        className={`wlv-qv-summary-pill wlv-qv-summary-${tone}`}
+        style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            gap: 4,
+            minWidth: 0,
+            padding: '3px 6px',
+            border: '1px solid rgba(116, 132, 158, 0.20)',
+            borderRadius: 5,
+            background: 'rgba(18, 23, 31, 0.54)',
+        }}
+    >
+        <span style={{ color: '#9aa6b8', fontSize: 9.5, fontWeight: 640, letterSpacing: '0.04em', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+        <b style={{ color: quickViewToneColor(tone), fontSize: 10.5, fontWeight: 680 }}>{value}</b>
+    </span>;
+}
+
+function QuickViewSummaryGroup({ title, children }: { title: string; children: ReactNode }) {
+    return <div style={{ marginTop: 6 }}>
+        <div style={{ color: '#8f98a8', fontSize: 9.5, fontWeight: 680, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>{title}</div>
+        <div className="wlv-qv-summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4 }}>{children}</div>
+    </div>;
+}
+
+function QuickViewInfoToggle({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggleCollapsed: () => void }) {
+    return <button
+        type="button"
+        className="wlv-curve-inventory-collapse-toggle wlv-qv-info-collapse-toggle"
+        onClick={onToggleCollapsed}
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? 'Expand Info panel' : 'Collapse Info panel'}
+        title={collapsed ? 'Expand Info panel' : 'Collapse Info panel'}
+        style={{ position: 'static', width: 28, height: 28, minWidth: 28, minHeight: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, margin: 0 }}
+    >
+        {collapsed ? '‹' : '›'}
+    </button>;
+}
+
+function QuickViewPanelHeaderTitle({ children }: { children: ReactNode }) {
+    return <h2
+        className="wlv-qv-panel-header-title wlv-qv-shared-header-text"
+        style={WDV_QV_SHARED_HEADER_TEXT_STYLE}
+    >
+        {children}
+    </h2>;
+}
+
+function QuickViewInfoHeading({ collapsed, onToggleCollapsed }: { collapsed: boolean; onToggleCollapsed: () => void }) {
+    if (collapsed) {
+        return <div className="wlv-panel-heading wlv-qv-info-heading-collapsed" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', minHeight: 42, padding: '6px 5px' }}>
+            <QuickViewInfoToggle collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />
+        </div>;
+    }
+    return <div className="wlv-panel-heading wlv-qv-info-heading" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, minHeight: 42, padding: '0 10px' }}>
+        <QuickViewPanelHeaderTitle>INFO</QuickViewPanelHeaderTitle>
+        <QuickViewInfoToggle collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />
+    </div>;
+}
+
+function QuickViewMetadataPanel({ pkg, collapsed = false, onToggleCollapsed = () => {} }: { pkg: QuickViewPackage; collapsed?: boolean; onToggleCollapsed?: () => void }) {
+    const metadata = pkg.quick_view_metadata;
+    const totalCurves = pkg.tracks.reduce((count, track) => count + track.curves.length, 0);
+    if (!metadata) {
+        return <aside className="wlv-right-panel wlv-ready-properties-panel" aria-label="Quick View information" style={{ overflow: 'hidden' }}>
+            <QuickViewInfoHeading collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />
+            {collapsed ? null : <div className="wlv-ready-properties-copy wlv-qv-metadata-panel" style={{ padding: 8, overflowY: 'auto' }}>
+              <QuickViewMetadataSection title="File Info">
+                <p className="wlv-qv-source-name" style={{ margin: '0 0 6px', color: '#cbd4e1', fontSize: 10.5, fontWeight: 540, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{pkg.filename}</p>
+                <QuickViewMetadataList>
+                    <QuickViewMetadataRow label="Type" value={pkg.source_format} />
+                    <QuickViewMetadataRow label="Curves" value={`${totalCurves} renderable curves`} />
+                </QuickViewMetadataList>
+                <QuickViewNotice>Temporary display only. Nothing was added to WSI or WMD.</QuickViewNotice>
+              </QuickViewMetadataSection>
+            </div>}
+          </aside>;
+    }
+    const file = metadata.file_info;
+    const well = metadata.well_info;
+    const curve = metadata.curve_info;
+    const index = curve.index;
+    const fileType = quickViewMetaDisplay(file.file_type, pkg.source_format);
+    const fileVersion = quickViewMetaDisplay(file.format_version, '');
+    const locationParts = [quickViewWellMetaDisplay(well.country), quickViewWellMetaDisplay(well.state_province), quickViewWellMetaDisplay(well.county_area)].filter((part) => part !== 'Not available');
+    const location = locationParts.length ? locationParts.join(' / ') : 'Not available';
+    const uwiApiParts = [quickViewWellMetaDisplay(well.uwi), quickViewWellMetaDisplay(well.api)].filter((part) => part !== 'Not available');
+    const uwiApi = uwiApiParts.length ? uwiApiParts.join(' / ') : 'Not available';
+    const technicalFlags = metadata.early_qaqc.flags.filter((flag) => /wrap|technical|section|encoding|parser/i.test(`${flag.code} ${flag.message}`));
+    const qaqcFlags = metadata.early_qaqc.flags.filter((flag) => !technicalFlags.includes(flag));
+    return <aside className="wlv-right-panel wlv-ready-properties-panel" aria-label="Quick View information" style={{ overflow: 'hidden' }}>
+        <QuickViewInfoHeading collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />
+        {collapsed ? null : <div className="wlv-ready-properties-copy wlv-qv-metadata-panel" style={{ padding: 8, overflowY: 'auto' }}>
+            <QuickViewMetadataSection title="File Info">
+                <p className="wlv-qv-source-name" style={{ margin: '0 0 6px', color: '#cbd4e1', fontSize: 10.5, fontWeight: 540, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{quickViewMetaDisplay(file.source_file_name, pkg.filename)}</p>
+                <QuickViewMetadataList>
+                    <QuickViewMetadataRow label="Type" value={`${fileType}${fileVersion ? ` ${fileVersion}` : ''}`} />
+                    <QuickViewMetadataRow label="Curves" value={`${curve.curve_counts.renderable_curves} rendered / ${curve.curve_counts.total_curves} total`} />
+                </QuickViewMetadataList>
+                <QuickViewNotice>Temporary display only. Nothing was added to WSI or WMD.</QuickViewNotice>
+            </QuickViewMetadataSection>
+            <QuickViewMetadataSection title="Well Info">
+                <QuickViewMetadataList>
+                    <QuickViewMetadataRow label="Well" value={quickViewWellMetaDisplay(well.well_name)} />
+                    <QuickViewMetadataRow label="UWI/API" value={uwiApi} />
+                    <QuickViewMetadataRow label="Field" value={quickViewWellMetaDisplay(well.field)} />
+                    <QuickViewMetadataRow label="Operator" value={quickViewWellMetaDisplay(well.operator)} />
+                    <QuickViewMetadataRow label="Location" value={location} />
+                </QuickViewMetadataList>
+            </QuickViewMetadataSection>
+            <QuickViewMetadataSection title="Curve Info">
+                <QuickViewMetadataList>
+                    <QuickViewMetadataRow label="Index" value={`${quickViewMetaDisplay(index.source_mnemonic, 'Index')} ${quickViewMetaDisplay(index.resolved_unit, '')}`.trim()} />
+                    <QuickViewMetadataRow label="Range" value={quickViewCompactRange(pkg)} />
+                    <QuickViewMetadataRow label="Step / samples" value={`${quickViewMetaDisplay(index.step, '—')} / ${quickViewMetaDisplay(index.sample_count, '—')}`} />
+                    <QuickViewMetadataRow label="Missing units" value={String(curve.curve_counts.curves_missing_units)} tone={curve.curve_counts.curves_missing_units ? 'warning' : 'ok'} />
+                </QuickViewMetadataList>
+                <QuickViewSummaryGroup title="Recognition">
+                    <QuickViewSummaryPill label="Exact" value={curve.recognition_summary.kr_exact} tone="ok" />
+                    <QuickViewSummaryPill label="Alias" value={curve.recognition_summary.kr_alias} />
+                    <QuickViewSummaryPill label="Family" value={curve.recognition_summary.kr_family} />
+                    <QuickViewSummaryPill label="Unit only" value={curve.recognition_summary.unit_domain} />
+                    <QuickViewSummaryPill label="Unknown" value={curve.recognition_summary.unknown} tone={curve.recognition_summary.unknown ? 'warning' : 'ok'} />
+                </QuickViewSummaryGroup>
+                <QuickViewSummaryGroup title="Scaling">
+                    <QuickViewSummaryPill label="Governed" value={curve.scaling_summary.governed} tone="ok" />
+                    <QuickViewSummaryPill label="KR fallback" value={curve.scaling_summary.kr_known_fallback} />
+                    <QuickViewSummaryPill label="Unit fallback" value={curve.scaling_summary.unit_domain_fallback} />
+                    <QuickViewSummaryPill label="Generic" value={curve.scaling_summary.generic_fallback} tone={curve.scaling_summary.generic_fallback ? 'warning' : 'ok'} />
+                    <QuickViewSummaryPill label="Mismatch" value={curve.scaling_summary.unit_mismatch} tone={curve.scaling_summary.unit_mismatch ? 'warning' : 'ok'} />
+                </QuickViewSummaryGroup>
+            </QuickViewMetadataSection>
+            <QuickViewMetadataSection title="Early QAQC" meta={metadata.early_qaqc.severity.toUpperCase()}>
+                {qaqcFlags.length === 0 ? <QuickViewNotice>No QAQC warnings.</QuickViewNotice> : <div className="wlv-qv-qaqc-list" style={{ display: 'grid', gap: 4, marginTop: 2 }}>{qaqcFlags.slice(0, 6).map((flag) => <p key={`${flag.code}:${flag.message}`} className={`wlv-qv-qaqc-flag wlv-qv-qaqc-${flag.severity}`} style={{ margin: 0, padding: '4px 6px', borderRadius: 4, border: '1px solid rgba(116, 132, 158, 0.16)', background: 'rgba(18, 23, 31, 0.42)', color: '#b7c1d0', fontSize: 10.25, fontWeight: 500, lineHeight: 1.22 }}>{flag.message}</p>)}</div>}
+                {technicalFlags.length ? <details className="wlv-qv-technical-flags" style={{ marginTop: 6, color: '#9aa6b8', fontSize: 10.25, fontWeight: 500 }}>
+                    <summary>Technical parse flags</summary>
+                    {technicalFlags.map((flag) => <p style={{ margin: '5px 0 0' }} key={`${flag.code}:${flag.source ?? ''}:${flag.message}`}>{flag.message}</p>)}
+                </details> : null}
+            </QuickViewMetadataSection>
+        </div>}
+      </aside>;
+}
+
 function QuickViewCurveInventory({ pkg }: { pkg: QuickViewPackage }) {
     const curves = pkg.tracks.flatMap((track, trackIndex) => track.curves.map((curve, curveIndex) => ({
         curve,
@@ -742,8 +1010,8 @@ function QuickViewCurveInventory({ pkg }: { pkg: QuickViewPackage }) {
     return (<aside className="wlv-curve-inventory wlv-qv-curve-inventory wlv-qv-curve-inventory-compact">
       <div className="wlv-inventory-control-stack">
         <section className="wlv-inventory-control-section wlv-curve-inventory-section">
-          <button type="button" className="wlv-inventory-section-toggle" aria-expanded="true">
-            <span>Curve Inventory</span>
+          <button type="button" className="wlv-inventory-section-toggle" aria-expanded="true" style={{ minHeight: 42, alignItems: 'center' }}>
+            <span className="wlv-qv-shared-header-text" style={WDV_QV_SHARED_HEADER_TEXT_STYLE}>CURVE INVENTORY</span>
             <span className="wlv-inventory-section-toggle-meta">{count}<b>▾</b></span>
           </button>
           <div className="wlv-inventory-section-body wlv-curve-inventory-body">
@@ -762,7 +1030,7 @@ function QuickViewCurveInventory({ pkg }: { pkg: QuickViewPackage }) {
     </aside>);
 }
 
-export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpenWellbore3D }: WdvPageBoundaryProps) {
+export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell }: WdvPageBoundaryProps) {
   const managedViewerWellId = managedViewerWell?.managedWellId ?? null;
   const managedViewerWellUid = managedViewerWell?.managedWellUid ?? null;
   const activeView = 'log-viewer' as const;
@@ -884,6 +1152,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell, onOpe
   const [trackResizeState, setTrackResizeState] = useState<TrackResizeState | null>(null);
   const [curveInventoryWidthPx, setCurveInventoryWidthPx] = useState(CURVE_INVENTORY_DEFAULT_WIDTH_PX);
   const [curveInventoryCollapsed, setCurveInventoryCollapsed] = useState(false);
+  const [quickViewInfoCollapsed, setQuickViewInfoCollapsed] = useState(false);
   const [curveInventoryResizeState, setCurveInventoryResizeState] = useState<CurveInventoryResizeState | null>(null);
   // Tracks the current canonical session revision for revision-guarded commands.
   // -1 means the canonical session has not been initialised yet (canonical GET
@@ -2297,6 +2566,69 @@ useEffect(() => {
 
   const activeWbvPublishedPackage = wbvPublishedPackages.find((item) => item.status === 'active') ?? wbvPublishedPackages[0] ?? null;
 
+  const wbvPublishAction = (
+    <span className="wlv-wdv-wbv-publish-actions" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      {wbvPublishMessage ? <span role="status" style={{ fontSize: 11, opacity: 0.78 }}>{wbvPublishMessage}</span> : null}
+      <button
+        type="button"
+        className="wlv-inline-wbv-publish-button"
+        style={{
+          alignItems: 'center',
+          background: 'rgba(94, 203, 255, 0.07)',
+          border: '1px solid rgba(94, 203, 255, 0.78)',
+          borderRadius: 4,
+          boxSizing: 'border-box',
+          color: '#5ecbff',
+          cursor: (!managedViewerWellUid || wbvPublishBusy || tracks.length === 0) ? 'not-allowed' : 'pointer',
+          display: 'inline-flex',
+          fontSize: 14,
+          fontWeight: 400,
+          height: 28,
+          justifyContent: 'center',
+          letterSpacing: 0,
+          lineHeight: '26px',
+          margin: 0,
+          minWidth: 0,
+          padding: '0 14px',
+          textTransform: 'none',
+          whiteSpace: 'nowrap',
+          width: 'auto',
+        }}
+        disabled={!managedViewerWellUid || wbvPublishBusy || tracks.length === 0}
+        onClick={() => void openWbvPublishPanel()}
+        title="Publish or update backend-owned WDV content in WBV"
+        aria-expanded={wbvPublishPanelOpen}
+        aria-haspopup="dialog"
+      >
+        {wbvPublishBusy ? 'Working…' : 'Send to WBV'}
+      </button>
+      {wbvPublishPanelOpen ? (
+        <div role="dialog" aria-label="Send WDV content to WBV" style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', zIndex: 1000, minWidth: 310, maxWidth: 420, padding: 12, border: '1px solid rgba(255,255,255,0.22)', borderRadius: 5, background: '#171717', boxShadow: '0 10px 28px rgba(0,0,0,0.5)', display: 'grid', gap: 10 }}>
+          <div style={{ display: 'grid', gap: 3 }}>
+            <strong>Send WDV content to WBV</strong>
+            <span style={{ opacity: 0.76, fontSize: 12 }}>WBV retains each published package independently until you explicitly update it.</span>
+          </div>
+          {activeWbvPublishedPackage ? (
+            <div style={{ display: 'grid', gap: 4, padding: 8, border: '1px solid rgba(255,255,255,0.14)', borderRadius: 4 }}>
+              <span style={{ fontSize: 12, opacity: 0.72 }}>Current retained package</span>
+              <strong style={{ fontSize: 13 }}>{activeWbvPublishedPackage.package_name}</strong>
+              <span style={{ fontSize: 12, opacity: 0.72 }}>Package revision {activeWbvPublishedPackage.package_revision} · source WDV revision {activeWbvPublishedPackage.source_wdv_revision}</span>
+            </div>
+          ) : (
+            <span style={{ fontSize: 12, opacity: 0.76 }}>No retained WBV package exists for this well.</span>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+            <button type="button" className="wlv-go-to-depth-button" onClick={() => setWbvPublishPanelOpen(false)} disabled={wbvPublishBusy}>Cancel</button>
+            {activeWbvPublishedPackage ? (
+              <button type="button" className="wlv-go-to-depth-button ready" onClick={() => void updateExistingWbvPublication(activeWbvPublishedPackage)} disabled={wbvPublishBusy}>Update existing</button>
+            ) : null}
+            <button type="button" className="wlv-go-to-depth-button ready" onClick={() => void publishCurrentWdvAsNewWbvPackage()} disabled={wbvPublishBusy}>Publish as new</button>
+          </div>
+        </div>
+      ) : null}
+    </span>
+  );
+
   const moveCurveToTrack = (payload: DragCurvePayload, toTrackId: string, toIndex?: number) => {
       if (!payload.assignmentId || !looksLikeUuid(payload.assignmentId) || !looksLikeUuid(toTrackId)) return;
       void (async () => {
@@ -2353,39 +2685,6 @@ useEffect(() => {
         <div className="wlv-app-title">
           <strong>Well Log Viewer</strong>
         </div>
-        <div className="wlv-wdv-wbv-publish-actions" style={{ position: 'relative' }}>
-          {wbvPublishMessage ? <span role="status">{wbvPublishMessage}</span> : null}
-          <button type="button" className="wlv-wdv-3d-badge" disabled={!managedViewerWellUid || wbvPublishBusy || tracks.length === 0} onClick={() => void openWbvPublishPanel()} title="Publish or update backend-owned WDV content in WBV" aria-expanded={wbvPublishPanelOpen} aria-haspopup="dialog">
-            {wbvPublishBusy ? 'Working…' : 'Send to WBV'}
-          </button>
-          {wbvPublishPanelOpen ? (
-            <div role="dialog" aria-label="Send WDV content to WBV" style={{ position: 'absolute', right: 46, top: 'calc(100% + 6px)', zIndex: 1000, minWidth: 310, maxWidth: 420, padding: 12, border: '1px solid rgba(255,255,255,0.22)', borderRadius: 6, background: '#171717', boxShadow: '0 10px 28px rgba(0,0,0,0.5)', display: 'grid', gap: 10 }}>
-              <div style={{ display: 'grid', gap: 3 }}>
-                <strong>Send WDV content to WBV</strong>
-                <span style={{ opacity: 0.76, fontSize: 12 }}>WBV retains each published package independently until you explicitly update it.</span>
-              </div>
-              {activeWbvPublishedPackage ? (
-                <div style={{ display: 'grid', gap: 4, padding: 8, border: '1px solid rgba(255,255,255,0.14)', borderRadius: 4 }}>
-                  <span style={{ fontSize: 12, opacity: 0.72 }}>Current retained package</span>
-                  <strong style={{ fontSize: 13 }}>{activeWbvPublishedPackage.package_name}</strong>
-                  <span style={{ fontSize: 12, opacity: 0.72 }}>Package revision {activeWbvPublishedPackage.package_revision} · source WDV revision {activeWbvPublishedPackage.source_wdv_revision}</span>
-                </div>
-              ) : (
-                <span style={{ fontSize: 12, opacity: 0.76 }}>No retained WBV package exists for this well.</span>
-              )}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <button type="button" className="wlv-wdv-3d-badge" onClick={() => setWbvPublishPanelOpen(false)} disabled={wbvPublishBusy}>Cancel</button>
-                {activeWbvPublishedPackage ? (
-                  <button type="button" className="wlv-wdv-3d-badge" onClick={() => void updateExistingWbvPublication(activeWbvPublishedPackage)} disabled={wbvPublishBusy}>Update existing</button>
-                ) : null}
-                <button type="button" className="wlv-wdv-3d-badge" onClick={() => void publishCurrentWdvAsNewWbvPackage()} disabled={wbvPublishBusy}>Publish as new</button>
-              </div>
-            </div>
-          ) : null}
-          <button type="button" className="wlv-wdv-3d-badge" onClick={() => onOpenWellbore3D()} title="Open 3D Wellbore Viewer" aria-label="Open 3D Wellbore Viewer">
-            3D
-          </button>
-        </div>
       </header>
 
       {!hasLoadedViewerWell && !quickViewPackage && (<section className="wlv-empty-viewer-top-banner" aria-label="Well Data Viewer empty state">
@@ -2432,11 +2731,11 @@ useEffect(() => {
         if (active) {
             setPendingAddTrackCurveIds([]);
         }
-    }} layoutRecommendations={wdvTemplateRecommendations} layoutRecommendationsLoading={wdvTemplateRecommendationsLoading} layoutRecommendationsError={wdvTemplateRecommendationsError} selectedLayoutRecommendationKey={selectedWdvTemplateKey} onLayoutRecommendationChange={handleLayoutRecommendationChange} onRefreshLayoutRecommendations={refreshWdvTemplateRecommendations}/>
+    }} wbvPublishAction={wbvPublishAction} layoutRecommendations={wdvTemplateRecommendations} layoutRecommendationsLoading={wdvTemplateRecommendationsLoading} layoutRecommendationsError={wdvTemplateRecommendationsError} selectedLayoutRecommendationKey={selectedWdvTemplateKey} onLayoutRecommendationChange={handleLayoutRecommendationChange} onRefreshLayoutRecommendations={refreshWdvTemplateRecommendations}/>
 
       {wdvTemplateModalOpen && selectedWdvTemplateRecommendation ? (<WdvTemplateRecommendationModal recommendation={selectedWdvTemplateRecommendation} loadedCurveItems={wdvPackageState.loadedCurveItems} managedWellId={managedViewerWellId} managedWellUid={managedViewerWellUid} getCanonicalRevision={() => canonicalRevisionRef.current} onClose={() => setWdvTemplateModalOpen(false)} onApplied={handleWdvTemplateApplied}/>) : null}
 
-      <div className={`wlv-prototype-workspace wlv-track-backdrop-${trackBackdropMode} ${curveInventoryResizeState ? 'curve-inventory-resize-active' : ''} ${curveInventoryCollapsed ? 'curve-inventory-collapsed' : ''}`} style={{ gridTemplateColumns: `${curveInventoryCollapsed ? 38 : curveInventoryWidthPx}px minmax(0, 1fr) 330px` }}>
+      <div className={`wlv-prototype-workspace wlv-track-backdrop-${trackBackdropMode} ${curveInventoryResizeState ? 'curve-inventory-resize-active' : ''} ${curveInventoryCollapsed ? 'curve-inventory-collapsed' : ''}`} style={{ gridTemplateColumns: `${curveInventoryCollapsed ? 38 : curveInventoryWidthPx}px minmax(0, 1fr) ${quickViewPackage && quickViewInfoCollapsed ? 38 : 330}px` }}>
         {(quickViewDragActive || quickViewPending) && <div className="wlv-qv-drop-overlay"><strong>{quickViewPending ? 'Reading file…' : 'Drop LAS or DLIS to view'}</strong></div>}
         {quickViewError && <div className="wlv-qv-status-message" role="status">{quickViewError}</div>}
         <div className={`wlv-curve-inventory-shell ${curveInventoryCollapsed ? 'collapsed' : ''}`} style={{ width: curveInventoryCollapsed ? 38 : curveInventoryWidthPx }}>
@@ -2507,15 +2806,7 @@ useEffect(() => {
               <div className="wlv-track-strip" aria-hidden="true"/>
             </section>)) : (<TrackCanvas tracks={tracks} selection={selection} openCurveMenu={openCurveMenu} depthTicks={visibleDepthTicks} viewDepthRange={viewDepthRange} goToDepthMarker={goToDepthMarker} intervalZoomActive={intervalZoomActive} intervalSelection={intervalSelection} dragPanActive={Boolean(dragPanState)} onSelectTrack={selectCanvasTrack} onSelectCurve={selectCanvasCurve} onReorderCurve={reorderCurve} onMoveCurveToTrack={moveCurveToTrack} onOpenCurveMenu={(trackId, assignmentId) => setOpenCurveMenu({ trackId, assignmentId })} onCloseCurveMenu={() => setOpenCurveMenu(null)} onRemoveCurveFromTrack={removeCurveFromTrack} onStartIntervalSelection={startIntervalSelection} onUpdateIntervalSelection={updateIntervalSelection} onCompleteIntervalSelection={completeIntervalSelection} onStartDragPan={startDragPan} onUpdateDragPan={updateDragPan} onEndDragPan={endDragPan} onStartCurveTrackResize={startCurveTrackResize} resizingTrackId={trackResizeState?.trackId ?? null} managedSamplesByCurveId={managedSamplesByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} curveCatalogItems={activeCurveCatalog} curveFillGeometryByRuleUid={curveFillFeatureEnabled ? curveFillGeometryByRuleUid : new Map()}/>)}
         </>)}
-        {quickViewPackage ? (<aside className="wlv-right-panel wlv-ready-properties-panel" aria-label="Quick View information">
-            <div className="wlv-panel-heading"><h2>Quick View</h2></div>
-            <div className="wlv-ready-properties-copy">
-              <p><strong>{quickViewPackage.filename}</strong></p>
-              <p>{quickViewPackage.source_format}</p>
-              <p>{quickViewPackage.tracks.reduce((count, track) => count + track.curves.length, 0)} renderable curves</p>
-              <p>Temporary display only. Nothing was added to WSI or WMD.</p>
-            </div>
-          </aside>) : (tracks.length === 0 ? (<aside className="wlv-right-panel wlv-ready-properties-panel" aria-label="Track properties unavailable">
+        {quickViewPackage ? (<QuickViewMetadataPanel pkg={quickViewPackage} collapsed={quickViewInfoCollapsed} onToggleCollapsed={() => setQuickViewInfoCollapsed((collapsed) => !collapsed)} />) : (tracks.length === 0 ? (<aside className="wlv-right-panel wlv-ready-properties-panel" aria-label="Track properties unavailable">
             <div className="wlv-panel-heading">
               <h2>Track Properties</h2>
             </div>
