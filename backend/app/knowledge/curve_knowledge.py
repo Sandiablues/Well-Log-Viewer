@@ -25,7 +25,26 @@ class CurveDisplayDefinition:
     display_min: float = 0.0
     display_max: float = 150.0
     default_unit: str | None = None
+    standard_mnemonics: tuple[str, ...] = field(default_factory=tuple)
     aliases: tuple[str, ...] = field(default_factory=tuple)
+
+    def all_known_mnemonics(self) -> tuple[str, ...]:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for value in (*self.standard_mnemonics, *self.aliases):
+            key = str(value or "").strip().upper()
+            if key and key not in seen:
+                seen.add(key)
+                ordered.append(key)
+        return tuple(ordered)
+
+    def is_standard_mnemonic(self, value: str | None) -> bool:
+        key = str(value or "").strip().upper()
+        return key in {str(item or "").strip().upper() for item in self.standard_mnemonics}
+
+    def is_alias_mnemonic(self, value: str | None) -> bool:
+        key = str(value or "").strip().upper()
+        return key in {str(item or "").strip().upper() for item in self.aliases}
 
 
 CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
@@ -38,7 +57,8 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_min=0.0,
         display_max=200.0,
         default_unit="API",
-        aliases=("GR", "GAM", "GRC", "ECGR", "HGR", "GR_EDTC"),
+        standard_mnemonics=("GR",),
+        aliases=("GAM", "GRC", "ECGR", "HGR", "GR_EDTC"),
     ),
     CurveDisplayDefinition(
         canonical_curve_id="spontaneous_potential",
@@ -49,7 +69,8 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_min=-700.0,
         display_max=-480.0,
         default_unit="MV",
-        aliases=("SP", "SPAR"),
+        standard_mnemonics=("SP",),
+        aliases=("SPAR",),
     ),
     CurveDisplayDefinition(
         canonical_curve_id="deep_resistivity",
@@ -61,7 +82,8 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_min=0.2,
         display_max=200.0,
         default_unit="OHMM",
-        aliases=("AT90", "AF90", "RT", "ILD", "LLD", "AORX", "AORT"),
+        standard_mnemonics=("AT90",),
+        aliases=("AF90", "RT", "ILD", "LLD", "AORX", "AORT"),
     ),
     CurveDisplayDefinition(
         canonical_curve_id="shallow_resistivity",
@@ -73,7 +95,8 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_min=0.2,
         display_max=200.0,
         default_unit="OHMM",
-        aliases=("AT10", "AF10", "LLS", "ILM", "RXO", "RXOZ", "RXO8"),
+        standard_mnemonics=("AT10",),
+        aliases=("AF10", "LLS", "ILM", "RXO", "RXOZ", "RXO8"),
     ),
     CurveDisplayDefinition(
         canonical_curve_id="bulk_density",
@@ -84,7 +107,8 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_min=1.95,
         display_max=2.95,
         default_unit="G/C3",
-        aliases=("RHOB", "RHOZ", "DEN", "DENS", "ZDEN", "DPHZ"),
+        standard_mnemonics=("RHOB", "RHOZ"),
+        aliases=("DEN", "DENS", "ZDEN", "DPHZ"),
     ),
     CurveDisplayDefinition(
         canonical_curve_id="neutron_porosity",
@@ -95,7 +119,8 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_min=0.45,
         display_max=-0.15,
         default_unit="V/V",
-        aliases=("NPHI", "NPOR", "TNPH", "DNPH", "HNPO", "HTNP"),
+        standard_mnemonics=("NPHI", "TNPH"),
+        aliases=("NPOR", "DNPH", "HNPO", "HTNP"),
     ),
     CurveDisplayDefinition(
         canonical_curve_id="sonic_compressional",
@@ -106,7 +131,8 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_min=140.0,
         display_max=40.0,
         default_unit="US/F",
-        aliases=("DT", "DTC", "DTCO"),
+        standard_mnemonics=("DTCO",),
+        aliases=("DT", "DTC"),
     ),
     CurveDisplayDefinition(
         canonical_curve_id="sonic_shear",
@@ -117,7 +143,8 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_min=300.0,
         display_max=80.0,
         default_unit="US/F",
-        aliases=("DTS", "DTSM"),
+        standard_mnemonics=("DTSM",),
+        aliases=("DTS",),
     ),
     CurveDisplayDefinition(
         canonical_curve_id="caliper",
@@ -128,7 +155,8 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_min=6.0,
         display_max=16.0,
         default_unit="IN",
-        aliases=("CALI", "CAL", "HCAL", "DCAL", "CALIPER"),
+        standard_mnemonics=("CALI", "HCAL"),
+        aliases=("CAL", "DCAL", "CALIPER"),
     ),
     CurveDisplayDefinition(
         canonical_curve_id="photoelectric_factor",
@@ -139,14 +167,15 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_min=0.0,
         display_max=10.0,
         default_unit="B/E",
-        aliases=("PEF", "PE", "PEFZ"),
+        standard_mnemonics=("PEFZ",),
+        aliases=("PEF", "PE"),
     ),
 )
 
 _ALIAS_TO_DEFINITION = {
     alias.upper(): definition
     for definition in CURVE_DEFINITIONS
-    for alias in definition.aliases
+    for alias in definition.all_known_mnemonics()
 }
 
 

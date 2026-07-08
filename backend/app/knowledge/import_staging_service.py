@@ -34,6 +34,7 @@ from .governance import GovernanceStatus
 from .import_models import ImportPayload
 from .managed_models import (
     AliasRecord,
+    StandardMnemonicRecord,
     ClassificationRuleRecord,
     CurveDefinitionRecord,
     DisplayRuleRecord,
@@ -151,7 +152,33 @@ def stage_import_payload(
         curve_def_ids.append(record_id)
 
     # ------------------------------------------------------------------
-    # 3. Stage aliases → AliasRecord (CANDIDATE)
+    # 3. Stage standard mnemonics → StandardMnemonicRecord (CANDIDATE)
+    # ------------------------------------------------------------------
+    standard_mnemonic_ids: list[str] = []
+    for cd in payload.curve_definitions:
+        for mnemonic in cd.standard_mnemonics:
+            normalized = mnemonic.strip().upper()
+            record_id = f"import_{batch_id}_standard_mnemonic_{normalized}_{cd.canonical_curve_id}"
+            record = StandardMnemonicRecord(
+                record_id=record_id,
+                mnemonic=mnemonic,
+                normalized_mnemonic=normalized,
+                canonical_curve_id=cd.canonical_curve_id,
+                unit_hint=cd.default_unit,
+                description_hint=cd.display_name,
+                confidence=1.0,
+                status=GovernanceStatus.CANDIDATE,
+                evidence_refs=list(evidence_refs),
+                created_at=now,
+                updated_at=now,
+                change_reason=change_reason,
+            )
+            repository._add_record(record)
+            record_ids.append(record_id)
+            standard_mnemonic_ids.append(record_id)
+
+    # ------------------------------------------------------------------
+    # 4. Stage aliases → AliasRecord (CANDIDATE)
     # ------------------------------------------------------------------
     alias_ids: list[str] = []
     for cd in payload.curve_definitions:
@@ -177,7 +204,7 @@ def stage_import_payload(
             alias_ids.append(record_id)
 
     # ------------------------------------------------------------------
-    # 4. Stage display rules → DisplayRuleRecord (CANDIDATE)
+    # 5. Stage display rules → DisplayRuleRecord (CANDIDATE)
     # ------------------------------------------------------------------
     display_rule_ids: list[str] = []
     for dr in payload.display_rules:
@@ -204,7 +231,7 @@ def stage_import_payload(
         display_rule_ids.append(record_id)
 
     # ------------------------------------------------------------------
-    # 5. Stage classification rules → ClassificationRuleRecord (CANDIDATE)
+    # 6. Stage classification rules → ClassificationRuleRecord (CANDIDATE)
     # ------------------------------------------------------------------
     class_rule_ids: list[str] = []
     for cr in payload.classification_rules:
@@ -231,7 +258,7 @@ def stage_import_payload(
         class_rule_ids.append(record_id)
 
     # ------------------------------------------------------------------
-    # 6. Stage template rules → TemplateRuleRecord (CANDIDATE)
+    # 7. Stage template rules → TemplateRuleRecord (CANDIDATE)
     # ------------------------------------------------------------------
     template_rule_ids: list[str] = []
     for tr in payload.template_rules:
@@ -258,10 +285,11 @@ def stage_import_payload(
         template_rule_ids.append(record_id)
 
     # ------------------------------------------------------------------
-    # 7. Return staging summary
+    # 8. Return staging summary
     # ------------------------------------------------------------------
     record_type_counts: dict[str, int] = {
         "curve_definition": len(curve_def_ids),
+        "standard_mnemonic": len(standard_mnemonic_ids),
         "alias": len(alias_ids),
         "display_rule": len(display_rule_ids),
         "classification_rule": len(class_rule_ids),

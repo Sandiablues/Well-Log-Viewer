@@ -36,6 +36,7 @@ from app.knowledge.governance import (
 )
 from app.knowledge.managed_models import (
     AliasRecord,
+    StandardMnemonicRecord,
     CurveDefinitionRecord,
     DisplayRuleRecord,
     ClassificationRuleRecord,
@@ -45,6 +46,7 @@ from app.knowledge.managed_models import (
 from app.knowledge.managed_seed import (
     build_seed_curve_definition_records,
     build_seed_alias_records,
+    build_seed_standard_mnemonic_records,
     build_seed_display_rule_records,
     build_seed_managed_records,
 )
@@ -98,7 +100,7 @@ class TestManagedEndpoints:
         data = client.get("/api/wlv/knowledge/managed/schema").json()
         rt_keys = {rt["record_type"] for rt in data["record_types"]}
         expected = {
-            "curve_definition", "alias", "alias_enrichment", "display_rule",
+            "curve_definition", "standard_mnemonic", "alias", "alias_enrichment", "display_rule",
             "classification_rule", "template_rule", "evidence",
         }
         assert expected == rt_keys
@@ -177,6 +179,31 @@ class TestSeedCurveDefinitions:
 
 
 # ===========================================================================
+# 3a. Seed standard mnemonics convert to standard_mnemonic records with status="seed"
+# ===========================================================================
+
+class TestSeedStandardMnemonics:
+    def test_seed_standard_mnemonic_records_non_empty(self) -> None:
+        records = build_seed_standard_mnemonic_records()
+        assert len(records) >= 10
+
+    def test_seed_standard_mnemonic_records_all_seed_status(self) -> None:
+        for r in build_seed_standard_mnemonic_records():
+            assert r.status == GovernanceStatus.SEED
+
+    def test_seed_standard_mnemonic_records_type(self) -> None:
+        for r in build_seed_standard_mnemonic_records():
+            assert isinstance(r, StandardMnemonicRecord)
+            assert r.record_type == "standard_mnemonic"
+
+    def test_seed_standard_mnemonic_records_have_required_fields(self) -> None:
+        for r in build_seed_standard_mnemonic_records():
+            assert r.mnemonic
+            assert r.normalized_mnemonic
+            assert r.canonical_curve_id
+
+
+# ===========================================================================
 # 3. Seed aliases convert to alias records with status="seed"
 # ===========================================================================
 
@@ -200,11 +227,16 @@ class TestSeedAliases:
             assert r.normalized_alias, f"Missing normalized_alias on {r.record_id}"
             assert r.canonical_curve_id, f"Missing canonical_curve_id on {r.record_id}"
 
-    def test_seed_alias_gr_present(self) -> None:
+    def test_seed_standard_mnemonic_gr_present(self) -> None:
+        records = build_seed_standard_mnemonic_records()
+        gr_records = [r for r in records if r.normalized_mnemonic == "GR"]
+        assert len(gr_records) >= 1
+        assert gr_records[0].canonical_curve_id == "gamma_ray"
+
+    def test_seed_alias_gr_not_present(self) -> None:
         records = build_seed_alias_records()
         gr_aliases = [r for r in records if r.normalized_alias == "GR"]
-        assert len(gr_aliases) >= 1
-        assert gr_aliases[0].canonical_curve_id == "gamma_ray"
+        assert gr_aliases == []
 
     def test_seed_alias_normalized_is_uppercase(self) -> None:
         for r in build_seed_alias_records():
@@ -602,7 +634,9 @@ class TestKR1Compatibility:
             d for d in data["curve_definitions"]
             if d["canonical_curve_id"] == "gamma_ray"
         )
-        assert "GR" in gr["aliases"]
+        assert "GR" in gr["standard_mnemonics"]
+        assert "GR" in gr["all_known_mnemonics"]
+        assert "GR" not in gr["aliases"]
 
 
 # ===========================================================================

@@ -18,9 +18,9 @@ Architecture contract
 
 Resolution priority chain
 --------------------------
-1. Exact alias match        — AliasRecord.alias == mnemonic (case-insensitive)
+1. Standard mnemonic match — StandardMnemonicRecord.mnemonic/normalized_mnemonic
                               status in {SEED, APPROVED}
-2. Normalized alias match   — AliasRecord.normalized_alias == normalized input
+2. Alias match             — AliasRecord.alias/normalized_alias
                               status in {SEED, APPROVED}
 3. Canonical ID match       — CurveDefinitionRecord.canonical_curve_id == lower(mnemonic)
                               status in {SEED, APPROVED}
@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from .governance import GovernanceStatus, PRODUCTION_STATUSES
-from .managed_models import AliasRecord, CurveDefinitionRecord, DisplayRuleRecord
+from .managed_models import AliasRecord, CurveDefinitionRecord, DisplayRuleRecord, StandardMnemonicRecord
 from .managed_repository import GovernedRecord, ManagedKRRepository
 
 KR6_VERSION = "kr-6"
@@ -48,6 +48,8 @@ KR6_VERSION = "kr-6"
 # Resolution source labels
 # ---------------------------------------------------------------------------
 
+_SOURCE_SEED_STANDARD_MNEMONIC = "seed_standard_mnemonic"
+_SOURCE_MANAGED_STANDARD_MNEMONIC = "managed_standard_mnemonic"
 _SOURCE_SEED_ALIAS = "seed_alias"
 _SOURCE_MANAGED_ALIAS = "managed_alias"
 _SOURCE_SEED_CANONICAL = "seed_canonical"
@@ -154,10 +156,20 @@ class KnowledgeResolutionService:
         normalized = raw_mnemonic.strip().upper()
 
         # Build production-eligible index
-        alias_records, curve_def_records, display_rule_records = self._load_production_records()
+        standard_records, alias_records, curve_def_records, display_rule_records = self._load_production_records()
 
         # ------------------------------------------------------------------
-        # Step 1 + 2: Alias match (exact then normalized)
+        # Step 1: Standard mnemonic match
+        # ------------------------------------------------------------------
+        matched_standard = self._find_standard_mnemonic(standard_records, raw_mnemonic, normalized)
+        if matched_standard is not None:
+            return self._result_from_standard_mnemonic(
+                matched_standard, raw_mnemonic, normalized,
+                curve_def_records, display_rule_records,
+            )
+
+        # ------------------------------------------------------------------
+        # Step 2: Alias match (exact then normalized)
         # ------------------------------------------------------------------
         matched_alias = self._find_alias(alias_records, raw_mnemonic, normalized)
         if matched_alias is not None:
@@ -195,7 +207,7 @@ class KnowledgeResolutionService:
 
     def _load_production_records(
         self,
-    ) -> tuple[list[AliasRecord], list[CurveDefinitionRecord], list[DisplayRuleRecord]]:
+    ) -> tuple[list[StandardMnemonicRecord], list[AliasRecord], list[CurveDefinitionRecord], list[DisplayRuleRecord]]:
         """Load all production-eligible records, split by type.
 
         Production-eligible = status in {SEED, APPROVED}.
@@ -203,19 +215,46 @@ class KnowledgeResolutionService:
         """
         all_production: list[GovernedRecord] = self._repo.list_production_eligible()
 
+        standard_records: list[StandardMnemonicRecord] = []
         alias_records: list[AliasRecord] = []
         curve_def_records: list[CurveDefinitionRecord] = []
         display_rule_records: list[DisplayRuleRecord] = []
 
         for record in all_production:
-            if isinstance(record, AliasRecord):
+            if isinstance(record, StandardMnemonicRecord):
+                standard_records.append(record)
+            elif isinstance(record, AliasRecord):
                 alias_records.append(record)
             elif isinstance(record, CurveDefinitionRecord):
                 curve_def_records.append(record)
             elif isinstance(record, DisplayRuleRecord):
                 display_rule_records.append(record)
 
-        return alias_records, curve_def_records, display_rule_records
+        return standard_records, alias_records, curve_def_records, display_rule_records
+
+    # ------------------------------------------------------------------
+    # Standard mnemonic matching
+    # ------------------------------------------------------------------
+
+    def _find_standard_mnemonic(
+        self,
+        standard_records: list[StandardMnemonicRecord],
+        raw_mnemonic: str,
+        normalized: str,
+    ) -> Optional[StandardMnemonicRecord]:
+        exact = [
+            r for r in standard_records
+            if r.mnemonic.strip().upper() == normalized
+        ]
+        if exact:
+            return max(exact, key=lambda r: r.confidence)
+        norm_match = [
+            r for r in standard_records
+            if r.normalized_mnemonic == normalized
+        ]
+        if norm_match:
+            return max(norm_match, key=lambda r: r.confidence)
+        return None
 
     # ------------------------------------------------------------------
     # Alias matching — Steps 1 and 2
@@ -277,6 +316,41 @@ class KnowledgeResolutionService:
     # ------------------------------------------------------------------
     # Result builders
     # ------------------------------------------------------------------
+
+    def _result_from_standard_mnemonic(
+        self,
+        standard: StandardMnemonicRecord,
+        raw_mnemonic: str,
+        normalized: str,
+        curve_def_records: list[CurveDefinitionRecord],
+        display_rule_records: list[DisplayRuleRecord],
+    ) -> CurveResolveResult:
+        """Build a resolved result from a matched StandardMnemonicRecord."""
+        resolution_source = (
+            _SOURCE_SEED_STANDARD_MNEMONIC
+            if standard.status == GovernanceStatus.SEED
+            else _SOURCE_MANAGED_STANDARD_MNEMONIC
+        )
+
+        curve_def = self._find_curve_def_by_id(curve_def_records, standard.canonical_curve_id)
+        display_rule = self._find_display_rule(display_rule_records, standard.canonical_curve_id)
+
+        return CurveResolveResult(
+            resolved=True,
+            mnemonic=raw_mnemonic,
+            normalized_mnemonic=normalized,
+            canonical_curve_id=standard.canonical_curve_id,
+            display_name=curve_def.display_name if curve_def else None,
+            family=curve_def.family if curve_def else None,
+            product_group=curve_def.product_group if curve_def else None,
+            product_subgroup=curve_def.product_subgroup if curve_def else None,
+            default_unit=curve_def.default_unit if curve_def else standard.unit_hint,
+            confidence=standard.confidence,
+            resolution_source=resolution_source,
+            record_id=standard.record_id,
+            display_rule=display_rule,
+            warnings=[],
+        )
 
     def _result_from_alias(
         self,

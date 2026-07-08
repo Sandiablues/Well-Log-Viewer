@@ -94,9 +94,13 @@ class ImportCurveDefinition(BaseModel):
         default=None,
         description="Optional human-readable description.",
     )
+    standard_mnemonics: list[str] = Field(
+        default_factory=list,
+        description="Accepted exact/source mnemonics that map to this canonical curve.",
+    )
     aliases: list[str] = Field(
         default_factory=list,
-        description="Mnemonic aliases that map to this canonical curve.",
+        description="Secondary/vendor/legacy mnemonic aliases that map to this canonical curve.",
     )
 
 

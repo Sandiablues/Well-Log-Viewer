@@ -184,7 +184,9 @@ _CURVE_DEFINITIONS_SEED: list[KrCurveDefinition] = [
         product_group="open_hole_logs",
         product_subgroup=_curve_subgroup_from_family(defn.curve_family),
         default_unit=defn.default_unit,
+        standard_mnemonics=list(defn.standard_mnemonics),
         aliases=list(defn.aliases),
+        all_known_mnemonics=list(defn.all_known_mnemonics()),
     )
     for defn in CURVE_DEFINITIONS
 ]

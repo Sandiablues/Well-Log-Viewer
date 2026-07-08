@@ -3,13 +3,13 @@
 Tests all 18 required cases plus regression coverage for KR-1 through KR-5.
 
 Resolution service unit tests (service layer):
-  1.  Seed alias resolves successfully.
+  1.  Seed standard mnemonic resolves successfully.
   2.  Seed canonical ID resolves successfully.
   3.  Unknown mnemonic returns unresolved.
   4.  Candidate alias does not resolve.
   5.  Rejected alias does not resolve.
   6.  Deprecated alias does not resolve.
-  7.  Approved managed alias resolves after approval.
+  7.  Approved managed standard mnemonic resolves after approval.
   8.  Approved managed curve definition resolves after approval.
   9.  Approved managed display rule is returned.
   10. Deprecated seed override prevents production resolution.
@@ -149,14 +149,14 @@ def client(repo: ManagedKRRepository) -> Generator[TestClient, None, None]:
 
 
 @pytest.fixture
-def seed_alias_record_id(repo: ManagedKRRepository) -> str:
-    """Return record_id of a known seed alias (GR → gamma_ray)."""
-    aliases = [
+def seed_standard_mnemonic_record_id(repo: ManagedKRRepository) -> str:
+    """Return record_id of a known seed standard mnemonic (GR → gamma_ray)."""
+    records = [
         r for r in repo.list_seeds()
-        if r.record_type == "alias" and getattr(r, "alias", "") == "GR"
+        if r.record_type == "standard_mnemonic" and getattr(r, "mnemonic", "") == "GR"
     ]
-    assert aliases, "Expected seed alias for GR"
-    return aliases[0].record_id
+    assert records, "Expected seed standard mnemonic for GR"
+    return records[0].record_id
 
 
 @pytest.fixture
@@ -171,19 +171,19 @@ def seed_curve_def_id(repo: ManagedKRRepository) -> str:
 
 
 # ===========================================================================
-# 1. Seed alias resolves successfully
+# 1. Seed standard mnemonic resolves successfully
 # ===========================================================================
 
 
 class TestSeedAliasResolution:
-    """Test 1: seed alias resolves successfully."""
+    """Test 1: seed standard mnemonic resolves successfully."""
 
     def test_gr_alias_resolves(self, service: KnowledgeResolutionService) -> None:
-        """1a. 'GR' resolves via seed alias to gamma_ray."""
+        """1a. 'GR' resolves via seed standard mnemonic to gamma_ray."""
         result = service.resolve_curve(CurveResolveInput(mnemonic="GR"))
         assert result.resolved is True
         assert result.canonical_curve_id == "gamma_ray"
-        assert result.resolution_source == "seed_alias"
+        assert result.resolution_source == "seed_standard_mnemonic"
         assert result.record_id is not None
         assert result.confidence == 1.0
 
@@ -193,7 +193,7 @@ class TestSeedAliasResolution:
         assert result.display_name == "Gamma Ray"
 
     def test_gr_alias_has_display_rule(self, service: KnowledgeResolutionService) -> None:
-        """1c. Resolved GR alias returns a display rule (seed display rule exists)."""
+        """1c. Resolved GR standard mnemonic returns a display rule (seed display rule exists)."""
         result = service.resolve_curve(CurveResolveInput(mnemonic="GR"))
         assert result.display_rule is not None
         assert result.display_rule.scale_type in {"linear", "log"}
@@ -201,20 +201,20 @@ class TestSeedAliasResolution:
         assert isinstance(result.display_rule.recommended_max, float)
 
     def test_case_insensitive_alias(self, service: KnowledgeResolutionService) -> None:
-        """1d. 'gr' (lowercase) resolves to gamma_ray via normalized alias match."""
+        """1d. 'gr' (lowercase) resolves to gamma_ray via normalized standard-mnemonic match."""
         result = service.resolve_curve(CurveResolveInput(mnemonic="gr"))
         assert result.resolved is True
         assert result.canonical_curve_id == "gamma_ray"
 
     def test_nphi_alias_resolves(self, service: KnowledgeResolutionService) -> None:
-        """1e. 'NPHI' resolves via seed alias to neutron_porosity."""
+        """1e. 'NPHI' resolves via seed standard mnemonic to neutron_porosity."""
         result = service.resolve_curve(CurveResolveInput(mnemonic="NPHI"))
         assert result.resolved is True
         assert result.canonical_curve_id == "neutron_porosity"
-        assert result.resolution_source == "seed_alias"
+        assert result.resolution_source == "seed_standard_mnemonic"
 
-    def test_no_warnings_on_seed_alias(self, service: KnowledgeResolutionService) -> None:
-        """1f. No warnings are produced for a successfully resolved seed alias."""
+    def test_no_warnings_on_seed_standard_mnemonic(self, service: KnowledgeResolutionService) -> None:
+        """1f. No warnings are produced for a successfully resolved seed standard mnemonic."""
         result = service.resolve_curve(CurveResolveInput(mnemonic="GR"))
         assert result.warnings == []
 
@@ -354,30 +354,30 @@ class TestRejectedAliasExclusion:
 class TestDeprecatedAliasExclusion:
     """Test 6: deprecated alias does not resolve."""
 
-    def test_deprecated_seed_alias_does_not_resolve(
+    def test_deprecated_seed_standard_mnemonic_does_not_resolve(
         self,
         repo: ManagedKRRepository,
-        seed_alias_record_id: str,
+        seed_standard_mnemonic_record_id: str,
     ) -> None:
-        """6a. Deprecating a seed alias removes it from resolution."""
+        """6a. Deprecating a seed standard mnemonic removes it from resolution."""
         # Verify GR resolves before deprecation
         svc = KnowledgeResolutionService(repo)
         pre = svc.resolve_curve(CurveResolveInput(mnemonic="GR"))
         assert pre.resolved is True
 
-        # Deprecate the seed alias record for GR
+        # Deprecate the seed standard mnemonic record for GR
         gov = GovernanceService(repo)
-        gov.deprecate_record(seed_alias_record_id, actor="tester", reason="test deprecated")
+        gov.deprecate_record(seed_standard_mnemonic_record_id, actor="tester", reason="test deprecated")
 
         # Build fresh service (re-queries production eligible)
         svc2 = KnowledgeResolutionService(repo)
         post = svc2.resolve_curve(CurveResolveInput(mnemonic="GR"))
 
-        # GR may still resolve via another seed alias (GAM, GRC, etc.) unless all deprecated.
+        # GR may still resolve via another seed standard mnemonic (GAM, GRC, etc.) unless all deprecated.
         # The test verifies the deprecated record itself is excluded.
         production_ids = {r.record_id for r in repo.list_production_eligible()}
-        assert seed_alias_record_id not in production_ids, (
-            "Deprecated seed alias must not appear in production-eligible records"
+        assert seed_standard_mnemonic_record_id not in production_ids, (
+            "Deprecated seed standard mnemonic must not appear in production-eligible records"
         )
 
     def test_deprecated_candidate_does_not_resolve(
@@ -400,12 +400,12 @@ class TestDeprecatedAliasExclusion:
 
 
 # ===========================================================================
-# 7. Approved managed alias resolves after approval
+# 7. Approved managed standard mnemonic resolves after approval
 # ===========================================================================
 
 
 class TestApprovedManagedAliasResolution:
-    """Test 7: approved managed alias resolves after approval."""
+    """Test 7: approved managed standard mnemonic resolves after approval."""
 
     def test_approved_alias_resolves(
         self,
@@ -798,7 +798,7 @@ class TestHTTPEndpointRoundTrip:
         data = resp.json()
         assert data["resolved"] is True
         assert data["canonical_curve_id"] == "gamma_ray"
-        assert data["resolution_source"] == "seed_alias"
+        assert data["resolution_source"] == "seed_standard_mnemonic"
         assert data["display_rule"] is not None
 
     def test_single_resolve_unknown(self, client: TestClient) -> None:

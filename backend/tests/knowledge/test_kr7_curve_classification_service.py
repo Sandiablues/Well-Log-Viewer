@@ -145,14 +145,14 @@ def client(repo: ManagedKRRepository) -> Generator[TestClient, None, None]:
 
 
 @pytest.fixture
-def seed_alias_record_id(repo: ManagedKRRepository) -> str:
-    """Return record_id of a known seed alias (GR → gamma_ray)."""
-    aliases = [
+def seed_standard_mnemonic_record_id(repo: ManagedKRRepository) -> str:
+    """Return record_id of a known seed standard mnemonic (GR → gamma_ray)."""
+    records = [
         r for r in repo.list_seeds()
-        if r.record_type == "alias" and getattr(r, "alias", "") == "GR"
+        if r.record_type == "standard_mnemonic" and getattr(r, "mnemonic", "") == "GR"
     ]
-    assert aliases, "Expected seed alias for GR"
-    return aliases[0].record_id
+    assert records, "Expected seed standard mnemonic for GR"
+    return records[0].record_id
 
 
 # ===========================================================================
@@ -173,7 +173,7 @@ class TestGrSeedAliasClassification:
         assert c.resolved is True
         assert c.classification_status == "classified"
         assert c.canonical_curve_id == "gamma_ray"
-        assert c.resolution_source == "seed_alias"
+        assert c.resolution_source == "seed_standard_mnemonic"
         assert c.confidence == 1.0
 
     def test_gr_classifies_knowledge_record_id_set(self, service: CurveClassificationService) -> None:
@@ -537,13 +537,13 @@ class TestDeprecatedDoesNotClassify:
     """Test 14: deprecated managed alias does not classify."""
 
     def test_deprecated_does_not_classify(
-        self, repo: ManagedKRRepository, seed_alias_record_id: str
+        self, repo: ManagedKRRepository, seed_standard_mnemonic_record_id: str
     ) -> None:
         """14a. Deprecating a seed alias removes it from production-eligible records."""
         gov = GovernanceService(repo)
-        gov.deprecate_record(seed_alias_record_id, actor="tester", reason="test deprecated")
+        gov.deprecate_record(seed_standard_mnemonic_record_id, actor="tester", reason="test deprecated")
         production_ids = {r.record_id for r in repo.list_production_eligible()}
-        assert seed_alias_record_id not in production_ids
+        assert seed_standard_mnemonic_record_id not in production_ids
 
     def test_approved_then_deprecated_does_not_classify(
         self, repo: ManagedKRRepository

@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from .alias_enrichment_models import AliasEnrichmentRecord
-from .managed_models import AliasRecord, CurveDefinitionRecord, DisplayRuleRecord
+from .managed_models import AliasRecord, CurveDefinitionRecord, DisplayRuleRecord, StandardMnemonicRecord
 from .runtime_resolver import ApprovedKnowledgeRuntimeResolver, RuntimeKnowledgePolicy
 from .contextual_curve_resolver import ContextualResolution, resolve_contextual_curve
 
@@ -28,6 +28,7 @@ _CLASSIFICATION_STATUS_RESOLVED = "resolved"
 _CLASSIFICATION_STATUS_UNKNOWN = "unknown"
 _CLASSIFICATION_STATUS_REQUIRES_REVIEW = "requires_review"
 
+_RESOLUTION_SOURCE_STANDARD_MNEMONIC = "runtime_standard_mnemonic"
 _RESOLUTION_SOURCE_ALIAS = "runtime_alias"
 _RESOLUTION_SOURCE_CANONICAL = "runtime_canonical"
 _RESOLUTION_SOURCE_CONTEXTUAL = "runtime_contextual_consensus"
@@ -200,9 +201,35 @@ class RuntimeCurveClassificationService:
         normalized = source_mnemonic.strip().upper()
         canonical_key = source_mnemonic.strip().lower()
 
+        standard_records = self._runtime_standard_mnemonic_records()
         alias_records = self._runtime_alias_records()
         curve_defs = self._runtime_curve_definitions()
         display_rules = self._runtime_display_rules()
+
+        matched_standard = self._find_standard_mnemonic(standard_records, source_mnemonic, normalized)
+        if matched_standard is not None:
+            curve_def = self._find_curve_definition(curve_defs, matched_standard.canonical_curve_id)
+            if curve_def is None:
+                return self._unknown_result(
+                    curve,
+                    normalized,
+                    policy,
+                    warnings=[
+                        f"Runtime standard mnemonic {matched_standard.mnemonic} points to missing canonical curve "
+                        f"{matched_standard.canonical_curve_id}"
+                    ],
+                )
+            return self._resolved_result(
+                curve=curve,
+                normalized=normalized,
+                policy=policy,
+                curve_def=curve_def,
+                source=_RESOLUTION_SOURCE_STANDARD_MNEMONIC,
+                knowledge_record_id=matched_standard.record_id,
+                confidence=float(getattr(matched_standard, "confidence", 1.0) or 1.0),
+                display_rule=self._display_rule_for(display_rules, curve_def.canonical_curve_id),
+                enrichment=None,
+            )
 
         matched_alias = self._find_alias(alias_records, source_mnemonic, normalized)
         if matched_alias is not None:
@@ -261,6 +288,12 @@ class RuntimeCurveClassificationService:
             warnings=["No approved runtime knowledge match found"],
         )
 
+    def _runtime_standard_mnemonic_records(self) -> list[StandardMnemonicRecord]:
+        return [
+            record for record in self._runtime_resolver.list_runtime_records(record_type="standard_mnemonic")
+            if isinstance(record, StandardMnemonicRecord)
+        ]
+
     def _runtime_alias_records(self) -> list[AliasRecord]:
         return [
             record for record in self._runtime_resolver.list_runtime_records(record_type="alias")
@@ -278,6 +311,21 @@ class RuntimeCurveClassificationService:
             record for record in self._runtime_resolver.list_runtime_records(record_type="display_rule")
             if isinstance(record, DisplayRuleRecord)
         ]
+
+    @staticmethod
+    def _find_standard_mnemonic(
+        standard_records: list[StandardMnemonicRecord],
+        source_mnemonic: str,
+        normalized: str,
+    ) -> Optional[StandardMnemonicRecord]:
+        raw = source_mnemonic.strip()
+        for record in standard_records:
+            if record.mnemonic.strip().upper() == raw.upper():
+                return record
+        for record in standard_records:
+            if record.normalized_mnemonic == normalized:
+                return record
+        return None
 
     @staticmethod
     def _find_alias(

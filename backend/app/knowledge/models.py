@@ -45,7 +45,9 @@ class KrCurveDefinition(BaseModel):
     product_group: str
     product_subgroup: str | None = None
     default_unit: str | None = None
+    standard_mnemonics: list[str] = []
     aliases: list[str] = []
+    all_known_mnemonics: list[str] = []
 
 
 class KrCurveDefinitionsResponse(BaseModel):

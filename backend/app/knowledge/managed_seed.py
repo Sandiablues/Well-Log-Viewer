@@ -12,6 +12,7 @@ production knowledge source.
 
   Seed record IDs are deterministic and stable:
     - CurveDefinitionRecord: "seed_curve_def_{canonical_curve_id}"
+    - StandardMnemonicRecord:"seed_standard_mnemonic_{NORMALIZED}_{canonical_curve_id}"
     - AliasRecord:           "seed_alias_{NORMALIZED}_{canonical_curve_id}"
     - DisplayRuleRecord:     "seed_display_{canonical_curve_id}"
 
@@ -28,6 +29,7 @@ from .curve_knowledge import CURVE_DEFINITIONS
 from .governance import GovernanceStatus
 from .managed_models import (
     AliasRecord,
+    StandardMnemonicRecord,
     CurveDefinitionRecord,
     DisplayRuleRecord,
 )
@@ -87,6 +89,31 @@ def build_seed_curve_definition_records() -> list[CurveDefinitionRecord]:
         )
     return records
 
+
+
+def build_seed_standard_mnemonic_records() -> list[StandardMnemonicRecord]:
+    """Convert standard_mnemonics tuples into seed-status StandardMnemonicRecords.
+
+    One record per accepted exact/source mnemonic.  These records are the first
+    authority in mnemonic resolution and are separate from aliases.
+    """
+    records: list[StandardMnemonicRecord] = []
+    for defn in CURVE_DEFINITIONS:
+        for mnemonic in defn.standard_mnemonics:
+            normalized = mnemonic.strip().upper()
+            records.append(
+                StandardMnemonicRecord(
+                    record_id=f"seed_standard_mnemonic_{normalized}_{defn.canonical_curve_id}",
+                    mnemonic=mnemonic,
+                    normalized_mnemonic=normalized,
+                    canonical_curve_id=defn.canonical_curve_id,
+                    unit_hint=defn.default_unit,
+                    description_hint=defn.display_name,
+                    confidence=1.0,
+                    status=GovernanceStatus.SEED,
+                )
+            )
+    return records
 
 def build_seed_alias_records() -> list[AliasRecord]:
     """Convert alias tuples from CURVE_DEFINITIONS into seed-status AliasRecords.
@@ -150,7 +177,7 @@ def build_seed_display_rule_records() -> list[DisplayRuleRecord]:
 # ---------------------------------------------------------------------------
 
 def build_seed_managed_records() -> (
-    list[CurveDefinitionRecord | AliasRecord | DisplayRuleRecord]
+    list[CurveDefinitionRecord | StandardMnemonicRecord | AliasRecord | DisplayRuleRecord]
 ):
     """Return all seed-status managed records from the Python seed layer.
 
@@ -161,8 +188,9 @@ def build_seed_managed_records() -> (
     empty in KR-2; those record types exist structurally but are not seeded
     from Python constants.
     """
-    records: list[CurveDefinitionRecord | AliasRecord | DisplayRuleRecord] = []
+    records: list[CurveDefinitionRecord | StandardMnemonicRecord | AliasRecord | DisplayRuleRecord] = []
     records.extend(build_seed_curve_definition_records())
+    records.extend(build_seed_standard_mnemonic_records())
     records.extend(build_seed_alias_records())
     records.extend(build_seed_display_rule_records())
     return records

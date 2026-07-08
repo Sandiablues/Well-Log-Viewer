@@ -7,7 +7,8 @@ response models in models.py, which remain the stable external API contract.
 Record type hierarchy
 ---------------------
 CurveDefinitionRecord    ��� canonical curve knowledge
-AliasRecord              – mnemonic/alias mapping (context-aware)
+StandardMnemonicRecord   – accepted exact/source mnemonic mapping
+AliasRecord              – secondary/vendor/legacy mnemonic alias mapping
 DisplayRuleRecord        – curve rendering display rules
 ClassificationRuleRecord – deterministic classification hints
 TemplateRuleRecord       – future template construction knowledge (empty in KR-2)
@@ -48,6 +49,7 @@ KR_DATA_MODEL_1_VERSION = "kr-data-model-1"
 GOVERNED_RECORD_TYPES: frozenset[str] = frozenset(
     {
         "curve_definition",
+        "standard_mnemonic",
         "alias",
         "display_rule",
         "classification_rule",
@@ -114,8 +116,52 @@ class CurveDefinitionRecord:
     governance_history: list[dict] = field(default_factory=list)
 
 
+
+
 # ---------------------------------------------------------------------------
-# B. Alias / Mnemonic Record
+# B. Standard Mnemonic Record
+# ---------------------------------------------------------------------------
+
+@dataclass
+class StandardMnemonicRecord:
+    """Governed standard/source mnemonic record linking an accepted exact mnemonic to a canonical curve.
+
+    Standard mnemonics are first-class KR recognition records.  They are not
+    aliases and must resolve before AliasRecord records.
+    """
+
+    record_id: str
+    mnemonic: str
+    canonical_curve_id: str
+
+    record_type: str = "standard_mnemonic"
+    normalized_mnemonic: str = ""
+    unit_hint: Optional[str] = None
+    description_hint: Optional[str] = None
+    confidence: float = 1.0
+
+    # Governance
+    status: GovernanceStatus = GovernanceStatus.SEED
+    evidence_refs: list[str] = field(default_factory=list)
+    created_at: Optional[datetime] = field(default_factory=_utcnow)
+    updated_at: Optional[datetime] = None
+    version: int = 1
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    approved_by: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    change_reason: Optional[str] = None
+    production_eligible: Optional[bool] = None
+    runtime_eligible: Optional[bool] = None
+    governance_history: list[dict] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.normalized_mnemonic:
+            self.normalized_mnemonic = self.mnemonic.strip().upper()
+
+
+# ---------------------------------------------------------------------------
+# C. Alias / Mnemonic Record
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -160,7 +206,7 @@ class AliasRecord:
 
 
 # ---------------------------------------------------------------------------
-# C. Display Rule Record
+# D. Display Rule Record
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -204,7 +250,7 @@ class DisplayRuleRecord:
 
 
 # ---------------------------------------------------------------------------
-# D. Classification Rule Record
+# E. Classification Rule Record
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -245,7 +291,7 @@ class ClassificationRuleRecord:
 
 
 # ---------------------------------------------------------------------------
-# E. Template Rule Record
+# F. Template Rule Record
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -288,7 +334,7 @@ class TemplateRuleRecord:
 
 
 # ---------------------------------------------------------------------------
-# F. Generic Managed Record
+# G. Generic Managed Record
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -363,7 +409,7 @@ class GenericManagedRecord:
 
 
 # ---------------------------------------------------------------------------
-# G. Evidence / Source Record
+# H. Evidence / Source Record
 # ---------------------------------------------------------------------------
 
 @dataclass

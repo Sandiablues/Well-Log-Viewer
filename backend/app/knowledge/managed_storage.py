@@ -37,6 +37,7 @@ from .alias_enrichment_models import AliasEnrichmentRecord
 from .governance import GovernanceStatus
 from .managed_models import (
     AliasRecord,
+    StandardMnemonicRecord,
     ClassificationRuleRecord,
     CurveDefinitionRecord,
     DisplayRuleRecord,
@@ -185,6 +186,8 @@ def deserialize_record(data: dict[str, Any]) -> Any:
 
         if record_type == "curve_definition":
             return _typed_record_from_data(CurveDefinitionRecord, data)
+        elif record_type == "standard_mnemonic":
+            return _typed_record_from_data(StandardMnemonicRecord, data)
         elif record_type == "alias":
             return _typed_record_from_data(AliasRecord, data)
         elif record_type == "display_rule":

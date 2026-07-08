@@ -776,14 +776,14 @@ class TestAliasConflictWithSeedRecords:
                     display_name="Different Curve",
                     family="different_family",
                     product_group="open_hole_logs",
-                    aliases=["GR"],  # GR already maps to gamma_ray in seed
+                    standard_mnemonics=["GR"],  # GR already maps to gamma_ray as a standard mnemonic in seed
                 )
             ],
         )
         result = validate_import_payload(payload, repo)
         assert not result.valid
         conflict_errors = [
-            e for e in result.errors if e.code == "alias_conflicts_with_existing_record"
+            e for e in result.errors if e.code == "mnemonic_conflicts_with_existing_record"
         ]
         assert len(conflict_errors) >= 1
 
@@ -798,13 +798,13 @@ class TestAliasConflictWithSeedRecords:
                     display_name="New Curve",
                     family="new_family",
                     product_group="open_hole_logs",
-                    aliases=["GR"],
+                    standard_mnemonics=["GR"],
                 )
             ],
         )
         result = validate_import_payload(payload, repo)
         conflict_errors = [
-            e for e in result.errors if e.code == "alias_conflicts_with_existing_record"
+            e for e in result.errors if e.code == "mnemonic_conflicts_with_existing_record"
         ]
         assert any("gamma_ray" in e.message for e in conflict_errors)
 
@@ -820,14 +820,14 @@ class TestAliasConflictWithSeedRecords:
                     display_name="Gamma Ray Extended",
                     family="gamma_ray",
                     product_group="open_hole_logs",
-                    aliases=["GR"],  # same canonical_curve_id as seed
+                    standard_mnemonics=["GR"],  # same canonical_curve_id as seed
                 )
             ],
         )
         result = validate_import_payload(payload, repo)
         # Should be valid (no errors); may have warning about duplicate alias
         alias_errors = [
-            e for e in result.errors if e.code == "alias_conflicts_with_existing_record"
+            e for e in result.errors if e.code == "mnemonic_conflicts_with_existing_record"
         ]
         assert len(alias_errors) == 0, (
             "Alias conflict to SAME canonical_curve_id should not be an error"
@@ -1089,7 +1089,7 @@ class TestKR2Compatibility:
         data = _standard_client.get("/api/wlv/knowledge/managed/schema").json()
         rt_keys = {rt["record_type"] for rt in data["record_types"]}
         expected = {
-            "curve_definition", "alias", "alias_enrichment", "display_rule",
+            "curve_definition", "standard_mnemonic", "alias", "alias_enrichment", "display_rule",
             "classification_rule", "template_rule", "evidence",
         }
         assert expected == rt_keys

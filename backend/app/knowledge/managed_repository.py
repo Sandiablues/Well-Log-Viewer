@@ -55,6 +55,7 @@ from .governance import (
 from .managed_models import (
     KR2_VERSION,
     AliasRecord,
+    StandardMnemonicRecord,
     ClassificationRuleRecord,
     CurveDefinitionRecord,
     DisplayRuleRecord,
@@ -72,6 +73,7 @@ from .managed_storage import ManagedStorage, ManagedStorageError, serialize_reco
 
 GovernedRecord = (
     CurveDefinitionRecord
+    | StandardMnemonicRecord
     | AliasRecord
     | DisplayRuleRecord
     | ClassificationRuleRecord
@@ -499,8 +501,17 @@ class ManagedKRRepository:
                 ),
             },
             {
+                "record_type": "standard_mnemonic",
+                "description": "Accepted exact/source mnemonic record mapping to a canonical curve",
+                "governed": True,
+                "seed_count": sum(
+                    1 for r in self.list_records("standard_mnemonic")
+                    if r.status == GovernanceStatus.SEED
+                ),
+            },
+            {
                 "record_type": "alias",
-                "description": "Mnemonic alias record mapping to a canonical curve",
+                "description": "Secondary/vendor/legacy mnemonic alias record mapping to a canonical curve",
                 "governed": True,
                 "seed_count": sum(
                     1 for r in self.list_records("alias")

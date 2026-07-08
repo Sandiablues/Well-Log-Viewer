@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .import_models import ImportPayload
-from .managed_models import AliasRecord
+from .managed_models import AliasRecord, StandardMnemonicRecord
 from .managed_repository import ManagedKRRepository
 
 
@@ -284,104 +284,143 @@ def validate_import_payload(
                 seen_canonical_ids[cid] = idx
 
     # -------------------------------------------------------------------
-    # 3. Alias duplicate and multi-mapping within payload
+    # 3. Standard mnemonic / alias duplicate and multi-mapping within payload
     # -------------------------------------------------------------------
 
-    # normalized_alias → (cd_idx, alias_idx) of first occurrence
-    seen_alias_global: dict[str, tuple[int, int]] = {}
+    # normalized mnemonic → (cd_idx, field_name, item_idx) of first occurrence
+    seen_mnemonic_global: dict[str, tuple[int, str, int]] = {}
 
     for idx, cd in enumerate(payload.curve_definitions):
-        seen_alias_in_cd: set[str] = set()
+        seen_mnemonic_in_cd: set[str] = set()
+        mnemonic_entries = [
+            ("standard_mnemonics", m_idx, mnemonic)
+            for m_idx, mnemonic in enumerate(cd.standard_mnemonics)
+        ] + [
+            ("aliases", a_idx, alias)
+            for a_idx, alias in enumerate(cd.aliases)
+        ]
 
-        for a_idx, alias in enumerate(cd.aliases):
-            normalized = alias.strip().upper()
-            alias_path = f"curve_definitions[{idx}].aliases[{a_idx}]"
+        for field_name, item_idx, mnemonic in mnemonic_entries:
+            normalized = mnemonic.strip().upper()
+            mnemonic_path = f"curve_definitions[{idx}].{field_name}[{item_idx}]"
 
-            # Duplicate alias within same curve definition
-            if normalized in seen_alias_in_cd:
+            if normalized in seen_mnemonic_in_cd:
+                if field_name == "aliases":
+                    code = "duplicate_alias_in_curve_definition"
+                    message = (
+                        f"Alias '{mnemonic}' (normalized: '{normalized}') appears more than "
+                        f"once within curve_definitions[{idx}]"
+                    )
+                elif field_name == "standard_mnemonics":
+                    code = "duplicate_standard_mnemonic_in_curve_definition"
+                    message = (
+                        f"Standard mnemonic '{mnemonic}' (normalized: '{normalized}') appears more than "
+                        f"once within curve_definitions[{idx}]"
+                    )
+                else:
+                    code = "duplicate_mnemonic_in_curve_definition"
+                    message = (
+                        f"Mnemonic '{mnemonic}' (normalized: '{normalized}') appears more than "
+                        f"once within curve_definitions[{idx}]"
+                    )
                 errors.append(
                     ValidationIssue(
-                        code="duplicate_alias_in_curve_definition",
-                        message=(
-                            f"Alias '{alias}' (normalized: '{normalized}') appears more than "
-                            f"once within curve_definitions[{idx}]"
-                        ),
-                        path=alias_path,
+                        code=code,
+                        message=message,
+                        path=mnemonic_path,
                         severity="error",
                     )
                 )
-                continue  # do not track for cross-cd check
+                continue
 
-            seen_alias_in_cd.add(normalized)
+            seen_mnemonic_in_cd.add(normalized)
 
-            if normalized in seen_alias_global:
-                first_cd_idx, first_a_idx = seen_alias_global[normalized]
+            if normalized in seen_mnemonic_global:
+                first_cd_idx, first_field, first_item_idx = seen_mnemonic_global[normalized]
                 if first_cd_idx != idx:
-                    # Alias assigned to two different canonical IDs
+                    if field_name == "aliases" and first_field == "aliases":
+                        code = "alias_mapped_to_multiple_canonical_ids"
+                        label = "Alias"
+                    elif field_name == "standard_mnemonics" and first_field == "standard_mnemonics":
+                        code = "standard_mnemonic_mapped_to_multiple_canonical_ids"
+                        label = "Standard mnemonic"
+                    else:
+                        code = "mnemonic_mapped_to_multiple_canonical_ids"
+                        label = "Mnemonic"
                     errors.append(
                         ValidationIssue(
-                            code="alias_mapped_to_multiple_canonical_ids",
+                            code=code,
                             message=(
-                                f"Alias '{alias}' (normalized: '{normalized}') is assigned to "
+                                f"{label} '{mnemonic}' (normalized: '{normalized}') is assigned to "
                                 f"multiple canonical_curve_ids in this payload "
-                                f"(first seen at curve_definitions[{first_cd_idx}].aliases[{first_a_idx}])"
+                                f"(first seen at curve_definitions[{first_cd_idx}].{first_field}[{first_item_idx}])"
                             ),
-                            path=alias_path,
+                            path=mnemonic_path,
                             severity="error",
                         )
                     )
             else:
-                seen_alias_global[normalized] = (idx, a_idx)
+                seen_mnemonic_global[normalized] = (idx, field_name, item_idx)
 
     # -------------------------------------------------------------------
-    # 4. Alias conflict with existing seed / managed alias records
+    # 4. Mnemonic conflict with existing seed / managed records
     # -------------------------------------------------------------------
 
-    existing_alias_map: dict[str, str] = {
+    existing_mnemonic_map: dict[str, str] = {
+        r.normalized_mnemonic: r.canonical_curve_id
+        for r in repository.list_records("standard_mnemonic")
+        if isinstance(r, StandardMnemonicRecord)
+    }
+    existing_mnemonic_map.update({
         r.normalized_alias: r.canonical_curve_id
         for r in repository.list_records("alias")
         if isinstance(r, AliasRecord)
-    }
+    })
 
     for idx, cd in enumerate(payload.curve_definitions):
         seen_in_cd_normalized: set[str] = set()
-        for a_idx, alias in enumerate(cd.aliases):
-            normalized = alias.strip().upper()
-            # Skip intra-cd duplicates (already errored above)
+        mnemonic_entries = [
+            ("standard_mnemonics", m_idx, mnemonic)
+            for m_idx, mnemonic in enumerate(cd.standard_mnemonics)
+        ] + [
+            ("aliases", a_idx, alias)
+            for a_idx, alias in enumerate(cd.aliases)
+        ]
+        for field_name, item_idx, mnemonic in mnemonic_entries:
+            normalized = mnemonic.strip().upper()
             if normalized in seen_in_cd_normalized:
                 continue
             seen_in_cd_normalized.add(normalized)
 
-            alias_path = f"curve_definitions[{idx}].aliases[{a_idx}]"
+            mnemonic_path = f"curve_definitions[{idx}].{field_name}[{item_idx}]"
 
-            if normalized in existing_alias_map:
-                existing_canonical = existing_alias_map[normalized]
+            if normalized in existing_mnemonic_map:
+                existing_canonical = existing_mnemonic_map[normalized]
                 import_canonical = cd.canonical_curve_id.strip() if cd.canonical_curve_id else ""
 
                 if existing_canonical != import_canonical:
                     errors.append(
                         ValidationIssue(
-                            code="alias_conflicts_with_existing_record",
+                            code="mnemonic_conflicts_with_existing_record",
                             message=(
-                                f"Alias '{alias}' (normalized: '{normalized}') already exists in "
+                                f"Mnemonic '{mnemonic}' (normalized: '{normalized}') already exists in "
                                 f"the managed KR mapped to canonical_curve_id '{existing_canonical}', "
                                 f"but this import assigns it to '{import_canonical}'"
                             ),
-                            path=alias_path,
+                            path=mnemonic_path,
                             severity="error",
                         )
                     )
                 else:
-                    # Same canonical ID — warn that a duplicate candidate will be created
                     warnings.append(
                         ValidationIssue(
-                            code="alias_already_exists_for_same_curve",
+                            code="mnemonic_already_exists_for_same_curve",
                             message=(
-                                f"Alias '{alias}' (normalized: '{normalized}') already exists in "
+                                f"Mnemonic '{mnemonic}' (normalized: '{normalized}') already exists in "
                                 f"the managed KR for canonical_curve_id '{existing_canonical}'. "
-                                f"A duplicate candidate alias record will be created."
+                                f"A duplicate candidate mnemonic record will be created."
                             ),
-                            path=alias_path,
+                            path=mnemonic_path,
                             severity="warning",
                         )
                     )
@@ -525,6 +564,7 @@ def validate_import_payload(
     # -------------------------------------------------------------------
 
     curve_def_count = len(payload.curve_definitions)
+    standard_mnemonic_count = sum(len(cd.standard_mnemonics) for cd in payload.curve_definitions)
     alias_count = sum(len(cd.aliases) for cd in payload.curve_definitions)
     display_rule_count = len(payload.display_rules)
     class_rule_count = len(payload.classification_rules)
@@ -533,6 +573,7 @@ def validate_import_payload(
 
     candidate_record_count = (
         curve_def_count
+        + standard_mnemonic_count
         + alias_count
         + display_rule_count
         + class_rule_count
@@ -541,6 +582,7 @@ def validate_import_payload(
 
     record_type_counts: dict[str, int] = {
         "curve_definition": curve_def_count,
+        "standard_mnemonic": standard_mnemonic_count,
         "alias": alias_count,
         "display_rule": display_rule_count,
         "classification_rule": class_rule_count,

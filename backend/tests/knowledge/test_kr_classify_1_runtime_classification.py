@@ -22,7 +22,7 @@ def _service(repo: ManagedKRRepository) -> RuntimeCurveClassificationService:
     return RuntimeCurveClassificationService(ApprovedKnowledgeRuntimeResolver(repo))
 
 
-def test_seed_alias_resolves_with_runtime_policy(tmp_path: Path) -> None:
+def test_seed_standard_mnemonic_resolves_with_runtime_policy(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     service = _service(repo)
 

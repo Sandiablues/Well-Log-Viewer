@@ -122,7 +122,9 @@ def test_kr_gamma_ray_definition(kr: KnowledgeRepository) -> None:
     assert gr is not None
     assert gr.display_name == "Gamma Ray"
     assert gr.product_subgroup == "gamma_ray"
-    assert "GR" in gr.aliases
+    assert "GR" in gr.standard_mnemonics
+    assert "GR" in gr.all_known_mnemonics
+    assert "GR" not in gr.aliases
 
 
 def test_kr_display_rules_count(kr: KnowledgeRepository) -> None:
@@ -207,7 +209,9 @@ def test_endpoint_curve_definitions() -> None:
     assert len(data["curve_definitions"]) >= 10
     gr = next((d for d in data["curve_definitions"] if d["canonical_curve_id"] == "gamma_ray"), None)
     assert gr is not None
-    assert "GR" in gr["aliases"]
+    assert "GR" in gr["standard_mnemonics"]
+    assert "GR" in gr["all_known_mnemonics"]
+    assert "GR" not in gr["aliases"]
 
 
 def test_endpoint_display_rules() -> None:
