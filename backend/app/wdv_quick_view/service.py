@@ -8,7 +8,23 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from .models import QuickViewCurve, QuickViewPackage, QuickViewSample, QuickViewTrack
+from .models import (
+    QuickViewCurve,
+    QuickViewCurveCounts,
+    QuickViewCurveInfo,
+    QuickViewEarlyQaqc,
+    QuickViewFileInfo,
+    QuickViewIndexInfo,
+    QuickViewMetadata,
+    QuickViewMetadataValue,
+    QuickViewPackage,
+    QuickViewQaqcFlag,
+    QuickViewRecognitionSummary,
+    QuickViewSample,
+    QuickViewScalingSummary,
+    QuickViewTrack,
+    QuickViewWellInfo,
+)
 from app.inventory.models import ManagedProductGroupItem
 from app.wdv_display.kr_family_policy_resolver import ManagedKrFamilyDisplayPolicyResolver
 from app.knowledge.curve_knowledge import CURVE_DEFINITIONS, resolve_curve_definition
@@ -16,6 +32,225 @@ from app.knowledge.curve_knowledge import CURVE_DEFINITIONS, resolve_curve_defin
 
 class QuickViewError(ValueError):
     pass
+
+
+def _meta_value(
+    value: Any,
+    *,
+    unit: str | None = None,
+    source: str | None = None,
+    confidence: str | None = None,
+) -> QuickViewMetadataValue:
+    supplied = value is not None and str(value).strip() != ''
+    return QuickViewMetadataValue(
+        value=value if supplied else None,
+        unit=unit,
+        source=source if supplied or source else None,
+        confidence=confidence or ('explicit' if supplied else 'not_supplied'),
+    )
+
+
+def _derived_meta(value: Any, *, unit: str | None = None, source: str | None = None) -> QuickViewMetadataValue:
+    return QuickViewMetadataValue(value=value, unit=unit, source=source, confidence='derived')
+
+
+def _unresolved_meta(value: Any, *, unit: str | None = None, source: str | None = None) -> QuickViewMetadataValue:
+    return QuickViewMetadataValue(value=value if value is not None else None, unit=unit, source=source, confidence='unresolved')
+
+
+def _parse_las_header_line(line: str) -> dict[str, str | None] | None:
+    left, _, description = line.partition(':')
+    match = re.match(r'^\s*([^\.\s]+)\s*\.\s*(.*)$', left.rstrip())
+    if not match:
+        return None
+    mnemonic = match.group(1).strip().upper()
+    after_dot = match.group(2)
+    # LAS uses MNEM.UNIT VALUE, but blank units are common in ~WELL.  Preserve
+    # whether a token appeared immediately after the dot: ``DEPT.F`` has unit
+    # F, while ``WELL .      #21D-14`` has no unit and the full text is value.
+    raw_after_dot = left[left.find('.') + 1:]
+    if raw_after_dot and not raw_after_dot[0].isspace():
+        parts = after_dot.split(None, 1)
+        unit = parts[0].strip() if parts else None
+        value = parts[1].strip() if len(parts) > 1 else None
+    else:
+        unit = None
+        value = after_dot.strip() or None
+    return {
+        'mnemonic': mnemonic,
+        'unit': unit,
+        'value': value,
+        'description': description.strip() or None,
+    }
+
+
+def _las_section_index(lines: list[str], section_name: str) -> dict[str, dict[str, str | None]]:
+    result: dict[str, dict[str, str | None]] = {}
+    for line in lines:
+        parsed = _parse_las_header_line(line)
+        if parsed is not None:
+            result[str(parsed['mnemonic'])] = parsed | {'source': f'LAS.~{section_name}.{parsed["mnemonic"]}'}
+    return result
+
+
+def _las_value(index: dict[str, dict[str, str | None]], *keys: str) -> QuickViewMetadataValue:
+    for key in keys:
+        item = index.get(key.upper())
+        if item and item.get('value'):
+            return _meta_value(item.get('value'), unit=item.get('unit'), source=item.get('source'))
+    return _meta_value(None)
+
+
+def _parse_float_or_none(value: str | None) -> float | None:
+    try:
+        return float(str(value).strip()) if value is not None and str(value).strip() else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _median_step(values: list[float]) -> float | None:
+    ordered = [float(value) for value in values if math.isfinite(float(value))]
+    if len(ordered) < 2:
+        return None
+    deltas = sorted(abs(ordered[index] - ordered[index - 1]) for index in range(1, len(ordered)) if ordered[index] != ordered[index - 1])
+    if not deltas:
+        return None
+    return float(deltas[len(deltas) // 2])
+
+
+def _is_regular_index(values: list[float], step: float | None) -> bool | None:
+    if step is None or len(values) < 3:
+        return None
+    tolerance = max(abs(step) * 1e-4, 1e-6)
+    for index in range(1, len(values)):
+        if abs(abs(values[index] - values[index - 1]) - abs(step)) > tolerance:
+            return False
+    return True
+
+
+def _curve_counts(total_curves: int, rendered_curves: list[QuickViewCurve], source_units: list[str | None]) -> QuickViewCurveCounts:
+    missing_units = sum(1 for unit in source_units if not str(unit or '').strip())
+    return QuickViewCurveCounts(
+        total_curves=total_curves,
+        renderable_curves=len(rendered_curves),
+        non_renderable_curves=max(total_curves - len(rendered_curves), 0),
+        curves_with_units=max(total_curves - missing_units, 0),
+        curves_missing_units=missing_units,
+    )
+
+
+def _recognition_summary(curves: list[QuickViewCurve]) -> QuickViewRecognitionSummary:
+    counts = {'KR exact': 0, 'KR alias': 0, 'KR family': 0, 'Unit domain': 0, 'Unknown': 0}
+    review_required = 0
+    for curve in curves:
+        status = str(curve.kr_catalogue_status or curve.catalogue_status or 'Unknown')
+        counts[status if status in counts else 'Unknown'] += 1
+        if curve.review_required:
+            review_required += 1
+    return QuickViewRecognitionSummary(
+        kr_exact=counts['KR exact'],
+        kr_alias=counts['KR alias'],
+        kr_family=counts['KR family'],
+        unit_domain=counts['Unit domain'],
+        unknown=counts['Unknown'],
+        review_required=review_required,
+    )
+
+
+def _scaling_summary(curves: list[QuickViewCurve]) -> QuickViewScalingSummary:
+    governed = kr_known = unit_domain = generic = mismatch = 0
+    for curve in curves:
+        decision = str(curve.scale_decision or '')
+        if decision == 'Governed':
+            governed += 1
+        elif decision == 'KR-known fallback':
+            kr_known += 1
+        elif decision == 'Unit mismatch fallback':
+            mismatch += 1
+        elif decision in {'Unit-log fallback', 'Unit-linear fallback'}:
+            unit_domain += 1
+        elif decision == 'Generic fallback':
+            generic += 1
+        else:
+            generic += 1
+    return QuickViewScalingSummary(
+        governed=governed,
+        kr_known_fallback=kr_known,
+        unit_domain_fallback=unit_domain,
+        generic_fallback=generic,
+        unit_mismatch=mismatch,
+    )
+
+
+def _qaqc_severity(flags: list[QuickViewQaqcFlag]) -> str:
+    if any(flag.severity == 'error' for flag in flags):
+        return 'error'
+    if any(flag.severity == 'warning' for flag in flags):
+        return 'warning'
+    if any(flag.severity == 'info' for flag in flags):
+        return 'info'
+    return 'ok'
+
+
+def _quick_view_metadata(
+    *,
+    filename: str,
+    source_format: str,
+    content: bytes,
+    format_version: str | None,
+    parser_name: str,
+    parser_status: str,
+    well_info: QuickViewWellInfo,
+    index_info: QuickViewIndexInfo,
+    curve_counts: QuickViewCurveCounts,
+    recognition_summary: QuickViewRecognitionSummary,
+    scaling_summary: QuickViewScalingSummary,
+    qaqc_flags: list[QuickViewQaqcFlag],
+) -> QuickViewMetadata:
+    fingerprint = hashlib.sha256(content).hexdigest()
+    return QuickViewMetadata(
+        file_info=QuickViewFileInfo(
+            source_file_name=_meta_value(Path(filename).name, source='upload.filename'),
+            file_type=_meta_value(source_format, source='file.extension'),
+            format_version=_meta_value(format_version),
+            file_size_bytes=_derived_meta(len(content), source='upload.content_length'),
+            content_fingerprint=_derived_meta(f'sha256:{fingerprint}', source='upload.content'),
+            parser_name=_derived_meta(parser_name),
+            parser_status=_derived_meta(parser_status),
+            temporary_only=_derived_meta(True),
+        ),
+        well_info=well_info,
+        curve_info=QuickViewCurveInfo(
+            index=index_info,
+            curve_counts=curve_counts,
+            recognition_summary=recognition_summary,
+            scaling_summary=scaling_summary,
+        ),
+        early_qaqc=QuickViewEarlyQaqc(
+            severity=_qaqc_severity(qaqc_flags),
+            flags=tuple(qaqc_flags),
+        ),
+    )
+
+
+def _not_supplied_well_info() -> QuickViewWellInfo:
+    empty = _meta_value(None)
+    return QuickViewWellInfo(
+        well_name=empty,
+        well_id=empty,
+        uwi=empty,
+        api=empty,
+        field=empty,
+        operator=empty,
+        country=empty,
+        state_province=empty,
+        county_area=empty,
+        latitude=empty,
+        longitude=empty,
+        x=empty,
+        y=empty,
+        datum=empty,
+    )
 
 
 _STANDARD_UNITS = {
@@ -113,6 +348,7 @@ def _depth_transform_from_unit(unit: str | None) -> _DepthTransform:
         'ft': ('imperial', 1.0),
         'foot': ('imperial', 1.0),
         'feet': ('imperial', 1.0),
+        'f': ('imperial', 1.0),
         'in': ('imperial-inch', 1.0),
         'inch': ('imperial-inch', 1.0),
         'inches': ('imperial-inch', 1.0),
@@ -903,6 +1139,8 @@ class _DlisFramePackage:
     depth_unit_label: str | None
     warning: str | None
     frame_name: str
+    index_mnemonic: str | None
+    source_index_unit: str | None
 
 
 class WdvQuickViewService:
@@ -926,17 +1164,20 @@ class WdvQuickViewService:
             elif current and stripped and not stripped.startswith('#'):
                 sections[current].append(raw)
 
+        version_section = sections.get('VERSION') or sections.get('V') or []
         well = sections.get('WELL') or sections.get('W') or []
         curves_section = sections.get('CURVE') or sections.get('C') or []
         ascii_section = sections.get('ASCII') or sections.get('A') or []
-        headers = []
-        for line in curves_section:
-            left, _, description = line.partition(':')
-            match = re.match(r'^\s*([^\.\s]+)\s*\.\s*([^\s]*)\s*(.*)$', left)
-            if match:
-                headers.append((match.group(1).strip(), match.group(2).strip() or None, description.strip() or None))
+        version_index = _las_section_index(version_section, 'VERSION')
+        well_index = _las_section_index(well, 'WELL')
 
-        rows = []
+        headers: list[tuple[str, str | None, str | None]] = []
+        for line in curves_section:
+            parsed = _parse_las_header_line(line)
+            if parsed is not None:
+                headers.append((str(parsed['mnemonic']), parsed.get('unit'), parsed.get('description')))
+
+        rows: list[list[float]] = []
         for line in ascii_section:
             try:
                 row = [float(value) for value in line.replace(',', ' ').split()]
@@ -947,24 +1188,14 @@ class WdvQuickViewService:
         if not headers or not rows:
             raise QuickViewError('LAS has no renderable curve table.')
 
-        null = -999.25
-        well_name = None
-        depth_unit = headers[0][1]
-        for line in well:
-            left, _, _ = line.partition(':')
-            match = re.match(r'^\s*([^\.\s]+)\s*\.\s*([^\s]*)\s*(.*)$', left)
-            if not match:
-                continue
-            key = match.group(1).upper()
-            value = ' '.join(part for part in [match.group(2), match.group(3)] if part).strip()
-            if key == 'NULL':
-                try:
-                    null = float(value)
-                except ValueError:
-                    pass
-            if key in {'WELL', 'WEL', 'WELLNAME'} and value:
-                well_name = value
+        null_item = well_index.get('NULL')
+        null = _parse_float_or_none(null_item.get('value') if null_item else None)
+        if null is None:
+            null = -999.25
 
+        well_name_value = _las_value(well_index, 'WELL', 'WEL', 'WELLNAME')
+        well_name = str(well_name_value.value).strip() if well_name_value.value is not None else None
+        depth_unit = headers[0][1]
         transform = _depth_transform_from_unit(depth_unit)
         depths = [transform.apply(row[0]) for row in rows if math.isfinite(row[0])]
         output: list[QuickViewCurve] = []
@@ -1011,7 +1242,122 @@ class WdvQuickViewService:
             ))
         if not output:
             raise QuickViewError('LAS contains no renderable numeric curves.')
-        warnings = () if transform.resolved else ('LAS index unit unresolved; displaying raw index without a unit.',)
+
+        warnings = [] if transform.resolved else ['LAS index unit unresolved; displaying raw index without a unit.']
+        qaqc_flags: list[QuickViewQaqcFlag] = []
+        wrap_item = version_index.get('WRAP')
+        wrap_value = str(wrap_item.get('value') or '').strip().upper() if wrap_item else ''
+        if wrap_value:
+            severity = 'warning' if wrap_value == 'YES' else 'info'
+            message = 'LAS WRAP=YES declared; parser warning if wrapped rows are inconsistent.' if wrap_value == 'YES' else 'LAS WRAP=NO.'
+            qaqc_flags.append(QuickViewQaqcFlag(
+                code='las_wrap_mode',
+                severity=severity,
+                message=message,
+                source=wrap_item.get('source') if wrap_item else 'LAS.~VERSION.WRAP',
+                visible_by_default=(wrap_value == 'YES'),
+            ))
+        else:
+            qaqc_flags.append(QuickViewQaqcFlag(
+                code='las_wrap_mode_missing',
+                severity='info',
+                message='LAS WRAP mode was not supplied; parser treated rows as unwrapped.',
+                source='LAS.~VERSION.WRAP',
+                visible_by_default=False,
+            ))
+
+        source_units = [unit for _, unit, _ in headers[1:]]
+        counts = _curve_counts(len(headers) - 1, output, source_units)
+        if counts.curves_missing_units:
+            qaqc_flags.append(QuickViewQaqcFlag(
+                code='missing_curve_units',
+                severity='warning',
+                message=f'{counts.curves_missing_units} curves have no source unit.',
+                count=counts.curves_missing_units,
+            ))
+        if not transform.resolved:
+            qaqc_flags.append(QuickViewQaqcFlag(
+                code='unresolved_index_unit',
+                severity='warning',
+                message='LAS index unit is unresolved; displaying raw index values.',
+                source='LAS.~CURVE.' + headers[0][0],
+            ))
+        recognition = _recognition_summary(output)
+        if recognition.unknown:
+            qaqc_flags.append(QuickViewQaqcFlag(
+                code='unknown_curve_mnemonics',
+                severity='info',
+                message=f'{recognition.unknown} curves were not recognized by KR or unit domain.',
+                count=recognition.unknown,
+            ))
+        scaling = _scaling_summary(output)
+        if scaling.unit_mismatch:
+            qaqc_flags.append(QuickViewQaqcFlag(
+                code='unit_mismatch',
+                severity='warning',
+                message=f'{scaling.unit_mismatch} curves have source units incompatible with KR policy.',
+                count=scaling.unit_mismatch,
+            ))
+        if counts.non_renderable_curves:
+            qaqc_flags.append(QuickViewQaqcFlag(
+                code='non_renderable_curves',
+                severity='warning',
+                message=f'{counts.non_renderable_curves} curves were not renderable.',
+                count=counts.non_renderable_curves,
+            ))
+
+        step_item = well_index.get('STEP')
+        step_raw = _parse_float_or_none(step_item.get('value') if step_item else None)
+        resolved_step = transform.apply(step_raw) if step_raw is not None else _median_step(depths)
+        regular = _is_regular_index(depths, resolved_step)
+        if regular is False:
+            qaqc_flags.append(QuickViewQaqcFlag(
+                code='irregular_index_sampling',
+                severity='warning',
+                message='Depth/index sampling is irregular.',
+            ))
+
+        well_info = QuickViewWellInfo(
+            well_name=well_name_value,
+            well_id=_las_value(well_index, 'WELLID', 'WID'),
+            uwi=_las_value(well_index, 'UWI'),
+            api=_las_value(well_index, 'API'),
+            field=_las_value(well_index, 'FLD', 'FIELD'),
+            operator=_las_value(well_index, 'COMP', 'COMPANY', 'OPERATOR', 'OPER'),
+            country=_las_value(well_index, 'COUN', 'COUNTRY', 'CTRY'),
+            state_province=_las_value(well_index, 'STAT', 'STATE', 'PROV', 'PROVINCE'),
+            county_area=_las_value(well_index, 'CNTY', 'COUNTY', 'AREA'),
+            latitude=_las_value(well_index, 'LAT', 'LATI', 'LATITUDE'),
+            longitude=_las_value(well_index, 'LON', 'LONG', 'LONGITUDE'),
+            x=_las_value(well_index, 'X', 'XCOORD', 'EASTING'),
+            y=_las_value(well_index, 'Y', 'YCOORD', 'NORTHING'),
+            datum=_las_value(well_index, 'DATUM', 'CRS'),
+        )
+        index_info = QuickViewIndexInfo(
+            source_mnemonic=_meta_value(headers[0][0], source='LAS.~CURVE.' + headers[0][0]),
+            source_unit=_meta_value(depth_unit, source='LAS.~CURVE.' + headers[0][0]),
+            resolved_unit=_meta_value(transform.unit_label, source='QuickView.depth_unit_resolver', confidence='derived' if transform.resolved else 'unresolved'),
+            start=_derived_meta(min(depths), unit=transform.unit_label, source='LAS.~A'),
+            stop=_derived_meta(max(depths), unit=transform.unit_label, source='LAS.~A'),
+            step=_derived_meta(resolved_step, unit=transform.unit_label, source=step_item.get('source') if step_item else 'LAS.~A'),
+            sample_count=_derived_meta(len(depths), source='LAS.~A'),
+            is_regular=_derived_meta(regular, source='LAS.~A'),
+        )
+        version_item = version_index.get('VERS') or version_index.get('VERSION')
+        metadata = _quick_view_metadata(
+            filename=filename,
+            source_format='LAS',
+            content=content,
+            format_version=str(version_item.get('value')).strip() if version_item and version_item.get('value') else None,
+            parser_name='las_quick_view_parser',
+            parser_status='parsed_with_warnings' if any(flag.severity in {'warning', 'error'} for flag in qaqc_flags) else 'parsed',
+            well_info=well_info,
+            index_info=index_info,
+            curve_counts=counts,
+            recognition_summary=recognition,
+            scaling_summary=scaling,
+            qaqc_flags=qaqc_flags,
+        )
         return QuickViewPackage(
             filename=Path(filename).name,
             source_format='LAS',
@@ -1021,7 +1367,8 @@ class WdvQuickViewService:
             depth_max=max(depths),
             depth_unit_label=transform.unit_label,
             tracks=_group(output),
-            warnings=warnings,
+            warnings=tuple(warnings),
+            quick_view_metadata=metadata,
         )
 
     def _parse_dlis_frame(self, *, frame: Any, logical_index: int, frame_index: int) -> _DlisFramePackage | None:
@@ -1131,6 +1478,8 @@ class WdvQuickViewService:
             depth_unit_label=transform.unit_label,
             warning=warning,
             frame_name=frame_name,
+            index_mnemonic=str(getattr(index_channel, 'name', '') or '').strip() or None,
+            source_index_unit=raw_index_unit,
         )
 
     def _dlis(self, filename: str, content: bytes) -> QuickViewPackage:
@@ -1177,6 +1526,81 @@ class WdvQuickViewService:
         if selected.warning:
             warnings.append(selected.warning)
 
+        selected_curves = list(selected.curves)
+        counts = _curve_counts(len(selected_curves), selected_curves, [curve.source_unit for curve in selected_curves])
+        recognition = _recognition_summary(selected_curves)
+        scaling = _scaling_summary(selected_curves)
+        qaqc_flags: list[QuickViewQaqcFlag] = []
+        if len(candidates) > 1:
+            qaqc_flags.append(QuickViewQaqcFlag(
+                code='dlis_multiple_frames',
+                severity='info',
+                message=f'Selected DLIS frame {selected.frame_name} with {len(selected.curves)} renderable scalar curves.',
+                count=len(candidates),
+            ))
+        if selected.warning:
+            qaqc_flags.append(QuickViewQaqcFlag(
+                code='unresolved_index_unit',
+                severity='warning',
+                message=selected.warning,
+                source=f'DLIS.frame.{selected.frame_name}',
+            ))
+        if counts.curves_missing_units:
+            qaqc_flags.append(QuickViewQaqcFlag(
+                code='missing_curve_units',
+                severity='warning',
+                message=f'{counts.curves_missing_units} curves have no source unit.',
+                count=counts.curves_missing_units,
+            ))
+        if recognition.unknown:
+            qaqc_flags.append(QuickViewQaqcFlag(
+                code='unknown_curve_mnemonics',
+                severity='info',
+                message=f'{recognition.unknown} curves were not recognized by KR or unit domain.',
+                count=recognition.unknown,
+            ))
+        if scaling.unit_mismatch:
+            qaqc_flags.append(QuickViewQaqcFlag(
+                code='unit_mismatch',
+                severity='warning',
+                message=f'{scaling.unit_mismatch} curves have source units incompatible with KR policy.',
+                count=scaling.unit_mismatch,
+            ))
+        step = _median_step(list(selected.depths))
+        regular = _is_regular_index(list(selected.depths), step)
+        if regular is False:
+            qaqc_flags.append(QuickViewQaqcFlag(
+                code='irregular_index_sampling',
+                severity='warning',
+                message='Depth/index sampling is irregular.',
+            ))
+        well_info = _not_supplied_well_info().model_copy(update={
+            'well_name': _meta_value(well_name if well_name != 'Not supplied' else None, source='DLIS.origin.well_name'),
+        })
+        index_info = QuickViewIndexInfo(
+            source_mnemonic=_meta_value(selected.index_mnemonic, source=f'DLIS.frame.{selected.frame_name}.index'),
+            source_unit=_meta_value(selected.source_index_unit, source=f'DLIS.frame.{selected.frame_name}.index.units'),
+            resolved_unit=_meta_value(selected.depth_unit_label, source='QuickView.depth_unit_resolver', confidence='derived' if selected.depth_unit_label else 'unresolved'),
+            start=_derived_meta(min(selected.depths), unit=selected.depth_unit_label, source=f'DLIS.frame.{selected.frame_name}'),
+            stop=_derived_meta(max(selected.depths), unit=selected.depth_unit_label, source=f'DLIS.frame.{selected.frame_name}'),
+            step=_derived_meta(step, unit=selected.depth_unit_label, source=f'DLIS.frame.{selected.frame_name}'),
+            sample_count=_derived_meta(len(selected.depths), source=f'DLIS.frame.{selected.frame_name}'),
+            is_regular=_derived_meta(regular, source=f'DLIS.frame.{selected.frame_name}'),
+        )
+        metadata = _quick_view_metadata(
+            filename=filename,
+            source_format='DLIS',
+            content=content,
+            format_version=None,
+            parser_name='dlis_quick_view_parser',
+            parser_status='parsed_with_warnings' if any(flag.severity in {'warning', 'error'} for flag in qaqc_flags) else 'parsed',
+            well_info=well_info,
+            index_info=index_info,
+            curve_counts=counts,
+            recognition_summary=recognition,
+            scaling_summary=scaling,
+            qaqc_flags=qaqc_flags,
+        )
         return QuickViewPackage(
             filename=Path(filename).name,
             source_format='DLIS',
@@ -1185,6 +1609,7 @@ class WdvQuickViewService:
             depth_min=min(selected.depths),
             depth_max=max(selected.depths),
             depth_unit_label=selected.depth_unit_label,
-            tracks=_group(list(selected.curves)),
+            tracks=_group(selected_curves),
             warnings=tuple(warnings),
+            quick_view_metadata=metadata,
         )

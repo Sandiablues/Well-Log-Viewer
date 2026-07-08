@@ -2,6 +2,107 @@ from __future__ import annotations
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
+
+class QuickViewMetadataValue(BaseModel):
+    model_config=ConfigDict(extra='forbid', frozen=True)
+    value: str | int | float | bool | None = None
+    unit: str | None = None
+    source: str | None = None
+    confidence: Literal['explicit','derived','not_supplied','unresolved'] = 'not_supplied'
+
+class QuickViewFileInfo(BaseModel):
+    model_config=ConfigDict(extra='forbid', frozen=True)
+    source_file_name: QuickViewMetadataValue
+    file_type: QuickViewMetadataValue
+    format_version: QuickViewMetadataValue
+    file_size_bytes: QuickViewMetadataValue
+    content_fingerprint: QuickViewMetadataValue
+    parser_name: QuickViewMetadataValue
+    parser_status: QuickViewMetadataValue
+    temporary_only: QuickViewMetadataValue
+
+class QuickViewWellInfo(BaseModel):
+    model_config=ConfigDict(extra='forbid', frozen=True)
+    well_name: QuickViewMetadataValue
+    well_id: QuickViewMetadataValue
+    uwi: QuickViewMetadataValue
+    api: QuickViewMetadataValue
+    field: QuickViewMetadataValue
+    operator: QuickViewMetadataValue
+    country: QuickViewMetadataValue
+    state_province: QuickViewMetadataValue
+    county_area: QuickViewMetadataValue
+    latitude: QuickViewMetadataValue
+    longitude: QuickViewMetadataValue
+    x: QuickViewMetadataValue
+    y: QuickViewMetadataValue
+    datum: QuickViewMetadataValue
+
+class QuickViewIndexInfo(BaseModel):
+    model_config=ConfigDict(extra='forbid', frozen=True)
+    source_mnemonic: QuickViewMetadataValue
+    source_unit: QuickViewMetadataValue
+    resolved_unit: QuickViewMetadataValue
+    start: QuickViewMetadataValue
+    stop: QuickViewMetadataValue
+    step: QuickViewMetadataValue
+    sample_count: QuickViewMetadataValue
+    is_regular: QuickViewMetadataValue
+
+class QuickViewCurveCounts(BaseModel):
+    model_config=ConfigDict(extra='forbid', frozen=True)
+    total_curves: int
+    renderable_curves: int
+    non_renderable_curves: int
+    curves_with_units: int
+    curves_missing_units: int
+
+class QuickViewRecognitionSummary(BaseModel):
+    model_config=ConfigDict(extra='forbid', frozen=True)
+    kr_exact: int = 0
+    kr_alias: int = 0
+    kr_family: int = 0
+    unit_domain: int = 0
+    unknown: int = 0
+    review_required: int = 0
+
+class QuickViewScalingSummary(BaseModel):
+    model_config=ConfigDict(extra='forbid', frozen=True)
+    governed: int = 0
+    kr_known_fallback: int = 0
+    unit_domain_fallback: int = 0
+    generic_fallback: int = 0
+    unit_mismatch: int = 0
+
+class QuickViewCurveInfo(BaseModel):
+    model_config=ConfigDict(extra='forbid', frozen=True)
+    index: QuickViewIndexInfo
+    curve_counts: QuickViewCurveCounts
+    recognition_summary: QuickViewRecognitionSummary
+    scaling_summary: QuickViewScalingSummary
+
+class QuickViewQaqcFlag(BaseModel):
+    model_config=ConfigDict(extra='forbid', frozen=True)
+    code: str
+    severity: Literal['info','warning','error']
+    message: str
+    count: int | None = None
+    source: str | None = None
+    visible_by_default: bool = True
+
+class QuickViewEarlyQaqc(BaseModel):
+    model_config=ConfigDict(extra='forbid', frozen=True)
+    severity: Literal['ok','info','warning','error'] = 'ok'
+    flags: tuple[QuickViewQaqcFlag, ...] = ()
+
+class QuickViewMetadata(BaseModel):
+    model_config=ConfigDict(extra='forbid', frozen=True)
+    file_info: QuickViewFileInfo
+    well_info: QuickViewWellInfo
+    curve_info: QuickViewCurveInfo
+    early_qaqc: QuickViewEarlyQaqc
+
+
 class QuickViewSample(BaseModel):
     model_config=ConfigDict(extra='forbid', frozen=True)
     depth: float
@@ -54,3 +155,4 @@ class QuickViewPackage(BaseModel):
     depth_unit_label: str | None = None
     tracks: tuple[QuickViewTrack, ...]
     warnings: tuple[str, ...]=()
+    quick_view_metadata: QuickViewMetadata | None = None

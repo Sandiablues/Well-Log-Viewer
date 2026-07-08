@@ -33,6 +33,26 @@ def test_las_returns_self_contained_render_package_without_state(tmp_path):
     assert list(tmp_path.iterdir()) == before
 
 
+
+
+def test_las_single_letter_f_depth_unit_resolves_to_feet():
+    transform = _depth_transform_from_unit('F')
+    assert transform.resolved is True
+    assert transform.unit_label == 'ft'
+    assert transform.apply(8660.0) == pytest.approx(8660.0)
+
+
+def test_las_fixture_depth_unit_f_is_reported_as_feet_for_display_toggle():
+    result = WdvQuickViewService().parse(
+        filename='fixture.las',
+        content=Path(__file__).with_name('fixture.las').read_bytes(),
+    )
+    assert result.depth_unit_label == 'ft'
+    assert not any('index unit unresolved' in warning for warning in result.warnings)
+    assert result.depth_min == pytest.approx(8660.0)
+    assert result.depth_max == pytest.approx(8906.0)
+
+
 def test_adaptive_padding_targets_controlled_visual_footprint():
     assert _adaptive_padding_fraction(0.30) == pytest.approx(1.1666666667)
     assert _adaptive_padding_fraction(0.35) == pytest.approx(0.9285714286)
@@ -319,3 +339,31 @@ def test_exact_governed_contract_reports_catalogue_and_scale_decision(monkeypatc
     assert result[5] == 'managed_knowledge_curve_rule'
     assert result[6] == 'KR exact'
     assert result[7] == 'Governed'
+
+
+def test_quick_view_package_exposes_standardized_metadata_sections():
+    result = WdvQuickViewService().parse(
+        filename='sample.las',
+        content=Path(__file__).with_name('fixture.las').read_bytes(),
+    )
+    metadata = result.quick_view_metadata
+    assert metadata is not None
+    assert metadata.file_info.file_type.value == 'LAS'
+    assert metadata.well_info.well_name.value is not None
+    assert metadata.curve_info.curve_counts.total_curves == 4
+    assert metadata.curve_info.curve_counts.renderable_curves == 4
+    assert metadata.curve_info.index.source_mnemonic.value is not None
+    assert metadata.curve_info.index.start.value < metadata.curve_info.index.stop.value
+    assert metadata.early_qaqc.severity in {'ok', 'info', 'warning', 'error'}
+
+
+def test_las_wrap_mode_is_qaqc_flag_not_file_info():
+    result = WdvQuickViewService().parse(
+        filename='sample.las',
+        content=Path(__file__).with_name('fixture.las').read_bytes(),
+    )
+    metadata = result.quick_view_metadata
+    assert metadata is not None
+    codes = {flag.code for flag in metadata.early_qaqc.flags}
+    assert 'las_wrap_mode' in codes or 'las_wrap_mode_missing' in codes
+    assert not hasattr(metadata.file_info, 'wrap')

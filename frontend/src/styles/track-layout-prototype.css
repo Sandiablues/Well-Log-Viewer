@@ -9298,3 +9298,364 @@ button.wlv-view-range-readout,
   border-radius: 6px;
 }
 .wlv-wmd-recovery-blocked-body p { margin: 0 0 12px; }
+
+/* Simple LAS/DLIS Quick View */
+.wlv-prototype-workspace {
+  position: relative;
+}
+
+.wlv-qv-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5000;
+  display: grid;
+  place-items: center;
+  background: rgba(3, 7, 18, 0.82);
+  color: #f8fafc;
+  font-size: 20px;
+  pointer-events: none;
+}
+
+
+.wlv-qv-status-message {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  z-index: 4900;
+  max-width: min(680px, calc(100% - 32px));
+  transform: translateX(-50%);
+  padding: 5px 9px;
+  border: 1px solid #64748b;
+  border-radius: 4px;
+  background: #1e293b;
+  color: #e2e8f0;
+  font-size: 11px;
+  line-height: 1.25;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+
+.wlv-qv-canvas {
+  min-width: 0;
+  min-height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #0b1020;
+  color: #e5e7eb;
+}
+
+.wlv-qv-toolbar {
+  flex: 0 0 42px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px;
+  border-bottom: 1px solid #2a3445;
+  background: #111827;
+  color: #f8fafc;
+}
+
+.wlv-qv-toolbar strong {
+  font-size: 13px;
+}
+
+.wlv-qv-toolbar span {
+  overflow: hidden;
+  color: #aeb8c8;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-qv-toolbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wlv-qv-toolbar-actions small {
+  color: #aeb8c8;
+  font-size: 11px;
+}
+
+.wlv-qv-toolbar button {
+  margin-left: 0;
+  min-height: 22px;
+  padding: 0 7px;
+  border: 1px solid #526174;
+  border-radius: 4px;
+  background: #182233;
+  color: #f8fafc;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wlv-qv-toolbar button:hover {
+  border-color: #7c8da4;
+  background: #223047;
+}
+
+.wlv-qv-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  overflow: auto;
+  background: #0b1020;
+  scrollbar-color: #445268 #111827;
+}
+
+.wlv-qv-depth {
+  position: relative;
+  flex: 0 0 64px;
+  border-right: 2px solid #526174;
+  background:
+    repeating-linear-gradient(to bottom, transparent 0, transparent 40px, rgba(82, 97, 116, 0.12) 41px),
+    #0d1422;
+  color: #cbd5e1;
+}
+
+.wlv-qv-depth header,
+.wlv-qv-track header {
+  position: relative;
+  z-index: 2;
+  height: 64px;
+  box-sizing: border-box;
+  border-bottom: 1px solid #526174;
+  background: #182233;
+  text-align: center;
+}
+
+.wlv-qv-depth header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.wlv-qv-depth header b,
+.wlv-qv-track header b {
+  color: #f1f5f9;
+  font-size: 11px;
+  letter-spacing: 0.025em;
+}
+
+.wlv-qv-depth header small {
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+.wlv-qv-depth > span {
+  position: absolute;
+  right: 8px;
+  z-index: 3;
+  transform: translateY(-50%);
+  color: #aeb8c8;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wlv-qv-track {
+  position: relative;
+  flex: 0 0 auto;
+  border-right: 1px solid #526174;
+  background: #111827;
+}
+
+.wlv-qv-track header {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 2px;
+  overflow: hidden;
+  padding: 4px 5px 3px;
+}
+
+.wlv-qv-curve-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.wlv-qv-curve-legend small {
+  display: grid;
+  grid-template-columns: 6px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: #cbd5e1;
+  font-size: 8px;
+  line-height: 1.15;
+}
+
+.wlv-qv-curve-legend i {
+  width: 6px;
+  height: 2px;
+  border-radius: 2px;
+}
+
+.wlv-qv-curve-legend span {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-qv-curve-legend em {
+  color: #7f8b9d;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wlv-qv-track svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  background: transparent;
+}
+
+.wlv-qv-grid-minor {
+  stroke: #253041;
+  stroke-width: 0.7;
+  shape-rendering: crispEdges;
+}
+
+.wlv-qv-grid-major {
+  stroke: #465469;
+  stroke-width: 0.9;
+  shape-rendering: crispEdges;
+}
+
+.wlv-qv-scroll.wlv-qv-interval-active {
+  cursor: crosshair;
+  position: relative;
+  user-select: none;
+}
+
+.wlv-qv-drag-selection {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  background: rgba(69, 214, 255, 0.12);
+  border-top: 1px solid rgba(69, 214, 255, 0.9);
+  border-bottom: 1px solid rgba(69, 214, 255, 0.9);
+  z-index: 20;
+}
+
+
+.wlv-qv-selected-depth-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 24;
+  pointer-events: none;
+  border-top: 2px solid #ff3b30;
+  box-shadow: 0 0 3px rgba(255, 59, 48, 0.65);
+}
+
+
+/* WLV Quick View compact curve inventory cleanup */
+.wlv-qv-curve-inventory-compact {
+  padding-top: 0;
+}
+
+.wlv-qv-curve-inventory-compact .wlv-panel-heading,
+.wlv-qv-curve-inventory-compact .wlv-curve-assignment-hint,
+.wlv-qv-curve-inventory-compact .wlv-curve-group-title,
+.wlv-qv-curve-inventory-compact .wlv-drop-help {
+  display: none !important;
+}
+
+.wlv-qv-curve-inventory-compact .wlv-inventory-control-stack {
+  gap: 0;
+}
+
+.wlv-qv-curve-inventory-compact .wlv-inventory-section-body {
+  padding: 6px 8px 8px;
+}
+
+.wlv-qv-curve-list-compact {
+  display: grid;
+  gap: 3px;
+}
+
+.wlv-qv-curve-row-compact {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 3px 6px;
+  border: 1px solid rgba(148, 163, 184, 0.20);
+  background: rgba(255, 255, 255, 0.025);
+  color: #cbd5e1;
+  font-size: 11px;
+  line-height: 1.12;
+}
+
+.wlv-qv-curve-row-compact strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.wlv-qv-curve-row-compact span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.82;
+  font-size: 11px;
+}
+
+
+/* WLV Quick View compact curve inventory font/wrap cleanup */
+.wlv-qv-curve-row-compact {
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  min-height: 20px;
+  padding: 2px 5px;
+  font-size: 10px;
+  line-height: 1.12;
+}
+
+.wlv-qv-curve-row-compact strong {
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.12;
+  padding-top: 1px;
+}
+
+.wlv-qv-curve-row-compact span {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  font-size: 10px;
+  line-height: 1.12;
+  opacity: 0.82;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+
+/* WLV Quick View catalogue status inventory cleanup */
+.wlv-qv-curve-row-compact span {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.wlv-qv-curve-row-compact span::first-letter {
+  text-transform: none;
+}
