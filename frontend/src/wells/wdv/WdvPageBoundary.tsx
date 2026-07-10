@@ -1044,6 +1044,7 @@ export function WdvPageBoundary({ managedViewerWell, setManagedViewerWell }: Wdv
   const [managedSampleContractsByCurveId, setManagedSampleContractsByCurveId] = useState<ManagedCurveSampleContractsByCurveId>({});
   const [managedSampleErrorsByCurveId, setManagedSampleErrorsByCurveId] = useState<Record<string, string>>({});
   const [managedSamplesLoading, setManagedSamplesLoading] = useState(false);
+  const [rightPropertiesCollapsed, setRightPropertiesCollapsed] = useState(false);
   const [wbvPublishBusy, setWbvPublishBusy] = useState(false);
   const [wbvPublishMessage, setWbvPublishMessage] = useState<string | null>(null);
   const [wbvPublishPanelOpen, setWbvPublishPanelOpen] = useState(false);
@@ -2571,7 +2572,7 @@ useEffect(() => {
       {wbvPublishMessage ? <span role="status" style={{ fontSize: 11, opacity: 0.78 }}>{wbvPublishMessage}</span> : null}
       <button
         type="button"
-        className="wlv-inline-wbv-publish-button"
+        className="wlv-inline-wbv-publish-button wlv-send-to-wbv-button wlv-go-to-depth-button ready"
         style={{
           alignItems: 'center',
           background: 'rgba(94, 203, 255, 0.07)',
@@ -2735,7 +2736,7 @@ useEffect(() => {
 
       {wdvTemplateModalOpen && selectedWdvTemplateRecommendation ? (<WdvTemplateRecommendationModal recommendation={selectedWdvTemplateRecommendation} loadedCurveItems={wdvPackageState.loadedCurveItems} managedWellId={managedViewerWellId} managedWellUid={managedViewerWellUid} getCanonicalRevision={() => canonicalRevisionRef.current} onClose={() => setWdvTemplateModalOpen(false)} onApplied={handleWdvTemplateApplied}/>) : null}
 
-      <div className={`wlv-prototype-workspace wlv-track-backdrop-${trackBackdropMode} ${curveInventoryResizeState ? 'curve-inventory-resize-active' : ''} ${curveInventoryCollapsed ? 'curve-inventory-collapsed' : ''}`} style={{ gridTemplateColumns: `${curveInventoryCollapsed ? 38 : curveInventoryWidthPx}px minmax(0, 1fr) ${quickViewPackage && quickViewInfoCollapsed ? 38 : 330}px` }}>
+      <div className={`wlv-prototype-workspace wlv-track-backdrop-${trackBackdropMode} ${curveInventoryResizeState ? 'curve-inventory-resize-active' : ''} ${curveInventoryCollapsed ? 'curve-inventory-collapsed' : ''}`} style={{ gridTemplateColumns: `${curveInventoryCollapsed ? 38 : curveInventoryWidthPx}px minmax(0, 1fr) ${quickViewPackage ? (quickViewInfoCollapsed ? 38 : 330) : (rightPropertiesCollapsed ? 38 : 330)}px` }}>
         {(quickViewDragActive || quickViewPending) && <div className="wlv-qv-drop-overlay"><strong>{quickViewPending ? 'Reading file…' : 'Drop LAS or DLIS to view'}</strong></div>}
         {quickViewError && <div className="wlv-qv-status-message" role="status">{quickViewError}</div>}
         <div className={`wlv-curve-inventory-shell ${curveInventoryCollapsed ? 'collapsed' : ''}`} style={{ width: curveInventoryCollapsed ? 38 : curveInventoryWidthPx }}>
@@ -2813,7 +2814,7 @@ useEffect(() => {
             <div className="wlv-ready-properties-copy">
               Create or select a visible track to edit display properties.
             </div>
-          </aside>) : (<WellLogPropertiesPanelSlot tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} managedSampleContractsByCurveId={managedSampleContractsByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} wdvIdentityMetadata={wdvIdentityMetadata} wdvIdentityMetadataError={wdvIdentityMetadataError} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment} curveFillV2={{ enabled: curveFillFeatureEnabled, managedWellUid: managedViewerWellUid, revision: canonicalSession?.revision ?? canonicalRevisionRef.current, rules: canonicalSession?.curve_fills ?? [], pending: curveFillPending, error: curveFillError, onCreateRule: createCurveFillRule, onUpdateRule: updateCurveFillRule, onRemoveRule: removeCurveFillRule, onReorderRules: reorderCurveFillRules }} legacyPanel={(<RightPanel tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment}/>)}/>))}
+          </aside>) : (<WellLogPropertiesPanelSlot tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} managedSampleContractsByCurveId={managedSampleContractsByCurveId} managedSampleErrorsByCurveId={managedSampleErrorsByCurveId} wdvIdentityMetadata={wdvIdentityMetadata} wdvIdentityMetadataError={wdvIdentityMetadataError} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment} collapsed={rightPropertiesCollapsed} onToggleCollapsed={() => setRightPropertiesCollapsed((collapsed) => !collapsed)} curveFillV2={{ enabled: curveFillFeatureEnabled, managedWellUid: managedViewerWellUid, revision: canonicalSession?.revision ?? canonicalRevisionRef.current, rules: canonicalSession?.curve_fills ?? [], pending: curveFillPending, error: curveFillError, onCreateRule: createCurveFillRule, onUpdateRule: updateCurveFillRule, onRemoveRule: removeCurveFillRule, onReorderRules: reorderCurveFillRules }} legacyPanel={(<RightPanel tracks={tracks} selection={selection} curveCatalogItems={activeCurveCatalog} updateTrack={updateTrack} updateCurveAssignment={updateCurveAssignment}/>)}/>))}
       </div>
 
       <footer className="wlv-status-footer">

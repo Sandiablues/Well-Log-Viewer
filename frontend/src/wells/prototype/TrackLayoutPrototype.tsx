@@ -271,8 +271,38 @@ function wmdpProductGroupsForWell(well: ManagedInventoryWellRecord): ManagedProd
 }
 
 function wellDisplayableCurveCount(well: ManagedInventoryWellRecord): number {
-    return Number.isFinite(well.displayable_curve_count) ? Number(well.displayable_curve_count) : 0;
+    if (Number.isFinite(well.viewer_curve_count)) {
+        return Number(well.viewer_curve_count);
+    }
+    if (Number.isFinite(well.displayable_curve_count)) {
+        return Number(well.displayable_curve_count);
+    }
+    return 0;
 }
+
+
+function wellRegisteredCurveCount(well: ManagedInventoryWellRecord): number {
+    const registeredFromProducts = (well.product_groups ?? [])
+        .filter((group) => group.group_key !== 'wellbore_geometry')
+        .reduce((total, group) => {
+            return total + (group.items ?? []).filter((item) => {
+                const category = (item.product_category ?? '').toLowerCase();
+                const role = (item.trajectory_role ?? '').toLowerCase();
+                return category !== 'wellbore_geometry' && role !== 'wellbore_geometry';
+            }).length;
+        }, 0);
+
+    if (registeredFromProducts > 0) {
+        return registeredFromProducts;
+    }
+
+    if (Number.isFinite(well.displayable_curve_count)) {
+        return Number(well.displayable_curve_count);
+    }
+
+    return 0;
+}
+
 
 type WmdpSortKey = 'wellName' | 'wellId' | 'field' | 'operator' | 'status' | 'updated';
 
@@ -982,13 +1012,14 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                 <th>Field</th>
                 <th>Block</th>
                 <th>Operator</th>
-                <th>WDV Curves</th>
+                <th className="wlv-wmdp-registered-curve-count-header"><span>Registered</span><span>Curves</span></th>
+                <th className="wlv-wmdp-promoted-curve-count-header"><span>Promoted</span><span>Curves</span></th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {loading ? (<tr><td colSpan={10} className="wlv-wmdp-empty-cell">Loading managed inventory from backend...</td></tr>) : pagedWells.length === 0 ? (<tr>
-                  <td colSpan={10} className="wlv-wmdp-empty-cell">
+              {loading ? (<tr><td colSpan={11} className="wlv-wmdp-empty-cell">Loading managed inventory from backend...</td></tr>) : pagedWells.length === 0 ? (<tr>
+                  <td colSpan={11} className="wlv-wmdp-empty-cell">
                     {wells.length === 0 ? 'No managed wells registered.' : 'No managed wells match the current search.'}
                   </td>
                 </tr>) : pagedWells.map((well) => {
@@ -1016,7 +1047,8 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                       <td>{safeText(well.field)}</td>
                       <td>{safeText(well.block)}</td>
                       <td>{safeText(well.operator)}</td>
-                      <td>{wellDisplayableCurveCount(well)}</td>
+                      <td className="wlv-wmdp-registered-curve-count-cell">{wellRegisteredCurveCount(well)}</td>
+                      <td className="wlv-wmdp-promoted-curve-count-cell">{wellDisplayableCurveCount(well)}</td>
                       <td>
                         <div className="wlv-wmdp-row-actions">
                           {(() => {
@@ -1024,7 +1056,6 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                             const loadAllowed = recovery?.wdv_load_allowed === true;
                             const action = recovery ? wmdRecoveryAction(recovery) : null;
                             return <>
-                              <span className={`wlv-wmd-recovery-chip ${recovery?.payload_available === false ? 'is-blocked' : 'is-available'}`} title={recovery?.recovery_message || 'Backend recovery status'}>{recovery ? wmdRecoveryLabel(recovery) : 'Checking…'}</span>
                               <button type="button" disabled={!loadAllowed} title={!loadAllowed ? recovery?.recovery_message || 'WMD payload unavailable' : 'Load managed well to WDV'} onClick={() => { setSelectedWellIds(new Set([well.managed_well_id])); void fetchWlvJson('/api/wlv/inventory/load-to-wdv', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(buildInventoryActionPayload(well, [])) }).then(() => loadInventory()).then(() => onOpenLogViewer(managedWellIdentityFromPayload(well))).catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to load managed well to WDV')); }}>Load</button>
                               {action === 'rebuild' ? <button type="button" disabled={rebuildingWellId === well.managed_well_id} onClick={() => void rebuildWell(well.managed_well_id)}>{rebuildingWellId === well.managed_well_id ? 'Rebuilding…' : 'Rebuild'}</button> : null}
                               {action === 'restore-source' ? <button type="button" disabled title={recovery?.recovery_message || 'Restore the original unchanged source before rebuilding'}>Restore source</button> : null}
@@ -1036,7 +1067,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                       </td>
                     </tr>
                     {expanded ? (<tr className="wlv-wmdp-expanded-row" key={`${well.managed_well_id}-expanded`}>
-                        <td colSpan={10}>
+                        <td colSpan={11}>
                           <div className="wlv-wmdp-expanded-content wlv-wmdp-product-groups">
                             {productCategories.map((category) => {
                         const groupId = productGroupId(well.managed_well_id, category.group_key);

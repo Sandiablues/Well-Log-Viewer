@@ -1356,6 +1356,8 @@ export function WellLogPropertiesPanelSlot({
   updateTrack,
   updateCurveAssignment,
   curveFillV2,
+  collapsed = false,
+  onToggleCollapsed,
   legacyPanel: _legacyPanel,
 }: {
   tracks: WellLogTrack[];
@@ -1372,6 +1374,8 @@ export function WellLogPropertiesPanelSlot({
     patch: Partial<CurveAssignment>,
   ) => void;
   curveFillV2?: CurveFillV2PanelContract;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
   legacyPanel?: ReactElement;
 }) {
   const [activeTab, setActiveTab] = useState<PropertiesPanelTabKey>("info");
@@ -1432,11 +1436,40 @@ export function WellLogPropertiesPanelSlot({
     selectedTrack?.trackType === "curve" &&
     selectedCurve === null;
 
+  if (collapsed) {
+    return (
+      <aside
+        className="wlv-right-panel wlv-properties-panel-v2 collapsed"
+        aria-label="Properties panel collapsed"
+      >
+        <button
+          type="button"
+          className="wlv-curve-inventory-collapse-toggle wlv-right-properties-collapse-toggle"
+          onClick={onToggleCollapsed}
+          aria-expanded={false}
+          aria-label="Expand Properties panel"
+          title="Expand Properties panel"
+        >
+          ‹
+        </button>
+      </aside>
+    );
+  }
+
   return (
     <aside className="wlv-right-panel wlv-properties-panel-v2">
-      <div className="wlv-panel-heading">
+      <div className="wlv-panel-heading wlv-properties-panel-heading-with-toggle">
         <h2>Properties</h2>
-        <span>{contract.selectedEntity.type}</span>
+        <button
+          type="button"
+          className="wlv-curve-inventory-collapse-toggle wlv-right-properties-collapse-toggle"
+          onClick={onToggleCollapsed}
+          aria-expanded={!collapsed}
+          aria-label="Collapse Properties panel"
+          title="Collapse Properties panel"
+        >
+          ›
+        </button>
       </div>
 
       <div className="wlv-properties-selected-entity">
