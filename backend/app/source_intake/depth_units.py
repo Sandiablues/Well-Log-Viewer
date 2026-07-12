@@ -155,8 +155,20 @@ def is_canonical_depth_unit(unit: object) -> bool:
 
 
 def requires_human_target_unit(unit: object) -> bool:
+    """Return whether Source Intake must ask a human to choose metres or feet.
+
+    Explicit metric-family units (for example mm, cm, or scaled metres) are
+    authoritative and normalize deterministically to metres. Existing
+    non-canonical imperial encodings (for example 0.1 in) retain the explicit
+    human target-unit workflow so accepted F-10 behavior is unchanged.
+    Unknown or malformed units are handled separately as unsupported.
+    """
     conversion = depth_unit_conversion(unit)
-    return conversion.supported and not is_canonical_depth_unit(unit)
+    if not conversion.supported:
+        return False
+    if is_canonical_depth_unit(unit):
+        return False
+    return conversion.normalized_unit == "ft"
 
 
 def convert_depth_to_target(value: float, unit: object, target_unit: str) -> float:

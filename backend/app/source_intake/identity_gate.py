@@ -15,6 +15,7 @@ from typing import Iterable
 from .models import (
     SourceFileCandidate,
     SourceIntakeEvidenceRecord,
+    SourceIntakeFileType,
     SourceIntakeResolvedField,
     SourceIntakeResolvedMetadata,
 )
@@ -88,6 +89,8 @@ def apply_identity_gate(candidates: list[SourceFileCandidate]) -> None:
         return
 
     for candidate in candidates:
+        if candidate.detected_file_type != SourceIntakeFileType.LAS:
+            continue
         if candidate.parsed_metadata is None:
             continue
         if not _has_curve_payload(candidate):
@@ -107,6 +110,8 @@ def _strong_identities(candidates: Iterable[SourceFileCandidate]) -> list[_Stron
     identities: list[_StrongIdentity] = []
     seen: set[tuple[str, str | None]] = set()
     for candidate in candidates:
+        if candidate.detected_file_type != SourceIntakeFileType.LAS:
+            continue
         resolved = candidate.resolved_metadata
         if candidate.parsed_metadata is None or resolved is None:
             continue
@@ -241,6 +246,8 @@ def _field(
 
 def _mark_generic_candidates_for_review(candidates: Iterable[SourceFileCandidate]) -> None:
     for candidate in candidates:
+        if candidate.detected_file_type != SourceIntakeFileType.LAS:
+            continue
         if candidate.parsed_metadata is None or not _has_curve_payload(candidate):
             continue
         if _has_weak_or_generic_identity(candidate):
