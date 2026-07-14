@@ -2426,26 +2426,21 @@ class ManagedWellInventoryService:
 
     @staticmethod
     def _is_wdv_loadable_product(item: ManagedProductGroupItem) -> bool:
-        """Return whether a backend-managed product belongs in WDV inventory.
+        """Return whether a managed product belongs in the WDV curve inventory.
 
-        Explicit backend routing is authoritative. Curves marked
-        display_in_wdv=False belong to another governed destination.
-        Selectability, family resolution, review status, and renderability
-        do not independently remove an otherwise WDV-routed curve.
+        MWD curve inventory is authoritative for WDV inventory membership.
+        Classification routing (display_in_wdv), family resolution, review status,
+        selectability, and sample renderability must not remove a managed curve
+        from the WDV inventory. Supporting documents remain outside curve
+        inventory; renderability is reported separately in the curve contract.
         """
-        source_kind = str(getattr(item, "source_kind", "") or "").strip().lower()
-        category = str(getattr(item, "product_category", "") or "").strip().lower()
-
-        if category == "supporting_documents":
+        if item.product_category == "supporting_documents":
             return False
-
-        if source_kind in {"document", "pdf", "doc", "docx"}:
+        source_kind = (item.source_kind or "").lower()
+        if source_kind in {ManagedSourceKind.DOCUMENT.value, "pdf", "doc", "docx"}:
             return False
-
-        if getattr(item, "display_in_wdv", True) is False:
-            return False
-
         return True
+
     def validate_inventory(self) -> ManagedInventoryValidationResult:
         snapshot = self.repository.snapshot()
         records = snapshot.records
