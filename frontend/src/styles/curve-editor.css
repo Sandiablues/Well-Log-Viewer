@@ -1,0 +1,219 @@
+/*
+ * WLV Curve Editor — isolated serviceable layout
+ *
+ * This stylesheet owns only the modeless Curve Editor. It does not position
+ * controls by nth-child/nth-of-type and it does not reuse the Properties panel
+ * section/grid classes for Curve Controls.
+ */
+
+/* ------------------------------
+   Curve Controls layout
+   ------------------------------ */
+
+.wlv-curve-editor-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "scale line"
+    "position position";
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+}
+
+.wlv-curve-editor-section {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #353b44;
+  border-radius: 6px;
+  background: #16181c;
+  box-sizing: border-box;
+}
+
+.wlv-curve-editor-section > h4 {
+  margin: 0 0 2px;
+  color: #e5e7eb;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.wlv-curve-editor-section--scale {
+  grid-area: scale;
+}
+
+.wlv-curve-editor-section--line {
+  grid-area: line;
+}
+
+.wlv-curve-editor-section--position {
+  grid-area: position;
+  grid-template-columns:
+    minmax(180px, 0.8fr)
+    minmax(280px, 1.5fr)
+    minmax(145px, 0.6fr);
+  column-gap: 18px;
+  row-gap: 9px;
+  align-items: end;
+}
+
+.wlv-curve-editor-section--position > h4 {
+  grid-column: 1 / -1;
+}
+
+/* ------------------------------
+   Fields
+   ------------------------------ */
+
+.wlv-curve-editor-section label,
+.wlv-curve-editor-field-label {
+  color: #aeb4bd;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.wlv-curve-editor-section label {
+  margin: 0;
+}
+
+.wlv-curve-editor-section
+  input:not([type="checkbox"]):not([type="range"]):not([type="color"]),
+.wlv-curve-editor-section select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid #454c56;
+  border-radius: 4px;
+  background: #121417;
+  color: #e5e7eb;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.wlv-curve-editor-section input[type="color"] {
+  width: 34px;
+  height: 28px;
+  min-height: 28px;
+  padding: 2px;
+  border: 1px solid #454c56;
+  border-radius: 4px;
+  background: #121417;
+}
+
+.wlv-curve-editor-section input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  margin: 4px 0 1px;
+}
+
+.wlv-curve-editor-field--position {
+  display: grid;
+  grid-template-rows: auto 30px;
+  row-gap: 5px;
+  min-width: 0;
+}
+
+.wlv-curve-editor-field--offset {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 18px;
+  align-items: center;
+  min-width: 0;
+}
+
+.wlv-curve-editor-field--offset > input[type="range"] {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  margin: 0;
+}
+
+.wlv-curve-editor-checkbox-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 28px;
+  color: #d2d6dc;
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.wlv-curve-editor-checkbox-row input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+.wlv-curve-editor-field--clip {
+  min-height: 30px;
+}
+
+/* ------------------------------
+   Explicit Color control in Infill
+   ------------------------------ */
+
+.wlv-curve-editor__color-control {
+  display: grid !important;
+  grid-template-columns: max-content 34px !important;
+  column-gap: 12px !important;
+  align-items: center !important;
+  justify-content: start !important;
+  width: max-content !important;
+}
+
+.wlv-curve-editor__color-label {
+  display: block !important;
+}
+
+.wlv-curve-editor__color-swatch {
+  display: block !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  height: 28px !important;
+  margin: 0 !important;
+}
+
+@media (max-width: 760px) {
+  .wlv-curve-editor-controls {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "scale"
+      "line"
+      "position";
+  }
+
+  .wlv-curve-editor-section--position {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wlv-curve-editor-section--position > h4 {
+    grid-column: 1;
+  }
+}
+
+/* Curve Controls → Line → Color */
+.wlv-curve-editor__line-color {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 20px !important;
+  width: max-content !important;
+  margin: 0 !important;
+}
+
+.wlv-curve-editor__line-color > input[type="color"] {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+}

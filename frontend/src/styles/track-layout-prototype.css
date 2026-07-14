@@ -10261,3 +10261,1039 @@ button.wlv-view-range-readout,
 .wlv-curve-scale-tick.edge-right b {
   transform-origin: right top;
 }
+
+/* WLV-CURVE-EDIT-MODAL-20260714-START
+   Presentation workspace for existing canonical WDV curve assignment
+   controls and backend-owned Curve Fill v2 state.
+*/
+.wlv-edit-curve-launcher {
+  box-sizing: border-box;
+  width: calc(100% - 20px);
+  min-height: 34px;
+  margin: 0 10px 10px;
+  border: 1px solid #4f7fae;
+  border-radius: 5px;
+  background: rgba(45, 92, 140, 0.16);
+  color: #cfe6ff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.wlv-edit-curve-launcher:hover {
+  border-color: #72a7db;
+  background: rgba(45, 92, 140, 0.28);
+  color: #ffffff;
+}
+
+.wlv-edit-curve-launcher.inline {
+  width: 100%;
+  margin: 8px 0 0;
+}
+
+.wlv-curve-edit-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.wlv-curve-edit-modal {
+  box-sizing: border-box;
+  width: min(82vw, 1400px);
+  max-width: calc(100vw - 48px);
+  height: min(85vh, 940px);
+  max-height: calc(100vh - 48px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #4b5563;
+  border-radius: 8px;
+  background: #111214;
+  color: #e5e7eb;
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.68);
+}
+
+.wlv-curve-edit-modal-header {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #343941;
+  background: #17191d;
+}
+
+.wlv-curve-edit-modal-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.wlv-curve-edit-modal-title > .wlv-curve-color {
+  width: 13px;
+  height: 44px;
+  flex: 0 0 13px;
+  border-radius: 3px;
+}
+
+.wlv-curve-edit-modal-title > div {
+  min-width: 0;
+}
+
+.wlv-curve-edit-modal-title span {
+  display: block;
+  margin-bottom: 2px;
+  color: #8f9aaa;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+}
+
+.wlv-curve-edit-modal-title h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.wlv-curve-edit-modal-title small {
+  display: block;
+  margin-top: 4px;
+  max-width: 850px;
+  overflow: hidden;
+  color: #aeb7c2;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-curve-edit-modal-close {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border: 1px solid #4b5563;
+  border-radius: 5px;
+  background: #15171a;
+  color: #d4d4d8;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.wlv-curve-edit-modal-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid #343941;
+  background: #141518;
+}
+
+.wlv-curve-edit-modal-tabs button {
+  min-height: 42px;
+  border: 0;
+  border-right: 1px solid #343941;
+  background: transparent;
+  color: #9da6b3;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.wlv-curve-edit-modal-tabs button:last-child {
+  border-right: 0;
+}
+
+.wlv-curve-edit-modal-tabs button.active {
+  background: #1d2025;
+  color: #f8fafc;
+  box-shadow: inset 0 -3px 0 #7ca8d4;
+}
+
+.wlv-curve-edit-modal-body {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.wlv-curve-edit-modal-body > .wlv-property-section,
+.wlv-curve-edit-modal-body > .wlv-curve-control-group {
+  margin: 0;
+}
+
+/* Curve tab: Scale | Line | Position */
+.wlv-curve-edit-modal-body .wlv-curve-control-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: 14px;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-control-panel > h3,
+.wlv-curve-edit-modal-body
+  .wlv-curve-control-panel
+  > .wlv-selected-curve-title {
+  grid-column: 1 / -1;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-control-group {
+  min-width: 0;
+}
+
+/* Infill tab: selected-curve rule creation | track-owned rule listing */
+.wlv-curve-edit-modal-body .wlv-curve-fill-editor {
+  display: grid;
+  grid-template-columns:
+    minmax(320px, 0.72fr)
+    minmax(520px, 1.28fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-editor > h4 {
+  grid-column: 1 / -1;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-new-rule {
+  grid-column: 1;
+  grid-row: 2 / span 999;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-layer-heading,
+.wlv-curve-edit-modal-body .wlv-curve-fill-empty,
+.wlv-curve-edit-modal-body .wlv-curve-fill-layer-card,
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-editor
+  > .wlv-property-note {
+  grid-column: 2;
+}
+
+.wlv-curve-fill-layer-card.involves-selected-curve {
+  border-color: #6688aa;
+  box-shadow: inset 3px 0 0 #6688aa;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-layer-summary-button {
+  grid-template-columns:
+    minmax(150px, 1.5fr)
+    minmax(130px, 1fr)
+    auto
+    auto;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-layer-controls {
+  grid-template-columns:
+    minmax(150px, 1fr)
+    minmax(150px, 1fr)
+    auto;
+}
+
+@media (max-width: 1100px) {
+  .wlv-curve-edit-modal {
+    width: calc(100vw - 32px);
+    max-width: none;
+  }
+
+  .wlv-curve-edit-modal-body .wlv-curve-control-panel,
+  .wlv-curve-edit-modal-body .wlv-curve-fill-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .wlv-curve-edit-modal-body .wlv-curve-fill-new-rule,
+  .wlv-curve-edit-modal-body .wlv-curve-fill-layer-heading,
+  .wlv-curve-edit-modal-body .wlv-curve-fill-empty,
+  .wlv-curve-edit-modal-body .wlv-curve-fill-layer-card,
+  .wlv-curve-edit-modal-body
+    .wlv-curve-fill-editor
+    > .wlv-property-note {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+/* WLV-CURVE-EDIT-MODAL-20260714-END */
+
+/* WLV-CURVE-EDIT-FLOATING-WORKSPACE-20260714-START
+   The Curve Editor is a modeless floating workspace:
+   - clicks outside pass through to WDV;
+   - outside clicks do not close it;
+   - native resize is enabled;
+   - header drag changes only local presentation position.
+*/
+.wlv-curve-edit-modal-backdrop {
+  pointer-events: none !important;
+}
+
+.wlv-curve-edit-modal {
+  pointer-events: auto !important;
+  min-width: 620px;
+  min-height: 420px;
+  resize: both;
+  overflow: hidden;
+  transform-origin: center center;
+}
+
+.wlv-curve-edit-modal-header {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.wlv-curve-edit-modal-header.is-dragging {
+  cursor: grabbing;
+}
+
+.wlv-curve-edit-modal-header button,
+.wlv-curve-edit-modal-header input,
+.wlv-curve-edit-modal-header select,
+.wlv-curve-edit-modal-header textarea {
+  cursor: default;
+}
+/* WLV-CURVE-EDIT-FLOATING-WORKSPACE-20260714-END */
+
+/* WLV-CURVE-EDITOR-UI-NORMALIZATION-20260714-START */
+
+/* Modeless editor must not darken the working canvas. */
+.wlv-curve-edit-modal-backdrop {
+  background: transparent !important;
+}
+
+/* Smaller initial working size; user resizing remains enabled. */
+.wlv-curve-edit-modal {
+  width: 760px;
+  height: min(72vh, 760px);
+  min-width: 620px;
+  min-height: 420px;
+  max-width: calc(100vw - 32px) !important;
+  max-height: calc(100vh - 32px) !important;
+  border-color: #3f4650;
+  border-radius: 7px;
+  background: #111214;
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.48),
+    0 0 0 1px rgba(255, 255, 255, 0.025);
+}
+
+/* Header */
+.wlv-curve-edit-modal-header {
+  min-height: 56px;
+  padding: 9px 12px;
+  gap: 12px;
+  border-bottom-color: #30353d;
+}
+
+.wlv-curve-edit-modal-title {
+  gap: 9px;
+}
+
+.wlv-curve-edit-modal-title > .wlv-curve-color {
+  width: 8px;
+  height: 34px;
+  flex-basis: 8px;
+  border-radius: 2px;
+}
+
+.wlv-curve-edit-modal-title span {
+  margin-bottom: 1px;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+
+.wlv-curve-edit-modal-title h2 {
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.15;
+}
+
+.wlv-curve-edit-modal-title small {
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.wlv-curve-edit-modal-close {
+  width: 30px;
+  height: 30px;
+  flex-basis: 30px;
+  border-radius: 4px;
+  font-size: 18px;
+}
+
+/* Tabs */
+.wlv-curve-edit-modal-tabs {
+  min-height: 36px;
+  border-bottom-color: #30353d;
+}
+
+.wlv-curve-edit-modal-tabs button {
+  min-height: 36px;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.055em;
+}
+
+.wlv-curve-edit-modal-tabs button.active {
+  background: #1b1e22;
+  color: #f1f3f5;
+  box-shadow: inset 0 -2px 0 #7fa4c8;
+}
+
+/* Shared application-style control geometry */
+.wlv-curve-edit-modal-body {
+  padding: 12px;
+  background: #111214;
+}
+
+.wlv-curve-edit-modal-body .wlv-property-section,
+.wlv-curve-edit-modal-body .wlv-curve-control-group,
+.wlv-curve-edit-modal-body .wlv-curve-fill-new-rule,
+.wlv-curve-edit-modal-body .wlv-curve-fill-layer-card {
+  border: 1px solid #353b44;
+  border-radius: 6px;
+  background: #16181c;
+  box-shadow: none;
+}
+
+.wlv-curve-edit-modal-body .wlv-property-section h3,
+.wlv-curve-edit-modal-body .wlv-curve-control-group h4,
+.wlv-curve-edit-modal-body .wlv-curve-fill-layer-heading {
+  color: #e5e7eb;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.wlv-curve-edit-modal-body label {
+  color: #aeb4bd;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.wlv-curve-edit-modal-body input:not([type="checkbox"]):not([type="range"]):not([type="color"]),
+.wlv-curve-edit-modal-body select,
+.wlv-curve-edit-modal-body button {
+  box-sizing: border-box;
+  min-height: 30px;
+  border: 1px solid #454c56;
+  border-radius: 4px;
+  background: #121417;
+  color: #e5e7eb;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.wlv-curve-edit-modal-body input:not([type="checkbox"]):not([type="range"]):not([type="color"]),
+.wlv-curve-edit-modal-body select {
+  width: 100%;
+  padding: 0 8px;
+}
+
+.wlv-curve-edit-modal-body button {
+  padding: 4px 9px;
+}
+
+.wlv-curve-edit-modal-body input[type="color"] {
+  width: 34px;
+  height: 28px;
+  min-height: 28px;
+  padding: 2px;
+  border: 1px solid #454c56;
+  border-radius: 4px;
+  background: #121417;
+}
+
+.wlv-curve-edit-modal-body input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  margin: 4px 0 1px;
+}
+
+.wlv-curve-edit-modal-body .wlv-checkbox-row {
+  min-height: 28px;
+  gap: 7px;
+  padding: 0;
+  color: #d2d6dc !important;
+  font-size: 10.5px;
+}
+
+.wlv-curve-edit-modal-body .wlv-checkbox-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+/* Curve Controls: Scale | Line, then Position full-width */
+.wlv-curve-edit-modal-body .wlv-curve-control-panel {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  grid-template-areas:
+    "heading heading"
+    "identity identity"
+    "scale line"
+    "position position";
+  gap: 12px !important;
+  align-items: start;
+  padding: 12px;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-control-panel > h3 {
+  grid-area: heading;
+  margin: 0;
+}
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-control-panel
+  > .wlv-selected-curve-title {
+  grid-area: identity;
+}
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-control-panel
+  > .wlv-curve-control-group:nth-of-type(1) {
+  grid-area: scale;
+}
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-control-panel
+  > .wlv-curve-control-group:nth-of-type(2) {
+  grid-area: line;
+}
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-control-panel
+  > .wlv-curve-control-group:nth-of-type(3) {
+  grid-area: position;
+  display: grid;
+  grid-template-columns:
+    minmax(150px, 0.7fr)
+    minmax(260px, 1.3fr)
+    minmax(140px, auto);
+  align-items: end;
+  column-gap: 12px;
+  row-gap: 7px;
+}
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-control-panel
+  > .wlv-curve-control-group:nth-of-type(3)
+  > h4 {
+  grid-column: 1 / -1;
+}
+
+/* Infill: vertical workflow — create rule, then full-width layer list */
+.wlv-curve-edit-modal-body .wlv-curve-fill-editor {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 10px !important;
+  align-items: start;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-editor > h4,
+.wlv-curve-edit-modal-body .wlv-curve-fill-new-rule,
+.wlv-curve-edit-modal-body .wlv-curve-fill-layer-heading,
+.wlv-curve-edit-modal-body .wlv-curve-fill-empty,
+.wlv-curve-edit-modal-body .wlv-curve-fill-layer-card,
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-editor
+  > .wlv-property-note {
+  grid-column: 1 !important;
+  grid-row: auto !important;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-new-rule {
+  gap: 8px;
+  padding: 10px;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-menu {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  align-items: end;
+  gap: 8px 10px;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-menu > .wlv-curve-fill-expression,
+.wlv-curve-edit-modal-body .wlv-curve-fill-menu > .wlv-curve-fill-paint-editor,
+.wlv-curve-edit-modal-body .wlv-curve-fill-menu > .wlv-curve-fill-style-row,
+.wlv-curve-edit-modal-body .wlv-curve-fill-menu > .wlv-property-note {
+  grid-column: 1 / -1;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-menu > button {
+  grid-column: 4;
+  justify-self: stretch;
+}
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-editor
+  .wlv-compact-curve-pair {
+  grid-template-columns:
+    minmax(140px, 1fr)
+    52px
+    minmax(140px, 1fr) !important;
+  max-width: 620px !important;
+  overflow: visible !important;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-paint-editor {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  gap: 8px 10px;
+  align-items: end;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-style-row {
+  display: grid;
+  grid-template-columns: 110px minmax(220px, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-layer-heading {
+  min-height: 30px;
+  padding: 4px 2px 2px;
+  border: 0;
+  background: transparent;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-layer-summary-button {
+  grid-template-columns:
+    minmax(180px, 1.7fr)
+    minmax(140px, 1fr)
+    88px
+    20px;
+  gap: 8px;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-layer-details {
+  gap: 9px;
+  padding: 9px 10px 10px;
+  border-top-color: #343b45;
+  background: #131519;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-expression-row {
+  grid-template-columns:
+    minmax(120px, 1fr)
+    minmax(70px, auto)
+    minmax(120px, 1fr);
+  gap: 8px;
+}
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-layer-card.involves-selected-curve {
+  border-color: #5d7288;
+  box-shadow: inset 2px 0 0 #7896b5;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-layer-state {
+  min-width: 70px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #1b1e22;
+  text-align: center;
+  font-size: 9px;
+}
+
+/* WLV-CURVE-EDITOR-UI-NORMALIZATION-20260714-END */
+
+/* WLV-CURVE-EDITOR-CORRECT-HORIZONTAL-RESIZE-20260714-START
+   Narrow the editor horizontally without changing its initial height.
+   Explicit bottom-right resize uses window-level pointer tracking.
+*/
+
+.wlv-curve-edit-modal {
+  position: relative;
+  resize: none !important;
+}
+
+/* Real, visible resize target. */
+.wlv-curve-edit-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+
+  width: 30px;
+  height: 30px;
+
+  pointer-events: auto;
+  touch-action: none;
+  cursor: nwse-resize;
+}
+
+.wlv-curve-edit-resize-handle::before {
+  content: "";
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+
+  width: 13px;
+  height: 13px;
+
+  border-right: 3px solid #86a9c8;
+  border-bottom: 3px solid #86a9c8;
+}
+
+.wlv-curve-edit-resize-handle::after {
+  content: "";
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+
+  width: 6px;
+  height: 6px;
+
+  border-right: 2px solid #596d80;
+  border-bottom: 2px solid #596d80;
+}
+
+.wlv-curve-edit-resize-handle:hover::before,
+.wlv-curve-edit-resize-handle.is-resizing::before {
+  border-color: #b8ddff;
+}
+
+/* ------------------------------------------------------------
+   Uniform horizontal compaction
+   ------------------------------------------------------------ */
+
+/* Controls should fit the narrower editor instead of retaining
+   unnecessarily long panel-width geometry. */
+.wlv-curve-edit-modal-body .wlv-curve-control-panel {
+  grid-template-columns:
+    minmax(0, 1fr)
+    minmax(0, 1fr) !important;
+}
+
+/* Position and Scale remain balanced halves. */
+.wlv-curve-edit-modal-body .wlv-curve-control-group select,
+.wlv-curve-edit-modal-body
+  .wlv-curve-control-group
+  input:not([type="range"]):not([type="checkbox"]):not([type="color"]) {
+  width: 100%;
+  max-width: none;
+}
+
+/* Sliders contract with their control region rather than acting as
+   full-window rulers. */
+.wlv-curve-edit-modal-body
+  .wlv-curve-control-group
+  input[type="range"] {
+  width: 100%;
+  max-width: 280px;
+}
+
+/* Position section: compact three-part row. */
+.wlv-curve-edit-modal-body
+  .wlv-curve-control-panel
+  > .wlv-curve-control-group:nth-of-type(3) {
+  grid-template-columns:
+    minmax(150px, 1fr)
+    minmax(180px, 1fr)
+    minmax(110px, 0.55fr) !important;
+}
+
+/* Line section uses the available width proportionally rather than
+   leaving an oversized empty right-hand region. */
+.wlv-curve-edit-modal-body
+  .wlv-curve-control-panel
+  > .wlv-curve-control-group:nth-of-type(2) {
+  display: grid;
+  grid-template-columns:
+    minmax(110px, 0.75fr)
+    minmax(110px, 0.75fr)
+    minmax(100px, 0.55fr);
+  column-gap: 10px;
+  row-gap: 7px;
+  align-items: end;
+}
+
+/* Infill creation controls contract proportionally with the editor. */
+.wlv-curve-edit-modal-body .wlv-curve-fill-menu {
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr)) !important;
+}
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-editor
+  .wlv-compact-curve-pair {
+  width: 100%;
+  max-width: 520px !important;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-paint-editor {
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr)) !important;
+}
+
+.wlv-curve-edit-modal-body .wlv-curve-fill-style-row {
+  grid-template-columns:
+    minmax(90px, 0.35fr)
+    minmax(180px, 1fr) !important;
+  max-width: 460px;
+}
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-style-row
+  input[type="range"] {
+  width: 100%;
+  max-width: 280px;
+}
+
+/* WLV-CURVE-EDITOR-CORRECT-HORIZONTAL-RESIZE-20260714-END */
+
+
+/* WLV-CURVE-EDITOR-INFILL-EXACT-THREE-ROW-20260714-START
+   Exact DOM contract:
+   Row 1: infill option + boundary OR curve pair
+   Row 2: fill appearance + color + opacity
+   Row 3: Add Infill Rule
+*/
+
+/* Parent creation form */
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule.wlv-curve-fill-menu {
+  display: grid !important;
+  grid-template-columns:
+    minmax(170px, 230px)
+    minmax(170px, 230px)
+    minmax(80px, 120px)
+    minmax(180px, 1fr) !important;
+  grid-template-rows: auto auto auto !important;
+  column-gap: 12px !important;
+  row-gap: 10px !important;
+  align-items: end !important;
+  width: 100% !important;
+}
+
+/* ============================================================
+   ROW 1 — INFILL LOGIC
+   ============================================================ */
+
+/* Infill option */
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule.wlv-curve-fill-menu
+  > label:first-child {
+  grid-row: 1 !important;
+  grid-column: 1 !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+}
+
+/* Curve-to-boundary mode:
+   second direct child is the Boundary label. */
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule.wlv-curve-fill-menu
+  > label:nth-child(2) {
+  grid-row: 1 !important;
+  grid-column: 2 / span 2 !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+}
+
+/* All other modes:
+   second direct child is Curve A | operator | Curve B. */
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule.wlv-curve-fill-menu
+  > .wlv-compact-curve-pair {
+  grid-row: 1 !important;
+  grid-column: 2 / -1 !important;
+
+  display: grid !important;
+  grid-template-columns:
+    minmax(140px, 1fr)
+    58px
+    minmax(170px, 1.25fr) !important;
+
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  gap: 10px !important;
+  margin: 0 !important;
+  align-items: end !important;
+  overflow: visible !important;
+}
+
+/* ============================================================
+   ROW 2 — APPEARANCE
+   ============================================================ */
+
+/* Fill appearance and any pattern/raster-specific controls */
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule.wlv-curve-fill-menu
+  > .wlv-curve-fill-paint-editor {
+  grid-row: 2 !important;
+  grid-column: 1 / span 2 !important;
+
+  display: grid !important;
+  grid-template-columns:
+    repeat(2, minmax(150px, 1fr)) !important;
+
+  width: 100% !important;
+  min-width: 0 !important;
+  gap: 10px !important;
+  margin: 0 !important;
+  align-items: end !important;
+}
+
+/* Color + Opacity */
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule.wlv-curve-fill-menu
+  > .wlv-curve-fill-style-row {
+  grid-row: 2 !important;
+  grid-column: 3 / -1 !important;
+
+  display: grid !important;
+  grid-template-columns:
+    74px
+    minmax(180px, 280px) !important;
+
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  gap: 12px !important;
+  margin: 0 !important;
+  align-items: end !important;
+  justify-content: start !important;
+}
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule
+  > .wlv-curve-fill-style-row
+  input[type="range"] {
+  width: 100% !important;
+  max-width: 280px !important;
+}
+
+/* ============================================================
+   ROW 3 — ACTION
+   ============================================================ */
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule.wlv-curve-fill-menu
+  > button {
+  grid-row: 3 !important;
+  grid-column: 1 / -1 !important;
+
+  width: 165px !important;
+  min-width: 165px !important;
+  justify-self: start !important;
+  align-self: end !important;
+  margin: 0 !important;
+}
+
+/* Backend capability/error note, when present, gets its own row beneath
+   the normal three-row editor rather than colliding with the action. */
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule.wlv-curve-fill-menu
+  > .wlv-property-note {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+/* Match existing compact WDV control typography. */
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule
+  label {
+  color: #aeb4bd !important;
+  font-size: 10px !important;
+  font-weight: 650 !important;
+  line-height: 1.15 !important;
+}
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule
+  select,
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule
+  button {
+  min-height: 30px !important;
+  font-size: 10.5px !important;
+  font-weight: 600 !important;
+}
+
+/* WLV-CURVE-EDITOR-INFILL-EXACT-THREE-ROW-20260714-END */
+
+/* WLV-CURVE-EDITOR-INFILL-MNEMONIC-FONT-NORMALIZATION-20260714-START
+   Match Curve A / Curve B mnemonic text to the standard infill control font.
+*/
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule
+  .wlv-compact-curve-pair
+  > .wlv-compact-curve-box,
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule
+  .wlv-compact-curve-pair
+  > .wlv-compact-curve-operator,
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule
+  .wlv-compact-curve-pair
+  > .wlv-compact-curve-operator-label {
+  font-size: 10.5px !important;
+  font-weight: 600 !important;
+}
+
+/* WLV-CURVE-EDITOR-INFILL-MNEMONIC-FONT-NORMALIZATION-20260714-END */
+
+/* WLV-CURVE-POSITION-OFFSET-EXACT-SPACING-20260714-START */
+.wlv-curve-position-offset-control {
+  display: grid !important;
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  align-items: center !important;
+  column-gap: 18px !important;
+}
+
+.wlv-curve-position-offset-control > input[type="range"] {
+  margin: 0 !important;
+}
+/* WLV-CURVE-POSITION-OFFSET-EXACT-SPACING-20260714-END */
+
+
+/* WLV-CURVE-FILL-COLOR-CONTROL-STRUCTURAL-20260714-START */
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule
+  .wlv-curve-fill-color-control {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 12px !important;
+  width: max-content !important;
+  margin: 0 !important;
+}
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule
+  .wlv-curve-fill-color-label {
+  display: inline-block !important;
+  flex: 0 0 auto !important;
+}
+
+.wlv-curve-edit-modal-body
+  .wlv-curve-fill-new-rule
+  .wlv-curve-fill-color-swatch {
+  display: block !important;
+  flex: 0 0 34px !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  margin: 0 !important;
+}
+/* WLV-CURVE-FILL-COLOR-CONTROL-STRUCTURAL-20260714-END */

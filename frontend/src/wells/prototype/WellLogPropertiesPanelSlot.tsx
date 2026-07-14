@@ -1,4 +1,6 @@
 import { type ReactElement, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import "../../styles/curve-editor.css";
 import type {
   WdvIdentityMetadataContract,
 } from "../contracts/wdvIdentityMetadataContract";
@@ -290,18 +292,9 @@ function CurveDesignControls({
   };
 
   return (
-    <div className="wlv-property-section wlv-properties-dark-section wlv-curve-control-panel">
-      <h3>Curve Controls</h3>
-      <div className="wlv-selected-curve-title">
-        <span
-          className="wlv-curve-color"
-          style={{ background: assignment.color }}
-        />
-        <strong>{curve.mnemonic}</strong>
-        <span>{curve.description}</span>
-      </div>
+    <div className="wlv-curve-editor-controls">
 
-      <div className="wlv-curve-control-group">
+      <div className="wlv-curve-editor-section wlv-curve-editor-section--scale">
         <h4>Scale</h4>
         <label>
           Scale type
@@ -395,7 +388,7 @@ function CurveDesignControls({
             {assignment.overrideWarningMessage}
           </div>
         ) : null}
-        <label className="wlv-checkbox-row">
+        <label className="wlv-curve-editor-checkbox-row">
           <input
             type="checkbox"
             checked={assignment.scaleDirection === "reverse"}
@@ -409,9 +402,9 @@ function CurveDesignControls({
         </label>
       </div>
 
-      <div className="wlv-curve-control-group">
+      <div className="wlv-curve-editor-section wlv-curve-editor-section--line">
         <h4>Line</h4>
-        <label className="wlv-checkbox-row">
+        <label className="wlv-curve-editor-checkbox-row">
           <input
             type="checkbox"
             checked={lineVisible}
@@ -419,8 +412,8 @@ function CurveDesignControls({
           />
           Show line
         </label>
-        <label>
-          Color
+        <label className="wlv-curve-editor__line-color">
+          <span>Color</span>
           <input
             type="color"
             value={assignment.color}
@@ -468,10 +461,10 @@ function CurveDesignControls({
         </label>
       </div>
 
-      <div className="wlv-curve-control-group">
+      <div className="wlv-curve-editor-section wlv-curve-editor-section--position">
         <h4>Position</h4>
-        <label>
-          Position
+        <label className="wlv-curve-editor-field wlv-curve-editor-field--position">
+          <span className="wlv-curve-editor-field-label">Position</span>
           <select
             value={positionAnchor}
             onChange={(event) =>
@@ -486,8 +479,8 @@ function CurveDesignControls({
             <option value="right">Right</option>
           </select>
         </label>
-        <label>
-          Offset
+        <label className="wlv-curve-editor-field wlv-curve-editor-field--offset">
+          <span className="wlv-curve-editor-field-label">Offset</span>
           <input
             type="range"
             min={-100}
@@ -499,7 +492,7 @@ function CurveDesignControls({
             }
           />
         </label>
-        <label className="wlv-checkbox-row">
+        <label className="wlv-curve-editor-checkbox-row wlv-curve-editor-field--clip">
           <input
             type="checkbox"
             checked={clipToTrack}
@@ -676,10 +669,12 @@ function curveFillRuleLabel(ruleType: CurveFillRuleTypeV2): string {
 function CurveFillV2Controls({
   track,
   assignment,
+  curveCatalogItems,
   contract,
 }: {
   track: CurveTrack;
   assignment: CurveAssignment;
+  curveCatalogItems: CurveCatalogItem[];
   contract: CurveFillV2PanelContract;
 }) {
   const [capabilities, setCapabilities] =
@@ -743,22 +738,41 @@ function CurveFillV2Controls({
   const trackRules = contract.rules
     .filter((rule) => rule.track_uid === track.trackId)
     .sort((a, b) => a.order - b.order);
-  const rules = trackRules.filter(
-    (rule) => rule.curve_a_assignment_uid === assignment.assignmentId,
-  );
+  const rules = trackRules;
   const mode =
     capabilities?.modes.find((item) => item.rule_type === ruleType) ?? null;
   const paintCapabilities = curveFillPaintCapabilitiesV2(capabilities);
   const operands = mode?.curve_b_operands.filter((item) => item.eligible) ?? [];
   const curveAMnemonic = capabilities?.curve_a_mnemonic ?? "—";
-  const operandName = (assignmentUid: string | null): string => {
+
+  const assignmentName = (assignmentUid: string | null): string => {
     if (!assignmentUid) return "—";
+
+    const trackAssignment = track.curves.find(
+      (candidate) => candidate.assignmentId === assignmentUid,
+    );
+    if (trackAssignment) {
+      const catalogCurve = findCurveForAssignment(
+        curveCatalogItems,
+        trackAssignment,
+      );
+      return (
+        catalogCurve?.mnemonic
+        ?? trackAssignment.observedMnemonic
+        ?? trackAssignment.normalizedMnemonic
+        ?? "—"
+      );
+    }
+
     return (
       capabilities?.modes
         .flatMap((item) => item.curve_b_operands)
         .find((item) => item.assignment_uid === assignmentUid)?.mnemonic ?? "—"
     );
   };
+
+  const operandName = (assignmentUid: string | null): string =>
+    assignmentName(assignmentUid);
   const requiresCurveB = ruleType !== "to_boundary";
   const paintReady = appearance !== "raster" || Boolean(rasterAssetUid);
   const canCreate = Boolean(
@@ -810,16 +824,17 @@ function CurveFillV2Controls({
   };
 
   const ruleExpression = (rule: CanonicalCurveFillRuleV2): string => {
+    const curveAName = assignmentName(rule.curve_a_assignment_uid);
     if (rule.rule_type === "to_boundary") {
-      return `${curveAMnemonic} → ${rule.boundary === "left" ? "left boundary" : "right boundary"}`;
+      return `${curveAName} → ${rule.boundary === "left" ? "left boundary" : "right boundary"}`;
     }
     const curveBName = operandName(rule.curve_b_assignment_uid);
     if (rule.rule_type === "conditional") {
-      return `${curveAMnemonic} ${rule.comparison === "less_than" ? "<" : ">"} ${curveBName}`;
+      return `${curveAName} ${rule.comparison === "less_than" ? "<" : ">"} ${curveBName}`;
     }
     if (rule.rule_type === "crossover")
-      return `${curveAMnemonic} crossover ${curveBName}`;
-    return `${curveAMnemonic} to ${curveBName}`;
+      return `${curveAName} crossover ${curveBName}`;
+    return `${curveAName} to ${curveBName}`;
   };
 
   const rulePaintSummary = (rule: CanonicalCurveFillRuleV2): string => {
@@ -1016,9 +1031,10 @@ function CurveFillV2Controls({
           ) : null}
         </div>
         <div className="wlv-curve-fill-style-row">
-          <label>
-            Color
+          <label className="wlv-curve-editor__color-control">
+            <span className="wlv-curve-editor__color-label">Color</span>
             <input
+              className="wlv-curve-editor__color-swatch"
               type="color"
               value={color}
               onChange={(event) => setColor(event.target.value)}
@@ -1049,12 +1065,12 @@ function CurveFillV2Controls({
       </div>
 
       <div className="wlv-curve-fill-layer-heading">
-        <strong>Infill layers</strong>
+        <strong>Track infill layers</strong>
         <span>{rules.length}</span>
       </div>
       {rules.length === 0 ? (
         <div className="wlv-curve-fill-empty">
-          No infill layers for this curve.
+          No infill layers for this track.
         </div>
       ) : null}
       {rules.map((rule, index) => {
@@ -1062,7 +1078,7 @@ function CurveFillV2Controls({
         return (
           <div
             key={rule.rule_uid}
-            className={`wlv-curve-fill-rule-card wlv-curve-fill-layer-card${expanded ? " is-expanded" : ""}`}
+            className={`wlv-curve-fill-rule-card wlv-curve-fill-layer-card${expanded ? " is-expanded" : ""}${rule.curve_a_assignment_uid === assignment.assignmentId || rule.curve_b_assignment_uid === assignment.assignmentId ? " involves-selected-curve" : ""}`}
           >
             <div
               className="wlv-curve-fill-layer-summary"
@@ -1117,7 +1133,7 @@ function CurveFillV2Controls({
             {expanded ? (
               <div className="wlv-curve-fill-layer-details">
                 <div className="wlv-curve-fill-expression-row">
-                  <strong>{curveAMnemonic}</strong>
+                  <strong>{assignmentName(rule.curve_a_assignment_uid)}</strong>
                   {rule.rule_type === "conditional" ? (
                     <select
                       aria-label="Conditional operator"
@@ -1379,6 +1395,31 @@ export function WellLogPropertiesPanelSlot({
   legacyPanel?: ReactElement;
 }) {
   const [activeTab, setActiveTab] = useState<PropertiesPanelTabKey>("info");
+  const [curveEditModalOpen, setCurveEditModalOpen] = useState(false);
+  const [curveEditModalTab, setCurveEditModalTab] =
+    useState<"curve" | "infill">("curve");
+  const [curveEditModalOffset, setCurveEditModalOffset] = useState({
+    x: 0,
+    y: 0,
+  });
+  const [curveEditModalDrag, setCurveEditModalDrag] = useState<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
+  const curveEditModalRef = useRef<HTMLElement | null>(null);
+  const [curveEditModalSize, setCurveEditModalSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+  const [curveEditModalResize, setCurveEditModalResize] = useState<{
+    startX: number;
+    startY: number;
+    originWidth: number;
+    originHeight: number;
+  } | null>(null);
   const [designParametersCollapsed, setDesignParametersCollapsed] =
     useState(false);
   const [metadataCollapsedSectionIds, setMetadataCollapsedSectionIds] =
@@ -1417,6 +1458,50 @@ export function WellLogPropertiesPanelSlot({
   });
 
   useEffect(() => {
+    if (!curveEditModalResize) {
+      return;
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const maxWidth = Math.max(520, window.innerWidth - 24);
+      const maxHeight = Math.max(420, window.innerHeight - 24);
+
+      setCurveEditModalSize({
+        width: Math.min(
+          maxWidth,
+          Math.max(
+            520,
+            curveEditModalResize.originWidth +
+              (event.clientX - curveEditModalResize.startX),
+          ),
+        ),
+        height: Math.min(
+          maxHeight,
+          Math.max(
+            420,
+            curveEditModalResize.originHeight +
+              (event.clientY - curveEditModalResize.startY),
+          ),
+        ),
+      });
+    };
+
+    const handlePointerUp = () => {
+      setCurveEditModalResize(null);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [curveEditModalResize]);
+
+  useEffect(() => {
     if (metadataCollapseInitializedRef.current) {
       return;
     }
@@ -1435,6 +1520,11 @@ export function WellLogPropertiesPanelSlot({
     normalizedSelection.kind === "curve" &&
     selectedTrack?.trackType === "curve" &&
     selectedCurve === null;
+
+  const selectedCurveCatalogItem =
+    selectedCurve
+      ? findCurveForAssignment(curveCatalogItems, selectedCurve)
+      : null;
 
   if (collapsed) {
     return (
@@ -1457,6 +1547,7 @@ export function WellLogPropertiesPanelSlot({
   }
 
   return (
+    <>
     <aside className="wlv-right-panel wlv-properties-panel-v2">
       <div className="wlv-panel-heading wlv-properties-panel-heading-with-toggle">
         <h2>Properties</h2>
@@ -1508,6 +1599,21 @@ export function WellLogPropertiesPanelSlot({
           role="tabpanel"
           aria-label={contract.tabs.design.label}
         >
+          {selectedTrack &&
+          selectedCurve &&
+          selectedTrack.trackType === "curve" ? (
+            <button
+              type="button"
+              className="wlv-edit-curve-launcher wlv-edit-curve-launcher-design-top"
+              onClick={() => {
+                setCurveEditModalTab("curve");
+                setCurveEditModalOpen(true);
+              }}
+            >
+              Edit Curve
+            </button>
+          ) : null}
+
           <PropertiesContractTable
             sections={contract.tabs.design.sections}
             collapsible
@@ -1516,24 +1622,8 @@ export function WellLogPropertiesPanelSlot({
           />
           {selectedTrack &&
           selectedCurve &&
-          selectedTrack.trackType === "curve" ? (
-            <>
-              <CurveDesignControls
-                track={selectedTrack}
-                assignment={selectedCurve}
-                curveCatalogItems={curveCatalogItems}
-                updateCurveAssignment={updateCurveAssignment}
-                backendCurveFillEnabled={Boolean(curveFillV2?.enabled)}
-              />
-              {curveFillV2 ? (
-                <CurveFillV2Controls
-                  track={selectedTrack}
-                  assignment={selectedCurve}
-                  contract={curveFillV2}
-                />
-              ) : null}
-            </>
-          ) : curveSelectionUnresolved ? (
+          selectedTrack.trackType === "curve" ? null
+          : curveSelectionUnresolved ? (
             <div className="wlv-property-section wlv-properties-dark-section">
               <h3>Curve Controls</h3>
               <div className="wlv-property-note">
@@ -1599,5 +1689,203 @@ export function WellLogPropertiesPanelSlot({
         </div>
       )}
     </aside>
+
+    {curveEditModalOpen &&
+    selectedTrack &&
+    selectedCurve &&
+    selectedTrack.trackType === "curve"
+      ? createPortal(
+          <div
+            className="wlv-curve-edit-modal-backdrop"
+            role="presentation"
+          >
+            <section
+              ref={curveEditModalRef}
+              className="wlv-curve-edit-modal wlv-curve-editor"
+              role="dialog"
+              aria-modal="false"
+              aria-label={`Edit ${selectedCurveCatalogItem?.mnemonic ?? selectedCurve.observedMnemonic ?? "curve"}`}
+              style={{
+                ...(curveEditModalSize
+                  ? {
+                      width: `${curveEditModalSize.width}px`,
+                      height: `${curveEditModalSize.height}px`,
+                    }
+                  : {}),
+                transform: `translate(${curveEditModalOffset.x}px, ${curveEditModalOffset.y}px)`,
+              }}
+            >
+              <header
+                className={`wlv-curve-edit-modal-header${curveEditModalDrag ? " is-dragging" : ""}`}
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return;
+
+                  const target = event.target;
+                  if (
+                    target instanceof Element &&
+                    target.closest("button, input, select, textarea")
+                  ) {
+                    return;
+                  }
+
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  setCurveEditModalDrag({
+                    pointerId: event.pointerId,
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    originX: curveEditModalOffset.x,
+                    originY: curveEditModalOffset.y,
+                  });
+                }}
+                onPointerMove={(event) => {
+                  if (
+                    !curveEditModalDrag ||
+                    curveEditModalDrag.pointerId !== event.pointerId
+                  ) {
+                    return;
+                  }
+
+                  setCurveEditModalOffset({
+                    x:
+                      curveEditModalDrag.originX +
+                      (event.clientX - curveEditModalDrag.startX),
+                    y:
+                      curveEditModalDrag.originY +
+                      (event.clientY - curveEditModalDrag.startY),
+                  });
+                }}
+                onPointerUp={(event) => {
+                  if (
+                    !curveEditModalDrag ||
+                    curveEditModalDrag.pointerId !== event.pointerId
+                  ) {
+                    return;
+                  }
+
+                  if (
+                    event.currentTarget.hasPointerCapture(event.pointerId)
+                  ) {
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                  }
+                  setCurveEditModalDrag(null);
+                }}
+                onPointerCancel={() => setCurveEditModalDrag(null)}
+              >
+                <div className="wlv-curve-edit-modal-title">
+                  <span
+                    className="wlv-curve-color"
+                    style={{ background: selectedCurve.color }}
+                  />
+                  <div>
+                    <span>Edit Curve</span>
+                    <h2>
+                      {selectedCurveCatalogItem?.mnemonic
+                        ?? selectedCurve.observedMnemonic
+                        ?? selectedCurve.normalizedMnemonic
+                        ?? "Curve"}
+                    </h2>
+                    <small>
+                      {selectedCurveCatalogItem?.description ?? "Managed curve"}
+                      {" · "}
+                      {selectedTrack.title}
+                      {selectedCurveCatalogItem?.unit
+                        ? ` · ${selectedCurveCatalogItem.unit}`
+                        : ""}
+                    </small>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="wlv-curve-edit-modal-close"
+                  aria-label="Close curve editor"
+                  onClick={() => setCurveEditModalOpen(false)}
+                >
+                  ×
+                </button>
+              </header>
+
+              <div
+                className="wlv-curve-edit-modal-tabs"
+                role="tablist"
+                aria-label="Curve editor sections"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={curveEditModalTab === "curve"}
+                  className={curveEditModalTab === "curve" ? "active" : ""}
+                  onClick={() => setCurveEditModalTab("curve")}
+                >
+                  Curve Controls
+                </button>
+
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={curveEditModalTab === "infill"}
+                  className={curveEditModalTab === "infill" ? "active" : ""}
+                  onClick={() => setCurveEditModalTab("infill")}
+                >
+                  Infill
+                </button>
+              </div>
+
+              <div className="wlv-curve-edit-modal-body">
+                {curveEditModalTab === "curve" ? (
+                  <CurveDesignControls
+                    track={selectedTrack}
+                    assignment={selectedCurve}
+                    curveCatalogItems={curveCatalogItems}
+                    updateCurveAssignment={updateCurveAssignment}
+                    backendCurveFillEnabled={Boolean(curveFillV2?.enabled)}
+                  />
+                ) : curveFillV2 ? (
+                  <CurveFillV2Controls
+                    track={selectedTrack}
+                    assignment={selectedCurve}
+                    curveCatalogItems={curveCatalogItems}
+                    contract={curveFillV2}
+                  />
+                ) : (
+                  <div className="wlv-property-note">
+                    Backend Curve Fill is not available.
+                  </div>
+                )}
+              </div>
+
+              <div
+                className={`wlv-curve-edit-resize-handle${curveEditModalResize ? " is-resizing" : ""}`}
+                role="separator"
+                aria-label="Resize curve editor"
+                title="Drag to resize"
+                onPointerDown={(event) => {
+                  if (event.button !== 0) {
+                    return;
+                  }
+
+                  event.preventDefault();
+                  event.stopPropagation();
+
+                  const bounds =
+                    curveEditModalRef.current?.getBoundingClientRect();
+                  if (!bounds) {
+                    return;
+                  }
+
+                  setCurveEditModalResize({
+                    startX: event.clientX,
+                    startY: event.clientY,
+                    originWidth: bounds.width,
+                    originHeight: bounds.height,
+                  });
+                }}
+              />
+            </section>
+          </div>,
+          document.body,
+        )
+      : null}
+    </>
   );
 }
