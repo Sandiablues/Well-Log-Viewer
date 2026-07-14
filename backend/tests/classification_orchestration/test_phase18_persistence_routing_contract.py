@@ -37,7 +37,7 @@ def test_managed_curve_defaults_preserve_existing_wdv_behavior():
     assert ManagedWellInventoryService._is_wdv_loadable_product(item) is True
 
 
-def test_explicit_non_wdv_route_is_not_wdv_loadable():
+def test_managed_curve_remains_wdv_inventory_visible_despite_routing_metadata():
     item = ManagedProductGroupItem(
         product_id="p",
         display_name="HAZI",
@@ -48,7 +48,7 @@ def test_explicit_non_wdv_route_is_not_wdv_loadable():
         destination_owner="Survey/WBV",
         display_in_wdv=False,
     )
-    assert ManagedWellInventoryService._is_wdv_loadable_product(item) is False
+    assert ManagedWellInventoryService._is_wdv_loadable_product(item) is True
 
 
 def test_resolved_non_wdv_domain_is_persistable_authority():
