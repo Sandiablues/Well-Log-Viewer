@@ -934,11 +934,10 @@ export function SourceIntakeWorkbench() {
         },
       }),
     });
-    if (response.workbench) {
-      setWorkbench(response.workbench);
-    } else {
-      await loadWorkbench();
-    }
+    // WSI-MWD-PROMOTION-RESPONSE-1:
+    // The promotion POST returns the compact committed result. Refresh both
+    // backend-owned views explicitly after the transaction completes.
+    await Promise.all([loadWorkbench(), loadManagedWells()]);
     setSelectedCandidateIds(new Set());
     setMessage(`Registered ${response.registered_count}; skipped ${response.skipped_count}.`);
   });

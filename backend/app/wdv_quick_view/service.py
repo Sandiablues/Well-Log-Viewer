@@ -1138,6 +1138,7 @@ class _DlisFramePackage:
     depths: tuple[float, ...]
     depth_unit_label: str | None
     warning: str | None
+    logical_file_id: str
     frame_name: str
     index_mnemonic: str | None
     source_index_unit: str | None
@@ -1371,7 +1372,7 @@ class WdvQuickViewService:
             quick_view_metadata=metadata,
         )
 
-    def _parse_dlis_frame(self, *, frame: Any, logical_index: int, frame_index: int) -> _DlisFramePackage | None:
+    def _parse_dlis_frame(self, *, frame: Any, logical_file_id: str, logical_index: int, frame_index: int) -> _DlisFramePackage | None:
         channels = list(getattr(frame, 'channels', ()) or ())
         index_channel = _frame_index_channel(frame, channels)
         if index_channel is None:
@@ -1451,6 +1452,8 @@ class WdvQuickViewService:
                 source_mnemonic=mnemonic,
                 source_description=description,
                 source_unit=unit,
+                source_logical_file_id=logical_file_id,
+                source_frame_id=str(getattr(frame, 'name', '') or f'frame-{frame_index}'),
                 kr_catalogue_status=catalogue_status,
                 kr_canonical_curve=catalogue.canonical_curve_id,
                 kr_family=catalogue.family,
@@ -1477,6 +1480,7 @@ class WdvQuickViewService:
             depths=tuple(depths),
             depth_unit_label=transform.unit_label,
             warning=warning,
+            logical_file_id=logical_file_id,
             frame_name=frame_name,
             index_mnemonic=str(getattr(index_channel, 'name', '') or '').strip() or None,
             source_index_unit=raw_index_unit,
@@ -1497,6 +1501,10 @@ class WdvQuickViewService:
             try:
                 with dlis.load(temporary.name) as physical:
                     for logical_index, logical_file in enumerate(physical):
+                        logical_file_id = (
+                            str(getattr(getattr(logical_file, 'fileheader', None), 'id', '') or '').strip()
+                            or f'logical_file_{logical_index + 1}'
+                        )
                         origins = list(getattr(logical_file, 'origins', ()) or ())
                         if origins:
                             supplied = getattr(origins[0], 'well_name', None)
@@ -1505,6 +1513,7 @@ class WdvQuickViewService:
                         for frame_index, frame in enumerate(getattr(logical_file, 'frames', ()) or ()):
                             candidate = self._parse_dlis_frame(
                                 frame=frame,
+                                logical_file_id=logical_file_id,
                                 logical_index=logical_index,
                                 frame_index=frame_index,
                             )
@@ -1516,35 +1525,57 @@ class WdvQuickViewService:
         if not candidates:
             raise QuickViewError('DLIS contains no renderable depth-indexed scalar curves.')
 
-        # Quick View is a simple display utility: select the renderable frame
-        # carrying the largest scalar curve inventory, then the densest index.
-        selected = max(candidates, key=lambda item: (len(item.curves), len(item.depths)))
+        all_curves = [curve for candidate in candidates for curve in candidate.curves]
+        all_depths = [depth for candidate in candidates for depth in candidate.depths]
+        resolved_units = {candidate.depth_unit_label for candidate in candidates if candidate.depth_unit_label}
+        source_units = {candidate.source_index_unit for candidate in candidates if candidate.source_index_unit}
+        index_mnemonics = {candidate.index_mnemonic for candidate in candidates if candidate.index_mnemonic}
+        depth_unit_label = next(iter(resolved_units)) if len(resolved_units) == 1 else None
+        source_index_unit = next(iter(source_units)) if len(source_units) == 1 else None
+        index_mnemonic = next(iter(index_mnemonics)) if len(index_mnemonics) == 1 else None
+
+        frame_steps = [_median_step(list(candidate.depths)) for candidate in candidates]
+        finite_steps = [step for step in frame_steps if step is not None]
+        common_step = (
+            finite_steps[0]
+            if finite_steps and all(
+                math.isclose(step, finite_steps[0], rel_tol=1e-9, abs_tol=1e-12)
+                for step in finite_steps
+            )
+            else None
+        )
+        all_regular = all(
+            _is_regular_index(list(candidate.depths), _median_step(list(candidate.depths))) is not False
+            for candidate in candidates
+        )
+
         if len(candidates) > 1:
             warnings.append(
-                f'Selected DLIS frame {selected.frame_name} with {len(selected.curves)} renderable scalar curves.'
+                f'Combined {len(candidates)} renderable DLIS frames with {len(all_curves)} scalar curves.'
             )
-        if selected.warning:
-            warnings.append(selected.warning)
+        for candidate in candidates:
+            if candidate.warning:
+                warnings.append(candidate.warning)
 
-        selected_curves = list(selected.curves)
-        counts = _curve_counts(len(selected_curves), selected_curves, [curve.source_unit for curve in selected_curves])
-        recognition = _recognition_summary(selected_curves)
-        scaling = _scaling_summary(selected_curves)
+        counts = _curve_counts(len(all_curves), all_curves, [curve.source_unit for curve in all_curves])
+        recognition = _recognition_summary(all_curves)
+        scaling = _scaling_summary(all_curves)
         qaqc_flags: list[QuickViewQaqcFlag] = []
         if len(candidates) > 1:
             qaqc_flags.append(QuickViewQaqcFlag(
                 code='dlis_multiple_frames',
                 severity='info',
-                message=f'Selected DLIS frame {selected.frame_name} with {len(selected.curves)} renderable scalar curves.',
+                message=f'Combined {len(candidates)} renderable DLIS frames with {len(all_curves)} scalar curves.',
                 count=len(candidates),
             ))
-        if selected.warning:
-            qaqc_flags.append(QuickViewQaqcFlag(
-                code='unresolved_index_unit',
-                severity='warning',
-                message=selected.warning,
-                source=f'DLIS.frame.{selected.frame_name}',
-            ))
+        for candidate in candidates:
+            if candidate.warning:
+                qaqc_flags.append(QuickViewQaqcFlag(
+                    code='unresolved_index_unit',
+                    severity='warning',
+                    message=candidate.warning,
+                    source=f'DLIS.{candidate.logical_file_id}.frame.{candidate.frame_name}',
+                ))
         if counts.curves_missing_units:
             qaqc_flags.append(QuickViewQaqcFlag(
                 code='missing_curve_units',
@@ -1566,8 +1597,8 @@ class WdvQuickViewService:
                 message=f'{scaling.unit_mismatch} curves have source units incompatible with KR policy.',
                 count=scaling.unit_mismatch,
             ))
-        step = _median_step(list(selected.depths))
-        regular = _is_regular_index(list(selected.depths), step)
+        step = common_step
+        regular = all_regular
         if regular is False:
             qaqc_flags.append(QuickViewQaqcFlag(
                 code='irregular_index_sampling',
@@ -1578,14 +1609,14 @@ class WdvQuickViewService:
             'well_name': _meta_value(well_name if well_name != 'Not supplied' else None, source='DLIS.origin.well_name'),
         })
         index_info = QuickViewIndexInfo(
-            source_mnemonic=_meta_value(selected.index_mnemonic, source=f'DLIS.frame.{selected.frame_name}.index'),
-            source_unit=_meta_value(selected.source_index_unit, source=f'DLIS.frame.{selected.frame_name}.index.units'),
-            resolved_unit=_meta_value(selected.depth_unit_label, source='QuickView.depth_unit_resolver', confidence='derived' if selected.depth_unit_label else 'unresolved'),
-            start=_derived_meta(min(selected.depths), unit=selected.depth_unit_label, source=f'DLIS.frame.{selected.frame_name}'),
-            stop=_derived_meta(max(selected.depths), unit=selected.depth_unit_label, source=f'DLIS.frame.{selected.frame_name}'),
-            step=_derived_meta(step, unit=selected.depth_unit_label, source=f'DLIS.frame.{selected.frame_name}'),
-            sample_count=_derived_meta(len(selected.depths), source=f'DLIS.frame.{selected.frame_name}'),
-            is_regular=_derived_meta(regular, source=f'DLIS.frame.{selected.frame_name}'),
+            source_mnemonic=_meta_value(index_mnemonic, source='DLIS.renderable_frames.index'),
+            source_unit=_meta_value(source_index_unit, source='DLIS.renderable_frames.index.units'),
+            resolved_unit=_meta_value(depth_unit_label, source='QuickView.depth_unit_resolver', confidence='derived' if depth_unit_label else 'unresolved'),
+            start=_derived_meta(min(all_depths), unit=depth_unit_label, source='DLIS.renderable_frames'),
+            stop=_derived_meta(max(all_depths), unit=depth_unit_label, source='DLIS.renderable_frames'),
+            step=_derived_meta(step, unit=depth_unit_label, source='DLIS.renderable_frames'),
+            sample_count=_derived_meta(sum(len(candidate.depths) for candidate in candidates), source='DLIS.renderable_frames'),
+            is_regular=_derived_meta(regular, source='DLIS.renderable_frames'),
         )
         metadata = _quick_view_metadata(
             filename=filename,
@@ -1606,10 +1637,10 @@ class WdvQuickViewService:
             source_format='DLIS',
             fingerprint=hashlib.sha256(content).hexdigest(),
             well_name=well_name,
-            depth_min=min(selected.depths),
-            depth_max=max(selected.depths),
-            depth_unit_label=selected.depth_unit_label,
-            tracks=_group(selected_curves),
+            depth_min=min(all_depths),
+            depth_max=max(all_depths),
+            depth_unit_label=depth_unit_label,
+            tracks=_group(all_curves),
             warnings=tuple(warnings),
             quick_view_metadata=metadata,
         )

@@ -175,7 +175,30 @@ def _read_managed_las_curve_samples(sample_store: Path, source_curve_index: int,
     curves = payload.get("curves")
     if not isinstance(depths, list) or not isinstance(curves, list):
         raise CurveSampleServiceError(f"Managed LAS sample store is incomplete: {sample_store}")
-    curve = next((item for item in curves if isinstance(item, dict) and int(item.get("curve_index", -1)) == source_curve_index), None)
+    curve_indices = [
+        int(item.get("curve_index", -1))
+        for item in curves
+        if isinstance(item, dict)
+    ]
+    zero_based_domain = list(range(0, len(curves)))
+    one_based_domain = list(range(1, len(curves) + 1))
+    if curve_indices == zero_based_domain:
+        sample_store_curve_index = source_curve_index
+    elif curve_indices == one_based_domain:
+        sample_store_curve_index = source_curve_index + 1
+    else:
+        raise CurveSampleServiceError(
+            f"Managed LAS sample store has ambiguous curve index domain: {sample_store}"
+        )
+    curve = next(
+        (
+            item
+            for item in curves
+            if isinstance(item, dict)
+            and int(item.get("curve_index", -1)) == sample_store_curve_index
+        ),
+        None,
+    )
     if curve is None:
         raise CurveSampleServiceError(f"Managed LAS curve index {source_curve_index} is absent: {sample_store}")
     values = curve.get("values")

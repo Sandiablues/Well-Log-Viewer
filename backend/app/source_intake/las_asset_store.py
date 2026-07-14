@@ -65,12 +65,60 @@ class LasAssetStore:
             source_bytes = path.read_bytes()
         except OSError as exc:
             raise LasAssetStoreError(f"Could not read LAS source file: {path}") from exc
+
+        fingerprint = hashlib.sha256(source_bytes).hexdigest()
+        existing = self._existing_valid_asset(
+            fingerprint=fingerprint,
+            source_uri=str(path),
+        )
+        if existing is not None:
+            return existing
+
         result = self.parser.import_from_bytes(
             source_bytes,
             MsiSourceRef(source_id=source_id, filename=filename or path.name),
         )
         return self.preserve_result(
             result, filename=filename or path.name, source_uri=str(path)
+        )
+
+
+    def _existing_valid_asset(
+        self,
+        *,
+        fingerprint: str,
+        source_uri: str,
+    ) -> StoredLasAsset | None:
+        asset_dir = self.storage_root / fingerprint[:2] / fingerprint
+        manifest_path = asset_dir / "manifest.json"
+        samples_path = asset_dir / "samples.json.gz"
+        if not manifest_path.is_file() or not samples_path.is_file():
+            return None
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if manifest.get("source_fingerprint") != fingerprint:
+            return None
+        if manifest.get("storage_contract") != "wlv_external_las_reference_v1":
+            return None
+        try:
+            curve_count = int(manifest["curve_count"])
+            sample_count = int(manifest["sample_count"])
+            byte_size = int(manifest["byte_size"])
+            asset_id = str(manifest["asset_id"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        return StoredLasAsset(
+            asset_id=asset_id,
+            source_fingerprint=fingerprint,
+            original_uri=str(Path(source_uri).expanduser().resolve()),
+            manifest_uri=str(manifest_path),
+            samples_uri=str(samples_path),
+            byte_size=byte_size,
+            curve_count=curve_count,
+            sample_count=sample_count,
+            created=False,
         )
 
     def preserve_result(

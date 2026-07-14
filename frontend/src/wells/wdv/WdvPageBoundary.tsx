@@ -315,6 +315,11 @@ export interface RawCanonicalAssignment {
   scale_max: number | null;
   scale_min_label?: string | null;
   scale_max_label?: string | null;
+  scale_ticks?: Array<{
+    value: number;
+    label: string;
+    normalized_position: number;
+  }>;
   scale_type: string | null;
   scale_direction: string | null;
   color: string | null;
@@ -596,6 +601,11 @@ export function frontendTracksFromCanonicalSession(
           scaleMax: raw.scale_max,
           scaleMinLabel: raw.scale_min_label ?? null,
           scaleMaxLabel: raw.scale_max_label ?? null,
+          scaleTicks: (raw.scale_ticks ?? []).map((tick) => ({
+            value: tick.value,
+            label: tick.label,
+            normalizedPosition: tick.normalized_position,
+          })),
           scaleType,
           scaleDirection,
           color: raw.color ?? fallback.color,

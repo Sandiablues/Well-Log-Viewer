@@ -21,6 +21,8 @@ from app.curve_fill_v2.models import FillAppearance, ResolvedFillPaint, Resolved
 from app.curve_fill_v2.paint_catalog import pattern_by_uid, raster_by_uid
 from app.identity.wdv_contract_v2 import WdvCanonicalAssignment, WdvCanonicalSession, WdvCurveSampleRequest
 from app.inventory.canonical_curve_sample_service import CanonicalCurveSampleService
+from app.inventory.repository import ManagedWellInventoryRepository
+from app.inventory.wdv_workspace import WdvWorkspaceService
 from app.wdv_session.canonical_service import CanonicalWdvSessionService
 
 
@@ -51,10 +53,14 @@ class CanonicalCurveFillGeometryService:
         session_service: CanonicalWdvSessionService | None = None,
         sample_service: CanonicalCurveSampleService | None = None,
         resolution_service: CurveFillResolutionService | None = None,
+        workspace_service: WdvWorkspaceService | None = None,
     ) -> None:
         self.session_service = session_service or CanonicalWdvSessionService()
         self.sample_service = sample_service or CanonicalCurveSampleService()
         self.resolution_service = resolution_service or CurveFillResolutionService()
+        self.workspace_service = workspace_service or WdvWorkspaceService(
+            ManagedWellInventoryRepository()
+        )
 
     def resolve_rule(
         self,
@@ -141,8 +147,23 @@ class CanonicalCurveFillGeometryService:
         if a is None or (canonical.curve_b_assignment_uid and b is None):
             raise CurveFillGeometryCommandError("Rule assignment is absent")
 
-        series_a = self._series(session.managed_well_uid, a, max_samples)
-        series_b = self._series(session.managed_well_uid, b, max_samples) if b else None
+        common_depth_unit = self.workspace_service.get_workspace().common_depth_unit
+        series_a = self._series(
+            session.managed_well_uid,
+            a,
+            max_samples,
+            target_depth_unit=common_depth_unit,
+        )
+        series_b = (
+            self._series(
+                session.managed_well_uid,
+                b,
+                max_samples,
+                target_depth_unit=common_depth_unit,
+            )
+            if b
+            else None
+        )
         width = track.width_px or 180
         transform_a = self._transform(a, width, session.display_policy_revision)
         transform_b = self._transform(b, width, session.display_policy_revision) if b else None
@@ -189,12 +210,20 @@ class CanonicalCurveFillGeometryService:
             )
         return geometry.model_copy(update={"paint": paint})
 
-    def _series(self, well_uid: str, assignment: WdvCanonicalAssignment, max_samples: int) -> CurveSeries:
+    def _series(
+        self,
+        well_uid: str,
+        assignment: WdvCanonicalAssignment,
+        max_samples: int,
+        *,
+        target_depth_unit: str,
+    ) -> CurveSeries:
         response = self.sample_service.get_curve_samples(
             WdvCurveSampleRequest(
                 managed_well_uid=well_uid,
                 managed_curve_uid=assignment.managed_curve_uid,
                 max_samples=max_samples,
+                target_depth_unit=target_depth_unit,
             )
         )
         revision = response.sample_revision or response.provenance.checksum or sha256(

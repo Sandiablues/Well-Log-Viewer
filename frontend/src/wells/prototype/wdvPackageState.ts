@@ -173,7 +173,9 @@ function backendCurveClass(curve: BackendViewerCurveLike): CurveCatalogItem['cur
   if (key.includes('neutron') || /^(nphi|tnph|np)/.test(mnemonic)) return 'neutron';
   if (key.includes('sonic') || /^(dt|ac|dts)/.test(mnemonic)) return 'sonic';
   if (key.includes('porosity') || key.includes('phi')) return 'porosity';
-  return 'depth';
+  // Backend families that are not represented by the current CurveClass union
+  // are not depth curves. Preserve them as visible unknown-family inventory rows.
+  return 'unknown';
 }
 
 function fallbackColor(index: number): string {
@@ -258,6 +260,7 @@ function loadedCurveFromBackend(curve: BackendViewerCurveLike, index: number): W
     description: displayDescription,
     unit: String(curve.unit || ''),
     curveClass: curveFamily,
+    backendCurveFamily: String(curve.curve_family || '').trim() || 'Unclassified',
     defaultLattice: lattice,
     defaultMin: finiteNumber(curve.display_left_value) ?? finiteNumber(curve.display_min) ?? finiteNumber(curve.scale?.min) ?? 0,
     defaultMax: finiteNumber(curve.display_right_value) ?? finiteNumber(curve.display_max) ?? finiteNumber(curve.scale?.max) ?? 150,

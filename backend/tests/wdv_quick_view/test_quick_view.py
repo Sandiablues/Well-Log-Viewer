@@ -367,3 +367,63 @@ def test_las_wrap_mode_is_qaqc_flag_not_file_info():
     codes = {flag.code for flag in metadata.early_qaqc.flags}
     assert 'las_wrap_mode' in codes or 'las_wrap_mode_missing' in codes
     assert not hasattr(metadata.file_info, 'wrap')
+
+
+def test_dlis_frame_parser_preserves_logical_file_and_frame_identity(monkeypatch):
+    import numpy as np
+    from types import SimpleNamespace
+
+    class Frame:
+        name = "0"
+        index_type = "BOREHOLE-DEPTH"
+        index = "DEPTH"
+
+        def __init__(self):
+            self.channels = [
+                SimpleNamespace(name="DEPTH", units="mm"),
+                SimpleNamespace(name="GR", units="GAPI", long_name="Gamma Ray"),
+            ]
+
+        def curves(self, strict=False):
+            return np.array(
+                [(1000.0, 10.0), (1100.0, 20.0), (1200.0, 30.0)],
+                dtype=[("DEPTH", "f8"), ("GR", "f8")],
+            )
+
+    monkeypatch.setattr(
+        "app.wdv_quick_view.service._curve_display_contract",
+        lambda **kwargs: ("linear", "normal", 0.0, 100.0, False, "test", "Unknown", "Generic fallback"),
+    )
+    monkeypatch.setattr(
+        "app.wdv_quick_view.service._quick_view_catalogue_match",
+        lambda **kwargs: SimpleNamespace(canonical_curve_id=None, family=None, display_unit=None),
+    )
+    package = WdvQuickViewService()._parse_dlis_frame(
+        frame=Frame(),
+        logical_file_id="Run3.logdata",
+        logical_index=1,
+        frame_index=0,
+    )
+    assert package is not None
+    assert package.logical_file_id == "Run3.logdata"
+    assert len(package.curves) == 1
+    curve = package.curves[0]
+    assert curve.source_logical_file_id == "Run3.logdata"
+    assert curve.source_frame_id == "0"
+    assert curve.source_mnemonic == "GR"
+
+
+def test_dlis_quick_view_curve_ids_remain_distinct_across_logical_files():
+    first = _curve("GR").model_copy(update={
+        "curve_id": "qv-0-0-1-GR",
+        "source_logical_file_id": "Fil#1_alle_MWD.logdata",
+        "source_frame_id": "0",
+    })
+    second = _curve("GR").model_copy(update={
+        "curve_id": "qv-1-0-1-GR",
+        "source_logical_file_id": "Run3.logdata",
+        "source_frame_id": "0",
+    })
+    assert first.mnemonic == second.mnemonic == "GR"
+    assert first.curve_id != second.curve_id
+    assert first.source_logical_file_id != second.source_logical_file_id

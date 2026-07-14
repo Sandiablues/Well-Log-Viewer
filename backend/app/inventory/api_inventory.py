@@ -49,12 +49,20 @@ from .managed_well_purge import (
     ManagedWellPurgeResponse,
     ManagedWellPurgeService,
 )
+from .mwd_transient_flush import (
+    MwdTransientFlushRequest,
+    MwdTransientFlushResponse,
+    MwdTransientFlushService,
+)
+from .mwd_selected_delete import SelectedManagedDataDeleteService
 from .curve_sample_service import CurveSampleService, CurveSampleServiceError
 
 router = APIRouter(prefix="/api/wlv/inventory", tags=["wlv-inventory"])
 _service = ManagedWellInventoryService()
 _curve_sample_service = CurveSampleService(repository=_service.repository)
 _purge_service = ManagedWellPurgeService(repository=_service.repository)
+_mwd_flush_service = MwdTransientFlushService(repository=_service.repository)
+_selected_delete_service = SelectedManagedDataDeleteService(repository=_service.repository)
 
 
 @router.get("/health", response_model=ManagedInventoryHealth, summary="Managed Well Inventory health")
@@ -341,11 +349,11 @@ def unload_managed_well_from_wdv(request: UnloadManagedWellFromWdvRequest) -> Un
 @router.post(
     "/remove-from-mdp",
     response_model=RemoveManagedDataFromMdpResponse,
-    summary="Remove selected managed well data from the Managed Data Page",
+    summary="Completely delete selected transient managed data from MWD",
 )
 def remove_managed_data_from_mdp(request: RemoveManagedDataFromMdpRequest) -> RemoveManagedDataFromMdpResponse:
     try:
-        return _service.remove_managed_data_from_mdp(
+        return _selected_delete_service.delete_selected(
             managed_well_ids=request.well_references,
             product_ids=request.product_references,
         )
@@ -470,6 +478,28 @@ def list_viewer_packages() -> list[ViewerPackageReference]:
         return _service.list_viewer_packages()
     except ManagedInventoryStoreError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+@router.post(
+    "/mwd/flush",
+    response_model=MwdTransientFlushResponse,
+    summary="Atomically flush all transient MWD managed data and reset linked WSI candidates",
+)
+def flush_mwd_transient_data(
+    request: MwdTransientFlushRequest,
+) -> MwdTransientFlushResponse:
+    try:
+        return _mwd_flush_service.flush(request=request)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except ManagedInventoryStoreError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
 
 @router.post(
     "/managed-wells/{well_reference}/purge-reset",

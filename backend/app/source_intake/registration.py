@@ -10,8 +10,18 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Iterable
+from app.source_intake.promotion_performance import now as _perf_now, elapsed_ms as _perf_ms, write_event as _perf_event
 
 from app.classification.well_log_classifier import classify_well_log_curve
+from app.classification_orchestration.general_family_projection import (
+    project_general_curve_family,
+    project_mwd_product_group,
+)
+from app.classification_orchestration.source_intake_bridge import (
+    apply_source_intake_authority_outcome,
+    build_source_intake_authority_outcomes,
+)
+from app.classification_orchestration.family_registry import canonical_family_key
 from app.classification.well_log_vocabulary import OPEN_HOLE_SUBGROUP_LABELS, PRODUCT_GROUP_ORDER
 from app.knowledge.managed_repository import ManagedKRRepository
 from app.knowledge.runtime_classification_service import (
@@ -84,7 +94,7 @@ def wmd_availability_block_reason(candidate: SourceFileCandidate) -> str | None:
         return "Depth target unit must be resolved to metres or feet before WMD availability."
 
     if candidate.is_available_to_wmd or candidate.resolution_state == SourceIntakeResolutionState.REGISTERED:
-        return "Candidate is already available in WMD."
+        return "Candidate is already registered in MWD."
 
     if candidate.resolution_state == SourceIntakeResolutionState.DUPLICATE:
         return "Candidate is an exact-content duplicate and cannot be made available again."
@@ -265,8 +275,16 @@ def register_candidate_to_inventory(
         well_id = existing.well_id
         canonical_display_name = existing.well_name
     else:
+        _repository_list_started = _perf_now()
+        _repository_records = inventory_service.repository.list_records()
+        _perf_event(
+            "managed_inventory_repository_listed",
+            candidate_id=candidate.source_file_id,
+            elapsed_ms=_perf_ms(_repository_list_started),
+            managed_well_count=len(_repository_records),
+        )
         existing = find_record_by_canonical_name(
-            inventory_service.repository.list_records(),
+            _repository_records,
             canonical_display_name,
         )
         if existing is not None:
@@ -387,6 +405,7 @@ def register_candidate_to_inventory(
         fallback_unit=canonical_metadata["depth_unit"],
     )
 
+    _product_groups_started = _perf_now()
     next_product_groups = _product_groups_from_candidate(
         candidate,
         las_asset=las_asset,
@@ -395,7 +414,35 @@ def register_candidate_to_inventory(
         managed_top_depth=managed_top_depth,
         managed_base_depth=managed_base_depth,
     )
-    merged_product_groups = _merge_product_groups(existing.product_groups if existing else [], next_product_groups)
+    _perf_event(
+        "managed_product_groups_constructed",
+        candidate_id=candidate.source_file_id,
+        elapsed_ms=_perf_ms(_product_groups_started),
+        group_count=len(next_product_groups),
+        curve_count=sum(len(group.items) for group in next_product_groups),
+    )
+
+    _product_merge_started = _perf_now()
+    merged_product_groups = _merge_product_groups(
+        existing.product_groups if existing else [],
+        next_product_groups,
+    )
+    # Final WSI well-log presentation projection after merge:
+    # stale legacy containers cannot override the accepted per-curve general family.
+    # This remains upstream of generic inventory persistence so geometry/identity
+    # contracts are not rewritten.
+    merged_product_groups = _rebuild_classified_well_log_groups_from_general_family(
+        merged_product_groups
+    )
+    _perf_event(
+        "managed_product_groups_merged",
+        candidate_id=candidate.source_file_id,
+        elapsed_ms=_perf_ms(_product_merge_started),
+        existing_curve_count=sum(
+            len(group.items) for group in (existing.product_groups if existing else [])
+        ),
+        merged_curve_count=sum(len(group.items) for group in merged_product_groups),
+    )
 
     record = ManagedWellRecord(
         managed_well_id=managed_well_id,
@@ -454,7 +501,90 @@ def register_candidate_to_inventory(
         created_at=created_at,
         updated_at=now,
     )
-    return inventory_service.upsert_managed_record(record)
+    _upsert_started = _perf_now()
+    _upsert_result = inventory_service.upsert_managed_record(record)
+    _perf_event(
+        "managed_inventory_upsert_completed",
+        candidate_id=candidate.source_file_id,
+        elapsed_ms=_perf_ms(_upsert_started),
+        action=_upsert_result[0],
+        managed_well_id=_upsert_result[1].managed_well_id,
+    )
+    return _upsert_result
+
+
+
+def _rebuild_classified_well_log_groups_from_general_family(
+    product_groups: list[ManagedProductGroup],
+) -> list[ManagedProductGroup]:
+    """Re-bucket only governed WSI well-log curve items after merge.
+
+    This is intentionally narrower than the generic inventory persistence boundary.
+
+    Eligibility for regrouping:
+      * the item carries the general-family projection contract; and
+      * it carries the unified classification contract; and
+      * it is a WDV-eligible curve with a resolved general family.
+
+    Non-well-log items, geometry-owned items, unclassified items, and records
+    without the classification/projection contracts retain their existing
+    group/subgroup placement unchanged.
+    """
+    items_by_group: dict[str, list[ManagedProductGroupItem]] = {
+        definition.group_key: [] for definition in PRODUCT_GROUP_ORDER
+    }
+
+    for source_group in product_groups:
+        source_group_key = (
+            source_group.group_key
+            if source_group.group_key in items_by_group
+            else "other_review_required"
+        )
+
+        for item in source_group.items:
+            target_group_key = source_group_key
+
+            has_general_family_contract = bool(
+                item.general_curve_family_projection_version
+                and item.general_curve_family_key
+                and item.general_curve_family
+            )
+            has_classification_contract = bool(item.classification_contract_version)
+            resolved_general_family = (
+                str(item.general_curve_family_key or "").strip().lower()
+                not in {"", "unclassified", "unknown"}
+            )
+
+            if (
+                has_general_family_contract
+                and has_classification_contract
+                and bool(item.display_in_wdv)
+                and resolved_general_family
+            ):
+                projected_group = project_mwd_product_group(
+                    current_product_category=item.product_category,
+                    measurement_domain_key=item.measurement_domain_key,
+                    general_family_key=item.general_curve_family_key,
+                    display_in_wdv=True,
+                )
+                if projected_group in items_by_group:
+                    target_group_key = projected_group
+
+                # MWD and WDV consume the exact same persisted GENERAL family.
+                item.product_category = target_group_key
+                item.product_subgroup_key = item.general_curve_family_key
+                item.product_subgroup_label = item.general_curve_family
+
+            items_by_group[target_group_key].append(item)
+
+    return [
+        ManagedProductGroup(
+            group_key=definition.group_key,
+            group_label=definition.group_label,
+            items=items_by_group[definition.group_key],
+        )
+        for definition in PRODUCT_GROUP_ORDER
+    ]
 
 
 def _product_groups_from_candidate(
@@ -490,32 +620,109 @@ def _product_groups_from_candidate(
         provenance = {**provenance, "las_asset": las_asset.as_dict(), "source_format": "LAS"}
     elif dlis_asset is not None:
         provenance = {**provenance, "dlis_asset": dlis_asset.as_dict(), "source_format": "DLIS"}
+    _runtime_classification_started = _perf_now()
     runtime_classifications = _runtime_classifications_for_curves(
         curve_headers=curve_headers,
         context_terms=context_terms,
     )
+    _perf_event(
+        "runtime_kr_classification_completed",
+        candidate_id=candidate.source_file_id,
+        elapsed_ms=_perf_ms(_runtime_classification_started),
+        curve_count=len(curve_headers),
+        resolved_count=sum(1 for item in runtime_classifications if item.resolved),
+    )
 
-    for index, curve in enumerate(curve_headers, start=1):
-        runtime_classification = runtime_classifications[index - 1] if index - 1 < len(runtime_classifications) else None
-        classification = _inventory_curve_classification_payload(
-            curve=curve,
-            runtime_classification=runtime_classification,
-            context_terms=context_terms,
-        )
-        group_key = classification["product_category"] if classification["product_category"] in items_by_group else "other_review_required"
-        review_required = bool(classification["review_required"] or candidate.qaqc_status.review_required)
-        items_by_group[group_key].append(
-            ManagedProductGroupItem(
+    _authority_started = _perf_now()
+    authority_outcomes = build_source_intake_authority_outcomes(
+        curve_headers=curve_headers,
+        context_terms=context_terms,
+        source_kind=(ManagedSourceKind.DLIS.value if dlis_asset is not None else ManagedSourceKind.LAS.value),
+        source_uid=candidate.source_file_id,
+        runtime_classifications=runtime_classifications,
+    )
+    _perf_event(
+        "classification_authority_evaluation_completed",
+        candidate_id=candidate.source_file_id,
+        elapsed_ms=_perf_ms(_authority_started),
+        outcome_count=len(authority_outcomes),
+    )
+    authority_by_index = {item.curve_index: item for item in authority_outcomes}
+    _curve_item_build_started = _perf_now()
+
+    # The runtime batch observer has already compared every curve against the
+    # deterministic classifier using one shared KR snapshot/registry. Suppress
+    # duplicate per-curve observer work while building managed items; this does
+    # not change classification authority or any persisted classification value.
+    from app.classification_orchestration.live_shadow_observer import suppress_shadow_observer
+
+    with suppress_shadow_observer():
+        for index, curve in enumerate(curve_headers, start=1):
+            runtime_classification = runtime_classifications[index - 1] if index - 1 < len(runtime_classifications) else None
+            classification = _inventory_curve_classification_payload(
+                curve=curve,
+                runtime_classification=runtime_classification,
+                context_terms=context_terms,
+            )
+            classification = apply_source_intake_authority_outcome(
+                classification,
+                authority_by_index.get(index),
+            )
+            review_required = bool(classification["review_required"] or candidate.qaqc_status.review_required)
+            general_family = project_general_curve_family(
+                classification.get("curve_family_key"),
+                classification.get("curve_family"),
+            )
+            display_in_wdv = bool(classification.get("display_in_wdv", True))
+            # The accepted backend measurement-domain contract may resolve a curve
+            # that the legacy product-category path left in Other / Review required.
+            # Project only that stale review bucket into the governed MWD product
+            # group. No mnemonic or frontend inference is permitted.
+            projected_product_category = project_mwd_product_group(
+                current_product_category=classification.get("product_category"),
+                measurement_domain_key=classification.get("measurement_domain_key"),
+                general_family_key=general_family.family_key,
+                display_in_wdv=display_in_wdv,
+            )
+            group_key = (
+                projected_product_category
+                if projected_product_category in items_by_group
+                else "other_review_required"
+            )
+            # MWD and WDV must present the same GENERAL CURVE FAMILY category.
+            # Detailed subtype/classification remains on curve_family/curve_family_key.
+            mwd_subgroup_key = (
+                general_family.family_key
+                if display_in_wdv and general_family.family_key != "unclassified"
+                else classification.get("product_subgroup_key")
+            )
+            mwd_subgroup_label = (
+                general_family.family_label
+                if display_in_wdv and general_family.family_key != "unclassified"
+                else classification.get("product_subgroup_label")
+            )
+            items_by_group[group_key].append(
+                ManagedProductGroupItem(
                 product_id=f"source-intake-curve:{candidate.source_file_id}:{index}:{_slug(curve.mnemonic or 'curve')}",
                 display_name=curve.mnemonic or f"Curve {index}",
                 curve_name=curve.mnemonic or f"Curve {index}",
                 curve_type=classification["curve_description"],
                 curve_description=classification["curve_description"],
                 curve_unit=classification["curve_unit"],
-                product_category=classification["product_category"],
-                product_subgroup_key=classification["product_subgroup_key"],
-                product_subgroup_label=classification["product_subgroup_label"],
+                product_category=projected_product_category,
+                product_subgroup_key=mwd_subgroup_key,
+                product_subgroup_label=mwd_subgroup_label,
                 curve_family=classification["curve_family"],
+                curve_family_key=classification.get("curve_family_key"),
+                general_curve_family=general_family.family_label,
+                general_curve_family_key=general_family.family_key,
+                general_curve_family_projection_version=general_family.projection_version,
+                measurement_domain_key=classification.get("measurement_domain_key"),
+                measurement_domain_label=classification.get("measurement_domain_label"),
+                destination_key=classification.get("destination_key"),
+                destination_owner=classification.get("destination_owner"),
+                display_in_wdv=bool(classification.get("display_in_wdv", True)),
+                classification_contract_version=classification.get("classification_contract_version"),
                 classification_confidence=classification["classification_confidence"],
                 classification_source=classification["classification_source"],
                 classification_reasons=classification["classification_reasons"],
@@ -552,7 +759,7 @@ def _product_groups_from_candidate(
             )
         )
 
-    return [
+    _result_groups = [
         ManagedProductGroup(
             group_key=definition.group_key,
             group_label=definition.group_label,
@@ -560,6 +767,14 @@ def _product_groups_from_candidate(
         )
         for definition in PRODUCT_GROUP_ORDER
     ]
+    _perf_event(
+        "managed_curve_items_constructed",
+        candidate_id=candidate.source_file_id,
+        elapsed_ms=_perf_ms(_curve_item_build_started),
+        curve_count=len(curve_headers),
+        group_count=len(_result_groups),
+    )
+    return _result_groups
 
 
 
@@ -648,6 +863,7 @@ def _inventory_curve_classification_payload(*, curve, runtime_classification: Cu
             "product_subgroup_key": product_subgroup_key,
             "product_subgroup_label": product_subgroup_label,
             "curve_family": runtime_classification.family or "Unclassified",
+            "curve_family_key": canonical_family_key(runtime_classification.family) or "unclassified",
             "curve_description": display_name,
             "curve_unit": runtime_classification.default_unit or curve.unit,
             "classification_confidence": _confidence_label(runtime_classification.confidence),
@@ -671,6 +887,7 @@ def _inventory_curve_classification_payload(*, curve, runtime_classification: Cu
         "product_subgroup_key": legacy.product_subgroup_key,
         "product_subgroup_label": legacy.product_subgroup_label,
         "curve_family": legacy.curve_family,
+        "curve_family_key": canonical_family_key(legacy.curve_family) or "unclassified",
         "curve_description": legacy.curve_description,
         "curve_unit": legacy.curve_unit,
         "classification_confidence": legacy.classification_confidence,
@@ -698,11 +915,12 @@ def _product_subgroup_label(product_category: str | None, product_subgroup_key: 
 
 
 def _merge_product_groups(existing: Iterable[ManagedProductGroup], incoming: Iterable[ManagedProductGroup]) -> list[ManagedProductGroup]:
-    # KR-MDP-REFRESH-MERGE-1:
-    # Re-registering a Source Intake candidate must replace that candidate's
-    # previous product-group items before adding the newly classified items.
-    # Otherwise a curve that moves from Other to a runtime-KR group remains
-    # counted in the old group and MDP displays stale classification.
+    # WMD-IDEMPOTENCY-1 + KR-MDP-REFRESH-MERGE-1:
+    # Re-registering the same source content must replace previous managed curve
+    # rows even when Source Intake creates a new occurrence/candidate id for the
+    # same physical LAS/DLIS file. Candidate-id replacement remains necessary
+    # for ordinary refreshes, while source fingerprint replacement prevents a
+    # second full inventory from being appended under a new occurrence id.
     incoming_groups = list(incoming)
     incoming_candidate_ids = {
         item.source_intake_candidate_id
@@ -714,20 +932,26 @@ def _merge_product_groups(existing: Iterable[ManagedProductGroup], incoming: Ite
         f"source-intake-curve:{candidate_id}:"
         for candidate_id in sorted(incoming_candidate_ids)
     )
+    incoming_fingerprints = {
+        fingerprint
+        for group in incoming_groups
+        for item in group.items
+        for fingerprint in _source_fingerprints_from_item(item)
+    }
 
     groups: dict[str, ManagedProductGroup] = {}
     for group in existing:
         next_group = group.model_copy(deep=True) if hasattr(group, "model_copy") else group.copy(deep=True)
-        if incoming_candidate_ids:
-            next_group.items = [
-                item
-                for item in next_group.items
-                if not _is_replaced_source_intake_item(
-                    item,
-                    incoming_candidate_ids=incoming_candidate_ids,
-                    incoming_product_prefixes=incoming_product_prefixes,
-                )
-            ]
+        next_group.items = [
+            item
+            for item in next_group.items
+            if not _is_replaced_source_intake_item(
+                item,
+                incoming_candidate_ids=incoming_candidate_ids,
+                incoming_product_prefixes=incoming_product_prefixes,
+                incoming_fingerprints=incoming_fingerprints,
+            )
+        ]
         groups[next_group.group_key] = next_group
 
     for group in incoming_groups:
@@ -744,17 +968,44 @@ def _merge_product_groups(existing: Iterable[ManagedProductGroup], incoming: Ite
     return [groups[key] for key in ordered_keys if key in groups]
 
 
+def _source_fingerprints_from_item(item: ManagedProductGroupItem) -> set[str]:
+    provenance = item.provenance if isinstance(item.provenance, dict) else {}
+    values: list[object] = [
+        provenance.get("checksum"),
+        provenance.get("source_fingerprint"),
+        provenance.get("fingerprint"),
+    ]
+    for asset_key in ("dlis_asset", "las_asset"):
+        asset = provenance.get(asset_key)
+        if isinstance(asset, dict):
+            values.extend([
+                asset.get("source_fingerprint"),
+                asset.get("checksum"),
+                asset.get("fingerprint"),
+            ])
+    fingerprints: set[str] = set()
+    for value in values:
+        text = str(value or "").strip().lower()
+        if re.fullmatch(r"[0-9a-f]{64}", text):
+            fingerprints.add(text)
+    return fingerprints
+
+
 def _is_replaced_source_intake_item(
     item: ManagedProductGroupItem,
     *,
     incoming_candidate_ids: set[str],
     incoming_product_prefixes: tuple[str, ...],
+    incoming_fingerprints: set[str],
 ) -> bool:
     if item.source_intake_candidate_id and item.source_intake_candidate_id in incoming_candidate_ids:
         return True
     if incoming_product_prefixes and item.product_id.startswith(incoming_product_prefixes):
         return True
+    if incoming_fingerprints and (_source_fingerprints_from_item(item) & incoming_fingerprints):
+        return True
     return False
+
 
 def _merge_las_assets(existing: object, asset: dict[str, object]) -> list[dict[str, object]]:
     values = [item for item in existing if isinstance(item, dict)] if isinstance(existing, list) else []
@@ -783,7 +1034,18 @@ def _get_existing_record(inventory_service: ManagedWellInventoryService, managed
 
 
 def _merge_source_references(existing: Iterable[ManagedSourceReference], new_reference: ManagedSourceReference) -> list[ManagedSourceReference]:
-    refs: dict[str, ManagedSourceReference] = {reference.source_id: reference for reference in existing}
+    # Same physical source content may be re-scanned under a new Source Intake
+    # occurrence id. Do not retain two active managed source references for one
+    # content checksum.
+    new_checksum = str(new_reference.checksum or "").strip().lower()
+    refs: dict[str, ManagedSourceReference] = {}
+    for reference in existing:
+        reference_checksum = str(reference.checksum or "").strip().lower()
+        if reference.source_id == new_reference.source_id:
+            continue
+        if new_checksum and reference_checksum == new_checksum:
+            continue
+        refs[reference.source_id] = reference
     refs[new_reference.source_id] = new_reference
     return list(refs.values())
 

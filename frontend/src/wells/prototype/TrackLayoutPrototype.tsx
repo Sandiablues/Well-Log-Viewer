@@ -7,6 +7,7 @@ import { Wellbore3DPage } from '../wbv/Wellbore3DPage';
 import { buildInventoryActionPayload, buildInventoryRemovalPayload } from '../identity/inventoryActionIdentity';
 import { managedWellIdentityFromActiveWorkspace, managedWellIdentityFromPayload, type ManagedWellIdentity } from '../identity/managedWellIdentity';
 import { fetchWlvJson } from '../wdv/WdvPresentationPrimitives';
+import { flushMwdTransientData } from '../inventory/mwdTransientFlushApi';
 import { WdvPageBoundary } from '../wdv/WdvPageBoundary';
 import { fetchWmdDownstreamRecovery, rebuildWmdPayload, wmdRecoveryAction, wmdRecoveryLabel, type WmdDownstreamRecoveryStatus } from '../inventory/wmdRecoveryApi';
 
@@ -63,6 +64,9 @@ type ManagedProductGroupItem = {
     curve_name?: string | null;
     curve_type?: string | null;
     curve_family?: string | null;
+    general_curve_family?: string | null;
+    general_curve_family_key?: string | null;
+    general_curve_family_projection_version?: string | null;
     product_subgroup_key?: string | null;
     product_subgroup_label?: string | null;
     classification_confidence?: string | null;
@@ -347,12 +351,38 @@ function normalizedProductSubgroupKey(value: string | null | undefined): string 
  * The frontend does not infer or re-order subgroups — it renders the
  * backend-provided order and labels only.
  */
+function groupCurveItemsByAuthoritativeGeneralFamily(items: ManagedProductGroupItem[]): WmdpProductSubgroup[] {
+    const groupsByKey = new Map<string, WmdpProductSubgroup>();
+    for (const item of items) {
+        const familyKey = item.general_curve_family_key?.trim();
+        const familyLabel = item.general_curve_family?.trim();
+        if (!familyKey || !familyLabel) {
+            continue;
+        }
+        const existing = groupsByKey.get(familyKey);
+        if (existing) {
+            existing.items.push(item);
+        }
+        else {
+            groupsByKey.set(familyKey, {
+                subgroupKey: familyKey,
+                subgroupLabel: familyLabel,
+                items: [item],
+            });
+        }
+    }
+    return [...groupsByKey.values()];
+}
+
+/**
+ * Non-curve product groups continue to use their existing backend-provided
+ * subgroup contract. This function is not curve-family authority.
+ */
 function groupProductItemsByKrSubgroups(items: ManagedProductGroupItem[], krSubgroups: KrSubgroup[]): WmdpProductSubgroup[] {
     if (krSubgroups.length === 0)
         return [];
     const sortedSubgroups = [...krSubgroups].sort((a, b) => a.order - b.order);
     const subgroupByKey = new Map<string, WmdpProductSubgroup>(sortedSubgroups.map((s) => [s.key, { subgroupKey: s.key, subgroupLabel: s.label, items: [] }]));
-    // Last subgroup absorbs unrecognised keys (typically the "other/review" bucket).
     const fallbackKey = sortedSubgroups[sortedSubgroups.length - 1].key;
     for (const item of items) {
         const rawKey = item.product_subgroup_key || item.curve_family || '';
@@ -516,6 +546,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
     const [currentPage, setCurrentPage] = useState(1);
     const [bulkAction, setBulkAction] = useState<WmdpBulkAction>('load');
     const [bulkApplying, setBulkApplying] = useState(false);
+    const [flushApplying, setFlushApplying] = useState(false);
     const [trajectoryApplyingId, setTrajectoryApplyingId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [registering, setRegistering] = useState(false);
@@ -800,7 +831,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                 }
             }
             catch (caught) {
-                setError(caught instanceof Error ? caught.message : 'Unable to remove selected managed data from MDP');
+                setError(caught instanceof Error ? caught.message : 'Unable to completely delete selected managed data from MWD');
             }
             finally {
                 setBulkApplying(false);
@@ -909,6 +940,32 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
             setBulkApplying(false);
         }
     };
+    const flushManagedData = async () => {
+        if (flushApplying || loading || wells.length === 0)
+            return;
+        const confirmed = window.confirm(
+            `Flush all transient MWD managed data? This will remove ${wells.length} managed well${wells.length === 1 ? '' : 's'} from MWD and clear their WDV workspace state. Original LAS/DLIS source files are not deleted.`,
+        );
+        if (!confirmed)
+            return;
+        setFlushApplying(true);
+        setError(null);
+        try {
+            await flushMwdTransientData();
+            onClearLogViewer();
+            setSelectedWellIds(new Set());
+            setSelectedProductItemIds(new Set());
+            setExpandedWellIds(new Set());
+            setExpandedProductGroupIds(new Set());
+            await loadInventory();
+        }
+        catch (caught) {
+            setError(caught instanceof Error ? caught.message : 'Unable to flush transient MWD managed data');
+        }
+        finally {
+            setFlushApplying(false);
+        }
+    };
     const setActiveTrajectory = async (managedWellId: string, managedTrajectoryUid: string) => {
         setTrajectoryApplyingId(managedTrajectoryUid);
         setError(null);
@@ -962,8 +1019,9 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                 <option value="updated">Updated</option>
               </select>
             </label>
-            <button type="button" onClick={loadInventory} disabled={loading}>Refresh</button>
-            <button type="button" onClick={() => setExpandedWellIds(new Set())} disabled={expandedWellIds.size === 0}>Collapse</button>
+            <button type="button" onClick={loadInventory} disabled={loading || flushApplying}>Refresh</button>
+            <button type="button" onClick={() => setExpandedWellIds(new Set())} disabled={expandedWellIds.size === 0 || flushApplying}>Collapse</button>
+            <button type="button" onClick={() => void flushManagedData()} disabled={loading || flushApplying || wells.length === 0} title="Flush all transient MWD managed data. Original LAS/DLIS source files are preserved.">{flushApplying ? 'Flushing MWD…' : 'Flush MWD'}</button>
           </div>
         </header>
 
@@ -991,7 +1049,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
               <select value={bulkAction} onChange={(event) => setBulkAction(event.target.value as WmdpBulkAction)}>
                 <option value="load">Load selected to Data Viewer</option>
                 <option value="unload">Unload selected from Data Viewer</option>
-                <option value="remove">Remove selected from MDP</option>
+                <option value="remove">Remove selected from MWD</option>
               </select>
             </label>
             <button type="button" onClick={applyBulkAction} disabled={!canApplyBulkAction}>{bulkApplying ? (bulkAction === 'remove' ? 'Removing…' : bulkAction === 'unload' ? 'Unloading…' : 'Loading…') : 'Apply'}</button>
@@ -1086,12 +1144,18 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onClearLogViewer, activeMan
                                     </button>
                                   </div>
                                   {categoryExpanded ? (() => {
-                                // KR-1: use backend-provided subgroups for any group that has them.
+                                const usesAuthoritativeCurveFamilyContract = categoryItems.length > 0
+                                    && categoryItems.every((item) => Boolean(
+                                        item.general_curve_family_key?.trim()
+                                        && item.general_curve_family?.trim()
+                                    ));
                                 const krGroup = krProductGroups.find((g) => g.key === category.group_key);
                                 const krSubgroups = krGroup?.subgroups ?? [];
-                                const subgroupedItems = krSubgroups.length > 0
-                                    ? groupProductItemsByKrSubgroups(categoryItems, krSubgroups)
-                                    : [];
+                                const subgroupedItems = usesAuthoritativeCurveFamilyContract
+                                    ? groupCurveItemsByAuthoritativeGeneralFamily(categoryItems)
+                                    : krSubgroups.length > 0
+                                        ? groupProductItemsByKrSubgroups(categoryItems, krSubgroups)
+                                        : [];
                                 return subgroupedItems.length > 0 ? (<div className="wlv-wmdp-product-subgroups">
                                         {categoryItems.length === 0 ? (<div className="wlv-wmdp-product-empty">No registered items.</div>) : subgroupedItems.map((subgroup) => (<section className="wlv-wmdp-product-subgroup" key={subgroup.subgroupKey}>
                                             <div className="wlv-wmdp-product-subgroup-header">

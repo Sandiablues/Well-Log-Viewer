@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.identity.wdv_contract_v2 import WdvCanonicalSession
+from app.wdv_session.view_contract import (
+    WdvCanonicalSessionView,
+    project_canonical_session_view,
+)
 from app.inventory.canonical_identity_resolver import CanonicalIdentityResolutionError
 from app.inventory.repository import ManagedWellNotFoundError
 from app.wdv_session.canonical_command_service import (
@@ -45,7 +48,7 @@ def get_service() -> CanonicalWdvCommandService:
 
 def _translate(call):
     try:
-        return call()
+        return project_canonical_session_view(call())
     except ManagedWellNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CanonicalSessionRevisionConflict as exc:
@@ -61,24 +64,24 @@ def _translate(call):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.post("/{managed_well_uid}/tracks", response_model=WdvCanonicalSession)
+@router.post("/{managed_well_uid}/tracks", response_model=WdvCanonicalSessionView)
 def create_track(
     managed_well_uid: str,
     command: CreateTrackCommand,
     service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
+) -> WdvCanonicalSessionView:
     return _translate(lambda: service.create_track(managed_well_uid, command))
 
 
 @router.post(
     "/{managed_well_uid}/tracks/configured",
-    response_model=WdvCanonicalSession,
+    response_model=WdvCanonicalSessionView,
 )
 def create_configured_track(
     managed_well_uid: str,
     command: CreateConfiguredTrackCommand,
     service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
+) -> WdvCanonicalSessionView:
     return _translate(
         lambda: service.create_configured_track(managed_well_uid, command)
     )
@@ -86,13 +89,13 @@ def create_configured_track(
 
 @router.post(
     "/{managed_well_uid}/tracks/reset-curve-widths",
-    response_model=WdvCanonicalSession,
+    response_model=WdvCanonicalSessionView,
 )
 def reset_curve_track_widths(
     managed_well_uid: str,
     command: ResetCurveTrackWidthsCommand,
     service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
+) -> WdvCanonicalSessionView:
     return _translate(
         lambda: service.reset_curve_track_widths(managed_well_uid, command)
     )
@@ -101,108 +104,108 @@ def reset_curve_track_widths(
 
 @router.post(
     "/{managed_well_uid}/tracks/clear",
-    response_model=WdvCanonicalSession,
+    response_model=WdvCanonicalSessionView,
 )
 def clear_canvas(
     managed_well_uid: str,
     command: ClearCanvasCommand,
     service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
+) -> WdvCanonicalSessionView:
     return _translate(lambda: service.clear_canvas(managed_well_uid, command))
 
 
-@router.post("/{managed_well_uid}/tracks/remove", response_model=WdvCanonicalSession)
+@router.post("/{managed_well_uid}/tracks/remove", response_model=WdvCanonicalSessionView)
 def remove_track(
     managed_well_uid: str,
     command: RemoveTrackCommand,
     service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
+) -> WdvCanonicalSessionView:
     return _translate(lambda: service.remove_track(managed_well_uid, command))
 
 
 @router.post(
     "/{managed_well_uid}/assignments/bootstrap",
-    response_model=WdvCanonicalSession,
+    response_model=WdvCanonicalSessionView,
 )
 def bootstrap_assignment(
     managed_well_uid: str,
     command: BootstrapCurveAssignmentCommand,
     service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
+) -> WdvCanonicalSessionView:
     return _translate(
         lambda: service.bootstrap_assignment(managed_well_uid, command)
     )
 
 
-@router.post("/{managed_well_uid}/assignments", response_model=WdvCanonicalSession)
+@router.post("/{managed_well_uid}/assignments", response_model=WdvCanonicalSessionView)
 def add_assignment(
     managed_well_uid: str,
     command: AddCurveAssignmentCommand,
     service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
+) -> WdvCanonicalSessionView:
     return _translate(lambda: service.add_assignment(managed_well_uid, command))
 
 
-@router.post("/{managed_well_uid}/assignments/remove", response_model=WdvCanonicalSession)
+@router.post("/{managed_well_uid}/assignments/remove", response_model=WdvCanonicalSessionView)
 def remove_assignment(
     managed_well_uid: str,
     command: RemoveCurveAssignmentCommand,
     service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
+) -> WdvCanonicalSessionView:
     return _translate(lambda: service.remove_assignment(managed_well_uid, command))
 
 
-@router.post("/{managed_well_uid}/assignments/reorder", response_model=WdvCanonicalSession)
+@router.post("/{managed_well_uid}/assignments/reorder", response_model=WdvCanonicalSessionView)
 def reorder_assignments(
     managed_well_uid: str,
     command: ReorderCurveAssignmentsCommand,
     service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
+) -> WdvCanonicalSessionView:
     return _translate(lambda: service.reorder_assignments(managed_well_uid, command))
 
 
-@router.post("/{managed_well_uid}/selection", response_model=WdvCanonicalSession)
+@router.post("/{managed_well_uid}/selection", response_model=WdvCanonicalSessionView)
 def select_track(
     managed_well_uid: str,
     command: SelectTrackCommand,
     service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
+) -> WdvCanonicalSessionView:
     return _translate(lambda: service.select_track(managed_well_uid, command))
 
 
-@router.post("/{managed_well_uid}/tracks/update", response_model=WdvCanonicalSession)
+@router.post("/{managed_well_uid}/tracks/update", response_model=WdvCanonicalSessionView)
 def update_track(
     managed_well_uid: str,
     command: UpdateTrackCommand,
     service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
+) -> WdvCanonicalSessionView:
     return _translate(lambda: service.update_track(managed_well_uid, command))
 
 
-@router.post("/{managed_well_uid}/tracks/reorder", response_model=WdvCanonicalSession)
+@router.post("/{managed_well_uid}/tracks/reorder", response_model=WdvCanonicalSessionView)
 def reorder_tracks(
     managed_well_uid: str,
     command: ReorderTracksCommand,
     service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
+) -> WdvCanonicalSessionView:
     return _translate(lambda: service.reorder_tracks(managed_well_uid, command))
 
 
-@router.post("/{managed_well_uid}/assignments/update", response_model=WdvCanonicalSession)
+@router.post("/{managed_well_uid}/assignments/update", response_model=WdvCanonicalSessionView)
 def update_assignment(
     managed_well_uid: str,
     command: UpdateCurveAssignmentCommand,
     service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
+) -> WdvCanonicalSessionView:
     return _translate(
         lambda: service.update_assignment(managed_well_uid, command)
     )
 
 
-@router.post("/{managed_well_uid}/assignments/move", response_model=WdvCanonicalSession)
+@router.post("/{managed_well_uid}/assignments/move", response_model=WdvCanonicalSessionView)
 def move_assignment(
     managed_well_uid: str,
     command: MoveCurveAssignmentCommand,
     service: CanonicalWdvCommandService = Depends(get_service),
-) -> WdvCanonicalSession:
+) -> WdvCanonicalSessionView:
     return _translate(lambda: service.move_assignment(managed_well_uid, command))

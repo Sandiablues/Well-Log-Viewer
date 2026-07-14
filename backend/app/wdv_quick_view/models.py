@@ -125,6 +125,8 @@ class QuickViewCurve(BaseModel):
     source_mnemonic: str | None = None
     source_description: str | None = None
     source_unit: str | None = None
+    source_logical_file_id: str | None = None
+    source_frame_id: str | None = None
     kr_catalogue_status: str | None = None
     kr_canonical_curve: str | None = None
     kr_family: str | None = None

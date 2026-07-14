@@ -17,6 +17,8 @@ from app.wells.seed_repository import SeedWellRepository
 from app.classification.well_log_classifier import classify_well_log_curve
 from app.classification.well_log_vocabulary import PRODUCT_GROUP_ORDER
 from app.knowledge.curve_knowledge import normalize_viewer_package_for_wdv
+from app.classification_orchestration.family_registry import canonical_family_key
+from app.classification_orchestration.general_family_projection import project_general_curve_family
 
 from app.wdv_display.policy_service import WdvCurveDisplayPolicyService
 from .models import (
@@ -1353,11 +1355,6 @@ class ManagedWellInventoryService:
                 )
             )
 
-        self.repository.write_snapshot(
-            snapshot.model_copy(update={"records": updated_records, "updated_at": now})
-        )
-        self._sync_source_intake_reference_states([item[0] for item in prepared])
-
         previous_workspace = self.workspace_service.get_workspace()
         loaded_record_ids = {
             record.managed_well_id
@@ -1375,7 +1372,16 @@ class ManagedWellInventoryService:
         active_record = next(
             record for record in updated_records if record.managed_well_id == preferred_active
         )
+
+        # The WDV package is part of the managed inventory transaction.
+        # Build it before persistence so the immediate GET reuses it.
         self._sync_wdv_load_session_for_record(active_record)
+
+        self.repository.write_snapshot(
+            snapshot.model_copy(update={"records": updated_records, "updated_at": now})
+        )
+        self._sync_source_intake_reference_states([item[0] for item in prepared])
+
         workspace = self.workspace_service.reconcile(
             updated_records,
             preferred_active=preferred_active,
@@ -1897,6 +1903,40 @@ class ManagedWellInventoryService:
         record.viewer_packages = [reference, *retained_packages]
         return reference.viewer_package_id
 
+    @staticmethod
+    def _coalesce_wdv_curve_family_contracts(
+        loaded_curve_items: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Coalesce WDV categories by persisted GENERAL CURVE FAMILY identity.
+
+        This is the same backend-owned identity exposed to MWD through each managed
+        item's product_subgroup_key/product_subgroup_label. Detailed curve subclass
+        classification must never create a separate MWD or WDV family category.
+        """
+        canonical_labels: dict[str, str] = {}
+        for curve in loaded_curve_items:
+            detailed_key = str(
+                curve.get("classification_curve_family_key")
+                or curve.get("curve_family_key")
+                or ""
+            ).strip()
+            detailed_label = str(
+                curve.get("classification_curve_family")
+                or curve.get("curve_family")
+                or ""
+            ).strip()
+            projected = project_general_curve_family(detailed_key, detailed_label)
+            family_key = str(curve.get("general_curve_family_key") or projected.family_key).strip()
+            raw_label = str(curve.get("general_curve_family") or projected.family_label).strip()
+            stable_label = canonical_labels.setdefault(family_key, raw_label)
+            curve["general_curve_family_key"] = family_key
+            curve["general_curve_family"] = stable_label
+            curve["general_curve_family_projection_version"] = projected.projection_version
+            # Backward-compatible WDV fields deliberately expose the general family.
+            curve["curve_family_key"] = family_key
+            curve["curve_family"] = stable_label
+        return loaded_curve_items
+
     def _build_wdv_load_session_contract(
         self,
         record: ManagedWellRecord,
@@ -1910,6 +1950,7 @@ class ManagedWellInventoryService:
         )
         product_ids = [item.product_id for item in loaded_items]
         loaded_curve_items = [self._wdv_curve_contract_from_product_item(record, item) for item in loaded_items]
+        loaded_curve_items = self._coalesce_wdv_curve_family_contracts(loaded_curve_items)
         loaded_curve_names = [
             str(curve.get("mnemonic") or curve.get("curve_id") or curve.get("display_name") or "").strip()
             for curve in loaded_curve_items
@@ -2156,7 +2197,15 @@ class ManagedWellInventoryService:
             "normalized_name": item.curve_type or item.display_name or curve_id,
             "display_name": item.display_name or curve_id,
             "description": item.curve_description or item.curve_type,
-            "curve_family": item.curve_family,
+            # Detailed governed classification remains available as metadata.
+            "classification_curve_family": item.curve_family,
+            "classification_curve_family_key": item.curve_family_key or canonical_family_key(item.curve_family) or "unclassified",
+            # WDV categorization uses the same persisted GENERAL CURVE FAMILY as MWD.
+            "general_curve_family": item.general_curve_family,
+            "general_curve_family_key": item.general_curve_family_key,
+            "general_curve_family_projection_version": item.general_curve_family_projection_version,
+            "curve_family": item.general_curve_family or item.curve_family,
+            "curve_family_key": item.general_curve_family_key or item.curve_family_key or canonical_family_key(item.curve_family) or "unclassified",
             "track_family": self._track_family_for_product_item(item),
             "unit": item.curve_unit or "",
             "scale": {"type": scale["type"], "min": scale["min"], "max": scale["max"]},
@@ -2377,8 +2426,14 @@ class ManagedWellInventoryService:
 
     @staticmethod
     def _is_wdv_loadable_product(item: ManagedProductGroupItem) -> bool:
-        if item.selectable is False:
-            return False
+        """Return whether a managed product belongs in the WDV curve inventory.
+
+        MWD curve inventory is authoritative for WDV inventory membership.
+        Classification routing (display_in_wdv), family resolution, review status,
+        selectability, and sample renderability must not remove a managed curve
+        from the WDV inventory. Supporting documents remain outside curve
+        inventory; renderability is reported separately in the curve contract.
+        """
         if item.product_category == "supporting_documents":
             return False
         source_kind = (item.source_kind or "").lower()

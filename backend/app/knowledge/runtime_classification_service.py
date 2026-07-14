@@ -159,6 +159,20 @@ class CurveClassificationBatchResult:
         }
 
 
+@dataclass(frozen=True)
+class _RuntimeClassificationCatalog:
+    """One immutable approved-KR lookup catalog for one classification batch."""
+
+    standard_by_raw: dict[str, StandardMnemonicRecord]
+    standard_by_normalized: dict[str, StandardMnemonicRecord]
+    alias_by_raw: dict[str, AliasRecord]
+    alias_by_normalized: dict[str, AliasRecord]
+    curve_def_by_id: dict[str, CurveDefinitionRecord]
+    display_rule_by_curve_id: dict[str, DisplayRuleRecord]
+    curve_definitions: tuple[CurveDefinitionRecord, ...]
+    enrichment_by_alias_and_curve: dict[tuple[str, str], AliasEnrichmentRecord]
+
+
 class RuntimeCurveClassificationService:
     """Classify well-log curves using approved-only runtime KR knowledge."""
 
@@ -166,19 +180,43 @@ class RuntimeCurveClassificationService:
         self._runtime_resolver = runtime_resolver
 
     def classify_curve(self, curve: CurveClassificationInput) -> CurveClassificationResult:
-        """Classify one curve using the current approved-only runtime snapshot."""
+        """Classify one curve using one current approved-only runtime snapshot."""
         snapshot = self._runtime_resolver.build_snapshot()
         policy = snapshot.policy
-        return self._classify_one(curve, policy)
+        catalog = self._catalog_from_snapshot(snapshot.records)
+        result = self._classify_one(curve, policy, catalog)
+        try:
+            from app.classification_orchestration.live_shadow_observer import observe_runtime_authoritative
+            observe_runtime_authoritative(
+                curve=curve,
+                authoritative_result=result,
+                runtime_resolver=self._runtime_resolver,
+            )
+        except Exception:
+            pass
+        return result
 
     def classify_curves(
         self,
         curves: list[CurveClassificationInput],
     ) -> CurveClassificationBatchResult:
-        """Classify a batch of curves.  Input order is preserved."""
+        """Classify a batch against exactly one approved runtime snapshot."""
         snapshot = self._runtime_resolver.build_snapshot()
         policy = snapshot.policy
-        classifications = tuple(self._classify_one(curve, policy) for curve in curves)
+        catalog = self._catalog_from_snapshot(snapshot.records)
+        classifications = tuple(
+            self._classify_one(curve, policy, catalog)
+            for curve in curves
+        )
+        try:
+            from app.classification_orchestration.live_shadow_observer import observe_runtime_batch_authoritative
+            observe_runtime_batch_authoritative(
+                curves=curves,
+                authoritative_results=classifications,
+                runtime_resolver=self._runtime_resolver,
+            )
+        except Exception:
+            pass
         resolved_count = sum(1 for item in classifications if item.resolved)
         unknown_count = sum(1 for item in classifications if item.status == _CLASSIFICATION_STATUS_UNKNOWN)
         review_required_count = sum(1 for item in classifications if item.requires_review)
@@ -192,23 +230,85 @@ class RuntimeCurveClassificationService:
             knowledge_policy=policy.as_dict(),
         )
 
+    @staticmethod
+    def _catalog_from_snapshot(records) -> _RuntimeClassificationCatalog:
+        standard_by_raw: dict[str, StandardMnemonicRecord] = {}
+        standard_by_normalized: dict[str, StandardMnemonicRecord] = {}
+        alias_by_raw: dict[str, AliasRecord] = {}
+        alias_by_normalized: dict[str, AliasRecord] = {}
+        curve_def_by_id: dict[str, CurveDefinitionRecord] = {}
+        display_rule_by_curve_id: dict[str, DisplayRuleRecord] = {}
+        curve_definitions: list[CurveDefinitionRecord] = []
+        enrichments: dict[tuple[str, str], list[AliasEnrichmentRecord]] = {}
+
+        for record in records:
+            if isinstance(record, StandardMnemonicRecord):
+                standard_by_raw.setdefault(record.mnemonic.strip().upper(), record)
+                standard_by_normalized.setdefault(record.normalized_mnemonic, record)
+            elif isinstance(record, AliasRecord):
+                alias_by_raw.setdefault(record.alias.strip().upper(), record)
+                alias_by_normalized.setdefault(record.normalized_alias, record)
+            elif isinstance(record, CurveDefinitionRecord):
+                curve_definitions.append(record)
+                curve_def_by_id.setdefault(record.canonical_curve_id, record)
+            elif isinstance(record, DisplayRuleRecord):
+                display_rule_by_curve_id.setdefault(record.canonical_curve_id, record)
+            elif isinstance(record, AliasEnrichmentRecord):
+                key = (record.normalized_alias, record.display_canonical_curve_id)
+                enrichments.setdefault(key, []).append(record)
+
+        enrichment_by_alias_and_curve: dict[tuple[str, str], AliasEnrichmentRecord] = {}
+        for key, items in enrichments.items():
+            enrichment_by_alias_and_curve[key] = sorted(
+                items, key=lambda item: item.selection_priority or 9999
+            )[0]
+
+        return _RuntimeClassificationCatalog(
+            standard_by_raw=standard_by_raw,
+            standard_by_normalized=standard_by_normalized,
+            alias_by_raw=alias_by_raw,
+            alias_by_normalized=alias_by_normalized,
+            curve_def_by_id=curve_def_by_id,
+            display_rule_by_curve_id=display_rule_by_curve_id,
+            curve_definitions=tuple(curve_definitions),
+            enrichment_by_alias_and_curve=enrichment_by_alias_and_curve,
+        )
+
+    @staticmethod
+    def _display_rule_from_catalog(
+        catalog: _RuntimeClassificationCatalog,
+        canonical_curve_id: str,
+    ) -> Optional[RuntimeDisplayRule]:
+        record = catalog.display_rule_by_curve_id.get(canonical_curve_id)
+        if record is None:
+            return None
+        return RuntimeDisplayRule(
+            scale_type=record.scale_type,
+            display_min=float(record.display_min),
+            display_max=float(record.display_max),
+            default_unit=record.default_unit,
+            preferred_track_family=record.preferred_track_family,
+            reverse_scale=bool(record.reverse_scale),
+            overlay_group=record.overlay_group,
+        )
+
     def _classify_one(
         self,
         curve: CurveClassificationInput,
         policy: RuntimeKnowledgePolicy,
+        catalog: _RuntimeClassificationCatalog,
     ) -> CurveClassificationResult:
         source_mnemonic = curve.source_mnemonic or ""
         normalized = source_mnemonic.strip().upper()
         canonical_key = source_mnemonic.strip().lower()
+        raw_key = source_mnemonic.strip().upper()
 
-        standard_records = self._runtime_standard_mnemonic_records()
-        alias_records = self._runtime_alias_records()
-        curve_defs = self._runtime_curve_definitions()
-        display_rules = self._runtime_display_rules()
-
-        matched_standard = self._find_standard_mnemonic(standard_records, source_mnemonic, normalized)
+        matched_standard = (
+            catalog.standard_by_raw.get(raw_key)
+            or catalog.standard_by_normalized.get(normalized)
+        )
         if matched_standard is not None:
-            curve_def = self._find_curve_definition(curve_defs, matched_standard.canonical_curve_id)
+            curve_def = catalog.curve_def_by_id.get(matched_standard.canonical_curve_id)
             if curve_def is None:
                 return self._unknown_result(
                     curve,
@@ -227,13 +327,16 @@ class RuntimeCurveClassificationService:
                 source=_RESOLUTION_SOURCE_STANDARD_MNEMONIC,
                 knowledge_record_id=matched_standard.record_id,
                 confidence=float(getattr(matched_standard, "confidence", 1.0) or 1.0),
-                display_rule=self._display_rule_for(display_rules, curve_def.canonical_curve_id),
+                display_rule=self._display_rule_from_catalog(catalog, curve_def.canonical_curve_id),
                 enrichment=None,
             )
 
-        matched_alias = self._find_alias(alias_records, source_mnemonic, normalized)
+        matched_alias = (
+            catalog.alias_by_raw.get(raw_key)
+            or catalog.alias_by_normalized.get(normalized)
+        )
         if matched_alias is not None:
-            curve_def = self._find_curve_definition(curve_defs, matched_alias.canonical_curve_id)
+            curve_def = catalog.curve_def_by_id.get(matched_alias.canonical_curve_id)
             if curve_def is None:
                 return self._unknown_result(
                     curve,
@@ -244,9 +347,8 @@ class RuntimeCurveClassificationService:
                         f"{matched_alias.canonical_curve_id}"
                     ],
                 )
-            enrichment = self._approved_enrichment_for_alias(
-                normalized_alias=normalized,
-                display_canonical_curve_id=matched_alias.canonical_curve_id,
+            enrichment = catalog.enrichment_by_alias_and_curve.get(
+                (normalized, matched_alias.canonical_curve_id)
             )
             return self._resolved_result(
                 curve=curve,
@@ -256,11 +358,11 @@ class RuntimeCurveClassificationService:
                 source=_RESOLUTION_SOURCE_ALIAS,
                 knowledge_record_id=matched_alias.record_id,
                 confidence=float(getattr(matched_alias, "confidence", 1.0) or 1.0),
-                display_rule=self._display_rule_for(display_rules, curve_def.canonical_curve_id),
+                display_rule=self._display_rule_from_catalog(catalog, curve_def.canonical_curve_id),
                 enrichment=enrichment,
             )
 
-        matched_curve_def = self._find_curve_definition(curve_defs, canonical_key)
+        matched_curve_def = catalog.curve_def_by_id.get(canonical_key)
         if matched_curve_def is not None:
             return self._resolved_result(
                 curve=curve,
@@ -270,7 +372,9 @@ class RuntimeCurveClassificationService:
                 source=_RESOLUTION_SOURCE_CANONICAL,
                 knowledge_record_id=matched_curve_def.record_id,
                 confidence=1.0,
-                display_rule=self._display_rule_for(display_rules, matched_curve_def.canonical_curve_id),
+                display_rule=self._display_rule_from_catalog(
+                    catalog, matched_curve_def.canonical_curve_id
+                ),
                 enrichment=None,
             )
 
@@ -278,10 +382,10 @@ class RuntimeCurveClassificationService:
             source_mnemonic=curve.source_mnemonic,
             description=curve.description,
             unit=curve.unit,
-            curve_definitions=curve_defs,
+            curve_definitions=list(catalog.curve_definitions),
         )
         if contextual is not None:
-            return self._contextual_result(curve, normalized, policy, contextual, display_rules)
+            return self._contextual_result(curve, normalized, policy, contextual, catalog)
 
         return self._unknown_result(
             curve, normalized, policy,
@@ -425,8 +529,20 @@ class RuntimeCurveClassificationService:
         )
 
     @staticmethod
-    def _contextual_result(curve, normalized, policy, contextual: ContextualResolution, display_rules):
-        display_rule = RuntimeCurveClassificationService._display_rule_for(display_rules, contextual.canonical_curve_id) if contextual.canonical_curve_id else None
+    def _contextual_result(
+        curve,
+        normalized,
+        policy,
+        contextual: ContextualResolution,
+        catalog: _RuntimeClassificationCatalog,
+    ):
+        display_rule = (
+            RuntimeCurveClassificationService._display_rule_from_catalog(
+                catalog, contextual.canonical_curve_id
+            )
+            if contextual.canonical_curve_id
+            else None
+        )
         warnings = list(contextual.warnings)
         if contextual.supporting_record_ids:
             warnings.append("Supporting approved KR records: " + ", ".join(contextual.supporting_record_ids[:8]))

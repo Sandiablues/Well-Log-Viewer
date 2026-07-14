@@ -12,6 +12,7 @@ import hashlib
 import json
 from pathlib import Path
 from typing import Iterable, Any
+from .promotion_performance import now as _perf_now, elapsed_ms as _perf_ms, write_event as _perf_event
 
 from ..ingestion.las_adapter import LasAdapterError, LasSourceAdapter
 from app.inventory.models import (
@@ -130,7 +131,9 @@ class WlvSourceIntakeService:
         self.lifecycle_service = SourceIntakeLifecycleService()
 
     def health(self) -> dict[str, object]:
+        _snapshot_load_started = _perf_now()
         snapshot = self._load_snapshot()
+        _perf_event("source_intake_snapshot_loaded", elapsed_ms=_perf_ms(_snapshot_load_started), snapshot_candidate_count=len(snapshot.candidates))
         return {
             "ok": True,
             "service": "wlv-source-intake",
@@ -1001,6 +1004,8 @@ class WlvSourceIntakeService:
         )
 
     def register_candidates(self, request: SourceIntakeRegisterRequest, inventory_service=None) -> SourceIntakeRegisterResponse:
+        _promotion_started = _perf_now()
+        _perf_event("promotion_started", candidate_count=len(request.candidate_ids), candidate_ids=list(request.candidate_ids))
         """Register approved intake candidates to Managed Well Inventory.
 
         This is the first controlled handoff from Source Intake into MSI/WMDP
@@ -1089,11 +1094,20 @@ class WlvSourceIntakeService:
                 continue
 
             try:
+                _candidate_register_started = _perf_now()
                 action, record = register_candidate_to_inventory(
                     candidate=candidate,
                     inventory_service=inventory_service,
                     approved_by=request.approval.approved_by,
                     approval_note=request.approval.approval_note,
+                )
+                _perf_event(
+                    "candidate_registration_completed",
+                    candidate_id=candidate.source_file_id,
+                    file_name=candidate.file_name,
+                    elapsed_ms=_perf_ms(_candidate_register_started),
+                    product_group_count=len(record.product_groups),
+                    curve_count=sum(len(group.items) for group in record.product_groups),
                 )
             except ValueError as exc:
                 skipped_count += 1
@@ -1141,13 +1155,28 @@ class WlvSourceIntakeService:
             ))
 
         if snapshot_changed:
+            _snapshot_save_started = _perf_now()
             self._save_snapshot(snapshot)
+            _perf_event(
+                "source_intake_snapshot_saved",
+                elapsed_ms=_perf_ms(_snapshot_save_started),
+            )
 
+        # WSI-MWD-PROMOTION-RESPONSE-1:
+        # Promotion is committed before this response is built. Do not rebuild
+        # and serialize the entire Source Intake workbench on the POST response
+        # path. The frontend performs explicit backend refreshes after success.
+        _perf_event(
+            "promotion_completed",
+            elapsed_ms=_perf_ms(_promotion_started),
+            registered_count=registered_count,
+            skipped_count=skipped_count,
+        )
         return SourceIntakeRegisterResponse(
             registered_count=registered_count,
             skipped_count=skipped_count,
             results=results,
-            workbench=self.get_workbench(),
+            workbench=None,
         )
 
     def _registration_block_reason(self, candidate: SourceFileCandidate) -> str | None:

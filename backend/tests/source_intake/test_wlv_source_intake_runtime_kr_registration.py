@@ -82,8 +82,10 @@ def test_source_intake_registration_uses_runtime_kr_before_fallback_classifier(t
     dcal = items["DCAL"]
     assert _group_for_curve(record, "DCAL").group_key == "open_hole_logs"
     assert dcal.product_category == "open_hole_logs"
-    assert dcal.product_subgroup_key == "borehole_geometry_imaging"
-    assert dcal.product_subgroup_label == "Borehole Geometry / Imaging"
+    assert dcal.product_subgroup_key == "caliper"
+    assert dcal.product_subgroup_label == "Caliper"
+    assert dcal.general_curve_family_key == "caliper"
+    assert dcal.general_curve_family == "Caliper"
     assert dcal.curve_family == "caliper"
     assert dcal.classification_source == "runtime_alias"
     assert dcal.classification_confidence == "high"

@@ -34,6 +34,10 @@ from app.wdv_session.canonical_service import (
     CanonicalSessionCommandReplayConflict,
     CanonicalSessionRevisionConflict,
 )
+from app.wdv_session.view_contract import (
+    WdvCanonicalSessionView,
+    project_canonical_session_view,
+)
 
 router = APIRouter(prefix="/api/wlv/v2/wdv/curve-fill-commands", tags=["wlv-curve-fill-v2"])
 
@@ -58,6 +62,21 @@ class CurveFillFeatureStatus(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     contract_version: str = "wdv_curve_fill_feature_status_v2"
     enabled: bool
+
+
+class CurveFillCommandResultView(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    contract_version: str = "wdv_curve_fill_command_result_v2"
+    session: WdvCanonicalSessionView
+    geometry_delta: CurveFillGeometryDelta
+
+
+def _project_workflow_result(result: CurveFillCommandResult) -> CurveFillCommandResultView:
+    return CurveFillCommandResultView(
+        contract_version=result.contract_version,
+        session=project_canonical_session_view(result.session),
+        geometry_delta=result.geometry_delta,
+    )
 
 
 def curve_fill_feature_enabled() -> bool:
@@ -110,24 +129,24 @@ def resolve_geometry(managed_well_uid: str, command: ResolveCurveFillGeometryCom
 
 
 # Preferred mutation workflow: canonical state plus only the affected geometry delta.
-@router.post("/{managed_well_uid}/workflow/rules", response_model=CurveFillCommandResult)
+@router.post("/{managed_well_uid}/workflow/rules", response_model=CurveFillCommandResultView)
 def workflow_create_rule(managed_well_uid: str, command: CreateCurveFillRuleCommand, service: CanonicalCurveFillWorkflowService = Depends(get_workflow_service)):
-    return _translate(lambda: service.create_rule(managed_well_uid, command))
+    return _translate(lambda: _project_workflow_result(service.create_rule(managed_well_uid, command)))
 
 
-@router.post("/{managed_well_uid}/workflow/rules/update", response_model=CurveFillCommandResult)
+@router.post("/{managed_well_uid}/workflow/rules/update", response_model=CurveFillCommandResultView)
 def workflow_update_rule(managed_well_uid: str, command: UpdateCurveFillRuleCommand, service: CanonicalCurveFillWorkflowService = Depends(get_workflow_service)):
-    return _translate(lambda: service.update_rule(managed_well_uid, command))
+    return _translate(lambda: _project_workflow_result(service.update_rule(managed_well_uid, command)))
 
 
-@router.post("/{managed_well_uid}/workflow/rules/remove", response_model=CurveFillCommandResult)
+@router.post("/{managed_well_uid}/workflow/rules/remove", response_model=CurveFillCommandResultView)
 def workflow_remove_rule(managed_well_uid: str, command: RemoveCurveFillRuleCommand, service: CanonicalCurveFillWorkflowService = Depends(get_workflow_service)):
-    return _translate(lambda: service.remove_rule(managed_well_uid, command))
+    return _translate(lambda: _project_workflow_result(service.remove_rule(managed_well_uid, command)))
 
 
-@router.post("/{managed_well_uid}/workflow/rules/reorder", response_model=CurveFillCommandResult)
+@router.post("/{managed_well_uid}/workflow/rules/reorder", response_model=CurveFillCommandResultView)
 def workflow_reorder_rules(managed_well_uid: str, command: ReorderCurveFillRulesCommand, service: CanonicalCurveFillWorkflowService = Depends(get_workflow_service)):
-    return _translate(lambda: service.reorder_rules(managed_well_uid, command))
+    return _translate(lambda: _project_workflow_result(service.reorder_rules(managed_well_uid, command)))
 
 
 @router.get("/{managed_well_uid}/capabilities", response_model=CurveFillCapabilities)
@@ -145,10 +164,10 @@ def capabilities(
         )
     )
 
-@router.post("/{managed_well_uid}/workflow/hydrate", response_model=CurveFillCommandResult)
+@router.post("/{managed_well_uid}/workflow/hydrate", response_model=CurveFillCommandResultView)
 def workflow_hydrate_rules(
     managed_well_uid: str,
     command: HydrateCurveFillRulesCommand,
     service: CanonicalCurveFillWorkflowService = Depends(get_workflow_service),
 ):
-    return _translate(lambda: service.hydrate_rules(managed_well_uid, command))
+    return _translate(lambda: _project_workflow_result(service.hydrate_rules(managed_well_uid, command)))

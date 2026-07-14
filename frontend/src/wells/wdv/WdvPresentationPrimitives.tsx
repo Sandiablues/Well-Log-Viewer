@@ -281,6 +281,29 @@ export async function fetchWlvJson<T>(path: string, init?: RequestInit): Promise
 export function curveInventoryIdentityKey(curve: CurveCatalogItem): string {
     return canonicalCurveKey(curve);
 }
+
+export function curveInventoryRowsForTab(
+    tab: CurveInventoryTab,
+    availableCurves: CurveCatalogItem[],
+    visibleTrackCurveIds: Set<string>,
+): CurveCatalogItem[] {
+    if (tab === 'aliases')
+        return [];
+    if (tab === 'selected') {
+        return availableCurves.filter((curve) =>
+            visibleTrackCurveIds.has(curveInventoryIdentityKey(curve)),
+        );
+    }
+    // Loaded is the backend-provided curve inventory. Track usage must not
+    // determine whether a loaded backend curve record is visible.
+    return availableCurves;
+}
+
+export function loadedMnemonicRows(curves: CurveCatalogItem[]): CurveCatalogItem[] {
+    // Duplicate mnemonics from distinct backend curve identities remain
+    // separate rows. The frontend must not collapse authoritative records.
+    return curves;
+}
 export function resolveCurveAssignmentCatalogItem(catalog: CurveCatalogItem[], assignment: CurveAssignment): CurveCatalogItem | null {
     const identityCandidates = [
         assignment.curveId,
@@ -469,13 +492,13 @@ export function sortTracks(tracks: WellLogTrack[]): WellLogTrack[] {
 export const TRACK_STRIP_PADDING_PX = 10;
 export const TRACK_HEADER_HEIGHT_PX = 108;
 export const TRACK_BODY_HEIGHT_PX = 900;
-export const TRACK_BODY_MIN_HEIGHT_PX = 650;
+export const TRACK_BODY_MIN_HEIGHT_PX = 900;
 export const TRACK_BODY_MAX_HEIGHT_PX = 900;
-export const TRACK_FOOTER_CLEARANCE_PX = 48;
+export const TRACK_FOOTER_CLEARANCE_PX = 0;
 export const TRACK_HEADER_TITLE_HEIGHT_PX = 24;
 export const TRACK_HEADER_WELL_OWNER_HEIGHT_PX = 24;
 export const TRACK_HEADER_SUBTITLE_HEIGHT_PX = 28;
-export const TRACK_CURVE_HEADER_ROW_HEIGHT_PX = 24;
+export const TRACK_CURVE_HEADER_ROW_HEIGHT_PX = 38;
 export const TRACK_HEADER_BOTTOM_PADDING_PX = 8;
 export const CURVE_VIEW_PADDING_X = 10;
 export type MockCurveSample = {
@@ -881,7 +904,6 @@ export function CurveInventory({ availableCurves, curveUsageCounts, visibleTrack
     onToggleCurveInSelectedTrack: (curveId: string, checked: boolean) => void;
 }) {
     const [activeInventoryTab, setActiveInventoryTab] = useState<CurveInventoryTab>(preferredInventoryTab);
-    const [expandedDuplicateGroups, setExpandedDuplicateGroups] = useState<Set<string>>(() => new Set());
     const [wellSectionExpanded, setWellSectionExpanded] = useState(() => inventorySectionExpansionState.well);
     const [lasSectionExpanded, setLasSectionExpanded] = useState(() => inventorySectionExpansionState.las);
     const [curveSectionExpanded, setCurveSectionExpanded] = useState(() => inventorySectionExpansionState.curve);
@@ -901,19 +923,18 @@ export function CurveInventory({ availableCurves, curveUsageCounts, visibleTrack
     useEffect(() => {
         inventorySectionExpansionState.logImage = logImageSectionExpanded;
     }, [logImageSectionExpanded]);
-    const displayedCurves = useMemo(() => {
-        if (activeInventoryTab === 'aliases')
-            return [];
-        if (activeInventoryTab === 'selected') {
-            return availableCurves.filter((curve) => visibleTrackCurveIds.has(curveInventoryIdentityKey(curve)));
-        }
-        return availableCurves.filter((curve) => (curveUsageCounts.get(curveInventoryIdentityKey(curve)) ?? 0) > 0);
-    }, [activeInventoryTab, availableCurves, curveUsageCounts, visibleTrackCurveIds]);
-    const groups = useMemo(() => Array.from(new Set(displayedCurves.map((curve) => curve.curveClass))).filter((group) => group !== 'depth'), [displayedCurves]);
+    const displayedCurves = useMemo(
+        () => curveInventoryRowsForTab(activeInventoryTab, availableCurves, visibleTrackCurveIds),
+        [activeInventoryTab, availableCurves, visibleTrackCurveIds],
+    );
+    const groups = useMemo(
+        () => Array.from(new Set(displayedCurves.map((curve) => curve.backendCurveFamily || 'Unclassified'))),
+        [displayedCurves],
+    );
     const curvesByGroupAndMnemonic = useMemo(() => {
         const grouped = new Map<string, Map<string, CurveCatalogItem[]>>();
         displayedCurves.forEach((curve) => {
-            const classKey = curve.curveClass;
+            const classKey = curve.backendCurveFamily || 'Unclassified';
             const mnemonicKey = curve.mnemonic || curve.curveId;
             const classGroup = grouped.get(classKey) ?? new Map<string, CurveCatalogItem[]>();
             const mnemonicGroup = classGroup.get(mnemonicKey) ?? [];
@@ -931,16 +952,6 @@ export function CurveInventory({ availableCurves, curveUsageCounts, visibleTrack
     const selectedCurveCount = useMemo(() => availableCurves.filter((curve) => visibleTrackCurveIds.has(curveInventoryIdentityKey(curve))).length, [availableCurves, visibleTrackCurveIds]);
     const loadedProductCount = useMemo(() => Array.from(curveUsageCounts.values()).reduce((total, count) => total + count, 0), [curveUsageCounts]);
     const inventoryCount = loadedProductCount;
-    const toggleDuplicateGroup = (groupKey: string) => {
-        setExpandedDuplicateGroups((current) => {
-            const next = new Set(current);
-            if (next.has(groupKey))
-                next.delete(groupKey);
-            else
-                next.add(groupKey);
-            return next;
-        });
-    };
     const renderCurveRow = (curve: CurveCatalogItem, options?: {
         duplicateInstance?: boolean;
     }) => {
@@ -977,35 +988,8 @@ export function CurveInventory({ availableCurves, curveUsageCounts, visibleTrack
         {activeInventoryTab !== 'all' && usageCount > 1 && <span className="wlv-curve-count" title="Curve is used in multiple tracks">{usageCount}</span>}
       </div>);
     };
-    const renderLoadedMnemonicGroup = (group: string, mnemonic: string, curves: CurveCatalogItem[]) => {
-        if (activeInventoryTab !== 'all' || curves.length === 1) {
-            return curves.map((curve) => renderCurveRow(curve));
-        }
-        const groupKey = `${group}:${mnemonic}`;
-        const assignedCount = curves.filter((curve) => visibleTrackCurveIds.has(curveInventoryIdentityKey(curve))).length;
-        const checkedCount = curves.filter((curve) => selectedTrackCurveIds.has(curveInventoryIdentityKey(curve))).length;
-        // WLV-UID-BLOCK5-GROUP-RENDER-REFINE:
-        // Duplicate mnemonic groups are containers only. When any exact child
-        // curve UID is assigned, expand the group and let the child row carry
-        // the same checkbox/highlight behavior as single curve rows.
-        const autoExpandedByAssignment = assignedCount > 0 || checkedCount > 0;
-        const expanded = expandedDuplicateGroups.has(groupKey) || autoExpandedByAssignment;
-        const units = Array.from(new Set(curves.map((curve) => curve.unit).filter(Boolean)));
-        const intervals = Array.from(new Set(curves.map((curve) => curve.description).filter(Boolean)));
-        const summaryText = `${curves.length} instances${intervals.length ? ` · ${intervals.length} intervals/runs` : ''}`;
-        return (<div key={groupKey} className="wlv-duplicate-curve-block">
-        <button type="button" className={`wlv-curve-row wlv-curve-duplicate-summary ${expanded ? 'expanded' : ''}`} onClick={() => toggleDuplicateGroup(groupKey)} aria-expanded={expanded} title="Expand duplicate mnemonic instances">
-          <span className="wlv-duplicate-expander">{expanded ? '▾' : '▸'}</span>
-          <strong>{mnemonic}</strong>
-          <span>{summaryText}</span>
-          <em>{units.length ? units.join(' / ') : ''}</em>
-          <span className="wlv-curve-count" title="Loaded curve product instances">{curves.length}</span>
-        </button>
-        {expanded && (<div className="wlv-duplicate-instance-list">
-            {curves.map((curve) => renderCurveRow(curve, { duplicateInstance: true }))}
-          </div>)}
-      </div>);
-    };
+    const renderLoadedMnemonicGroup = (_group: string, _mnemonic: string, curves: CurveCatalogItem[]) =>
+        loadedMnemonicRows(curves).map((curve) => renderCurveRow(curve));
     const sectionHeader = (label: string, expanded: boolean, onToggle: () => void, count?: number) => (
       <button type="button" className="wlv-inventory-section-toggle" aria-expanded={expanded} onClick={onToggle}>
         <span>{label}</span>
@@ -1758,10 +1742,41 @@ export function CurveHeaderStack({ track, curveCatalogItems, selectedAssignmentI
                         onMoveCurveToTrack(payload, track.trackId, index);
                     }
                 }}>
-            <span className="wlv-curve-color" style={{ background: assignment.color }}/>
-            <strong>{curve.mnemonic}</strong>
-            <span>{assignment.scaleMinLabel ?? (assignment.scaleMin !== null ? String(assignment.scaleMin) : '?')}—{assignment.scaleMaxLabel ?? (assignment.scaleMax !== null ? String(assignment.scaleMax) : '?')}</span>
-            <em>{curve.unit}</em>
+            <div className="wlv-curve-header-meta">
+              <span className="wlv-curve-color" style={{ background: assignment.color }}/>
+              <strong>{curve.mnemonic}</strong>
+              <em>{curve.unit}</em>
+            </div>
+            {(assignment.scaleTicks ?? []).length >= 2 ? (
+              <div
+                className="wlv-curve-scale-axis"
+                style={{
+                  left: `${CURVE_VIEW_PADDING_X}px`,
+                  right: `${CURVE_VIEW_PADDING_X}px`,
+                }}
+                aria-label={`${curve.mnemonic} backend-owned scale`}
+              >
+                <span className="wlv-curve-scale-line" aria-hidden="true"/>
+                {(assignment.scaleTicks ?? []).map((tick, tickIndex, ticks) => (
+                  <span
+                    key={`${assignment.assignmentId}-scale-${tickIndex}`}
+                    className={`wlv-curve-scale-tick ${tickIndex === 0 ? 'edge-left' : tickIndex === ticks.length - 1 ? 'edge-right' : ''}`}
+                    style={{ left: `${tick.normalizedPosition * 100}%` }}
+                    data-scale-value={tick.value}
+                    data-scale-position={tick.normalizedPosition}
+                  >
+                    <i aria-hidden="true"/>
+                    <b>{tick.label}</b>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="wlv-curve-scale-fallback">
+                {assignment.scaleMinLabel ?? String(assignment.scaleMin)}
+                —
+                {assignment.scaleMaxLabel ?? String(assignment.scaleMax)}
+              </div>
+            )}
             {openMenuAssignmentId === assignment.assignmentId && (<CurveHeaderActionMenuPortal trackId={track.trackId} assignmentId={assignment.assignmentId} assignmentIndex={index} assignmentCount={ordered.length} onSelectCurve={onSelectCurve} onReorderCurve={onReorderCurve} onCloseCurveMenu={onCloseCurveMenu} onRemoveCurveFromTrack={onRemoveCurveFromTrack}/>)}
           </div>);
         })}

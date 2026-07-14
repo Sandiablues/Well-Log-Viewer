@@ -56,7 +56,7 @@ def _fallback_description(mnemonic: str, description: str | None) -> str:
     return _clean(description) or mnemonic or "Unclassified curve"
 
 
-def classify_well_log_curve(
+def _classify_well_log_curve_authoritative(
     *,
     mnemonic: str | None,
     description: str | None = None,
@@ -181,3 +181,20 @@ def classify_well_log_curve(
         classification_reasons=[*reasons, "No deterministic curve-family rule matched."],
         review_required=True,
     )
+
+
+def classify_well_log_curve(
+    *,
+    mnemonic: str | None,
+    description: str | None = None,
+    unit: str | None = None,
+    context_terms: Iterable[str | None] = (),
+) -> WellLogClassification:
+    context_snapshot = tuple(context_terms)
+    result = _classify_well_log_curve_authoritative(mnemonic=mnemonic, description=description, unit=unit, context_terms=context_snapshot)
+    try:
+        from app.classification_orchestration.live_shadow_observer import observe_deterministic_authoritative
+        observe_deterministic_authoritative(mnemonic=mnemonic, description=description, unit=unit, context_terms=context_snapshot, authoritative_result=result)
+    except Exception:
+        pass
+    return result

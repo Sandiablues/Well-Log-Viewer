@@ -177,6 +177,16 @@ class ManagedProductGroupItem(BaseModel):
     product_subgroup_key: str | None = None
     product_subgroup_label: str | None = None
     curve_family: str = "Unclassified"
+    curve_family_key: str | None = None
+    general_curve_family: str = "Unclassified"
+    general_curve_family_key: str | None = None
+    general_curve_family_projection_version: str | None = None
+    measurement_domain_key: str | None = None
+    measurement_domain_label: str | None = None
+    destination_key: str | None = None
+    destination_owner: str | None = None
+    display_in_wdv: bool = True
+    classification_contract_version: str | None = None
     classification_confidence: str = "low"
     classification_source: str = "unclassified"
     classification_reasons: list[str] = Field(default_factory=list)
@@ -577,12 +587,12 @@ class RemoveManagedDataFromMdpResult(BaseModel):
     removed_managed_well_ids: list[str] = Field(default_factory=list)
     removed_product_ids: list[str] = Field(default_factory=list)
     unloaded_managed_well_ids: list[str] = Field(default_factory=list)
-    retained_msi_records: bool = True
+    retained_msi_records: bool = False
 
 
 class RemoveManagedDataFromMdpResponse(BaseModel):
     ok: bool = True
-    action: str = "removed_from_mdp"
+    action: str = "deleted_from_mwd"
     result: RemoveManagedDataFromMdpResult
     records: list[ManagedWellRecord] = Field(default_factory=list)
 

@@ -229,3 +229,16 @@ def _normalize_text(value: str | None) -> str:
 
 def _clean(value: object) -> str:
     return str(value or "").strip()
+
+
+def governed_contextual_families() -> tuple[str, ...]:
+    """Return canonical family labels emitted by governed contextual fallback policies.
+
+    This is the public ontology boundary consumed by classification orchestration.
+    It exposes family identity only; it does not expose or duplicate matching rules.
+    """
+    return tuple(dict.fromkeys(
+        str(policy["family"])
+        for policy in _GOVERNED_FALLBACKS
+        if str(policy.get("family") or "").strip()
+    ))

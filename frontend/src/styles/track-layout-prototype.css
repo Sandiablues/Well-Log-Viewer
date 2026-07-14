@@ -103,7 +103,7 @@ button:disabled {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -958,7 +958,7 @@ button:disabled {
 
 .wlv-interval-selection-band span {
   position: absolute;
-  top: 4px;
+  top: 3px;
   left: 12px;
   padding: 4px 7px;
   border: 1px solid rgba(31, 95, 159, 0.75);
@@ -1026,7 +1026,7 @@ button:disabled {
 
 .wlv-curve-count {
   min-width: 20px;
-  height: 18px;
+  height: 14px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1624,7 +1624,7 @@ button:disabled {
   width: max-content;
   min-width: 100%;
   flex-wrap: nowrap;
-  align-items: stretch;
+  align-items: center;
 }
 
 .wlv-track {
@@ -1721,7 +1721,7 @@ button:disabled {
 
 .wlv-curve-color {
   width: 8px;
-  height: 8px;
+  height: 6px;
 }
 /* WL-PROTOTYPE-MARKETING-HEADER-CONTRAST-END */
 
@@ -2833,7 +2833,7 @@ button.wlv-view-range-readout,
 .wlv-managed-inventory-summary span,
 .wlv-managed-detail-grid span {
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   color: #8aa0ba;
   font-size: 10px;
   font-weight: 750;
@@ -5690,7 +5690,7 @@ button.wlv-view-range-readout,
 
 /* WLV-WDV-DUPLICATE-CURVE-MODEL-1 */
 .wlv-duplicate-curve-block {
-  margin-bottom: 3px;
+  margin-bottom: 1px;
 }
 
 .wlv-curve-duplicate-summary {
@@ -8567,7 +8567,7 @@ button.wlv-view-range-readout,
 /* WLV Curve Fill v2.1 compact layer stack */
 .wlv-curve-fill-editor { gap: 8px; }
 .wlv-curve-fill-menu { order: 0; padding: 8px; gap: 6px; }
-.wlv-curve-fill-layer-heading { display: flex; align-items: center; justify-content: space-between; padding: 2px 0; color: #d8dee7; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.wlv-curve-fill-layer-heading { display: flex; align-items: center; justify-content: space-between; padding: 1px 0; color: #d8dee7; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
 .wlv-curve-fill-layer-heading span { min-width: 20px; text-align: center; color: #9aa5b1; }
 .wlv-curve-fill-layer-card { padding: 7px 8px; gap: 5px; }
 .wlv-curve-fill-layer-toggle { margin: 0; gap: 6px; }
@@ -10154,3 +10154,110 @@ button.wlv-view-range-readout,
 }
 /* WLV-SEND-TO-WBV-EXACT-GO-TO-MD-INPUT-SPEC-END */
 
+
+/* WDV-CURVE-SCALE-REBUILD-V3-001 */
+.wlv-curve-header {
+  position: relative;
+  display: block;
+  min-height: 38px;
+  height: 38px;
+  padding: 2px 0;
+}
+
+.wlv-curve-header-meta {
+  height: 18px;
+  padding: 0 5px;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  gap: 5px;
+  align-items: center;
+}
+
+.wlv-curve-header-meta strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-curve-header-meta em {
+  color: #a1a1aa;
+  font-style: normal;
+  white-space: nowrap;
+  font-size: 6.5px;
+  line-height: 1;
+}
+
+.wlv-curve-scale-axis {
+  position: absolute;
+  bottom: 3px;
+  height: 16px;
+}
+
+.wlv-curve-scale-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 4px;
+  height: 1px;
+  background: #7b8794;
+}
+
+.wlv-curve-scale-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 5.2px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 1;
+  color: #667085;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.wlv-curve-scale-tick.edge-left { transform: none; }
+.wlv-curve-scale-tick.edge-right { transform: translateX(-100%); }
+
+.wlv-curve-scale-tick i {
+  display: block;
+  width: 1px;
+  height: 8px;
+  margin: 0 auto 1px;
+  background: #667085;
+}
+
+.wlv-curve-scale-tick.edge-left i { margin-left: 0; }
+.wlv-curve-scale-tick.edge-right i { margin-right: 0; }
+
+.wlv-curve-scale-tick b {
+  display: block;
+  color: inherit;
+  font: inherit;
+}
+
+.wlv-curve-scale-fallback {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 4px;
+  text-align: center;
+  color: #a1a1aa;
+  font-size: 5.2px;
+}
+
+/* WDV-CURVE-SCALE-VISUAL-FONT-35PCT-001
+   Browser-independent visible reduction of scale-label glyphs.
+   Tick marks and axis geometry are unchanged. */
+.wlv-curve-scale-tick b {
+  font-size: 8px;
+  transform: scale(0.715);
+  transform-origin: center top;
+}
+
+.wlv-curve-scale-tick.edge-left b {
+  transform-origin: left top;
+}
+
+.wlv-curve-scale-tick.edge-right b {
+  transform-origin: right top;
+}

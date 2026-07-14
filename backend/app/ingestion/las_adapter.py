@@ -219,6 +219,11 @@ def _split_las_sections(text: str) -> dict[str, list[str]]:
 
 def _parse_header_lines(lines: list[str]) -> list[LasHeaderLine]:
     parsed: list[LasHeaderLine] = []
+    vendor_label_fields = {
+        "WELL", "WEL", "WELLNAME", "NAME", "UWI", "API", "WELLID", "WELL_ID",
+        "FLD", "FIELD", "COMP", "COMPANY", "LOC", "CNTY", "STAT", "CTRY",
+        "SRVC", "DATE",
+    }
     for raw in lines:
         stripped = raw.strip()
         if not stripped or stripped.startswith("#"):
@@ -230,6 +235,27 @@ def _parse_header_lines(lines: list[str]) -> list[LasHeaderLine]:
         mnemonic = match.group(1).strip()
         unit = (match.group(2) or "").strip() or None
         value = (match.group(3) or "").strip() or None
+
+        # Some LAS producers emit identity/header rows as:
+        #   WELL .                    WELL:  Forge 21-31
+        #   API  .              API NUMBER:  2700190539
+        # In those rows the text before ':' is a field label, while the text
+        # after ':' is the authoritative value. Preserve normal LAS rows where
+        # ':' introduces a description.
+        if mnemonic.upper() in vendor_label_fields:
+            label_text = " ".join(part for part in (unit, value) if part).strip()
+            normalized_label = re.sub(r"[^A-Z0-9]+", " ", label_text.upper()).strip()
+            mnemonic_label = re.sub(r"[^A-Z0-9]+", " ", mnemonic.upper()).strip()
+            generic_labels = {
+                mnemonic_label,
+                "WELL", "FIELD", "COMPANY", "LOCATION", "COUNTY", "STATE", "COUNTRY",
+                "SERVICE COMPANY", "API NUMBER", "UNIQUE WELL ID", "LOG DATE",
+            }
+            if normalized_label in generic_labels:
+                value = description.strip() if description else None
+                description = label_text or None
+                unit = None
+
         if mnemonic.upper() in {"WELL", "WEL", "WELLNAME", "NAME", "UWI", "API", "WELLID", "WELL_ID", "FLD", "FIELD", "COMP", "COMPANY", "NULL"}:
             parts = [part for part in (unit, value) if part]
             value = " ".join(parts) if parts else value

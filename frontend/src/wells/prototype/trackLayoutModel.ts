@@ -41,6 +41,7 @@ export interface CurveCatalogItem {
   description: string;
   unit: string;
   curveClass: CurveClass;
+  backendCurveFamily?: string | null;
   defaultLattice: CurveLattice;
   defaultMin: number;
   defaultMax: number;
@@ -56,6 +57,12 @@ export interface CurveCatalogItem {
   visualSpanRatio?: number | null;
   defaultColor: string;
   recognised: boolean;
+}
+
+export interface CurveScaleTick {
+  value: number;
+  label: string;
+  normalizedPosition: number;
 }
 
 export interface CurveAssignment {
@@ -88,6 +95,8 @@ export interface CurveAssignment {
   scaleMax: number;
   scaleMinLabel?: string | null;
   scaleMaxLabel?: string | null;
+  /** Backend-owned response-only scale ticks. */
+  scaleTicks?: CurveScaleTick[];
   scaleDirection: 'normal' | 'reverse';
   scaleType?: CurveScaleType;
   rangeMode?: CurveRangeMode;

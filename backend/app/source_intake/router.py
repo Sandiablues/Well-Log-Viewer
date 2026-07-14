@@ -32,9 +32,14 @@ from .models import (
     SourceRepositoryScanResult,
 )
 from .service import SourceIntakeError, WlvSourceIntakeService
+from .promotion_full_profiler import PromotionProfilingRoute, profile_promotion_endpoint
 from app.inventory.service import ManagedWellInventoryService
 
-router = APIRouter(prefix="/api/wlv/source-intake", tags=["wlv-source-intake"])
+router = APIRouter(
+    prefix="/api/wlv/source-intake",
+    tags=["wlv-source-intake"],
+    route_class=PromotionProfilingRoute,
+)
 _service = WlvSourceIntakeService()
 _inventory_service = ManagedWellInventoryService()
 
@@ -163,7 +168,15 @@ def restore_candidates_to_mdp(request: SourceIntakeRestoreToMdpRequest) -> Sourc
 @router.post("/register", response_model=SourceIntakeRegisterResponse, summary="Register WLV Source Intake candidates to managed inventory")
 def register_candidates(request: SourceIntakeRegisterRequest) -> SourceIntakeRegisterResponse:
     try:
-        return _service.register_candidates(request, inventory_service=_inventory_service)
+        return profile_promotion_endpoint(
+            request_model=request,
+            service=_service,
+            inventory_service=_inventory_service,
+            operation=lambda: _service.register_candidates(
+                request,
+                inventory_service=_inventory_service,
+            ),
+        )
     except SourceIntakeError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
