@@ -154,6 +154,41 @@ class ViewerPackageReference(BaseModel):
     status: ManagedInventoryLifecycleState = ManagedInventoryLifecycleState.VIEWER_READY
 
 
+class ManagedCurveStatisticsContract(BaseModel):
+    """Backend-owned persisted numeric summary for one managed curve.
+
+    This contract contains derived statistics only. It never stores curve
+    samples and never delegates statistical authority to the frontend.
+    """
+
+    contract_version: str = "managed_curve_statistics_v1"
+    statistics_status: str = "available"
+
+    depth_min: Optional[float] = None
+    depth_max: Optional[float] = None
+    value_min: Optional[float] = None
+    value_max: Optional[float] = None
+    robust_value_min: Optional[float] = None
+    robust_value_max: Optional[float] = None
+
+    value_p01: Optional[float] = None
+    value_p05: Optional[float] = None
+    value_p50: Optional[float] = None
+    value_p95: Optional[float] = None
+    value_p99: Optional[float] = None
+
+    valid_sample_count: int = 0
+    raw_numeric_sample_count: int = 0
+    rejected_sample_count: int = 0
+    rejected_null_count: int = 0
+    rejected_sentinel_count: int = 0
+    rejected_nonfinite_count: int = 0
+    rejected_plausibility_count: int = 0
+    rejected_row_count: int = 0
+
+    source_checksum: Optional[str] = None
+
+
 class ManagedProductGroupItem(BaseModel):
     product_id: str
     managed_product_uid: Optional[CanonicalUuid7] = None
@@ -216,6 +251,7 @@ class ManagedProductGroupItem(BaseModel):
     depth_units: Optional[str] = None
     depth_start: Optional[float] = None
     depth_end: Optional[float] = None
+    curve_statistics: Optional[ManagedCurveStatisticsContract] = None
     provenance: dict[str, Any] = Field(default_factory=dict)
 
 

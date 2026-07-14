@@ -241,6 +241,7 @@ class SourceIntakeCurveHeader(BaseModel):
     depth_normalization_reason: Optional[str] = None
     raw_top_depth: Optional[float] = None
     raw_base_depth: Optional[float] = None
+    curve_statistics: Optional[dict[str, Any]] = None
 
 
 class SourceIntakeDlisChannelHeader(BaseModel):

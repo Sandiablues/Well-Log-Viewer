@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+import math
 
 from .depth_units import depth_unit_conversion, requires_human_target_unit
 
@@ -39,6 +40,7 @@ class DlisScalarChannel:
     depth_normalization_reason: str | None = None
     raw_top_depth: float | None = None
     raw_base_depth: float | None = None
+    curve_statistics: dict[str, Any] | None = None
 
     @property
     def source_curve_name(self) -> str:
@@ -202,6 +204,12 @@ def inspect_dlis(path: Path) -> DlisInspection:
                         if sample_count is None:
                             warnings.append(f"{logical_id}/{frame_id}/{mnemonic}: channel data is unavailable.")
                             continue
+                        curve_statistics = _curve_statistics_from_frame_arrays(
+                            depths=curves[index_name],
+                            values=curves[mnemonic],
+                            channel=channel,
+                            depth_conversion=depth_conversion,
+                        )
                         scalar_channels.append(DlisScalarChannel(
                             logical_file_id=logical_id,
                             frame_id=frame_id,
@@ -220,6 +228,7 @@ def inspect_dlis(path: Path) -> DlisInspection:
                             depth_normalization_reason="human_target_unit_required" if decision_required else depth_conversion.reason,
                             raw_top_depth=raw_top_depth,
                             raw_base_depth=raw_base_depth,
+                            curve_statistics=curve_statistics,
                         ))
                         if not unit:
                             warnings.append(f"{logical_id}/{frame_id}/{mnemonic}: channel unit is missing.")
@@ -268,3 +277,153 @@ def _raw_depth_range(values: Any) -> tuple[float | None, float | None]:
     if not numeric:
         return None, None
     return min(numeric), max(numeric)
+
+
+
+def _curve_statistics_from_frame_arrays(
+    *,
+    depths: Any,
+    values: Any,
+    channel: Any,
+    depth_conversion: Any,
+) -> dict[str, Any]:
+    """Derive persisted statistics from an already-loaded DLIS frame."""
+    valid_depths: list[float] = []
+    valid_values: list[float] = []
+
+    raw_numeric_sample_count = 0
+    rejected_null_count = 0
+    rejected_sentinel_count = 0
+    rejected_nonfinite_count = 0
+    rejected_row_count = 0
+
+    null_values = _curve_statistics_channel_null_values(channel)
+
+    for raw_depth, raw_value in zip(depths, values, strict=False):
+        try:
+            depth = _curve_statistics_scalar_float(raw_depth)
+            value = _curve_statistics_scalar_float(raw_value)
+        except (TypeError, ValueError, OverflowError):
+            rejected_row_count += 1
+            continue
+
+        if not math.isfinite(depth) or not math.isfinite(value):
+            rejected_nonfinite_count += 1
+            continue
+
+        raw_numeric_sample_count += 1
+
+        if any(
+            _curve_statistics_same_numeric_value(value, marker)
+            for marker in null_values
+        ):
+            rejected_null_count += 1
+            continue
+
+        if _curve_statistics_common_null_sentinel(value):
+            rejected_sentinel_count += 1
+            continue
+
+        valid_depths.append(depth_conversion.convert(depth))
+        valid_values.append(value)
+
+    rejected_sample_count = (
+        rejected_null_count
+        + rejected_sentinel_count
+        + rejected_nonfinite_count
+        + rejected_row_count
+    )
+
+    base = {
+        "contract_version": "managed_curve_statistics_v1",
+        "valid_sample_count": len(valid_values),
+        "raw_numeric_sample_count": raw_numeric_sample_count,
+        "rejected_sample_count": rejected_sample_count,
+        "rejected_null_count": rejected_null_count,
+        "rejected_sentinel_count": rejected_sentinel_count,
+        "rejected_nonfinite_count": rejected_nonfinite_count,
+        "rejected_plausibility_count": 0,
+        "rejected_row_count": rejected_row_count,
+    }
+
+    if not valid_values:
+        return {
+            **base,
+            "statistics_status": "unavailable",
+        }
+
+    return {
+        **base,
+        "statistics_status": "available",
+        "depth_min": min(valid_depths),
+        "depth_max": max(valid_depths),
+        "value_min": min(valid_values),
+        "value_max": max(valid_values),
+        "robust_value_min": _curve_statistics_percentile(valid_values, 0.05),
+        "robust_value_max": _curve_statistics_percentile(valid_values, 0.95),
+        "value_p01": _curve_statistics_percentile(valid_values, 0.01),
+        "value_p05": _curve_statistics_percentile(valid_values, 0.05),
+        "value_p50": _curve_statistics_percentile(valid_values, 0.50),
+        "value_p95": _curve_statistics_percentile(valid_values, 0.95),
+        "value_p99": _curve_statistics_percentile(valid_values, 0.99),
+    }
+
+
+def _curve_statistics_scalar_float(value: Any) -> float:
+    if hasattr(value, "item"):
+        value = value.item()
+    if isinstance(value, (list, tuple)):
+        if len(value) != 1:
+            raise ValueError("non-scalar value")
+        value = value[0]
+    return float(value)
+
+
+def _curve_statistics_channel_null_values(channel: Any) -> tuple[float, ...]:
+    values: list[float] = []
+    for attribute in ("null", "null_value", "invalid", "absent_value"):
+        raw = getattr(channel, attribute, None)
+        if raw is None:
+            continue
+        candidates = raw if isinstance(raw, (list, tuple, set)) else (raw,)
+        for candidate in candidates:
+            try:
+                value = float(candidate)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(value):
+                values.append(value)
+    return tuple(dict.fromkeys(values))
+
+
+def _curve_statistics_same_numeric_value(left: float, right: float) -> bool:
+    return math.isclose(
+        left,
+        right,
+        rel_tol=0.0,
+        abs_tol=max(1.0e-12, abs(right) * 1.0e-12),
+    )
+
+
+def _curve_statistics_common_null_sentinel(value: float) -> bool:
+    return any(
+        _curve_statistics_same_numeric_value(value, marker)
+        for marker in (-999.0, -999.25, -9999.0, -9999.25, -99999.0)
+    )
+
+
+def _curve_statistics_percentile(values: list[float], fraction: float) -> float:
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+
+    position = (len(ordered) - 1) * min(1.0, max(0.0, fraction))
+    lower = int(math.floor(position))
+    upper = int(math.ceil(position))
+
+    if lower == upper:
+        return ordered[lower]
+
+    return ordered[lower] + (
+        ordered[upper] - ordered[lower]
+    ) * (position - lower)

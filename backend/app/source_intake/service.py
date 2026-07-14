@@ -2143,6 +2143,7 @@ class WlvSourceIntakeService:
                 depth_normalization_reason=item.depth_normalization_reason,
                 raw_top_depth=item.raw_top_depth,
                 raw_base_depth=item.raw_base_depth,
+                curve_statistics=item.curve_statistics,
             ) for item in channels],
             logical_file_count=inspection.logical_file_count,
             frame_count=inspection.frame_count,

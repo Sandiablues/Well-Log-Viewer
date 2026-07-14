@@ -2284,6 +2284,41 @@ class ManagedWellInventoryService:
         }
 
     def _wdv_curve_sample_statistics(self, record: ManagedWellRecord, item: ManagedProductGroupItem) -> dict[str, Any]:
+        persisted = item.curve_statistics
+        if persisted is not None:
+            return {
+                "statistics_status": persisted.statistics_status,
+                "observed_min": persisted.value_min,
+                "observed_max": persisted.value_max,
+                "robust_observed_min": (
+                    persisted.robust_value_min
+                    if persisted.robust_value_min is not None
+                    else persisted.value_min
+                ),
+                "robust_observed_max": (
+                    persisted.robust_value_max
+                    if persisted.robust_value_max is not None
+                    else persisted.value_max
+                ),
+                "observed_p01": persisted.value_p01,
+                "observed_p05": persisted.value_p05,
+                "observed_p50": persisted.value_p50,
+                "observed_p95": persisted.value_p95,
+                "observed_p99": persisted.value_p99,
+                "depth_min": persisted.depth_min,
+                "depth_max": persisted.depth_max,
+                "valid_sample_count": persisted.valid_sample_count,
+                "raw_numeric_sample_count": persisted.raw_numeric_sample_count,
+                "rejected_sample_count": persisted.rejected_sample_count,
+                "rejected_null_count": persisted.rejected_null_count,
+                "rejected_sentinel_count": persisted.rejected_sentinel_count,
+                "rejected_nonfinite_count": persisted.rejected_nonfinite_count,
+                "rejected_plausibility_count": persisted.rejected_plausibility_count,
+                "rejected_row_count": persisted.rejected_row_count,
+            }
+
+        # Legacy compatibility path for managed records created before
+        # managed_curve_statistics_v1 was introduced.
         try:
             payload = self.curve_sample_service.get_curve_samples(
                 managed_well_id=record.managed_well_id,

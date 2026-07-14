@@ -738,6 +738,14 @@ def _product_groups_from_candidate(
                 wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,
                 wdv_state=ManagedWdvState.NOT_LOADED,
                 source_intake_candidate_id=candidate.source_file_id,
+                curve_statistics=(
+                    {
+                        **curve.curve_statistics,
+                        "source_checksum": candidate.checksum,
+                    }
+                    if curve.curve_statistics is not None
+                    else None
+                ),
                 provenance={
                     **provenance,
                     "source_curve_index": index - 1,
