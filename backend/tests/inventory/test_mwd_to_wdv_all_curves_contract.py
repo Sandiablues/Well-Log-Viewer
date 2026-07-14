@@ -16,14 +16,14 @@ def item(**overrides):
     return SimpleNamespace(**values)
 
 
-def test_unclassified_curve_with_display_routing_false_still_enters_wdv_inventory() -> None:
+def test_explicitly_non_wdv_routed_unclassified_curve_is_excluded() -> None:
     curve = item(
         display_in_wdv=False,
         product_category="other_review_required",
         general_curve_family_key="unclassified",
         review_required=True,
     )
-    assert ManagedWellInventoryService._is_wdv_loadable_product(curve) is True
+    assert ManagedWellInventoryService._is_wdv_loadable_product(curve) is False
 
 
 def test_nonselectable_managed_curve_still_enters_wdv_inventory() -> None:
