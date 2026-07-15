@@ -115,6 +115,78 @@ def test_passing_las_candidate_registers_to_managed_inventory(tmp_path: Path) ->
     assert persisted.current_decision is None
 
 
+
+def test_qaqc_report_is_not_attached_when_promotion_option_is_false(
+    tmp_path: Path,
+) -> None:
+    source, inventory, candidate = _scan(
+        tmp_path,
+        "FORGE_21_31.las",
+        LAS_WITH_UWI,
+    )
+
+    response = source.register_candidates(
+        SourceIntakeRegisterRequest(
+            candidate_ids=[candidate.source_file_id],
+            approval={
+                "approved_by": "test",
+                "approval_note": "unit-test approval",
+            },
+            include_qaqc_report=False,
+        ),
+        inventory_service=inventory,
+    )
+
+    assert response.registered_count == 1
+
+    record = inventory.list_wells()[0]
+    source_reference = next(
+        reference
+        for reference in record.source_references
+        if reference.source_id == candidate.source_file_id
+    )
+
+    assert "source_intake_qaqc_report" not in source_reference.metadata
+
+
+def test_qaqc_report_is_attached_when_promotion_option_is_true(
+    tmp_path: Path,
+) -> None:
+    source, inventory, candidate = _scan(
+        tmp_path,
+        "FORGE_21_31.las",
+        LAS_WITH_UWI,
+    )
+
+    response = source.register_candidates(
+        SourceIntakeRegisterRequest(
+            candidate_ids=[candidate.source_file_id],
+            approval={
+                "approved_by": "test",
+                "approval_note": "unit-test approval",
+            },
+            include_qaqc_report=True,
+        ),
+        inventory_service=inventory,
+    )
+
+    assert response.registered_count == 1
+
+    record = inventory.list_wells()[0]
+    source_reference = next(
+        reference
+        for reference in record.source_references
+        if reference.source_id == candidate.source_file_id
+    )
+
+    report = source_reference.metadata["source_intake_qaqc_report"]
+
+    assert report["candidate_id"] == candidate.source_file_id
+    assert report["source_format"] == candidate.detected_file_type.value
+    assert report["source_fingerprint"] == candidate.content_fingerprint
+    assert report["qaqc"]["status"] == candidate.qaqc_status.status.value
+
+
 def test_missing_uwi_candidate_registers_without_using_internal_well_id_as_uwi(tmp_path: Path) -> None:
     source, inventory, candidate = _scan(tmp_path, "FORGE_21_31.las", LAS_WITHOUT_UWI)
     source.resolve_candidates(
@@ -194,16 +266,16 @@ def test_registered_inventory_is_visible_through_inventory_service(tmp_path: Pat
     assert sum(len(group.items) for group in detail.product_groups) == 2
 
 
-def test_unresolved_warning_candidate_is_blocked_until_resolution(tmp_path: Path) -> None:
+def test_nonblocking_warning_candidate_can_register_without_resolution(tmp_path: Path) -> None:
     source, inventory, candidate = _scan(tmp_path, "FORGE_21_31.las", LAS_WITHOUT_UWI)
 
     response = _register(source, inventory, candidate.source_file_id)
 
-    assert response.registered_count == 0
-    assert response.skipped_count == 1
-    assert response.results[0].status == "blocked"
-    assert "resolution state" in response.results[0].reason
-    assert inventory.list_wells() == []
+    assert response.registered_count == 1
+    assert response.skipped_count == 0
+    assert response.results[0].status == "registered"
+    assert response.results[0].managed_well_id is not None
+    assert len(inventory.list_wells()) == 1
 
 
 def test_occurrence_accounting_balances_after_registration(tmp_path: Path) -> None:

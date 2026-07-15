@@ -113,11 +113,6 @@ def wmd_availability_block_reason(candidate: SourceFileCandidate) -> str | None:
             return f"Geometry candidate QAQC status is not WMD-ready: {candidate.qaqc_status.status.value}."
         if candidate.qaqc_status.failure_count > 0:
             return "Geometry candidate QAQC has failures and cannot be made available."
-        if not is_wmd_eligible(candidate):
-            return (
-                "Geometry candidate resolution state is not WMD-ready: "
-                f"{candidate.resolution_state.value}. Resolve the candidate first."
-            )
         return candidate.readiness_issues[0] if candidate.readiness_issues else None
 
     if candidate.candidate_role != SourceIntakeCandidateRole.WELL_LOG_CANDIDATE:
@@ -139,13 +134,7 @@ def wmd_availability_block_reason(candidate: SourceFileCandidate) -> str | None:
     if clean_identity_value(well_name) is None:
         return "Candidate has no resolved well name."
 
-    if not is_wmd_eligible(candidate):
-        return (
-            "Candidate resolution state is not WMD-ready: "
-            f"{candidate.resolution_state.value}. Resolve or explicitly disposition the candidate first."
-        )
-
-    return candidate.readiness_issues[0] if candidate.readiness_issues else "Candidate is not WMD-ready."
+    return candidate.readiness_issues[0] if candidate.readiness_issues else "Candidate is not MWD-ready."
 
 
 def registration_block_reason(candidate: SourceFileCandidate) -> str | None:
@@ -189,6 +178,7 @@ def register_candidate_to_inventory(
     inventory_service: ManagedWellInventoryService,
     approved_by: str | None = None,
     approval_note: str | None = None,
+    qaqc_report: dict[str, object] | None = None,
 ) -> tuple[str, ManagedWellRecord]:
     """Create/update one Managed Well Inventory record from an intake candidate."""
     blocked = wmd_availability_block_reason(candidate)
@@ -352,6 +342,11 @@ def register_candidate_to_inventory(
             ),
             "storage_uri": dlis_asset.original_uri,
             "dlis_asset_id": dlis_asset.asset_id,
+            **(
+                {"source_intake_qaqc_report": qaqc_report}
+                if qaqc_report is not None
+                else {}
+            ),
         }
         source_fingerprint = dlis_asset.source_fingerprint
     else:
@@ -374,6 +369,11 @@ def register_candidate_to_inventory(
             "las_manifest_uri": las_asset.manifest_uri,
             "las_samples_uri": las_asset.samples_uri,
             "las_asset_id": las_asset.asset_id,
+            **(
+                {"source_intake_qaqc_report": qaqc_report}
+                if qaqc_report is not None
+                else {}
+            ),
         }
         source_fingerprint = las_asset.source_fingerprint
     if candidate.checksum and candidate.checksum != source_fingerprint:

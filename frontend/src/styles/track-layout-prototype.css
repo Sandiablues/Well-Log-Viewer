@@ -11297,3 +11297,129 @@ button.wlv-view-range-readout,
   margin: 0 !important;
 }
 /* WLV-CURVE-FILL-COLOR-CONTROL-STRUCTURAL-20260714-END */
+
+/* WLV-WSI-STAGE6A-PROMOTION-STATE-1:
+   Promotion colour is a presentation of the backend-owned readiness contract.
+   READY renders as an enabled green action. Any non-ready state remains
+   disabled and neutral. */
+.wlv-source-intake .wlv-si-promote-button.wlv-si-button--primary:not(:disabled) {
+  border-color: rgba(74, 196, 116, 0.78) !important;
+  background: rgba(74, 196, 116, 0.14) !important;
+  color: #7ee2a0 !important;
+  opacity: 1 !important;
+}
+
+.wlv-source-intake .wlv-si-promote-button.wlv-si-button--primary:not(:disabled):hover {
+  border-color: rgba(104, 225, 145, 0.96) !important;
+  background: rgba(74, 196, 116, 0.22) !important;
+  color: #a2efba !important;
+}
+
+.wlv-source-intake .wlv-si-promote-button:disabled {
+  border-color: rgba(83, 94, 108, 0.28) !important;
+  background: transparent !important;
+  color: #707987 !important;
+  cursor: not-allowed !important;
+  opacity: 0.52 !important;
+}
+
+/* WLV-WSI-STAGE6A-QAQC-TOGGLE-1:
+   Keep the promotion-report option at normal drawer body scale. */
+.wlv-source-intake .wlv-si-diagnostic-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  color: var(--wlv-si-soft);
+  font-family: var(--wlv-si-font);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.3;
+}
+
+.wlv-source-intake .wlv-si-diagnostic-toggle input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.wlv-source-intake .wlv-si-diagnostic-toggle span {
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
+/* WLV-WSI-STAGE6C-QAQC-HIERARCHY-1:
+   Frontend presentation only. Counts and grouping are derived directly from
+   backend-owned diagnostic severities. */
+.wlv-source-intake .wlv-si-qaqc-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.wlv-source-intake .wlv-si-qaqc-summary > div {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--wlv-si-border);
+  border-radius: 8px;
+  background: #16171d;
+}
+
+.wlv-source-intake .wlv-si-qaqc-summary span {
+  font-family: var(--wlv-si-mono);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.wlv-source-intake .wlv-si-qaqc-summary small {
+  color: var(--wlv-si-muted);
+  font-family: var(--wlv-si-mono);
+  font-size: 9px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.wlv-source-intake .wlv-si-qaqc-summary .is-success span {
+  color: #43d17a;
+}
+
+.wlv-source-intake .wlv-si-qaqc-summary .is-warning span {
+  color: #f0c65a;
+}
+
+.wlv-source-intake .wlv-si-qaqc-summary .is-error span {
+  color: #ff6b6b;
+}
+
+.wlv-source-intake .wlv-si-diagnostic-subheading {
+  margin: 12px 0 8px;
+  color: var(--wlv-si-soft);
+  font-family: var(--wlv-si-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.wlv-source-intake .wlv-si-qaqc-passed {
+  margin-top: 12px;
+  border-top: 1px solid var(--wlv-si-border);
+  padding-top: 10px;
+}
+
+.wlv-source-intake .wlv-si-qaqc-passed summary {
+  cursor: pointer;
+  color: var(--wlv-si-muted);
+  font-family: var(--wlv-si-mono);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.wlv-source-intake .wlv-si-qaqc-passed[open] summary {
+  margin-bottom: 8px;
+}

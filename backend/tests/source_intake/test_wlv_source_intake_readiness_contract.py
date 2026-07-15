@@ -62,22 +62,17 @@ def _accept_missing_uwi(service, candidate) -> None:
     )
 
 
-def test_unresolved_candidate_requires_human_decision(
+def test_nonblocking_review_findings_do_not_block_promotion(
     tmp_path: Path,
 ) -> None:
     service, _, candidate = _scan(tmp_path)
 
     assert (
         candidate.readiness_state
-        == SourceIntakeReadinessState.REVIEW_REQUIRED
+        == SourceIntakeReadinessState.READY
     )
-    assert candidate.readiness_issues
-    assert set(candidate.available_human_actions) == {
-        "accept",
-        "correct",
-        "assign",
-        "exclude",
-    }
+    assert candidate.readiness_issues == []
+    assert candidate.available_human_actions == []
 
 
 def test_explicit_human_decision_makes_candidate_ready(

@@ -4,6 +4,7 @@ from app.source_intake.models import (
     SourceIntakeFileType,
     SourceIntakeCandidateRole,
     SourceIntakeResolutionState,
+    SourceIntakeReadinessState,
 )
 from app.source_intake.readiness import (
     evaluate_registration_readiness,
@@ -49,6 +50,7 @@ def test_canonical_wmd_eligibility_preserves_legacy_alias():
 
 def test_mark_available_to_wmd_preserves_serialized_compatibility_state():
     candidate = _candidate()
+    candidate.readiness_state = SourceIntakeReadinessState.READY
     SourceIntakeResolutionService().mark_available_to_wmd(candidate)
     assert candidate.resolution_state == SourceIntakeResolutionState.REGISTERED
 

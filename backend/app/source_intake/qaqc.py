@@ -190,17 +190,17 @@ def _check_las_parse(candidate: SourceFileCandidate, checks: list[SourceIntakeQa
         )
         return
 
-    if candidate.parser_status == SourceIntakeParseStatus.PARSED_WITH_WARNINGS:
+    if candidate.parser_status in {
+        SourceIntakeParseStatus.PARSED,
+        SourceIntakeParseStatus.PARSED_WITH_WARNINGS,
+    }:
         checks.append(
-            _warning(
-                "las.parse.warnings",
-                "LAS metadata parsed with warnings.",
-                field_name="parser_status",
-                review_required=True,
+            _pass(
+                "las.parse.parsed",
+                "LAS content was parsed successfully. Parser-specific warnings "
+                "are reported separately under Parsing Analysis.",
             )
         )
-    else:
-        checks.append(_pass("las.parse.parsed", "LAS metadata parsed successfully."))
 
     if candidate.parsed_metadata is None:
         checks.append(_fail("las.metadata.present", "Parsed LAS metadata is missing."))
@@ -323,7 +323,11 @@ def _check_curve_headers(candidate: SourceFileCandidate, checks: list[SourceInta
         checks.append(
             _warning(
                 "curve.unit.missing",
-                f"Curve {curve.mnemonic or index} is missing a unit.",
+                (
+                    f"Curve {curve.mnemonic or index} has no source unit. "
+                    "The curve can still be promoted and viewed, but WLV cannot "
+                    "display an authoritative unit label for it."
+                ),
                 field_name="curve_headers.unit",
                 review_required=False,
             )

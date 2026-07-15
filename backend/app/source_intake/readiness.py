@@ -67,10 +67,12 @@ def evaluate_wmd_availability_readiness(
 ) -> SourceFileCandidate:
     """Set one current readiness state.
 
-    QAQC findings remain available for review and display. Once a human has made
-    an explicit resolution decision, those non-hard findings do not become a
-    second hidden WMD availability gate. Only technical failure, unsupported data,
-    missing required payload, or unresolved identity blocks progression.
+    QAQC findings remain available for review and export but do not block MWD
+    promotion unless they prevent the system from establishing the minimum
+    viewing contract: what the data is, which well it belongs to, and whether
+    it can be viewed. Technical failure, unsupported data, missing required
+    payload, unresolved well association, or unresolved depth normalization
+    required for viewing may block progression.
     """
     if (
         candidate.is_available_to_wmd
@@ -158,11 +160,6 @@ def evaluate_wmd_availability_readiness(
     ):
         review_issues.append(
             "A human must assign or confirm the destination well."
-        )
-
-    if not is_wmd_eligible(candidate):
-        review_issues.append(
-            "A human decision is required before WMD availability."
         )
 
     if review_issues:

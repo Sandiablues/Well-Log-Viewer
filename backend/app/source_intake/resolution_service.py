@@ -21,6 +21,7 @@ from .models import (
     SourceIntakeResolutionDecision,
     SourceIntakeResolutionResult,
     SourceIntakeResolutionState,
+    SourceIntakeReadinessState,
     SourceIntakeWellAssignmentMode,
     SourceIntakeOccurrenceAccounting,
     utc_now_iso,
@@ -60,7 +61,13 @@ def classify_initial_resolution(candidate: SourceFileCandidate) -> SourceIntakeR
 
 
 def is_wmd_eligible(candidate: SourceFileCandidate) -> bool:
-    """Return whether current review state permits transient WMD availability."""
+    """Legacy compatibility projection only.
+
+    Canonical promotion authority belongs to the backend-owned readiness
+    contract. This helper preserves historical resolution-state semantics for
+    callers that still inspect the legacy compatibility state, but it must not
+    be used as an independent promotion veto.
+    """
     return candidate.resolution_state in {
         SourceIntakeResolutionState.AUTO_INGESTIBLE,
         SourceIntakeResolutionState.RESOLVED,
@@ -223,9 +230,10 @@ class SourceIntakeResolutionService:
         """Record transient WMD availability in the legacy resolution state slot."""
         if candidate.resolution_state == SourceIntakeResolutionState.REGISTERED:
             return
-        if not is_wmd_eligible(candidate):
+        if candidate.readiness_state != SourceIntakeReadinessState.READY:
             raise SourceIntakeResolutionError(
-                f"Candidate resolution state is not WMD-eligible: {candidate.resolution_state.value}."
+                "Candidate is not MWD-ready: "
+                f"{candidate.readiness_state.value}."
             )
         now = utc_now_iso()
         # REGISTERED is retained only as the serialized compatibility value.

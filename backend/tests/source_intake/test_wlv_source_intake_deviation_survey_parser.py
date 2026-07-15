@@ -62,8 +62,8 @@ def test_source_intake_attaches_deviation_preview_without_registering_to_mdp(tmp
     diagnostics = service.get_candidate_diagnostics(candidate.source_file_id)
 
     # Missing optional spatial-coordinate columns remains a legitimate warning.
-    # The survey is valid, but explicit review is required before registration.
-    assert diagnostics.mdp_ready_status == "needs_review"
+    # The survey is valid and viewable, so the warning does not block promotion.
+    assert diagnostics.mdp_ready_status == "ready"
     assert any(flag.code == "parse_completed_with_warnings" for flag in diagnostics.flags)
     assert any("X/Y or Northing/Easting" in flag.message for flag in diagnostics.flags)
 

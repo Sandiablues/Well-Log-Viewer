@@ -947,6 +947,7 @@ class SourceIntakeApproval(BaseModel):
 class SourceIntakeRegisterRequest(BaseModel):
     candidate_ids: list[str]
     approval: SourceIntakeApproval = Field(default_factory=SourceIntakeApproval)
+    include_qaqc_report: bool = False
 
 
 class SourceIntakeRegisterResult(BaseModel):

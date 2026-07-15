@@ -217,30 +217,6 @@ type ManagedWellSummary = {
   };
 };
 
-type HumanActionChoice =
-  | ''
-  | 'accept_current'
-  | 'accept_with_warning'
-  | 'correct_metadata'
-  | 'assign_existing'
-  | 'create_new'
-  | 'leave_unresolved'
-  | 'exclude'
-  | 'restore_to_mdp';
-
-type ResolveResponse = {
-  ok: boolean;
-  resolved_count: number;
-};
-
-type RestoreToMdpResponse = {
-  ok: boolean;
-  action: string;
-  restored_count: number;
-  already_visible_count: number;
-  blocked_count: number;
-};
-
 type CandidateDiagnosticPhase = 'parse' | 'qaqc' | 'mdp_ready' | 'evidence';
 type CandidateDiagnosticSeverity = 'info' | 'success' | 'warning' | 'error' | 'blocker';
 
@@ -425,27 +401,13 @@ export function SourceIntakeWorkbench() {
   const [candidateDiagnostics, setCandidateDiagnostics] = useState<CandidateDiagnosticsResponse | null>(null);
   const [diagnosticLoading, setDiagnosticLoading] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState<string>('');
+  const [includeQaqcReportOnPromotion, setIncludeQaqcReportOnPromotion] = useState(false);
   const headerSelectRef = useRef<HTMLInputElement | null>(null);
   const directIngestInputRef = useRef<HTMLInputElement | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [directIngestDragActive, setDirectIngestDragActive] = useState(false);
   const [message, setMessage] = useState<string>('');
   const [error, setError] = useState<string>('');
-  const [managedWells, setManagedWells] = useState<ManagedWellSummary[]>([]);
-  const [humanAction, setHumanAction] = useState<HumanActionChoice>('');
-  const [assignmentTargetId, setAssignmentTargetId] = useState('');
-  const [decisionReason, setDecisionReason] = useState('');
-  const [newWellName, setNewWellName] = useState('');
-  const [newWellUwi, setNewWellUwi] = useState('');
-  const [newWellOperator, setNewWellOperator] = useState('');
-  const [newWellField, setNewWellField] = useState('');
-  const [newWellBlock, setNewWellBlock] = useState('');
-  const [correctedWellName, setCorrectedWellName] = useState('');
-  const [correctedWellUwi, setCorrectedWellUwi] = useState('');
-  const [correctedWellOperator, setCorrectedWellOperator] = useState('');
-  const [correctedWellField, setCorrectedWellField] = useState('');
-  const [correctedWellBlock, setCorrectedWellBlock] = useState('');
-
   const repositories = workbench?.repositories ?? [];
   const candidates = workbench?.candidates ?? [];
   const summary = workbench?.summary;
@@ -509,33 +471,8 @@ export function SourceIntakeWorkbench() {
     [visibleCandidates],
   );
 
-  const visibleEligibleCandidateIds = useMemo(
-    () => visibleCandidates.filter(candidateIsRegisterable).map((candidate) => candidate.source_file_id),
-    [visibleCandidates],
-  );
-
   const selectedCandidateCount = selectedCandidateIds.size;
-  const selectedCandidates = useMemo(
-    () => candidates.filter((candidate) => selectedCandidateIds.has(candidate.source_file_id)),
-    [candidates, selectedCandidateIds],
-  );
-  const selectedCanAccept = selectedCandidates.length > 0
-    && selectedCandidates.every((candidate) => candidate.available_human_actions.includes('accept'));
-  const selectedCanCorrect = selectedCandidates.length === 1
-    && selectedCandidates.every((candidate) => candidate.available_human_actions.includes('correct'));
-  const selectedCanAssign = selectedCandidates.length > 0
-    && selectedCandidates.every((candidate) => candidate.available_human_actions.includes('assign'));
-  const selectedCanExclude = selectedCandidates.length > 0
-    && selectedCandidates.every((candidate) => candidate.available_human_actions.includes('exclude'));
-  const selectedCanClearDecision = selectedCandidates.length > 0
-    && selectedCandidates.every((candidate) => Boolean(candidate.current_decision));
-  const selectedCanRestoreToMdp = selectedCandidates.length > 0
-    && selectedCandidates.every(
-      (candidate) => candidate.registration_status === 'registered'
-        && Boolean(candidate.managed_well_id),
-    );
   const visibleSelectedCandidateCount = visibleCandidateIds.filter((candidateId) => selectedCandidateIds.has(candidateId)).length;
-  const selectedRegisterableCount = visibleEligibleCandidateIds.filter((candidateId) => selectedCandidateIds.has(candidateId)).length;
   const allVisibleCandidatesSelected = visibleCandidateIds.length > 0
     && visibleCandidateIds.every((candidateId) => selectedCandidateIds.has(candidateId));
   const partiallyVisibleCandidatesSelected = visibleSelectedCandidateCount > 0 && !allVisibleCandidatesSelected;
@@ -585,17 +522,10 @@ export function SourceIntakeWorkbench() {
       { label: fallback?.candidate_role === 'wellbore_geometry_candidate' ? 'Geometry Preview' : 'Curves', value: fallback?.candidate_role === 'wellbore_geometry_candidate' ? geometryPreviewLabel(fallback) : String(candidateDiagnostics?.summary.curve_count ?? (fallback ? candidateCurveCount(fallback) : 0)) },
       { label: 'Parse', value: parseStatusLabel(candidateDiagnostics?.parse_status ?? fallback?.parser_status ?? 'not_parsed') },
       { label: 'QAQC', value: labelize(candidateDiagnostics?.qaqc_status.status ?? fallback?.qaqc_status?.status ?? 'not_checked') },
-      { label: 'MDP Ready', value: labelize(candidateDiagnostics?.mdp_ready_status ?? fallback?.readiness_state ?? 'review_required') },
+      { label: 'MWD Readiness', value: labelize(candidateDiagnostics?.mdp_ready_status ?? fallback?.readiness_state ?? 'review_required') },
       { label: 'Registration', value: labelize(candidateDiagnostics?.summary.registration_status ?? fallback?.registration_status ?? 'not_registered') },
     ];
   }, [candidateDiagnostics, diagnosticFallbackCandidate]);
-
-  const loadManagedWells = useCallback(async () => {
-    const records = await fetchWlvJson<ManagedWellSummary[]>('/api/wlv/inventory/wells');
-    setManagedWells(
-      [...records].sort((a, b) => a.well_name.localeCompare(b.well_name)),
-    );
-  }, []);
 
   const loadWorkbench = useCallback(async () => {
     const data = await fetchWlvJson<SourceIntakeWorkbenchResponse>('/api/wlv/source-intake/workbench');
@@ -614,10 +544,10 @@ export function SourceIntakeWorkbench() {
 
   useEffect(() => {
     setBusyAction('refresh');
-    Promise.all([loadWorkbench(), loadManagedWells()])
+    loadWorkbench()
       .catch((err: unknown) => setError(err instanceof Error ? err.message : 'Unable to load Source Intake workbench.'))
       .finally(() => setBusyAction(null));
-  }, [loadManagedWells, loadWorkbench]);
+  }, [loadWorkbench]);
 
   useEffect(() => {
     if (headerSelectRef.current) {
@@ -675,7 +605,7 @@ export function SourceIntakeWorkbench() {
   });
 
   const handleRefresh = () => runAction('refresh', async () => {
-    await Promise.all([loadWorkbench(), loadManagedWells()]);
+    await loadWorkbench();
     setMessage('Source Intake workbench refreshed from backend.');
   });
 
@@ -692,181 +622,6 @@ export function SourceIntakeWorkbench() {
     await loadWorkbench();
     setSelectedRepositoryId(scan.repository.repository_id);
     setMessage(`${files.length} file${files.length === 1 ? '' : 's'} ingested.`);
-  });
-
-  const resetHumanActionForm = () => {
-    setHumanAction('');
-    setAssignmentTargetId('');
-    setDecisionReason('');
-    setNewWellName('');
-    setNewWellUwi('');
-    setNewWellOperator('');
-    setNewWellField('');
-    setNewWellBlock('');
-    setCorrectedWellName('');
-    setCorrectedWellUwi('');
-    setCorrectedWellOperator('');
-    setCorrectedWellField('');
-    setCorrectedWellBlock('');
-  };
-
-  const handleApplyHumanAction = () => runAction('human-action', async () => {
-    if (selectedCandidates.length === 0) {
-      throw new Error('Select at least one Source Intake candidate.');
-    }
-    if (!humanAction) {
-      throw new Error('Select a human action before applying.');
-    }
-    if (humanAction === 'restore_to_mdp') {
-      if (!selectedCanRestoreToMdp) {
-        throw new Error('Every selected candidate must have a retained MSI registration.');
-      }
-      const response = await fetchWlvJson<RestoreToMdpResponse>('/api/wlv/source-intake/restore-to-mdp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          candidate_ids: selectedCandidates.map((candidate) => candidate.source_file_id),
-          actor: 'user',
-          reason: decisionReason.trim() || 'Restored from WSI to MDP.',
-        }),
-      });
-      await Promise.all([loadWorkbench(), loadManagedWells()]);
-      setSelectedCandidateIds(new Set());
-      resetHumanActionForm();
-      setMessage(
-        `Restore to MDP: ${response.restored_count} restored · `
-        + `${response.already_visible_count} already visible · ${response.blocked_count} blocked.`,
-      );
-      return;
-    }
-    if (
-      (humanAction === 'accept_current' || humanAction === 'accept_with_warning')
-      && !selectedCanAccept
-    ) {
-      throw new Error('The backend does not allow acceptance for every selected candidate.');
-    }
-    if (humanAction === 'correct_metadata' && !selectedCanCorrect) {
-      throw new Error('Metadata correction requires exactly one selected candidate that permits correction.');
-    }
-    if (
-      (humanAction === 'assign_existing' || humanAction === 'create_new')
-      && !selectedCanAssign
-    ) {
-      throw new Error('The backend does not allow assignment for every selected candidate.');
-    }
-    if (humanAction === 'exclude' && !selectedCanExclude) {
-      throw new Error('The backend does not allow exclusion for every selected candidate.');
-    }
-    if (humanAction === 'leave_unresolved' && !selectedCanClearDecision) {
-      throw new Error('Every selected candidate must have a current decision before it can be cleared.');
-    }
-    if (humanAction === 'assign_existing' && !assignmentTargetId) {
-      throw new Error('Select an existing managed well.');
-    }
-    if (humanAction === 'create_new' && !newWellName.trim()) {
-      throw new Error('Enter the confirmed new well name.');
-    }
-    if (humanAction === 'accept_with_warning' && !decisionReason.trim()) {
-      throw new Error('Enter a reason for accepting the current warning state.');
-    }
-    if (humanAction === 'correct_metadata' && ![
-      correctedWellName,
-      correctedWellUwi,
-      correctedWellOperator,
-      correctedWellField,
-      correctedWellBlock,
-    ].some((value) => value.trim())) {
-      throw new Error('Enter at least one corrected metadata value.');
-    }
-    if (humanAction === 'exclude' && !decisionReason.trim()) {
-      throw new Error('Enter a reason for exclusion.');
-    }
-
-    const decisions = selectedCandidates.map((candidate) => {
-      if (humanAction === 'accept_current') {
-        return {
-          occurrence_id: candidate.occurrence_id,
-          action: 'confirm_suggestion',
-          actor: 'user',
-          reason: decisionReason.trim() || 'Accepted current Source Intake metadata.',
-        };
-      }
-      if (humanAction === 'accept_with_warning') {
-        return {
-          occurrence_id: candidate.occurrence_id,
-          action: 'warning_accepted',
-          actor: 'user',
-          reason: decisionReason.trim(),
-          accepted_warning_codes: candidateAcceptedFindingCodes(candidate),
-        };
-      }
-      if (humanAction === 'correct_metadata') {
-        return {
-          occurrence_id: candidate.occurrence_id,
-          action: 'manual_correction',
-          actor: 'user',
-          reason: decisionReason.trim() || 'Corrected Source Intake metadata.',
-          resolved_values: {
-            ...(correctedWellName.trim() ? { well_name: correctedWellName.trim() } : {}),
-            ...(correctedWellUwi.trim() ? { uwi: correctedWellUwi.trim() } : {}),
-            ...(correctedWellOperator.trim() ? { operator: correctedWellOperator.trim() } : {}),
-            ...(correctedWellField.trim() ? { field: correctedWellField.trim() } : {}),
-            ...(correctedWellBlock.trim() ? { block: correctedWellBlock.trim() } : {}),
-          },
-        };
-      }
-      if (humanAction === 'assign_existing') {
-        return {
-          occurrence_id: candidate.occurrence_id,
-          action: 'well_assigned',
-          actor: 'user',
-          reason: decisionReason.trim() || 'Assigned from Source Intake.',
-          assignment_mode: 'existing_well',
-          target_managed_well_id: assignmentTargetId,
-        };
-      }
-      if (humanAction === 'create_new') {
-        return {
-          occurrence_id: candidate.occurrence_id,
-          action: 'well_assigned',
-          actor: 'user',
-          reason: decisionReason.trim() || 'New well confirmed from Source Intake.',
-          assignment_mode: 'new_well',
-          new_well_values: {
-            well_name: newWellName.trim(),
-            ...(newWellUwi.trim() ? { uwi: newWellUwi.trim() } : {}),
-            ...(newWellOperator.trim() ? { operator: newWellOperator.trim() } : {}),
-            ...(newWellField.trim() ? { field: newWellField.trim() } : {}),
-            ...(newWellBlock.trim() ? { block: newWellBlock.trim() } : {}),
-          },
-        };
-      }
-      if (humanAction === 'exclude') {
-        return {
-          occurrence_id: candidate.occurrence_id,
-          action: 'excluded',
-          actor: 'user',
-          reason: decisionReason.trim(),
-        };
-      }
-      return {
-        occurrence_id: candidate.occurrence_id,
-        action: 'reopened',
-        actor: 'user',
-        reason: decisionReason.trim() || 'Current decision cleared from Source Intake.',
-      };
-    });
-
-    const response = await fetchWlvJson<ResolveResponse>('/api/wlv/source-intake/resolve', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ decisions }),
-    });
-
-    await Promise.all([loadWorkbench(), loadManagedWells()]);
-    setSelectedCandidateIds(new Set());
-    resetHumanActionForm();
-    setMessage(`Applied human decision to ${response.resolved_count} candidate(s).`);
   });
 
   const resolveDepthUnit = (candidate: SourceFileCandidate, targetUnit: 'm' | 'ft') => runAction(
@@ -916,30 +671,85 @@ export function SourceIntakeWorkbench() {
     setMessage(`Exported QAQC and metadata overlays for ${candidateIds.length} candidate(s).`);
   });
 
-  const handleRegister = () => runAction('register', async () => {
-    const candidateIds = visibleCandidates
-      .filter((candidate) => selectedCandidateIds.has(candidate.source_file_id) && candidateIsRegisterable(candidate))
-      .map((candidate) => candidate.source_file_id);
-    if (candidateIds.length === 0) {
-      throw new Error('Select at least one eligible well log or wellbore geometry candidate before registering.');
-    }
-    const response = await fetchWlvJson<RegisterResponse>('/api/wlv/source-intake/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        candidate_ids: candidateIds,
-        approval: {
-          approved_by: 'user',
-          approval_note: 'Registered from WLV Source Intake workbench shell',
+  const exportCandidateOverlay = (
+    candidate: SourceFileCandidate,
+  ) => runAction(`export-overlay-${candidate.source_file_id}`, async () => {
+    const response = await fetch(
+      `${wlvApiBaseUrl()}/api/wlv/source-intake/export-overlays`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
         },
-      }),
-    });
-    // WSI-MWD-PROMOTION-RESPONSE-1:
-    // The promotion POST returns the compact committed result. Refresh both
-    // backend-owned views explicitly after the transaction completes.
-    await Promise.all([loadWorkbench(), loadManagedWells()]);
-    setSelectedCandidateIds(new Set());
-    setMessage(`Registered ${response.registered_count}; skipped ${response.skipped_count}.`);
+        body: JSON.stringify({
+          candidate_ids: [candidate.source_file_id],
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const payload = await response.text();
+      throw new Error(
+        `${response.status} ${response.statusText}: ${payload}`,
+      );
+    }
+
+    const packagePayload = await response.json();
+    const blob = new Blob(
+      [JSON.stringify(packagePayload, null, 2)],
+      { type: 'application/json' },
+    );
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+
+    link.href = url;
+    link.download =
+      `wlv-qaqc-report-${candidate.file_name}-${new Date()
+        .toISOString()
+        .replace(/[:.]/g, '-')}.json`;
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+
+    setMessage(`Exported QAQC report for ${candidate.file_name}.`);
+  });
+
+  const handlePromoteCandidate = (
+    candidate: SourceFileCandidate,
+  ) => runAction(`promote-${candidate.source_file_id}`, async () => {
+    if (!candidateIsRegisterable(candidate)) {
+      throw new Error(
+        candidate.readiness_issues?.[0]
+          ?? 'This candidate is not ready for MWD promotion.',
+      );
+    }
+
+    const response = await fetchWlvJson<RegisterResponse>(
+      '/api/wlv/source-intake/register',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          candidate_ids: [candidate.source_file_id],
+          approval: {
+            approved_by: 'user',
+            approval_note: 'Promoted from WSI candidate row',
+          },
+          include_qaqc_report: includeQaqcReportOnPromotion,
+        }),
+      },
+    );
+
+    await loadWorkbench();
+
+    setMessage(
+      response.registered_count === 1
+        ? `${candidate.file_name} promoted to MWD.`
+        : `Promotion skipped for ${candidate.file_name}.`,
+    );
   });
 
   const setCandidateSelected = (candidateId: string, selected: boolean) => {
@@ -1007,37 +817,6 @@ export function SourceIntakeWorkbench() {
     setMessage(response.message || 'Removed selected source repository from Source Intake.');
   });
 
-  const clearCandidateSelection = () => runAction('clear-selection', async () => {
-    const candidateIds = Array.from(selectedCandidateIds);
-    if (candidateIds.length === 0) {
-      setMessage('No Source Intake candidate rows are selected.');
-      return;
-    }
-
-    const response = await fetchWlvJson<SourceIntakeClearResponse>('/api/wlv/source-intake/workbench/clear', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        repository_id: selectedRepository?.repository_id ?? undefined,
-        candidate_ids: candidateIds,
-      }),
-    });
-
-    setWorkbench(response.workbench);
-    setSelectedCandidateIds(new Set());
-    if (headerSelectRef.current) {
-      headerSelectRef.current.checked = false;
-      headerSelectRef.current.indeterminate = false;
-    }
-
-    // WLV-WSI-STALE-CANDIDATE-RENDER-GUARD-1:
-    // The backend is authoritative. After candidate removal, reload the
-    // canonical workbench so stale DOM/render state cannot leave an orphan row.
-    await loadWorkbench();
-
-    setMessage(response.message || `Removed ${response.records_deleted} selected candidate row(s) from Source Intake.`);
-  });
-
   const setVisibleCandidateSelection = (selected: boolean) => {
     setSelectedCandidateIds((current) => {
       const next = new Set(current);
@@ -1049,19 +828,6 @@ export function SourceIntakeWorkbench() {
     });
   };
 
-
-  const toggleAllVisibleEligible = () => {
-    const allEligibleSelected = visibleEligibleCandidateIds.length > 0
-      && visibleEligibleCandidateIds.every((candidateId) => selectedCandidateIds.has(candidateId));
-    setSelectedCandidateIds((current) => {
-      const next = new Set(current);
-      visibleEligibleCandidateIds.forEach((candidateId) => {
-        if (allEligibleSelected) next.delete(candidateId);
-        else next.add(candidateId);
-      });
-      return next;
-    });
-  };
 
   return (
     <section className="wlv-source-intake" aria-label="WLV Source Intake workbench">
@@ -1235,7 +1001,7 @@ export function SourceIntakeWorkbench() {
                   <span>Sift / Sort</span>
                   <select value={candidateViewMode} onChange={(event) => setCandidateViewMode(event.currentTarget.value)}>
                     <option value="all">All candidates</option>
-                    <option value="eligible">Sift: ready for WMD</option>
+                    <option value="eligible">Sift: ready for MWD</option>
                     <option value="review_required">Sift: review required</option>
                     <option value="well_logs">Sift: well-log candidates</option>
                     <option value="wellbore_geometry">Sift: wellbore geometry</option>
@@ -1251,20 +1017,6 @@ export function SourceIntakeWorkbench() {
                     <option value="sort_curves">Sort: curve count high-low</option>
                   </select>
                 </label>
-                <button type="button" className="wlv-si-button" onClick={toggleAllVisibleEligible} disabled={visibleEligibleCandidateIds.length === 0}>
-                  {selectedRegisterableCount === visibleEligibleCandidateIds.length && visibleEligibleCandidateIds.length > 0 ? 'Clear Eligible' : 'Select Eligible'}
-                </button>
-                <button
-                  type="button"
-                  className="wlv-si-button wlv-si-button--primary"
-                  onClick={handleRegister}
-                  disabled={Boolean(busyAction || selectedRegisterableCount === 0)}
-                >
-                  Make Available ({selectedRegisterableCount})
-                </button>
-                <button type="button" className="wlv-si-button" onClick={clearCandidateSelection} disabled={selectedCandidateCount === 0}>
-                  Clear Selection
-                </button>
                 <button type="button" className="wlv-si-button" onClick={exportSelectedOverlays} disabled={selectedCandidateCount === 0 || Boolean(busyAction)}>
                   Export QAQC / Metadata
                 </button>
@@ -1273,137 +1025,6 @@ export function SourceIntakeWorkbench() {
                 </button>
               </div>
             </div>
-
-            <section className="wlv-si-candidate-action-panel" aria-label="Selected candidate human action">
-              <div className="wlv-si-candidate-action-panel__summary">
-                <span className="wlv-si-candidate-action-panel__eyebrow">Selected candidates</span>
-                <strong>{selectedCandidateCount}</strong>
-                <span>Resolve non-fatal findings, assign a well, or exclude from intake.</span>
-              </div>
-
-              <div className="wlv-si-candidate-action-panel__controls">
-                <label className="wlv-si-action-field wlv-si-action-field--wide">
-                  <span>Action</span>
-                  <select
-                    value={humanAction}
-                    onChange={(event) => setHumanAction(event.currentTarget.value as HumanActionChoice)}
-                    disabled={selectedCandidateCount === 0 || Boolean(busyAction)}
-                  >
-                    <option value="">Choose an action</option>
-                    <option value="accept_current" disabled={!selectedCanAccept}>
-                      Accept current metadata
-                    </option>
-                    <option value="accept_with_warning" disabled={!selectedCanAccept}>
-                      Accept current metadata with warning
-                    </option>
-                    <option value="correct_metadata" disabled={!selectedCanCorrect}>
-                      Correct metadata for selected candidate
-                    </option>
-                    <option value="assign_existing" disabled={!selectedCanAssign}>
-                      Assign selected to existing well
-                    </option>
-                    <option value="create_new" disabled={!selectedCanAssign}>
-                      Create new well from selected
-                    </option>
-                    <option value="restore_to_mdp" disabled={!selectedCanRestoreToMdp}>
-                      Restore to MDP
-                    </option>
-                    <option value="leave_unresolved" disabled={!selectedCanClearDecision}>
-                      Clear current decision / leave unresolved
-                    </option>
-                    <option value="exclude" disabled={!selectedCanExclude}>
-                      Exclude selected from intake
-                    </option>
-                  </select>
-                </label>
-
-              {humanAction === 'correct_metadata' && (
-                <div className="wlv-si-action-fields-grid">
-                  <label className="wlv-si-action-field">
-                    <span>Well Name</span>
-                    <input value={correctedWellName} onChange={(event) => setCorrectedWellName(event.currentTarget.value)} />
-                  </label>
-                  <label className="wlv-si-action-field">
-                    <span>UWI / API</span>
-                    <input value={correctedWellUwi} onChange={(event) => setCorrectedWellUwi(event.currentTarget.value)} />
-                  </label>
-                  <label className="wlv-si-action-field">
-                    <span>Operator</span>
-                    <input value={correctedWellOperator} onChange={(event) => setCorrectedWellOperator(event.currentTarget.value)} />
-                  </label>
-                  <label className="wlv-si-action-field">
-                    <span>Field</span>
-                    <input value={correctedWellField} onChange={(event) => setCorrectedWellField(event.currentTarget.value)} />
-                  </label>
-                  <label className="wlv-si-action-field">
-                    <span>Block</span>
-                    <input value={correctedWellBlock} onChange={(event) => setCorrectedWellBlock(event.currentTarget.value)} />
-                  </label>
-                </div>
-              )}
-
-              {humanAction === 'assign_existing' && (
-                <label className="wlv-si-action-field">
-                  <span>Existing Well</span>
-                  <select
-                    value={assignmentTargetId}
-                    onChange={(event) => setAssignmentTargetId(event.currentTarget.value)}
-                  >
-                    <option value="">Select managed well</option>
-                    {managedWells.map((well) => (
-                      <option key={well.managed_well_id} value={well.managed_well_id}>
-                        {well.well_name}{well.metadata?.uwi ? ` · ${well.metadata.uwi}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              {humanAction === 'create_new' && (
-                <>
-                  <label className="wlv-si-action-field">
-                    <span>New Well Name</span>
-                    <input value={newWellName} onChange={(event) => setNewWellName(event.currentTarget.value)} />
-                  </label>
-                  <label className="wlv-si-action-field">
-                    <span>UWI / API</span>
-                    <input value={newWellUwi} onChange={(event) => setNewWellUwi(event.currentTarget.value)} />
-                  </label>
-                  <label className="wlv-si-action-field">
-                    <span>Operator</span>
-                    <input value={newWellOperator} onChange={(event) => setNewWellOperator(event.currentTarget.value)} />
-                  </label>
-                  <label className="wlv-si-action-field">
-                    <span>Field</span>
-                    <input value={newWellField} onChange={(event) => setNewWellField(event.currentTarget.value)} />
-                  </label>
-                  <label className="wlv-si-action-field">
-                    <span>Block</span>
-                    <input value={newWellBlock} onChange={(event) => setNewWellBlock(event.currentTarget.value)} />
-                  </label>
-                </>
-              )}
-
-              {humanAction && (
-                <label className="wlv-si-action-field wlv-si-action-field--reason">
-                  <span>{humanAction === 'exclude' || humanAction === 'accept_with_warning' ? 'Reason (required)' : 'Reason / Note'}</span>
-                  <input
-                    value={decisionReason}
-                    onChange={(event) => setDecisionReason(event.currentTarget.value)}
-                  />
-                </label>
-              )}
-
-                <button
-                  type="button"
-                  className="wlv-si-button wlv-si-button--primary wlv-si-candidate-action-panel__apply"
-                  onClick={handleApplyHumanAction}
-                  disabled={Boolean(busyAction || selectedCandidateCount === 0 || !humanAction)}
-                >
-                  Apply to Selected ({selectedCandidateCount})
-                </button>
-              </div>
-            </section>
 
             <div className="wlv-si-table-wrap">
               <table className="wlv-si-table wlv-si-candidate-table" key={candidateTableRenderKey} data-candidate-count={visibleCandidates.length}>
@@ -1436,7 +1057,7 @@ export function SourceIntakeWorkbench() {
                     <th>Curves</th>
                     <th>Parse</th>
                     <th>QAQC</th>
-                    <th>WMD Available</th>
+                    <th>MWD</th>
                     <th>Detail</th>
                   </tr>
                 </thead>
@@ -1494,17 +1115,42 @@ export function SourceIntakeWorkbench() {
                         <td className="wlv-si-cell-mdp-ready wlv-si-status-cell">
                           {registered ? (
                             <div className="wlv-si-status-stack">
-                              <span className="wlv-si-pill is-ok">Available in WMD</span>
-                              <small>{candidate.candidate_role === 'wellbore_geometry_candidate' ? `${candidate.registered_trajectory_count ?? 1} trajectory` : `${candidate.registered_curve_count ?? curveCount} curves`} · {labelize(candidate.wdv_state ?? 'not_loaded')}</small>
-                            </div>
-                          ) : eligible ? (
-                            <div className="wlv-si-status-stack">
-                              <span className="wlv-si-pill is-ok">Ready for WMD</span>
+                              <span className="wlv-si-pill is-ok">IN MWD</span>
+                              <small>
+                                {candidate.candidate_role === 'wellbore_geometry_candidate'
+                                  ? `${candidate.registered_trajectory_count ?? 1} trajectory`
+                                  : `${candidate.registered_curve_count ?? curveCount} curves`}
+                              </small>
                             </div>
                           ) : (
-                            <div className="wlv-si-status-stack">
-                              <span className="wlv-si-pill is-warning">Review</span>
-                            </div>
+                            <button
+                              type="button"
+                              className={[
+                                'wlv-si-button',
+                                'wlv-si-promote-button',
+                                eligible ? 'wlv-si-button--primary' : '',
+                              ].filter(Boolean).join(' ')}
+                              disabled={Boolean(
+                                busyAction
+                                || !eligible
+                              )}
+                              title={
+                                eligible
+                                  ? 'Promote this candidate to MWD'
+                                  : (
+                                    candidate.readiness_issues?.[0]
+                                    ?? 'This candidate is not ready for promotion.'
+                                  )
+                              }
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handlePromoteCandidate(candidate);
+                              }}
+                            >
+                              {busyAction === `promote-${candidate.source_file_id}`
+                                ? 'PROMOTING…'
+                                : 'PROMOTE'}
+                            </button>
                           )}
                         </td>
                         <td className="wlv-si-cell-detail">
@@ -1563,7 +1209,7 @@ export function SourceIntakeWorkbench() {
 
           <div className="wlv-si-diagnostic-drawer__body">
             <section className="wlv-si-diagnostic-section wlv-si-diagnostic-section--known-metadata">
-              <h3>Known Metadata</h3>
+              <h3>Metadata</h3>
               <dl className="wlv-si-diagnostic-summary">
                 {diagnosticKnownMetadata.map((item) => (
                   <div key={item.label}>
@@ -1572,183 +1218,357 @@ export function SourceIntakeWorkbench() {
                   </div>
                 ))}
               </dl>
+
+              {diagnosticFallbackCandidate?.geometry_preview ? (
+                <>
+                  <h4>Wellbore Geometry</h4>
+                  <dl className="wlv-si-diagnostic-summary">
+                    <div>
+                      <dt>Format</dt>
+                      <dd>{diagnosticFallbackCandidate.geometry_preview.source_format ?? '—'}</dd>
+                    </div>
+                    <div>
+                      <dt>Stations</dt>
+                      <dd>{diagnosticFallbackCandidate.geometry_preview.station_count ?? 0}</dd>
+                    </div>
+                    <div>
+                      <dt>MD Range</dt>
+                      <dd>{geometryPreviewLabel(diagnosticFallbackCandidate)}</dd>
+                    </div>
+                    <div>
+                      <dt>Warnings</dt>
+                      <dd>{diagnosticFallbackCandidate.geometry_preview.warning_count ?? 0}</dd>
+                    </div>
+                  </dl>
+                </>
+              ) : null}
             </section>
 
             {diagnosticLoading ? (
-              <p className="wlv-si-diagnostic-note">Loading backend-owned diagnostics…</p>
+              <p className="wlv-si-diagnostic-note">
+                Loading backend-owned diagnostics…
+              </p>
             ) : null}
 
             {diagnosticError ? (
-              <p className="wlv-si-diagnostic-note is-error">{diagnosticError}</p>
+              <p className="wlv-si-diagnostic-note is-error">
+                {diagnosticError}
+              </p>
             ) : null}
 
             {candidateDiagnostics ? (
               <>
-              <section className="wlv-si-diagnostic-section">
-                <h3>Workflow Status</h3>
-                <dl className="wlv-si-diagnostic-summary">
-                  <div>
-                    <dt>Well</dt>
-                  <dd>{candidateDiagnostics.summary.well_name ?? '—'}</dd>
-                </div>
-                <div>
-                  <dt>Role</dt>
-                  <dd>{labelize(candidateDiagnostics.summary.candidate_role)}</dd>
-                </div>
-                <div>
-                  <dt>Curves</dt>
-                  <dd>{candidateDiagnostics.summary.curve_count}</dd>
-                </div>
-                <div>
-                  <dt>Parse</dt>
-                  <dd>{parseStatusLabel(candidateDiagnostics.parse_status)}</dd>
-                </div>
-                <div>
-                  <dt>QAQC</dt>
-                  <dd>{labelize(candidateDiagnostics.qaqc_status.status ?? 'not_checked')}</dd>
-                </div>
-                  <div>
-                    <dt>WMD Available</dt>
-                    <dd>{labelize(candidateDiagnostics.mdp_ready_status)}</dd>
-                  </div>
-                </dl>
-              </section>
-
-
-
-              {diagnosticFallbackCandidate?.depth_normalization ? (
                 <section className="wlv-si-diagnostic-section">
-                  <h3>Depth Normalization</h3>
-                  <dl className="wlv-si-diagnostic-summary">
-                    <div><dt>Raw encoding</dt><dd>{diagnosticFallbackCandidate.depth_normalization.raw_unit ?? '—'}</dd></div>
-                    <div><dt>Raw interval</dt><dd>{typeof diagnosticFallbackCandidate.depth_normalization.raw_start_depth === 'number' && typeof diagnosticFallbackCandidate.depth_normalization.raw_stop_depth === 'number' ? `${diagnosticFallbackCandidate.depth_normalization.raw_start_depth.toLocaleString()}–${diagnosticFallbackCandidate.depth_normalization.raw_stop_depth.toLocaleString()}` : '—'}</dd></div>
-                    <div><dt>Status</dt><dd>{labelize(diagnosticFallbackCandidate.depth_normalization.status)}</dd></div>
-                    <div><dt>Selected unit</dt><dd>{diagnosticFallbackCandidate.depth_normalization.decision?.target_unit ?? 'Not selected'}</dd></div>
-                  </dl>
-                  {diagnosticFallbackCandidate.depth_normalization.status === 'review_required' ? (
-                    <div
-                      style={{
-                        border: '2px solid rgba(239, 68, 68, 0.95)',
-                        borderRadius: '10px',
-                        padding: '0.9rem',
-                        marginTop: '0.85rem',
-                        background: 'rgba(127, 29, 29, 0.12)',
-                        boxShadow: '0 0 0 1px rgba(239, 68, 68, 0.18) inset',
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: '0.74rem',
-                          fontWeight: 700,
-                          letterSpacing: '0.08em',
-                          textTransform: 'uppercase',
-                          color: '#fca5a5',
-                          marginBottom: '0.45rem',
-                        }}
-                      >
-                        Action required: choose depth unit
-                      </div>
-                      <p className="wlv-si-diagnostic-note" style={{ marginTop: 0 }}>The source provides a valid physical scale but does not govern whether WSI should normalize it to metres or feet. Select the target explicitly.</p>
-                      <div className="wlv-si-toolbar-actions">
-                        {diagnosticFallbackCandidate.depth_normalization.options.map((option) => (
-                          <button
-                            key={option.target_unit}
-                            type="button"
-                            className="wlv-si-detail-button"
-                            disabled={busyAction !== null}
-                            onClick={() => void resolveDepthUnit(diagnosticFallbackCandidate, option.target_unit)}
+                  <h3>Critical Actions</h3>
+
+                  {diagnosticFallbackCandidate?.readiness_issues?.length ? (
+                    <ul className="wlv-si-diagnostic-flags">
+                      {diagnosticFallbackCandidate.readiness_issues.map(
+                        (issue) => (
+                          <li
+                            key={issue}
+                            className="is-blocker"
                           >
-                            Use {option.target_unit === 'm' ? 'metres' : 'feet'} ({option.start_depth.toLocaleString(undefined, { maximumFractionDigits: 3 })}–{option.stop_depth.toLocaleString(undefined, { maximumFractionDigits: 3 })} {option.target_unit})
-                          </button>
-                        ))}
+                            <strong>Promotion blocker</strong>
+                            <p>{issue}</p>
+                          </li>
+                        ),
+                      )}
+                    </ul>
+                  ) : (
+                    <p className="wlv-si-diagnostic-note">
+                      No critical actions required for promotion.
+                    </p>
+                  )}
+
+                  {diagnosticFallbackCandidate?.depth_normalization?.status
+                    === 'review_required' ? (
+                    <div className="wlv-si-diagnostic-critical-action">
+                      <strong>Choose depth unit</strong>
+                      <p className="wlv-si-diagnostic-note">
+                        The backend requires a normalized depth unit before
+                        this source can be promoted.
+                      </p>
+
+                      <div className="wlv-si-toolbar-actions">
+                        {diagnosticFallbackCandidate.depth_normalization.options.map(
+                          (option) => (
+                            <button
+                              key={option.target_unit}
+                              type="button"
+                              className="wlv-si-detail-button"
+                              disabled={busyAction !== null}
+                              onClick={() =>
+                                void resolveDepthUnit(
+                                  diagnosticFallbackCandidate,
+                                  option.target_unit,
+                                )
+                              }
+                            >
+                              Use{' '}
+                              {option.target_unit === 'm'
+                                ? 'metres'
+                                : 'feet'}{' '}
+                              (
+                              {option.start_depth.toLocaleString(
+                                undefined,
+                                { maximumFractionDigits: 3 },
+                              )}
+                              –
+                              {option.stop_depth.toLocaleString(
+                                undefined,
+                                { maximumFractionDigits: 3 },
+                              )}{' '}
+                              {option.target_unit})
+                            </button>
+                          ),
+                        )}
                       </div>
                     </div>
                   ) : null}
                 </section>
-              ) : null}
 
-              {diagnosticFallbackCandidate?.geometry_preview ? (
                 <section className="wlv-si-diagnostic-section">
-                  <h3>Wellbore Geometry Preview</h3>
-                  <dl className="wlv-si-diagnostic-summary">
-                    <div><dt>Format</dt><dd>{diagnosticFallbackCandidate.geometry_preview.source_format ?? '—'}</dd></div>
-                    <div><dt>Stations</dt><dd>{diagnosticFallbackCandidate.geometry_preview.station_count ?? 0}</dd></div>
-                    <div><dt>MD Range</dt><dd>{geometryPreviewLabel(diagnosticFallbackCandidate)}</dd></div>
-                    <div><dt>Warnings</dt><dd>{diagnosticFallbackCandidate.geometry_preview.warning_count ?? 0}</dd></div>
-                  </dl>
-                  <p className="wlv-si-diagnostic-note">
-                    Preview only. Registration to MSI and WBV loading remain disabled until trajectory approval is implemented.
-                  </p>
-                </section>
-              ) : null}
+                  <h3>Parsing Analysis</h3>
 
-              {(['parse', 'qaqc', 'mdp_ready'] as CandidateDiagnosticPhase[]).map((phase) => {
-                const phaseFlags = candidateDiagnostics.flags.filter((flag) => flag.phase === phase);
-                return (
-                  <section className="wlv-si-diagnostic-section" key={phase}>
-                    <h3>{phase === 'mdp_ready' ? 'WMD Available' : phase.toUpperCase()}</h3>
-                    {phaseFlags.length === 0 ? (
-                      <p className="wlv-si-diagnostic-note">No diagnostic flags reported for this phase.</p>
-                    ) : (
-                      <ul className="wlv-si-diagnostic-flags">
-                        {phaseFlags.map((flag) => (
-                          <li key={`${flag.phase}:${flag.code}:${flag.message}`} className={`is-${flag.severity}`}>
+                  {candidateDiagnostics.flags.filter(
+                    (flag) => flag.phase === 'parse',
+                  ).length === 0 ? (
+                    <p className="wlv-si-diagnostic-note">
+                      No parsing findings reported.
+                    </p>
+                  ) : (
+                    <ul className="wlv-si-diagnostic-flags">
+                      {candidateDiagnostics.flags
+                        .filter((flag) => flag.phase === 'parse')
+                        .map((flag) => (
+                          <li
+                            key={`${flag.phase}:${flag.code}:${flag.message}`}
+                            className={`is-${flag.severity}`}
+                          >
                             <strong>{flag.title}</strong>
                             <p>{flag.message}</p>
-                            {flag.field_name ? <small>Field: {flag.field_name}</small> : null}
+                            {flag.field_name ? (
+                              <small>Field: {flag.field_name}</small>
+                            ) : null}
                           </li>
                         ))}
-                      </ul>
-                    )}
-                  </section>
-                );
-              })}
+                    </ul>
+                  )}
+                </section>
 
-              <section className="wlv-si-diagnostic-section">
-                <h3>Suggested Actions</h3>
-                <div className="wlv-si-diagnostic-actions">
-                  {candidateDiagnostics.actions.map((action) => (
-                    <button
-                      key={`${action.phase}:${action.action_key}`}
-                      type="button"
-                      className="wlv-si-button"
-                      disabled={!action.enabled}
-                      title={action.reason ?? undefined}
-                    >
-                      {action.label}
-                    </button>
-                  ))}
-                </div>
-                {candidateDiagnostics.actions.some((action) => action.reason) ? (
-                  <ul className="wlv-si-diagnostic-action-reasons">
-                    {candidateDiagnostics.actions
-                      .filter((action) => action.reason)
-                      .map((action) => (
-                        <li key={`${action.action_key}:reason`}>
-                          <strong>{action.label}:</strong> {action.reason}
-                        </li>
-                      ))}
-                  </ul>
-                ) : null}
-              </section>
+                <section className="wlv-si-diagnostic-section">
+                  <h3>QAQC Analysis</h3>
 
-              <section className="wlv-si-diagnostic-section">
-                <h3>Source Evidence</h3>
-                <dl className="wlv-si-diagnostic-source">
-                  <div>
-                    <dt>Detected file type</dt>
-                    <dd>{candidateDiagnostics.summary.detected_file_type}</dd>
+                  {(() => {
+                    const qaqcFlags = candidateDiagnostics.flags.filter(
+                      (flag) => flag.phase === 'qaqc',
+                    );
+                    const passedFlags = qaqcFlags.filter(
+                      (flag) => flag.severity === 'success',
+                    );
+                    const warningFlags = qaqcFlags.filter(
+                      (flag) => flag.severity === 'warning',
+                    );
+                    const failureFlags = qaqcFlags.filter(
+                      (flag) =>
+                        flag.severity === 'error'
+                        || flag.severity === 'blocker',
+                    );
+                    const informationalFlags = qaqcFlags.filter(
+                      (flag) => flag.severity === 'info',
+                    );
+                    const issueFlags = [
+                      ...failureFlags,
+                      ...warningFlags,
+                      ...informationalFlags,
+                    ];
+
+                    if (qaqcFlags.length === 0) {
+                      return (
+                        <p className="wlv-si-diagnostic-note">
+                          No QAQC findings reported.
+                        </p>
+                      );
+                    }
+
+                    return (
+                      <>
+                        <div className="wlv-si-qaqc-summary">
+                          <div className="is-success">
+                            <span>{passedFlags.length}</span>
+                            <small>Passed</small>
+                          </div>
+                          <div className="is-warning">
+                            <span>{warningFlags.length}</span>
+                            <small>Warnings</small>
+                          </div>
+                          <div className="is-error">
+                            <span>{failureFlags.length}</span>
+                            <small>Failures</small>
+                          </div>
+                        </div>
+
+                        {issueFlags.length > 0 ? (
+                          <>
+                            <h4 className="wlv-si-diagnostic-subheading">
+                              Findings requiring attention
+                            </h4>
+                            <ul className="wlv-si-diagnostic-flags">
+                              {issueFlags.map((flag) => (
+                                <li
+                                  key={`${flag.phase}:${flag.code}:${flag.message}`}
+                                  className={`is-${flag.severity}`}
+                                >
+                                  <strong>{flag.title}</strong>
+                                  <p>{flag.message}</p>
+                                  {flag.field_name ? (
+                                    <small>Field: {flag.field_name}</small>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          </>
+                        ) : (
+                          <p className="wlv-si-diagnostic-note">
+                            No QAQC warnings or failures reported.
+                          </p>
+                        )}
+
+                        {passedFlags.length > 0 ? (
+                          <details className="wlv-si-qaqc-passed">
+                            <summary>
+                              Passed checks ({passedFlags.length})
+                            </summary>
+                            <ul className="wlv-si-diagnostic-flags">
+                              {passedFlags.map((flag) => (
+                                <li
+                                  key={`${flag.phase}:${flag.code}:${flag.message}`}
+                                  className="is-success"
+                                >
+                                  <strong>{flag.title}</strong>
+                                  <p>{flag.message}</p>
+                                  {flag.field_name ? (
+                                    <small>Field: {flag.field_name}</small>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        ) : null}
+                      </>
+                    );
+                  })()}
+                </section>
+
+                <section className="wlv-si-diagnostic-section">
+                  <h3>Suggested Actions</h3>
+
+                  {candidateDiagnostics.actions.length === 0 ? (
+                    <p className="wlv-si-diagnostic-note">
+                      No suggested actions.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="wlv-si-diagnostic-actions">
+                        {candidateDiagnostics.actions.map((action) => (
+                          <button
+                            key={`${action.phase}:${action.action_key}`}
+                            type="button"
+                            className="wlv-si-button"
+                            disabled={!action.enabled}
+                            title={action.reason ?? undefined}
+                          >
+                            {action.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {candidateDiagnostics.actions.some(
+                        (action) => action.reason,
+                      ) ? (
+                        <ul className="wlv-si-diagnostic-action-reasons">
+                          {candidateDiagnostics.actions
+                            .filter((action) => action.reason)
+                            .map((action) => (
+                              <li key={`${action.action_key}:reason`}>
+                                <strong>{action.label}:</strong>{' '}
+                                {action.reason}
+                              </li>
+                            ))}
+                        </ul>
+                      ) : null}
+                    </>
+                  )}
+                </section>
+
+                <section className="wlv-si-diagnostic-section">
+                  <h3>Source Evidence</h3>
+
+                  <dl className="wlv-si-diagnostic-source">
+                    <div>
+                      <dt>Detected file type</dt>
+                      <dd>
+                        {candidateDiagnostics.summary.detected_file_type}
+                      </dd>
+                    </div>
+
+                    <div>
+                      <dt>Original path</dt>
+                      <dd>
+                        {candidateDiagnostics.summary.original_path ?? '—'}
+                      </dd>
+                    </div>
+
+                    <div>
+                      <dt>Relative path</dt>
+                      <dd>
+                        {candidateDiagnostics.summary.relative_path ?? '—'}
+                      </dd>
+                    </div>
+
+                    <div>
+                      <dt>Managed well</dt>
+                      <dd>
+                        {candidateDiagnostics.summary.managed_well_name
+                          ?? candidateDiagnostics.summary.managed_well_id
+                          ?? '—'}
+                      </dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section className="wlv-si-diagnostic-section">
+                  <h3>Actions</h3>
+
+                  <div className="wlv-si-diagnostic-actions">
+                    {diagnosticFallbackCandidate ? (
+                      <button
+                        type="button"
+                        className="wlv-si-button"
+                        disabled={busyAction !== null}
+                        onClick={() =>
+                          void exportCandidateOverlay(
+                            diagnosticFallbackCandidate,
+                          )
+                        }
+                      >
+                        Export QAQC Report
+                      </button>
+                    ) : null}
                   </div>
-                  <div>
-                    <dt>Original path</dt>
-                    <dd>{candidateDiagnostics.summary.original_path ?? '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>Managed well</dt>
-                    <dd>{candidateDiagnostics.summary.managed_well_name ?? candidateDiagnostics.summary.managed_well_id ?? '—'}</dd>
-                  </div>
-                </dl>
-              </section>
+
+                  <label className="wlv-si-diagnostic-toggle">
+                    <input
+                      type="checkbox"
+                      checked={includeQaqcReportOnPromotion}
+                      onChange={(event) =>
+                        setIncludeQaqcReportOnPromotion(event.target.checked)
+                      }
+                    />
+                    <span>Include QAQC report with promoted data</span>
+                  </label>
+                </section>
               </>
             ) : null}
           </div>

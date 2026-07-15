@@ -598,6 +598,79 @@ class WlvSourceIntakeService:
         parsed.well_header.depth_unit = target
         contract.status = SourceIntakeDepthNormalizationStatus.HUMAN_RESOLVED
 
+    def _build_overlay_export_candidate(
+        self,
+        candidate: SourceFileCandidate,
+    ) -> SourceIntakeOverlayExportCandidate:
+        if candidate.source_reference is None:
+            raise SourceIntakeError(
+                f"Candidate has no external source reference: {candidate.source_file_id}"
+            )
+
+        original: dict[str, object] = {}
+        parsed = candidate.parsed_metadata
+        if parsed is not None and parsed.well_header is not None:
+            original = parsed.well_header.model_dump(mode="json")
+
+        effective: dict[str, object] = dict(original)
+        resolved = candidate.resolved_metadata
+        if resolved is not None:
+            for field_name in (
+                "well_name",
+                "uwi",
+                "operator",
+                "field",
+                "block",
+                "wellbore_name",
+                "country",
+                "latitude",
+                "longitude",
+                "producer",
+                "product",
+                "version",
+                "creation_date",
+                "run_date",
+            ):
+                field = getattr(resolved, field_name, None)
+                if field is not None and field.value is not None:
+                    effective[field_name] = field.value
+
+        decision = candidate.current_decision
+        overlay = dict(decision.corrected_values) if decision is not None else {}
+        effective.update(overlay)
+
+        accepted = set(
+            decision.accepted_finding_codes
+            if decision is not None
+            else []
+        )
+        all_codes = [
+            check.check_id
+            for check in candidate.qaqc_status.checks
+        ]
+        unresolved = [
+            code
+            for code in all_codes
+            if code not in accepted
+        ]
+
+        return SourceIntakeOverlayExportCandidate(
+            candidate_id=candidate.source_file_id,
+            occurrence_id=candidate.occurrence_id,
+            source_reference=candidate.source_reference,
+            source_fingerprint=candidate.content_fingerprint,
+            source_format=candidate.detected_file_type.value,
+            parser_status=candidate.parser_status,
+            original_metadata=original,
+            effective_metadata=effective,
+            metadata_overlay=overlay,
+            current_decision=decision,
+            depth_normalization=candidate.depth_normalization,
+            qaqc=candidate.qaqc_status,
+            resolved_finding_codes=sorted(accepted),
+            unresolved_finding_codes=unresolved,
+        )
+
     def export_overlay_package(self, candidate_ids: list[str]) -> SourceIntakeOverlayExportPackage:
         """Build a read-only QAQC and metadata-overlay sidecar package."""
         selected_ids = [value for value in dict.fromkeys(candidate_ids) if str(value or "").strip()]
@@ -612,8 +685,6 @@ class WlvSourceIntakeService:
         exported: list[SourceIntakeOverlayExportCandidate] = []
         for candidate_id in selected_ids:
             candidate = by_id[candidate_id]
-            if candidate.source_reference is None:
-                raise SourceIntakeError(f"Candidate has no external source reference: {candidate_id}")
             owner_id = f"overlay-export:{candidate_id}"
             self.lifecycle_service.acquire_reference(
                 candidate,
@@ -622,47 +693,16 @@ class WlvSourceIntakeService:
                 "QAQC and metadata-overlay sidecar export.",
             )
             try:
-                original: dict[str, object] = {}
-                parsed = candidate.parsed_metadata
-                if parsed is not None:
-                    if parsed.well_header is not None:
-                        original = parsed.well_header.model_dump(mode="json")
-                effective: dict[str, object] = dict(original)
-                resolved = candidate.resolved_metadata
-                if resolved is not None:
-                    for field_name in (
-                        "well_name", "uwi", "operator", "field", "block", "wellbore_name",
-                        "country", "latitude", "longitude", "producer", "product", "version",
-                        "creation_date", "run_date",
-                    ):
-                        field = getattr(resolved, field_name, None)
-                        if field is not None and field.value is not None:
-                            effective[field_name] = field.value
-                decision = candidate.current_decision
-                overlay = dict(decision.corrected_values) if decision is not None else {}
-                effective.update(overlay)
-                accepted = set(decision.accepted_finding_codes if decision is not None else [])
-                all_codes = [check.check_id for check in candidate.qaqc_status.checks]
-                unresolved = [code for code in all_codes if code not in accepted]
-                exported.append(SourceIntakeOverlayExportCandidate(
-                    candidate_id=candidate.source_file_id,
-                    occurrence_id=candidate.occurrence_id,
-                    source_reference=candidate.source_reference,
-                    source_fingerprint=candidate.content_fingerprint or candidate.checksum,
-                    source_format=candidate.detected_file_type.value,
-                    parser_status=candidate.parser_status,
-                    original_metadata=original,
-                    effective_metadata=effective,
-                    metadata_overlay=overlay,
-                    current_decision=decision,
-                    depth_normalization=candidate.depth_normalization,
-                    qaqc=candidate.qaqc_status,
-                    resolved_finding_codes=sorted(accepted),
-                    unresolved_finding_codes=unresolved,
-                ))
+                exported.append(
+                    self._build_overlay_export_candidate(candidate)
+                )
             finally:
-                self.lifecycle_service.release_reference(candidate, SourceIntakeReferenceType.EXPORT, owner_id)
-        self._save_snapshot(snapshot)
+                self.lifecycle_service.release_reference(
+                    candidate,
+                    SourceIntakeReferenceType.EXPORT,
+                    owner_id,
+                )
+
         return SourceIntakeOverlayExportPackage(candidate_count=len(exported), candidates=exported)
 
     def save_workspace(self, request: SourceIntakeSavedWorkspaceSaveRequest) -> SourceIntakeSavedWorkspaceRecord:
@@ -1034,6 +1074,12 @@ class WlvSourceIntakeService:
                 ))
                 continue
 
+            qaqc_report: dict[str, object] | None = None
+            if request.include_qaqc_report:
+                qaqc_report = self._build_overlay_export_candidate(
+                    candidate
+                ).model_dump(mode="json")
+
             if candidate.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
                 blocked_reason = self._registration_block_reason(candidate)
                 if blocked_reason is not None:
@@ -1050,6 +1096,7 @@ class WlvSourceIntakeService:
                     inventory_service=inventory_service,
                     approved_by=request.approval.approved_by,
                     approval_note=request.approval.approval_note,
+                    qaqc_report=qaqc_report,
                 )
                 candidate.mark_available_to_wmd()
                 candidate.managed_well_id = record.managed_well_id
@@ -1100,6 +1147,7 @@ class WlvSourceIntakeService:
                     inventory_service=inventory_service,
                     approved_by=request.approval.approved_by,
                     approval_note=request.approval.approval_note,
+                    qaqc_report=qaqc_report,
                 )
                 _perf_event(
                     "candidate_registration_completed",
@@ -1203,11 +1251,6 @@ class WlvSourceIntakeService:
             return f"Geometry candidate QAQC status is not registration-ready: {candidate.qaqc_status.status.value}."
         if candidate.qaqc_status.failure_count > 0:
             return "Geometry candidate QAQC has failures and cannot be registered."
-        if not is_wmd_eligible(candidate):
-            return (
-                "Geometry candidate resolution state is not registration-ready: "
-                f"{candidate.resolution_state.value}. Resolve the candidate first."
-            )
         return None
 
     def _register_geometry_candidate_to_inventory(
@@ -1217,6 +1260,7 @@ class WlvSourceIntakeService:
         inventory_service,
         approved_by: str | None = None,
         approval_note: str | None = None,
+        qaqc_report: dict[str, object] | None = None,
     ) -> tuple[str, ManagedWellRecord, int]:
         """Promote a parsed Source Intake geometry candidate into managed WBV trajectory metadata.
 
@@ -1254,7 +1298,11 @@ class WlvSourceIntakeService:
             well_name=well_name,
             approved_at=now,
         )
-        source_reference = self._geometry_source_reference(candidate, trajectory_id=trajectory.trajectory_id)
+        source_reference = self._geometry_source_reference(
+            candidate,
+            trajectory_id=trajectory.trajectory_id,
+            qaqc_report=qaqc_report,
+        )
 
         if existing is not None:
             record = existing.model_copy(deep=True)
@@ -1434,7 +1482,13 @@ class WlvSourceIntakeService:
                 box[key] = {"min": min(values), "max": max(values)}
         return box
 
-    def _geometry_source_reference(self, candidate: SourceFileCandidate, *, trajectory_id: str) -> ManagedSourceReference:
+    def _geometry_source_reference(
+        self,
+        candidate: SourceFileCandidate,
+        *,
+        trajectory_id: str,
+        qaqc_report: dict[str, object] | None = None,
+    ) -> ManagedSourceReference:
         return ManagedSourceReference(
             source_id=candidate.source_file_id,
             source_kind=ManagedSourceKind.DOCUMENT,
@@ -1455,6 +1509,11 @@ class WlvSourceIntakeService:
                 "trajectory_id": trajectory_id,
                 "parser_status": candidate.parser_status.value,
                 "geometry_preview": candidate.geometry_preview.model_dump(mode="json") if candidate.geometry_preview else None,
+                **(
+                    {"source_intake_qaqc_report": qaqc_report}
+                    if qaqc_report is not None
+                    else {}
+                ),
             },
         )
 
@@ -1634,26 +1693,37 @@ class WlvSourceIntakeService:
             ]
 
         if status == SourceIntakeParseStatus.PARSED_WITH_WARNINGS:
-            flags = [
-                SourceIntakeDiagnosticFlag(
-                    phase=SourceIntakeDiagnosticPhase.PARSE,
-                    severity=SourceIntakeDiagnosticSeverity.WARNING,
-                    code="parse_completed_with_warnings",
-                    title="Parsed with warnings",
-                    message="Content extraction completed, but parser warnings remain.",
-                )
-            ]
-            for index, warning in enumerate(candidate.parsed_metadata.warnings if candidate.parsed_metadata else []):
-                flags.append(
+            warnings = (
+                candidate.parsed_metadata.warnings
+                if candidate.parsed_metadata
+                else []
+            )
+
+            if not warnings:
+                return [
                     SourceIntakeDiagnosticFlag(
                         phase=SourceIntakeDiagnosticPhase.PARSE,
                         severity=SourceIntakeDiagnosticSeverity.WARNING,
-                        code=f"parse_warning_{index + 1}",
-                        title="Parser warning",
-                        message=warning,
+                        code="parse_completed_with_warnings",
+                        title="Parsing completed with warnings",
+                        message=(
+                            "The source was parsed successfully, but the parser "
+                            "reported one or more warnings. Promotion remains "
+                            "available unless a separate Critical Action is shown."
+                        ),
                     )
+                ]
+
+            return [
+                SourceIntakeDiagnosticFlag(
+                    phase=SourceIntakeDiagnosticPhase.PARSE,
+                    severity=SourceIntakeDiagnosticSeverity.WARNING,
+                    code=f"parse_warning_{index + 1}",
+                    title=f"Parsing warning {index + 1}",
+                    message=warning,
                 )
-            return flags
+                for index, warning in enumerate(warnings)
+            ]
 
         if status == SourceIntakeParseStatus.PARSE_FAILED:
             return [
@@ -1708,9 +1778,14 @@ class WlvSourceIntakeService:
         if qaqc.checks:
             for check in qaqc.checks:
                 severity = SourceIntakeDiagnosticSeverity.INFO
-                if check.status == SourceIntakeQaqcStatus.FAIL:
+                if check.status == SourceIntakeQaqcStatus.PASS:
+                    severity = SourceIntakeDiagnosticSeverity.SUCCESS
+                elif check.status == SourceIntakeQaqcStatus.FAIL:
                     severity = SourceIntakeDiagnosticSeverity.ERROR
-                elif check.status in {SourceIntakeQaqcStatus.WARNING, SourceIntakeQaqcStatus.REVIEW_REQUIRED}:
+                elif check.status in {
+                    SourceIntakeQaqcStatus.WARNING,
+                    SourceIntakeQaqcStatus.REVIEW_REQUIRED,
+                }:
                     severity = SourceIntakeDiagnosticSeverity.WARNING
 
                 flags.append(
@@ -1718,7 +1793,7 @@ class WlvSourceIntakeService:
                         phase=SourceIntakeDiagnosticPhase.QAQC,
                         severity=severity,
                         code=check.check_id,
-                        title=f"QAQC {check.status.value.replace('_', ' ')}",
+                        title=self._qaqc_diagnostic_title(check.check_id),
                         message=check.message,
                         field_name=check.field_name,
                     )
@@ -1760,6 +1835,44 @@ class WlvSourceIntakeService:
                 )
 
         return flags
+
+    @staticmethod
+    def _qaqc_diagnostic_title(check_id: str) -> str:
+        governed_titles = {
+            "las.metadata.present": "LAS metadata",
+            "identity.well_name.present": "Well identity",
+            "identity.well_name.missing": "Well name missing",
+            "identity.uwi.present": "Well identifier",
+            "identity.uwi.missing": "UWI/API missing",
+            "identity.resolver.warning": "Identity resolution warning",
+            "log.header.present": "LAS log header",
+            "depth.start.present": "Start depth",
+            "depth.start.missing": "Start depth missing",
+            "depth.stop.present": "Stop depth",
+            "depth.stop.missing": "Stop depth missing",
+            "depth.step.present": "Depth step",
+            "depth.step.missing": "Depth step missing",
+            "depth.range.valid": "Depth range",
+            "depth.range.invalid": "Invalid depth range",
+            "curve.count.positive": "Curve inventory",
+            "curve.count.zero": "No viewable curves",
+            "curve.headers.present": "Curve headers",
+            "curve.mnemonic.missing": "Curve mnemonic missing",
+            "curve.mnemonic.duplicate": "Duplicate curve mnemonic",
+            "curve.unit.missing": "Curve unit missing",
+            "depth.target_unit.required": "Depth unit decision required",
+            "depth.target_unit.resolved": "Depth unit resolved",
+        }
+        if check_id in governed_titles:
+            return governed_titles[check_id]
+
+        return (
+            check_id
+            .replace(".", " ")
+            .replace("_", " ")
+            .strip()
+            .title()
+        )
 
     def _mdp_diagnostic_flags(self, candidate: SourceFileCandidate) -> list[SourceIntakeDiagnosticFlag]:
         if candidate.is_available_to_wmd:
