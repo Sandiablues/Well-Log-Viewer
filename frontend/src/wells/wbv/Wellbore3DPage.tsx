@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { createWbvInteractionCommandAuthority, wbvInteractionApiV2, type WbvInteractionCommandAuthority, type WbvInteractionStateV2, type WbvScreenObservationV2 } from './interactionDomain';
 import { fetchWlvJson } from "../../api/wlvBackendClient";
 import { changeWbvOverlayPackageLifecycle, commandWbvTrackLayout, deleteWbvOverlayPackage, getWbvTrackLayout, listWbvOverlayPackages, publishedWbvRenderPackageUrl, setWbvOverlayPackageActive, updateWbvPresentationOverrides, type WbvLayoutCommand, type WbvLayoutTrack, type WbvOverlayPackage, type WbvPresentationOverrides, type WbvTrackLayout } from "./publicationApi";
 import "./Wellbore3DPage.css";
@@ -367,15 +368,7 @@ type WbvDisplayLayerConfigurationContract = {
 type WbvDepthUnit = "ft" | "m";
 
 
-type WbvInteractionState = {
-  managed_well_id: string;
-  selection_mode: "none" | "point" | "interval";
-  selected_point_visible: boolean;
-  interval_visible: boolean;
-  selected_point: WbvRenderPoint | null;
-  interval_draft_start: WbvRenderPoint | null;
-  saved_interval: { interval_id: string; start: WbvRenderPoint; end: WbvRenderPoint; top_md: number; base_md: number; depth_unit: string } | null;
-};
+type WbvInteractionState = WbvInteractionStateV2;
 type WbvLoadState = {
   session: WbvSessionContract | null;
   viewerPackage: WbvViewerPackageContract | null;
@@ -600,6 +593,20 @@ export function Wellbore3DPage({
   const [interaction, setInteraction] = useState<WbvInteractionState | null>(null);
   const [interactionSaving, setInteractionSaving] = useState(false);
   const [interactionError, setInteractionError] = useState<string | null>(null);
+  // A point projected by the live renderer is the authoritative presentation value.
+  // Keep it pending while the backend records the observation so a resampled response
+  // cannot visibly replace the exact MD selected by the user.
+  const pendingExactSelectedPointRef = useRef<WbvRenderPoint | null>(null);
+  const interactionAuthorityRef = useRef<WbvInteractionCommandAuthority | null>(null);
+  if (!interactionAuthorityRef.current) {
+    interactionAuthorityRef.current = createWbvInteractionCommandAuthority({
+      applyState: (next) => {
+        setInteraction(next);
+        setSelectedPoint(pendingExactSelectedPointRef.current ?? next.selected_point ?? null);
+      },
+      applyError: setInteractionError,
+    });
+  }
   const [trackValuesAlongWellbore, setTrackValuesAlongWellbore] = useState(false);
   const [depthUnitSaving, setDepthUnitSaving] = useState(false);
   const [viewerControls, setViewerControls] = useState<WbvViewerControls>(initialViewerControls);
@@ -642,6 +649,16 @@ export function Wellbore3DPage({
   const selectedPublishedPackage = publishedOverlayPackages.find(
     (item) => item.package_uid === selectedPublishedPackageUid,
   ) ?? null;
+
+  // Keep renderer lifecycle inputs referentially stable while selected-point
+  // interaction state changes. A new filtered array on every page render was
+  // retriggering the Three.js construction effect for every tracking update.
+  const depthTrackRenderLayout = useMemo(
+    () => (wbvTrackLayout?.tracks ?? []).filter(
+      (track): track is WbvLayoutTrack & { track_type: "depth" } => track.track_type === "depth",
+    ),
+    [wbvTrackLayout?.tracks],
+  );
 
   useEffect(() => {
     setPublishedPresentationDraft(
@@ -840,7 +857,7 @@ export function Wellbore3DPage({
             )
           : null;
       const nextInteraction = managedWellId
-        ? await fetchWlvJson<WbvInteractionState>(`/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/interaction`)
+        ? await wbvInteractionApiV2.get(managedWellId)
         : null;
       if (managedWellId) {
         const legacyContracts = [
@@ -865,8 +882,7 @@ export function Wellbore3DPage({
         }
       }
       setCurveOverlayRenderPackage(nextCurveOverlayRenderPackage);
-      setInteraction(nextInteraction);
-      setSelectedPoint(nextInteraction?.selected_point ?? null);
+      interactionAuthorityRef.current?.seed(nextInteraction);
       setAppliedLayerConfigs(nextLayerConfiguration?.layers ?? []);
       setAppliedTracks(nextLayerConfiguration?.tracks ?? []);
       setTrackSpacing(nextLayerConfiguration?.track_spacing ?? 0.05);
@@ -916,38 +932,63 @@ export function Wellbore3DPage({
     }
   }, []);
 
-  const putInteraction = async (path: string, method: string, body?: object) => {
+  const setSelectionMode = async (mode: "none" | "point" | "interval") => {
     const managedWellId = state.viewerPackage?.managed_well_id;
-    if (!managedWellId) return null;
+    if (!managedWellId) return;
     setInteractionSaving(true);
-    setInteractionError(null);
     try {
-      const next = await fetchWlvJson<WbvInteractionState>(
-        `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/interaction/${path}`,
-        { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined },
+      await interactionAuthorityRef.current?.runRevisioned((expectedRevision) =>
+        wbvInteractionApiV2.setMode(managedWellId, mode, expectedRevision),
       );
-      setInteraction(next);
-      setSelectedPoint(next.selected_point ?? null);
-      return next;
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "WBV interaction command failed.";
-      setInteractionError(message);
-      return null;
     } finally {
       setInteractionSaving(false);
     }
   };
 
-  const setSelectionMode = async (mode: "none" | "point" | "interval") => {
-    await putInteraction("mode", "PUT", { mode });
-  };
+  const acceptExactLocalSelectedPoint = useCallback((point: WbvRenderPoint) => {
+    pendingExactSelectedPointRef.current = point;
+    setSelectedPoint(point);
+  }, []);
 
-  const handleTrajectoryPick = async (point: WbvRenderPoint) => {
-    if (interaction?.selection_mode === "point" && interaction.selected_point_visible) {
-      await putInteraction("point", "PUT", { point });
-    } else if (interaction?.selection_mode === "interval" && interaction.interval_visible) {
-      await putInteraction("interval/pick", "PUT", { point });
+  const handleInteractionCommand = async (command: {
+    kind: "observe" | "track-start" | "track-update" | "track-commit" | "track-cancel";
+    observation?: WbvScreenObservationV2;
+    sessionId?: string;
+    sequence: number;
+  }) => {
+    const managedWellId = state.viewerPackage?.managed_well_id;
+    const authority = interactionAuthorityRef.current;
+    if (!managedWellId || !authority) return null;
+    if (command.kind === "observe" && command.observation) {
+      try {
+        return await authority.runRevisioned((expectedRevision) => wbvInteractionApiV2.observe(managedWellId, {
+          observation: command.observation!, expected_revision: expectedRevision,
+        }));
+      } finally {
+        pendingExactSelectedPointRef.current = null;
+      }
     }
+    if (command.kind === "track-start" && command.observation) {
+      return authority.runRevisioned((expectedRevision) => wbvInteractionApiV2.startTracking(managedWellId, {
+        sequence: command.sequence, observation: command.observation!, expected_revision: expectedRevision,
+      }));
+    }
+    if (command.kind === "track-update" && command.observation && command.sessionId) {
+      return authority.runSession(() => wbvInteractionApiV2.updateTracking(managedWellId, {
+        session_id: command.sessionId, sequence: command.sequence, observation: command.observation!,
+      }));
+    }
+    if (command.kind === "track-commit" && command.sessionId) {
+      return authority.runSession(() => wbvInteractionApiV2.commitTracking(managedWellId, {
+        session_id: command.sessionId, sequence: command.sequence, observation: command.observation,
+      }));
+    }
+    if (command.kind === "track-cancel" && command.sessionId) {
+      return authority.runSession(() => wbvInteractionApiV2.cancelTracking(managedWellId, {
+        session_id: command.sessionId, sequence: command.sequence,
+      }));
+    }
+    return null;
   };
 
   const sendIntervalToLogViewer = async () => {
@@ -956,10 +997,7 @@ export function Wellbore3DPage({
     setInteractionSaving(true);
     setInteractionError(null);
     try {
-      await fetchWlvJson(
-        `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/interaction/interval/send-to-wdv`,
-        { method: "POST" },
-      );
+      await wbvInteractionApiV2.sendIntervalToWdv(managedWellId);
     } catch (caught) {
       setInteractionError(caught instanceof Error ? caught.message : "Unable to send the AOI to Log Viewer.");
     } finally {
@@ -1424,7 +1462,8 @@ export function Wellbore3DPage({
                 viewerState={viewerState}
                 viewPreset={viewPreset}
                 viewCommandId={viewCommandId}
-                onPointSelect={handleTrajectoryPick}
+                onInteractionCommand={handleInteractionCommand}
+                onLocalSelectedPoint={acceptExactLocalSelectedPoint}
                 selectedPoint={interaction?.selected_point_visible ? selectedPoint : null}
                 selectionMode={interaction?.selection_mode ?? "none"}
                 intervalDraftStart={interaction?.interval_visible ? interaction.interval_draft_start : null}
@@ -1441,6 +1480,7 @@ export function Wellbore3DPage({
                 useSurfaceLighting={viewerControls.surfaceLighting}
                 curveOverlays={curveOverlayRenderPackage?.curves ?? []}
                 curveTracks={curveOverlayRenderPackage?.tracks ?? appliedTracks}
+                depthTracks={depthTrackRenderLayout}
                 curveTrackSpacing={curveOverlayRenderPackage?.track_spacing ?? trackSpacing}
                 showCurveOverlays={layerConfigFor(appliedLayerConfigs, "curve_overlays").visible}
               />
@@ -1655,7 +1695,7 @@ export function Wellbore3DPage({
             </div> : <p className="wlv-wbv-information-empty">{interaction?.interval_draft_start ? "Select the interval end." : "Select the interval start, then the end."}</p>}
             <div className="wlv-wbv-inline-action-row">
               <button type="button" className="wlv-wbv-control-button wlv-wbv-control-button--compact" disabled={!interaction?.saved_interval || interactionSaving} onClick={sendIntervalToLogViewer}>Send to Log Viewer as AOI</button>
-              <button type="button" className="wlv-wbv-control-button wlv-wbv-control-button--compact" disabled={(!interaction?.saved_interval && !interaction?.interval_draft_start) || interactionSaving} onClick={()=>putInteraction("interval","DELETE")}>Clear</button>
+              <button type="button" className="wlv-wbv-control-button wlv-wbv-control-button--compact" disabled={(!interaction?.saved_interval && !interaction?.interval_draft_start) || interactionSaving} onClick={() => { const id = state.viewerPackage?.managed_well_id; if (id) void interactionAuthorityRef.current?.runRevisioned((expectedRevision) => wbvInteractionApiV2.clearInterval(id, expectedRevision)); }}>Clear</button>
             </div>
           </section>
 
@@ -1744,7 +1784,7 @@ export function Wellbore3DPage({
                     <section className="wlv-wbv-manager-inventory-panel wlv-wbv-track-layout-list">
                       <div className="wlv-wbv-manager-panel-title"><div><h3>WBV Tracks</h3><span>{tracks.length} tracks</span></div></div>
                       <div className="wlv-wbv-track-toolbar">
-                        <select value={newLayoutTrackType} onChange={(event)=>setNewLayoutTrackType(event.target.value as WbvLayoutTrack["track_type"])}><option value="curve">Curve</option><option value="formation_tops">Formation Tops</option><option value="lithology">Lithology</option><option value="casing_hole">Casing / Hole</option><option value="completions">Completions</option><option value="borehole_imagery">Borehole Imagery</option></select>
+                        <select value={newLayoutTrackType} onChange={(event)=>setNewLayoutTrackType(event.target.value as WbvLayoutTrack["track_type"])}><option value="curve">Curve</option><option value="depth">Depth</option><option value="formation_tops">Formation Tops</option><option value="lithology">Lithology</option><option value="casing_hole">Casing / Hole</option><option value="completions">Completions</option><option value="borehole_imagery">Borehole Imagery</option></select>
                         <button type="button" className="wlv-wbv-control-button is-primary" disabled={layoutCommandSaving} onClick={()=>void runLayoutCommand({command:"add_track",track_type:newLayoutTrackType})}>+ Add Track</button>
                       </div>
                       <div className="wlv-wbv-track-list">{tracks.map((track)=><button type="button" key={track.track_uid} className={track.track_uid===selectedTrack?.track_uid?"is-current":""} onClick={()=>setSelectedLayoutTrackUid(track.track_uid)}><span>{track.display_order+1}</span><strong>{track.display_name}</strong><small>{track.track_type.replace(/_/g, " ")} · {track.position}</small></button>)}</div>
@@ -1754,14 +1794,25 @@ export function Wellbore3DPage({
                       {selectedTrack?<div className="wlv-wbv-properties-scroll">
                         <label className="wlv-wbv-check-row"><input type="checkbox" checked={selectedTrack.visible} onChange={(e)=>updateSelected({visible:e.target.checked})}/><span>Show track</span></label>
                         <label className="wlv-wbv-field">Track name<input key={`${selectedTrack.track_uid}-name-${selectedTrack.display_name}`} defaultValue={selectedTrack.display_name} onBlur={(e)=>{const value=e.target.value.trim();if(value&&value!==selectedTrack.display_name)updateSelected({display_name:value});}}/></label>
-                        <div className="wlv-wbv-inline-fields"><label className="wlv-wbv-field">Track type<select value={selectedTrack.track_type} onChange={(e)=>updateSelected({track_type:e.target.value as WbvLayoutTrack["track_type"]})}><option value="curve">Curve</option><option value="formation_tops">Formation Tops</option><option value="lithology">Lithology</option><option value="casing_hole">Casing / Hole</option><option value="completions">Completions</option><option value="borehole_imagery">Borehole Imagery</option></select></label><label className="wlv-wbv-field">Position<select value={selectedTrack.position} onChange={(e)=>updateSelected({position:e.target.value as WbvLayoutTrack["position"]})}><option value="right">Right</option><option value="left">Left</option><option value="center">Center</option></select></label></div>
+                        <div className="wlv-wbv-inline-fields"><label className="wlv-wbv-field">Track type<select value={selectedTrack.track_type} onChange={(e)=>updateSelected({track_type:e.target.value as WbvLayoutTrack["track_type"]})}><option value="curve">Curve</option><option value="depth">Depth</option><option value="formation_tops">Formation Tops</option><option value="lithology">Lithology</option><option value="casing_hole">Casing / Hole</option><option value="completions">Completions</option><option value="borehole_imagery">Borehole Imagery</option></select></label><label className="wlv-wbv-field">Position<select value={selectedTrack.position} onChange={(e)=>updateSelected({position:e.target.value as WbvLayoutTrack["position"]})}><option value="right">Right</option><option value="left">Left</option><option value="center">Center</option></select></label></div>
                         <div className="wlv-wbv-inline-fields">{isClosestToWellbore?<label className="wlv-wbv-field">Distance from wellbore<input key={`${selectedTrack.track_uid}-distance-${selectedTrack.distance_from_wellbore}`} type="number" min="0" step="0.05" defaultValue={selectedTrack.distance_from_wellbore} onBlur={(e)=>updateSelected({distance_from_wellbore:Number(e.target.value)})}/></label>:<label className="wlv-wbv-field">Gap from previous track<input key={`${selectedTrack.track_uid}-gap-${selectedTrack.previous_track_gap}`} type="number" min="0" step="0.05" defaultValue={selectedTrack.previous_track_gap} onBlur={(e)=>updateSelected({previous_track_gap:Number(e.target.value)})}/></label>}<label className="wlv-wbv-field">Width<input key={`${selectedTrack.track_uid}-width-${selectedTrack.width}`} type="number" min="0.1" step="0.05" defaultValue={selectedTrack.width} onBlur={(e)=>updateSelected({width:Number(e.target.value)})}/></label></div>
                         <div className="wlv-wbv-inline-fields">
                           <label className="wlv-wbv-field">Track background<select value={selectedTrack.background_mode} onChange={(e)=>updateSelected({background_mode:e.target.value as WbvLayoutTrack["background_mode"]})}><option value="transparent">Transparent</option><option value="solid">Solid</option></select></label>
                           <label className="wlv-wbv-field">Background color<input type="color" value={selectedTrack.background_color} disabled={selectedTrack.background_mode==="transparent"} onChange={(e)=>updateSelected({background_color:e.target.value})}/></label>
                         </div>
                         <label className="wlv-wbv-check-row"><input type="checkbox" checked={selectedTrack.outline_visible} onChange={(e)=>updateSelected({outline_visible:e.target.checked})}/><span>Track outline</span></label>
-                        <label className="wlv-wbv-field">Track grid<select value={selectedTrack.grid_mode} onChange={(e)=>updateSelected({grid_mode:e.target.value as WbvLayoutTrack["grid_mode"]})}><option value="off">Off</option><option value="linear">Linear</option><option value="logarithmic">Logarithmic</option></select></label>
+                        {selectedTrack.track_type==="depth"?<>
+                          <div className="wlv-wbv-inline-fields">
+                            <label className="wlv-wbv-field">Depth type<select value={selectedTrack.depth_type} onChange={(e)=>updateSelected({depth_type:e.target.value as WbvLayoutTrack["depth_type"]})}><option value="MD">MD</option><option value="TVD">TVD</option><option value="TVDSS">TVDSS</option></select></label>
+                            <label className="wlv-wbv-field">Depth increment<input key={`${selectedTrack.track_uid}-depth-increment-${selectedTrack.depth_increment}`} type="number" min="0.000001" step="10" defaultValue={selectedTrack.depth_increment} onBlur={(e)=>updateSelected({depth_increment:Number(e.target.value)})}/></label>
+                          </div>
+                          <div className="wlv-wbv-inline-fields">
+                            <label className="wlv-wbv-field">Label increment<input key={`${selectedTrack.track_uid}-label-increment-${selectedTrack.label_increment}`} type="number" min="0.000001" step="10" defaultValue={selectedTrack.label_increment} onBlur={(e)=>updateSelected({label_increment:Number(e.target.value)})}/></label>
+                            <label className="wlv-wbv-field">Label size<input key={`${selectedTrack.track_uid}-label-size-${selectedTrack.label_size}`} type="number" min="0.1" step="0.1" defaultValue={selectedTrack.label_size} onBlur={(e)=>updateSelected({label_size:Number(e.target.value)})}/></label>
+                          </div>
+                          <label className="wlv-wbv-check-row"><input type="checkbox" checked={selectedTrack.show_depth_units} onChange={(e)=>updateSelected({show_depth_units:e.target.checked})}/><span>Show units</span></label>
+                          {selectedTrack.depth_type==="TVDSS"?<div className="wlv-wbv-warning-inline">Precise surface elevation/datum is not available. TVDSS is currently referenced to TVD.</div>:null}
+                        </>:<label className="wlv-wbv-field">Track grid<select value={selectedTrack.grid_mode} onChange={(e)=>updateSelected({grid_mode:e.target.value as WbvLayoutTrack["grid_mode"]})}><option value="off">Off</option><option value="linear">Linear</option><option value="logarithmic">Logarithmic</option></select></label>}
                         <label className="wlv-wbv-field">Track opacity<input key={`${selectedTrack.track_uid}-opacity-${selectedTrack.opacity}`} type="number" min="0" max="1" step="0.05" defaultValue={selectedTrack.opacity} onBlur={(e)=>updateSelected({opacity:Number(e.target.value)})}/></label>
                         <div className="wlv-wbv-inline-action-row"><button type="button" className="wlv-wbv-control-button" disabled={layoutCommandSaving||selectedTrack.display_order===0} onClick={()=>void runLayoutCommand({command:"move_up",track_uid:selectedTrack.track_uid})}>Move Up</button><button type="button" className="wlv-wbv-control-button" disabled={layoutCommandSaving||selectedTrack.display_order===tracks.length-1} onClick={()=>void runLayoutCommand({command:"move_down",track_uid:selectedTrack.track_uid})}>Move Down</button><button type="button" className="wlv-wbv-control-button" disabled={layoutCommandSaving} onClick={()=>void runLayoutCommand({command:"duplicate_track",track_uid:selectedTrack.track_uid})}>Duplicate</button><button type="button" className="wlv-wbv-control-button is-danger" disabled={layoutCommandSaving} onClick={()=>void runLayoutCommand({command:"delete_track",track_uid:selectedTrack.track_uid})}>Delete</button></div>
                       </div>:<div className="wlv-wbv-empty-state">Add a track.</div>}

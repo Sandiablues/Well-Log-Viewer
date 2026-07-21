@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createWbvScreenObservation, type WbvInteractionStateV2, type WbvScreenObservationV2 } from './interactionDomain';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import {
+  TransientContinuityController,
+  type TransientScreenPoint,
+  type TransientTrajectoryLocation,
+  type TransientTrajectoryStation,
+} from './selectedPointTracking/transientContinuityController';
+import { advanceTransientArcPresentation } from './selectedPointTracking/transientArcPresentation';
+import { buildUniformCurveDisplayTrajectory } from './selectedPointTracking/uniformCurveDisplayTrajectory';
+import { createContinuousProjectedTracker, projectPointerToWellbore, type WbvContinuousProjectedTracker, type WbvFrontendSelectedPoint } from './selection/projectPointerToWellbore';
 
 export type WbvTrajectoryRenderPoint = {
   station_index?: number;
@@ -42,7 +52,7 @@ export type WbvCurveOverlayRenderSample = { md: number; value: number; normalize
 export type WbvCurveTrack = {
   track_id: string;
   display_name: string;
-  track_type: 'curve' | 'reference' | 'image' | 'interval';
+  track_type: 'curve' | 'depth' | 'reference' | 'image' | 'interval';
   display_order: number;
   side: 'left' | 'right' | 'center';
   geometry_type: 'legacy_planar' | 'camera_ribbon' | 'radial_panel';
@@ -60,6 +70,29 @@ export type WbvCurveTrack = {
   grid_color: string;
   wellbore_offset: number;
   previous_track_gap?: number;
+};
+
+export type WbvDepthTrack = {
+  track_uid: string;
+  display_name: string;
+  track_type: 'depth';
+  display_order: number;
+  visible: boolean;
+  position: 'right' | 'left' | 'center';
+  angular_position_deg: number;
+  distance_from_wellbore: number;
+  previous_track_gap: number;
+  width: number;
+  opacity: number;
+  background_mode: 'transparent' | 'solid';
+  background_color: string;
+  outline_visible: boolean;
+  grid_mode: 'off' | 'linear' | 'logarithmic';
+  depth_type: 'MD' | 'TVD' | 'TVDSS';
+  depth_increment: number;
+  label_increment: number;
+  label_size: number;
+  show_depth_units: boolean;
 };
 
 export type WbvCurveOverlayRenderCurve = {
@@ -91,7 +124,13 @@ type WbvTrajectoryRendererProps = {
   viewerState: string;
   viewPreset?: WbvViewPreset;
   viewCommandId?: number;
-  onPointSelect?: (point: WbvTrajectoryRenderPoint) => void | Promise<void>;
+  onInteractionCommand?: (command: {
+    kind: "observe" | "track-start" | "track-update" | "track-commit" | "track-cancel";
+    observation?: WbvScreenObservationV2;
+    sessionId?: string;
+    sequence: number;
+  }) => Promise<WbvInteractionStateV2 | null>;
+  onLocalSelectedPoint?: (point: WbvTrajectoryRenderPoint) => void;
   selectedPoint?: WbvTrajectoryRenderPoint | null;
   selectionMode?: "none" | "point" | "interval";
   intervalDraftStart?: WbvTrajectoryRenderPoint | null;
@@ -108,6 +147,7 @@ type WbvTrajectoryRendererProps = {
   useSurfaceLighting?: boolean;
   curveOverlays?: WbvCurveOverlayRenderCurve[];
   curveTracks?: WbvCurveTrack[];
+  depthTracks?: WbvDepthTrack[];
   curveTrackSpacing?: number;
   showCurveOverlays?: boolean;
 };
@@ -424,7 +464,17 @@ function createTrajectoryBoundingBox(box: SceneBox): THREE.LineSegments {
   return boundingBox;
 }
 
-function createTextSprite(text: string, options?: { color?: string; background?: string; scale?: number }): THREE.Sprite {
+function createTextSprite(
+  text: string,
+  options?: {
+    color?: string;
+    background?: string;
+    scale?: number;
+    fontWeight?: number;
+    shadowBlur?: number;
+    shadowColor?: string;
+  },
+): THREE.Sprite {
   const canvas = document.createElement('canvas');
   canvas.width = 640;
   canvas.height = 160;
@@ -432,7 +482,7 @@ function createTextSprite(text: string, options?: { color?: string; background?:
 
   if (context) {
     context.clearRect(0, 0, canvas.width, canvas.height);
-    context.font = '800 32px Inter, Arial, sans-serif';
+    context.font = `${options?.fontWeight ?? 800} 32px Inter, Arial, sans-serif`;
     context.textBaseline = 'middle';
     context.textAlign = 'center';
 
@@ -457,8 +507,8 @@ function createTextSprite(text: string, options?: { color?: string; background?:
       context.fill();
     }
 
-    context.shadowColor = 'rgba(111, 211, 255, 0.48)';
-    context.shadowBlur = 8;
+    context.shadowColor = options?.shadowColor ?? 'rgba(111, 211, 255, 0.48)';
+    context.shadowBlur = options?.shadowBlur ?? 8;
     context.fillStyle = options?.color ?? '#b9f3ff';
     context.fillText(text, canvas.width / 2, canvas.height / 2);
   }
@@ -833,6 +883,306 @@ function viewVerticesFromPoints(points: PreparedOverlayPoint[], offset: 'traceOf
   }));
 }
 
+
+type DepthTrackRuntime = {
+  update(camera: THREE.Camera): void;
+};
+
+type DepthSpriteBinding = {
+  sprite: THREE.Sprite;
+  trackId: string;
+  position: THREE.Vector3;
+  framePosition: number;
+  offset: number;
+};
+
+function governedDepthValue(
+  point: WbvTrajectoryRenderPoint,
+  depthType: WbvDepthTrack['depth_type'],
+): number | null {
+  if (depthType === 'MD') {
+    return typeof point.md === 'number' && Number.isFinite(point.md) ? point.md : null;
+  }
+  if (depthType === 'TVD') {
+    return typeof point.tvd === 'number' && Number.isFinite(point.tvd) ? point.tvd : null;
+  }
+  if (typeof point.tvdss === 'number' && Number.isFinite(point.tvdss)) return point.tvdss;
+  // Agreed provisional contract: without a resolved surface datum, TVDSS is equivalent to TVD.
+  return typeof point.tvd === 'number' && Number.isFinite(point.tvd) ? point.tvd : null;
+}
+
+function measuredDepthAtGovernedDepth(
+  renderPoints: WbvTrajectoryRenderPoint[],
+  depthType: WbvDepthTrack['depth_type'],
+  targetDepth: number,
+): number | null {
+  for (let index = 0; index < renderPoints.length - 1; index += 1) {
+    const first = renderPoints[index];
+    const second = renderPoints[index + 1];
+    const firstDepth = governedDepthValue(first, depthType);
+    const secondDepth = governedDepthValue(second, depthType);
+    const firstMd = first.md;
+    const secondMd = second.md;
+    if (
+      firstDepth === null ||
+      secondDepth === null ||
+      typeof firstMd !== 'number' ||
+      typeof secondMd !== 'number' ||
+      !Number.isFinite(firstMd) ||
+      !Number.isFinite(secondMd)
+    ) continue;
+    const minimum = Math.min(firstDepth, secondDepth);
+    const maximum = Math.max(firstDepth, secondDepth);
+    if (targetDepth < minimum || targetDepth > maximum) continue;
+    const span = secondDepth - firstDepth;
+    const ratio = Math.abs(span) < 1e-12
+      ? 0
+      : THREE.MathUtils.clamp((targetDepth - firstDepth) / span, 0, 1);
+    return THREE.MathUtils.lerp(firstMd, secondMd, ratio);
+  }
+  return null;
+}
+
+function depthTrackPositions(
+  renderPoints: WbvTrajectoryRenderPoint[],
+  track: WbvDepthTrack,
+  increment: number,
+): Array<{ depth: number; md: number }> {
+  const values = renderPoints
+    .map((point) => governedDepthValue(point, track.depth_type))
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  if (values.length < 2) return [];
+
+  const minimum = Math.min(...values);
+  const maximum = Math.max(...values);
+  const governedIncrement = Math.max(Number.EPSILON, increment);
+  const firstValue = Math.ceil(minimum / governedIncrement) * governedIncrement;
+  const positions: Array<{ depth: number; md: number }> = [];
+
+  for (
+    let depth = firstValue, count = 0;
+    depth <= maximum + governedIncrement * 1e-6 && count < 5000;
+    depth += governedIncrement, count += 1
+  ) {
+    const md = measuredDepthAtGovernedDepth(renderPoints, track.depth_type, depth);
+    if (md !== null) positions.push({ depth, md });
+  }
+
+  return positions;
+}
+
+function depthTrackAsCurveTrack(track: WbvDepthTrack): WbvCurveTrack {
+  return {
+    track_id: track.track_uid,
+    display_name: track.display_name,
+    track_type: 'depth',
+    display_order: track.display_order,
+    side: track.position,
+    geometry_type: 'camera_ribbon',
+    radial_lane: track.display_order,
+    angular_position_deg: track.angular_position_deg,
+    orientation_mode: 'camera_facing',
+    thickness: 0.05,
+    width: track.width,
+    background_mode: track.background_mode === 'solid' ? 'custom' : 'transparent',
+    background_color: track.background_color,
+    background_opacity: track.background_mode === 'solid' ? track.opacity : 0,
+    border_visible: track.outline_visible,
+    border_color: '#8799a3',
+    grid_mode: 'off',
+    grid_color: '#8799a3',
+    wellbore_offset: track.distance_from_wellbore,
+    previous_track_gap: track.previous_track_gap,
+  };
+}
+
+function addDepthTracks(
+  group: THREE.Group,
+  tracks: WbvDepthTrack[],
+  renderPoints: WbvTrajectoryRenderPoint[],
+  positions: THREE.Vector3[],
+  depthUnit: string,
+): DepthTrackRuntime {
+  const bindings: ViewRelativeGeometryBinding[] = [];
+  const spriteBindings: DepthSpriteBinding[] = [];
+  const tangents = trajectoryTangents(positions);
+  const trackById = new Map<string, WbvCurveTrack>();
+
+  const update = (camera: THREE.Camera) => {
+    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+    const axesCache = new Map<string, THREE.Vector3[]>();
+    const axesForTrackId = (trackId: string) => {
+      let axes = axesCache.get(trackId);
+      if (!axes) {
+        axes = axesForTrack(trackById.get(trackId), tangents, cameraRight);
+        axesCache.set(trackId, axes);
+      }
+      return axes;
+    };
+
+    bindings.forEach((binding) => {
+      updateViewRelativeBinding(binding, axesForTrackId(binding.trackId));
+    });
+
+    spriteBindings.forEach((binding) => {
+      const axis = axisAtFramePosition(axesForTrackId(binding.trackId), binding.framePosition);
+      binding.sprite.position.copy(binding.position).add(axis.multiplyScalar(binding.offset));
+    });
+  };
+
+  if (tracks.length === 0 || positions.length < 2) return { update };
+
+  const wellboreRadius = 0.008;
+  const widthScale = wellboreRadius * 5.0;
+  const sortedTracks = tracks
+    .filter((track) => track.visible && track.track_type === 'depth')
+    .sort((first, second) => first.display_order - second.display_order);
+
+  sortedTracks.forEach((track) => {
+    const renderTrack = depthTrackAsCurveTrack(track);
+    trackById.set(track.track_uid, renderTrack);
+
+    const sideSign = track.position === 'left' ? -1 : track.position === 'center' ? 0 : 1;
+    const radialDistance = wellboreRadius * (2.75 + Math.max(0, track.distance_from_wellbore));
+    const trackWidth = widthScale * Math.max(0.25, track.width);
+
+    let innerOffset: number;
+    let outerOffset: number;
+    if (track.position === 'center') {
+      innerOffset = -trackWidth / 2;
+      outerOffset = trackWidth / 2;
+    } else {
+      innerOffset = sideSign * radialDistance;
+      outerOffset = innerOffset + sideSign * trackWidth;
+    }
+    const centerOffset = (innerOffset + outerOffset) / 2;
+
+    // WLV-WBV-DEPTH-TRACK-FULL-BODY-LABEL-WEIGHT-EXACT-FIX
+    // Complete camera-facing track body using the same inner/outer edge model
+    // as the existing Curve track renderer.
+    const innerVertices: ViewRelativeVertex[] = positions.map((position, index) => ({
+      position,
+      tangent: tangents[index],
+      framePosition: index,
+      offset: innerOffset,
+    }));
+    const outerVertices: ViewRelativeVertex[] = positions.map((position, index) => ({
+      position,
+      tangent: tangents[index],
+      framePosition: index,
+      offset: outerOffset,
+    }));
+
+    if (track.background_mode === 'solid' && track.opacity > 0) {
+      const ribbonVertices: ViewRelativeVertex[] = [];
+      positions.forEach((_, index) => {
+        ribbonVertices.push(innerVertices[index], outerVertices[index]);
+      });
+      const ribbonIndices: number[] = [];
+      for (let index = 0; index < positions.length - 1; index += 1) {
+        const base = index * 2;
+        ribbonIndices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+      }
+      const ribbonDynamic = dynamicGeometry(ribbonVertices, ribbonIndices, track.track_uid);
+      const ribbonMaterial = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(track.background_color),
+        transparent: true,
+        opacity: track.opacity,
+        side: THREE.DoubleSide,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const ribbon = new THREE.Mesh(ribbonDynamic.geometry, ribbonMaterial);
+      ribbon.renderOrder = 49;
+      group.add(ribbon);
+      bindings.push(ribbonDynamic.binding);
+    }
+
+    if (track.outline_visible) {
+      [innerVertices, outerVertices].forEach((boundaryVertices) => {
+        const boundaryDynamic = dynamicGeometry(boundaryVertices, undefined, track.track_uid);
+        const boundaryMaterial = new THREE.LineBasicMaterial({
+          color: 0xb9f3ff,
+          transparent: true,
+          opacity: track.opacity,
+        });
+        boundaryMaterial.depthTest = false;
+        boundaryMaterial.depthWrite = false;
+        const boundary = new THREE.Line(boundaryDynamic.geometry, boundaryMaterial);
+        boundary.renderOrder = 50;
+        group.add(boundary);
+        bindings.push(boundaryDynamic.binding);
+      });
+    }
+
+    // WLV-WBV-DEPTH-TRACK-STAGE3-REPAIR
+    // Tick and label schedules are independent. The ruler is two-sided.
+    depthTrackPositions(renderPoints, track, track.depth_increment).forEach((tick) => {
+      const basis = interpolateTrajectoryBasisAtMd(renderPoints, positions, tangents, tick.md);
+      if (!basis) return;
+
+      const tickVertices: ViewRelativeVertex[] = [
+        {
+          position: basis.position,
+          tangent: basis.tangent,
+          framePosition: basis.framePosition,
+          offset: innerOffset,
+        },
+        {
+          position: basis.position,
+          tangent: basis.tangent,
+          framePosition: basis.framePosition,
+          offset: outerOffset,
+        },
+      ];
+      const tickDynamic = dynamicGeometry(tickVertices, undefined, track.track_uid);
+      const tickMaterial = new THREE.LineBasicMaterial({
+        color: 0xb9f3ff,
+        transparent: true,
+        opacity: track.opacity,
+      });
+      tickMaterial.depthTest = false;
+      tickMaterial.depthWrite = false;
+      const tickLine = new THREE.Line(tickDynamic.geometry, tickMaterial);
+      tickLine.renderOrder = 51;
+      group.add(tickLine);
+      bindings.push(tickDynamic.binding);
+    });
+
+    depthTrackPositions(renderPoints, track, track.label_increment).forEach((labelPoint) => {
+      const basis = interpolateTrajectoryBasisAtMd(renderPoints, positions, tangents, labelPoint.md);
+      if (!basis) return;
+
+      const unitSuffix = track.show_depth_units ? ` ${depthUnit}` : '';
+      const formattedDepth = labelPoint.depth.toLocaleString(undefined, { maximumFractionDigits: 2 });
+      const label = createTextSprite(`${formattedDepth}${unitSuffix}`, {
+        color: '#b9f3ff',
+        // WLV-WBV-DEPTH-TRACK-TRANSPARENT-LABEL-BACKGROUND-FIX
+        background: track.background_mode === 'solid' ? track.background_color : 'rgba(0, 0, 0, 0)',
+        scale: 0.15 * track.label_size,
+        fontWeight: 500,
+        shadowBlur: 2,
+        shadowColor: 'rgba(111, 211, 255, 0.18)',
+      });
+      label.material.opacity = track.opacity;
+      label.renderOrder = 53;
+      group.add(label);
+
+      spriteBindings.push({
+        sprite: label,
+        trackId: track.track_uid,
+        position: basis.position.clone(),
+        framePosition: basis.framePosition,
+        offset: centerOffset,
+      });
+    });
+  });
+
+  return { update };
+}
+
+// WLV-WBV-DEPTH-TRACK-STAGE2-RENDERER
+
 function addCurveOverlays(
   group: THREE.Group,
   overlays: WbvCurveOverlayRenderCurve[],
@@ -1163,47 +1513,6 @@ function applyCameraPlan(
 }
 
 
-function interpolateOptional(a: number | null | undefined, b: number | null | undefined, ratio: number): number | null {
-  if (typeof a === 'number' && Number.isFinite(a) && typeof b === 'number' && Number.isFinite(b)) {
-    return a + (b - a) * ratio;
-  }
-  if (typeof a === 'number' && Number.isFinite(a)) return a;
-  if (typeof b === 'number' && Number.isFinite(b)) return b;
-  return null;
-}
-
-function interpolateAzimuth(a: number | null | undefined, b: number | null | undefined, ratio: number): number | null {
-  if (typeof a !== 'number' || !Number.isFinite(a)) return interpolateOptional(a, b, ratio);
-  if (typeof b !== 'number' || !Number.isFinite(b)) return a;
-  let delta = ((b - a + 540) % 360) - 180;
-  const value = a + delta * ratio;
-  return ((value % 360) + 360) % 360;
-}
-
-function interpolateRenderPoint(
-  first: WbvTrajectoryRenderPoint,
-  second: WbvTrajectoryRenderPoint,
-  ratio: number,
-): WbvTrajectoryRenderPoint {
-  return {
-    station_index: interpolateOptional(first.station_index, second.station_index, ratio) ?? undefined,
-    md: interpolateOptional(first.md, second.md, ratio),
-    tvd: interpolateOptional(first.tvd, second.tvd, ratio),
-    tvdss: interpolateOptional(first.tvdss, second.tvdss, ratio),
-    x: interpolateOptional(first.x, second.x, ratio),
-    y: interpolateOptional(first.y, second.y, ratio),
-    z: interpolateOptional(first.z, second.z, ratio),
-    inclination: interpolateOptional(first.inclination, second.inclination, ratio),
-    azimuth: interpolateAzimuth(first.azimuth, second.azimuth, ratio),
-    dogleg_severity: interpolateOptional(first.dogleg_severity, second.dogleg_severity, ratio),
-    east_departure: interpolateOptional(first.east_departure, second.east_departure, ratio),
-    north_departure: interpolateOptional(first.north_departure, second.north_departure, ratio),
-    inclination_source: ratio === 0 ? first.inclination_source : 'interpolated_along_trajectory',
-    azimuth_source: ratio === 0 ? first.azimuth_source : 'interpolated_along_trajectory',
-    dogleg_severity_source: ratio === 0 ? first.dogleg_severity_source : 'interpolated_along_trajectory',
-  };
-}
-
 export function nearestSegmentOnScreen(
   event: PointerEvent,
   canvas: HTMLCanvasElement,
@@ -1306,7 +1615,8 @@ export function WellboreTrajectoryRenderer({
   viewerState,
   viewPreset = 'reset',
   viewCommandId = 0,
-  onPointSelect,
+  onInteractionCommand,
+  onLocalSelectedPoint,
   selectedPoint = null,
   selectionMode = "none",
   intervalDraftStart = null,
@@ -1323,9 +1633,33 @@ export function WellboreTrajectoryRenderer({
   useSurfaceLighting = true,
   curveOverlays = [],
   curveTracks = [],
+  depthTracks = [],
   curveTrackSpacing = 0.05,
   showCurveOverlays = true,
 }: WbvTrajectoryRendererProps) {
+  const activeTrackingPointerRef = useRef<{ pointerId: number; clientX: number; clientY: number } | null>(null);
+  const interactionLifecycleRef = useRef<{
+    ordinaryPointerDown: { pointerId: number; x: number; y: number; moved: boolean } | null;
+    trackingPointerId: number | null;
+    trackingSessionId: string | null;
+    trackingSequence: number;
+    trackingStartPending: boolean;
+    pendingTrackingObservation: WbvScreenObservationV2 | null;
+    trackingStartPromise: Promise<WbvInteractionStateV2 | null> | null;
+    trackingUpdatePromise: Promise<void> | null;
+    trackingFinishing: boolean;
+  }>({
+    ordinaryPointerDown: null,
+    trackingPointerId: null,
+    trackingSessionId: null,
+    trackingSequence: 0,
+    trackingStartPending: false,
+    pendingTrackingObservation: null,
+    trackingStartPromise: null,
+    trackingUpdatePromise: null,
+    trackingFinishing: false,
+  });
+
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const leaderRef = useRef<HTMLDivElement | null>(null);
@@ -1335,8 +1669,10 @@ export function WellboreTrajectoryRenderer({
   const overviewDisabledRef = useRef(false);
   const overviewDragRef = useRef(false);
   const trackValuesRef = useRef(trackValuesAlongWellbore);
-  const onPointSelectRef = useRef(onPointSelect);
-  onPointSelectRef.current = onPointSelect;
+  const onInteractionCommandRef = useRef(onInteractionCommand);
+  onInteractionCommandRef.current = onInteractionCommand;
+  const onLocalSelectedPointRef = useRef(onLocalSelectedPoint);
+  onLocalSelectedPointRef.current = onLocalSelectedPoint;
   const selectedPointRef = useRef<WbvTrajectoryRenderPoint | null>(selectedPoint);
   selectedPointRef.current = selectedPoint;
   const selectionModeRef = useRef(selectionMode);
@@ -1412,6 +1748,7 @@ export function WellboreTrajectoryRenderer({
       });
       renderer.setClearColor(0x000000, 0);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.domElement.style.cursor = 'default';
 
       controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
@@ -1434,6 +1771,9 @@ export function WellboreTrajectoryRenderer({
         ONE: THREE.TOUCH.ROTATE,
         TWO: THREE.TOUCH.DOLLY_PAN,
       };
+      if (interactionLifecycleRef.current.trackingPointerId !== null) {
+        controls.enabled = false;
+      }
 
       if (showBoundingBox) {
         group.add(createTrajectoryBoundingBox(box));
@@ -1545,10 +1885,51 @@ export function WellboreTrajectoryRenderer({
         group.add(surveyStations);
       }
 
+      const interpolateOptionalNumber = (
+        first: number | null | undefined,
+        second: number | null | undefined,
+        ratio: number,
+      ): number | null => {
+        if (typeof first === 'number' && Number.isFinite(first) && typeof second === 'number' && Number.isFinite(second)) {
+          return THREE.MathUtils.lerp(first, second, ratio);
+        }
+        if (typeof first === 'number' && Number.isFinite(first)) return first;
+        if (typeof second === 'number' && Number.isFinite(second)) return second;
+        return null;
+      };
+
+      const interpolateTransientPoint = (
+        first: WbvTrajectoryRenderPoint,
+        second: WbvTrajectoryRenderPoint,
+        ratio: number,
+      ): WbvTrajectoryRenderPoint => ({
+        ...first,
+        station_index: ratio <= 0 ? first.station_index : ratio >= 1 ? second.station_index : undefined,
+        md: interpolateOptionalNumber(first.md, second.md, ratio),
+        tvd: interpolateOptionalNumber(first.tvd, second.tvd, ratio),
+        tvdss: interpolateOptionalNumber(first.tvdss, second.tvdss, ratio),
+        inclination: interpolateOptionalNumber(first.inclination, second.inclination, ratio),
+        azimuth: interpolateOptionalNumber(first.azimuth, second.azimuth, ratio),
+        dogleg_severity: interpolateOptionalNumber(first.dogleg_severity, second.dogleg_severity, ratio),
+        east_departure: interpolateOptionalNumber(first.east_departure, second.east_departure, ratio),
+        north_departure: interpolateOptionalNumber(first.north_departure, second.north_departure, ratio),
+        x: interpolateOptionalNumber(first.x, second.x, ratio),
+        y: interpolateOptionalNumber(first.y, second.y, ratio),
+        z: interpolateOptionalNumber(first.z, second.z, ratio),
+      });
+
       const curve = new THREE.CatmullRomCurve3(normalizedPoints, false, 'catmullrom', 0.02);
+      const displayTrajectory = buildUniformCurveDisplayTrajectory(
+        renderPoints,
+        normalizedPoints,
+        curve,
+        interpolateTransientPoint,
+        0.25,
+      );
+      const displayTrajectoryPositions = displayTrajectory.map((sample) => sample.position);
       const guideGeometry = new THREE.TubeGeometry(
         curve,
-        Math.max(40, Math.min(220, normalizedPoints.length * 2)),
+        Math.max(80, Math.min(1200, displayTrajectoryPositions.length)),
         0.008,
         8,
         false,
@@ -1574,7 +1955,7 @@ export function WellboreTrajectoryRenderer({
       guideMaterial.depthWrite = false;
       group.add(trajectoryMesh);
 
-      const lineGeometry = new THREE.BufferGeometry().setFromPoints(normalizedPoints);
+      const lineGeometry = new THREE.BufferGeometry().setFromPoints(displayTrajectoryPositions);
       const lineMaterial = new THREE.LineBasicMaterial({
         color: 0xe7fbff,
         transparent: true,
@@ -1586,6 +1967,16 @@ export function WellboreTrajectoryRenderer({
       lineMaterial.depthTest = false;
       lineMaterial.depthWrite = false;
       group.add(trajectoryLine);
+
+      const depthTrackGroup = new THREE.Group();
+      group.add(depthTrackGroup);
+      const depthTrackRuntime = addDepthTracks(
+        depthTrackGroup,
+        depthTracks,
+        renderPoints,
+        normalizedPoints,
+        depthUnit,
+      );
 
       const curveOverlayGroup = new THREE.Group();
       curveOverlayGroup.visible = showCurveOverlays;
@@ -1646,16 +2037,128 @@ export function WellboreTrajectoryRenderer({
         group.add(marker);
         return marker;
       };
-      const selectionMarker = createBullseye();
+      const createDiagnosticSphere = () => {
+        const geometry = new THREE.SphereGeometry(0.028, 20, 14);
+        const material = new THREE.MeshBasicMaterial({
+          color: 0xe23232,
+          depthTest: false,
+          depthWrite: false,
+        });
+        const marker = new THREE.Mesh(geometry, material);
+        marker.renderOrder = 201;
+        marker.frustumCulled = false;
+        marker.visible = false;
+        marker.userData.basePosition = new THREE.Vector3();
+        marker.userData.targetPosition = new THREE.Vector3();
+        group.add(marker);
+        return marker;
+      };
+      const selectionMarker = createDiagnosticSphere();
       const intervalStartMarker = createBullseye();
       const intervalEndMarker = createBullseye();
+
       let intervalHighlight: THREE.Line | null = null;
       let selectedRuntimePoint: WbvTrajectoryRenderPoint | null = null;
-      let shiftDragActive = false;
-      let dragPreviewPoint: WbvTrajectoryRenderPoint | null = null;
-      let dragDispatchTimer: number | null = null;
-      let lastDragDispatchAt = 0;
-      const DRAG_BACKEND_INTERVAL_MS = 75;
+      let activeTransientPoint: WbvTrajectoryRenderPoint | null = null;
+      let transientContinuity: TransientContinuityController<WbvTrajectoryRenderPoint> | null = null;
+      let displayedTransientProjectedDistance: number | null = null;
+      let targetTransientProjectedDistance: number | null = null;
+      let keyboardTraversalProjectedDistance: number | null = null;
+      const keyboardTraversalStepPx = 0.75;
+      let cachedLiveReadoutText = '';
+      const projectedMarkerPosition = new THREE.Vector3();
+      const cameraDirection = new THREE.Vector3();
+      const liveOverlayOffsetXPx = 144;
+      const liveOverlayOffsetYPx = 0;
+      const liveOverlayLeaderLengthPx = 128;
+      const liveOverlayReadoutWidthPx = 300;
+      let viewportWidth = Math.max(1, host.clientWidth);
+      let viewportHeight = Math.max(1, host.clientHeight);
+      let lastReadoutLayoutKey = '';
+      let lastAppliedZoom = Number.NaN;
+
+      const handleKeyboardTraversal = (event: KeyboardEvent) => {
+        if (!event.shiftKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (!transientContinuity) {
+          const stations = projectedTransientStations();
+          const selectedPoint =
+            activeTransientPoint ??
+            selectedRuntimePoint ??
+            selectedPointRef.current;
+          const selectedMd = selectedPoint?.md;
+
+          if (stations.length < 2 || typeof selectedMd !== 'number' || !Number.isFinite(selectedMd)) {
+            return;
+          }
+
+          transientContinuity = new TransientContinuityController(
+            stations,
+            interpolateTransientPoint,
+          );
+
+          let cumulativeProjectedDistance = 0;
+          let seededProjectedDistance = 0;
+          let seeded = false;
+
+          for (let index = 0; index < stations.length - 1; index += 1) {
+            const first = stations[index];
+            const second = stations[index + 1];
+            const segmentProjectedLength = Math.hypot(
+              second.screenX - first.screenX,
+              second.screenY - first.screenY,
+            );
+            const firstMd = first.point.md;
+            const secondMd = second.point.md;
+
+            if (
+              typeof firstMd === 'number' &&
+              typeof secondMd === 'number' &&
+              selectedMd >= Math.min(firstMd, secondMd) &&
+              selectedMd <= Math.max(firstMd, secondMd)
+            ) {
+              const mdSpan = secondMd - firstMd;
+              const ratio =
+                Math.abs(mdSpan) > Number.EPSILON
+                  ? Math.max(0, Math.min(1, (selectedMd - firstMd) / mdSpan))
+                  : 0;
+              seededProjectedDistance =
+                cumulativeProjectedDistance + segmentProjectedLength * ratio;
+              seeded = true;
+              break;
+            }
+
+            cumulativeProjectedDistance += segmentProjectedLength;
+          }
+
+          keyboardTraversalProjectedDistance = seeded
+            ? seededProjectedDistance
+            : 0;
+          displayedTransientProjectedDistance = keyboardTraversalProjectedDistance;
+          targetTransientProjectedDistance = keyboardTraversalProjectedDistance;
+        }
+
+        const currentDistance =
+          keyboardTraversalProjectedDistance ??
+          displayedTransientProjectedDistance ??
+          targetTransientProjectedDistance ??
+          0;
+        const direction = event.key === 'ArrowUp' ? 1 : -1;
+        keyboardTraversalProjectedDistance = Math.max(
+          0,
+          currentDistance + direction * keyboardTraversalStepPx,
+        );
+
+        const location = transientContinuity.locationAtArc(keyboardTraversalProjectedDistance);
+        displayedTransientProjectedDistance = keyboardTraversalProjectedDistance;
+        targetTransientProjectedDistance = keyboardTraversalProjectedDistance;
+        showTransientLocation(location);
+      };
+
+      window.addEventListener('keydown', handleKeyboardTraversal);
 
       const setMarkerBasePosition = (marker: THREE.Object3D, position: THREE.Vector3) => {
         const basePosition = marker.userData.basePosition as THREE.Vector3;
@@ -1687,30 +2190,43 @@ export function WellboreTrajectoryRenderer({
         intervalHighlight = null;
       };
 
+      const liveReadoutTextFor = (point: WbvTrajectoryRenderPoint): string => {
+        const curveValues = typeof point.md === 'number'
+          ? curveOverlays
+              .map((curve) => {
+                const value = interpolateCurveValueAtMd(curve.samples, point.md as number);
+                return value === null ? null : `${curve.display_name} ${value.toPrecision(4)}${curve.unit ? ` ${curve.unit}` : ''}`;
+              })
+              .filter((value): value is string => value !== null)
+          : [];
+        return [
+          `MD ${formatDepth(point.md, depthUnit)} / TVD ${formatDepth(point.tvd, depthUnit)}`,
+          ...curveValues,
+        ].join('\n');
+      };
+
       const syncInteraction = () => {
-        if (shiftDragActive && dragPreviewPoint && typeof dragPreviewPoint.md === 'number') {
-          const previewPosition = pointAtMd(dragPreviewPoint.md);
-          if (previewPosition) {
-            setMarkerBasePosition(selectionMarker, previewPosition);
-            selectionMarker.visible = true;
-            selectedRuntimePoint = dragPreviewPoint;
-          }
-          return;
-        }
         selectionMarker.visible = false;
         intervalStartMarker.visible = false;
         intervalEndMarker.visible = false;
         selectedRuntimePoint = null;
+        cachedLiveReadoutText = '';
+        lastReadoutLayoutKey = '';
         clearIntervalHighlight();
 
         if (selectionModeRef.current === 'point') {
-          const point = selectedPointRef.current;
+          const point = activeTransientPoint ?? selectedPointRef.current;
           if (point && typeof point.md === 'number' && Number.isFinite(point.md)) {
             const position = pointAtMd(point.md);
             if (position) {
               setMarkerBasePosition(selectionMarker, position);
               selectionMarker.visible = true;
               selectedRuntimePoint = point;
+              cachedLiveReadoutText = liveReadoutTextFor(point);
+              const readoutElement = liveReadoutRef.current;
+              if (readoutElement && readoutElement.textContent !== cachedLiveReadoutText) {
+                readoutElement.textContent = cachedLiveReadoutText;
+              }
             }
           }
           return;
@@ -1752,89 +2268,204 @@ export function WellboreTrajectoryRenderer({
         }
       };
 
-      const resolvePick = (event: PointerEvent): WbvTrajectoryRenderPoint | null => {
+      const observationFor = (event: PointerEvent): WbvScreenObservationV2 | null => {
         if (!renderer) return null;
-        const nearest = nearestSegmentOnScreen(event, renderer.domElement, camera, normalizedPoints);
-        if (!nearest || nearest.distance > 20) return null;
-        const firstPoint = renderPoints[nearest.segmentIndex];
-        const secondPoint = renderPoints[nearest.segmentIndex + 1];
-        if (!firstPoint || !secondPoint) return null;
-        return interpolateRenderPoint(firstPoint, secondPoint, nearest.ratio);
+        return createWbvScreenObservation(event, renderer.domElement, camera, 20);
       };
 
-      let ordinaryPointerDown: { pointerId: number; x: number; y: number; moved: boolean } | null = null;
-      let pickCommandInFlight = false;
-      let pendingDragPoint: WbvTrajectoryRenderPoint | null = null;
-
-      const setDragPreview = (point: WbvTrajectoryRenderPoint) => {
-        dragPreviewPoint = point;
-        if (typeof point.md !== 'number' || !Number.isFinite(point.md)) return;
-        const previewPosition = pointAtMd(point.md);
-        if (!previewPosition) return;
-        setMarkerBasePosition(selectionMarker, previewPosition);
-        selectionMarker.visible = true;
-        selectedRuntimePoint = point;
+      const transientPointerFor = (event: PointerEvent): TransientScreenPoint | null => {
+        if (!renderer) return null;
+        const rect = renderer.domElement.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return null;
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
       };
 
-      const dispatchPick = (point: WbvTrajectoryRenderPoint) => {
-        const command = onPointSelectRef.current;
-        if (!command) return;
-        if (pickCommandInFlight) {
-          pendingDragPoint = point;
-          return;
-        }
-        pickCommandInFlight = true;
-        lastDragDispatchAt = performance.now();
-        Promise.resolve(command(point)).finally(() => {
-          pickCommandInFlight = false;
-          const pending = pendingDragPoint;
-          pendingDragPoint = null;
-          if (pending) {
-            dispatchPick(pending);
-          } else if (!shiftDragActive) {
-            dragPreviewPoint = null;
-            syncInteraction();
-          }
+      const projectedTransientStations = (): readonly TransientTrajectoryStation<WbvTrajectoryRenderPoint>[] => {
+        if (!renderer || displayTrajectory.length < 2) return [];
+        const rect = renderer.domElement.getBoundingClientRect();
+        return displayTrajectory.map((sample) => {
+          const projected = sample.position.clone().project(camera);
+          return {
+            point: sample.point,
+            sceneX: sample.position.x,
+            sceneY: sample.position.y,
+            sceneZ: sample.position.z,
+            screenX: (projected.x * 0.5 + 0.5) * rect.width,
+            screenY: (-projected.y * 0.5 + 0.5) * rect.height,
+          };
         });
       };
 
-      const queueDragPick = (point: WbvTrajectoryRenderPoint, final = false) => {
-        setDragPreview(point);
-        pendingDragPoint = point;
-        if (dragDispatchTimer !== null) {
-          window.clearTimeout(dragDispatchTimer);
-          dragDispatchTimer = null;
+      const showTransientLocation = (
+        location: TransientTrajectoryLocation<WbvTrajectoryRenderPoint>,
+      ) => {
+        activeTransientPoint = location.point;
+        selectedRuntimePoint = location.point;
+        selectionMarker.position.set(location.sceneX, location.sceneY, location.sceneZ);
+        selectionMarker.visible = true;
+        cachedLiveReadoutText = liveReadoutTextFor(location.point);
+        const readoutElement = liveReadoutRef.current;
+        if (readoutElement && readoutElement.textContent !== cachedLiveReadoutText) {
+          readoutElement.textContent = cachedLiveReadoutText;
         }
-        const elapsed = performance.now() - lastDragDispatchAt;
-        if (final || (!pickCommandInFlight && elapsed >= DRAG_BACKEND_INTERVAL_MS)) {
-          const next = pendingDragPoint;
-          pendingDragPoint = null;
-          if (next) dispatchPick(next);
-          return;
-        }
-        const delay = Math.max(0, DRAG_BACKEND_INTERVAL_MS - elapsed);
-        dragDispatchTimer = window.setTimeout(() => {
-          dragDispatchTimer = null;
-          if (pickCommandInFlight) return;
-          const next = pendingDragPoint;
-          pendingDragPoint = null;
-          if (next) dispatchPick(next);
-        }, delay);
       };
 
-      const endShiftDrag = (event: PointerEvent, finalPoint: WbvTrajectoryRenderPoint | null = null) => {
-        if (!shiftDragActive) return;
-        shiftDragActive = false;
-        ordinaryPointerDown = null;
-        if (dragDispatchTimer !== null) {
-          window.clearTimeout(dragDispatchTimer);
-          dragDispatchTimer = null;
+      const startTransientContinuityAtPointer = (pointer: TransientScreenPoint): boolean => {
+        const stations = projectedTransientStations();
+        if (stations.length < 2) return false;
+        const controller = new TransientContinuityController(stations, interpolateTransientPoint);
+        const location = controller.start(pointer);
+        if (!location) return false;
+        transientContinuity = controller;
+        displayedTransientProjectedDistance = location.projectedDistance;
+        targetTransientProjectedDistance = location.projectedDistance;
+        keyboardTraversalProjectedDistance = location.projectedDistance;
+        showTransientLocation(location);
+        return true;
+      };
+
+      const startTransientContinuity = (event: PointerEvent): boolean => {
+        const pointer = transientPointerFor(event);
+        return pointer ? startTransientContinuityAtPointer(pointer) : false;
+      };
+
+      const restoreTransientContinuityFromActivePointer = (): boolean => {
+        if (!renderer || interactionLifecycleRef.current.trackingPointerId === null) return false;
+        const activePointer = activeTrackingPointerRef.current;
+        if (!activePointer || activePointer.pointerId !== interactionLifecycleRef.current.trackingPointerId) return false;
+        const rect = renderer.domElement.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        return startTransientContinuityAtPointer({
+          x: activePointer.clientX - rect.left,
+          y: activePointer.clientY - rect.top,
+        });
+      };
+
+      const updateTransientContinuity = (event: PointerEvent) => {
+        const pointer = transientPointerFor(event);
+        if (!pointer) return;
+        if (!transientContinuity) {
+          startTransientContinuityAtPointer(pointer);
+          return;
         }
-        if (finalPoint) queueDragPick(finalPoint, true);
-        if (renderer?.domElement.hasPointerCapture(event.pointerId)) {
-          renderer.domElement.releasePointerCapture(event.pointerId);
+        const location = transientContinuity.update(pointer);
+        targetTransientProjectedDistance = location.projectedDistance;
+      };
+
+      // Backend-selected-point updates can reconstruct this renderer while a drag is active.
+      // Re-seed the local presentation immediately so visible motion never falls back to
+      // backend-response cadence alone.
+      restoreTransientContinuityFromActivePointer();
+
+      const clearTransientContinuity = () => {
+        transientContinuity?.clear();
+        transientContinuity = null;
+        displayedTransientProjectedDistance = null;
+        targetTransientProjectedDistance = null;
+        keyboardTraversalProjectedDistance = null;
+        activeTransientPoint = null;
+      };
+
+      const interactionLifecycle = interactionLifecycleRef.current;
+      let localTrackingPointerId: number | null = null;
+      let localTrackingProjection: WbvFrontendSelectedPoint | null = null;
+      let localContinuousTracker: WbvContinuousProjectedTracker | null = null;
+
+      const sendCommand = async (command: Parameters<NonNullable<WbvTrajectoryRendererProps['onInteractionCommand']>>[0]) => {
+        const handler = onInteractionCommandRef.current;
+        return handler ? handler(command) : null;
+      };
+
+      const localProjectionFor = (event: PointerEvent): WbvFrontendSelectedPoint | null => {
+        const pointer = transientPointerFor(event);
+        if (!pointer) return null;
+        return projectPointerToWellbore(pointer, projectedTransientStations(), 20);
+      };
+
+      const showLocalProjection = (
+        projection: WbvFrontendSelectedPoint,
+        publishPageState: boolean,
+      ): void => {
+        localTrackingProjection = projection;
+        const point = projection.point as WbvTrajectoryRenderPoint;
+        activeTransientPoint = point;
+        selectedRuntimePoint = point;
+        if (publishPageState) onLocalSelectedPointRef.current?.(point);
+        const projectedPosition = new THREE.Vector3(
+          projection.sceneX,
+          projection.sceneY,
+          projection.sceneZ,
+        );
+        const markerBasePosition = selectionMarker.userData.basePosition as THREE.Vector3;
+        const markerTargetPosition = selectionMarker.userData.targetPosition as THREE.Vector3;
+        markerBasePosition.copy(projectedPosition);
+        markerTargetPosition.copy(projectedPosition);
+        selectionMarker.position.copy(projectedPosition);
+        selectionMarker.visible = true;
+        cachedLiveReadoutText = liveReadoutTextFor(point);
+        const readoutElement = liveReadoutRef.current;
+        if (readoutElement && readoutElement.textContent !== cachedLiveReadoutText) {
+          readoutElement.textContent = cachedLiveReadoutText;
         }
+      };
+
+      const exactObservationForProjection = (projection: WbvFrontendSelectedPoint): WbvScreenObservationV2 | null => {
+        if (!renderer) return null;
+        const rect = renderer.domElement.getBoundingClientRect();
+        const synthetic = new PointerEvent('pointerup', {
+          pointerId: localTrackingPointerId ?? 1,
+          pointerType: 'mouse',
+          button: 0,
+          buttons: 0,
+          clientX: rect.left + projection.screenX,
+          clientY: rect.top + projection.screenY,
+        });
+        return createWbvScreenObservation(synthetic, renderer.domElement, camera, 20);
+      };
+
+      const commitLocalProjection = async (projection: WbvFrontendSelectedPoint): Promise<void> => {
+        const observation = exactObservationForProjection(projection);
+        if (!observation) return;
+        await sendCommand({ kind: 'observe', observation, sequence: 0 });
+      };
+
+      const beginLocalTracking = (event: PointerEvent): boolean => {
+        if (!renderer || selectionModeRef.current !== 'point' || localTrackingPointerId !== null) return false;
+        localTrackingPointerId = event.pointerId;
+        interactionLifecycle.ordinaryPointerDown = null;
+        if (controls) controls.enabled = false;
+        try {
+          renderer.domElement.setPointerCapture(event.pointerId);
+        } catch {
+          // Pointer capture can fail if the browser has already transferred ownership;
+          // window listeners below still keep the gesture alive.
+        }
+        renderer.domElement.style.setProperty('cursor', 'default');
+        const pointer = transientPointerFor(event);
+        const stations = projectedTransientStations();
+        localContinuousTracker = pointer ? createContinuousProjectedTracker(pointer, stations, 20) : null;
+        const projection = pointer ? projectPointerToWellbore(pointer, stations, 20) : null;
+        if (projection) showLocalProjection(projection, false);
+        return true;
+      };
+
+      const endLocalTracking = async (event: PointerEvent, commit: boolean): Promise<void> => {
+        if (!renderer || localTrackingPointerId !== event.pointerId) return;
+        const finalPointer = transientPointerFor(event);
+        const finalProjection = (finalPointer && localContinuousTracker
+          ? localContinuousTracker.update(finalPointer, projectedTransientStations())
+          : null) ?? localTrackingProjection;
+        if (finalProjection) showLocalProjection(finalProjection, false);
+        if (renderer.domElement.hasPointerCapture(event.pointerId)) renderer.domElement.releasePointerCapture(event.pointerId);
         if (controls) controls.enabled = true;
+        renderer.domElement.style.setProperty('cursor', 'default');
+        localTrackingPointerId = null;
+        localTrackingProjection = null;
+        localContinuousTracker = null;
+        if (commit && finalProjection) {
+          onLocalSelectedPointRef.current?.(finalProjection.point as WbvTrajectoryRenderPoint);
+          await commitLocalProjection(finalProjection);
+        }
         event.preventDefault();
         event.stopPropagation();
       };
@@ -1846,20 +2477,15 @@ export function WellboreTrajectoryRenderer({
           event.stopPropagation();
           return;
         }
-
-        if (event.shiftKey && selectionModeRef.current === 'point') {
-          shiftDragActive = true;
-          ordinaryPointerDown = null;
-          if (controls) controls.enabled = false;
-          renderer.domElement.setPointerCapture(event.pointerId);
-          const picked = resolvePick(event);
-          if (picked) queueDragPick(picked);
-          event.preventDefault();
-          event.stopPropagation();
+        const shiftTrackingRequested = event.shiftKey || event.getModifierState?.('Shift') === true;
+        if (shiftTrackingRequested && selectionModeRef.current === 'point') {
+          if (beginLocalTracking(event)) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
           return;
         }
-
-        ordinaryPointerDown = {
+        interactionLifecycle.ordinaryPointerDown = {
           pointerId: event.pointerId,
           x: event.clientX,
           y: event.clientY,
@@ -1868,35 +2494,47 @@ export function WellboreTrajectoryRenderer({
       };
 
       const handlePointerMove = (event: PointerEvent) => {
-        if (shiftDragActive) {
-          const picked = resolvePick(event);
-          if (picked) queueDragPick(picked);
+        if (localTrackingPointerId === event.pointerId) {
+          const pointer = transientPointerFor(event);
+          const projection = pointer && localContinuousTracker
+            ? localContinuousTracker.update(pointer, projectedTransientStations())
+            : null;
+          if (projection) showLocalProjection(projection, false);
           event.preventDefault();
           event.stopPropagation();
           return;
         }
-        if (!ordinaryPointerDown || ordinaryPointerDown.pointerId !== event.pointerId) return;
-        if (Math.hypot(event.clientX - ordinaryPointerDown.x, event.clientY - ordinaryPointerDown.y) > 4) {
-          ordinaryPointerDown.moved = true;
+        const pointerDown = interactionLifecycle.ordinaryPointerDown;
+        if (!pointerDown || pointerDown.pointerId !== event.pointerId) return;
+        if (Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) > 4) {
+          pointerDown.moved = true;
         }
       };
 
       const handlePointerUp = (event: PointerEvent) => {
-        if (shiftDragActive) {
-          endShiftDrag(event, resolvePick(event));
+        if (localTrackingPointerId === event.pointerId) {
+          void endLocalTracking(event, true);
           return;
         }
-        const pointerDown = ordinaryPointerDown;
-        ordinaryPointerDown = null;
+        const pointerDown = interactionLifecycle.ordinaryPointerDown;
+        interactionLifecycle.ordinaryPointerDown = null;
         if (!pointerDown || pointerDown.pointerId !== event.pointerId || pointerDown.moved) return;
-        const picked = resolvePick(event);
-        if (!picked) return;
-        dispatchPick(picked);
+
+        if (selectionModeRef.current === 'point') {
+          const projection = localProjectionFor(event);
+          if (!projection) return;
+          showLocalProjection(projection, true);
+          void commitLocalProjection(projection);
+          return;
+        }
+
+        const observation = observationFor(event);
+        if (observation) void sendCommand({ kind: 'observe', observation, sequence: 0 });
       };
 
       const handlePointerCancel = (event: PointerEvent) => {
-        ordinaryPointerDown = null;
-        endShiftDrag(event, null);
+        interactionLifecycle.ordinaryPointerDown = null;
+        if (localTrackingPointerId === event.pointerId) void endLocalTracking(event, false);
       };
 
       const handleDoubleClick = (event: MouseEvent) => {
@@ -1910,6 +2548,9 @@ export function WellboreTrajectoryRenderer({
       renderer.domElement.addEventListener('pointerup', handlePointerUp, true);
       renderer.domElement.addEventListener('pointercancel', handlePointerCancel, true);
       renderer.domElement.addEventListener('dblclick', handleDoubleClick, true);
+      window.addEventListener('pointermove', handlePointerMove, true);
+      window.addEventListener('pointerup', handlePointerUp, true);
+      window.addEventListener('pointercancel', handlePointerCancel, true);
       syncInteraction();
 
       const topMarker = new THREE.Mesh(
@@ -1963,6 +2604,8 @@ export function WellboreTrajectoryRenderer({
         if (!renderer) return { width: 1, height: 1, aspect: 1 };
         const width = Math.max(1, host.clientWidth);
         const height = Math.max(1, host.clientHeight);
+        viewportWidth = width;
+        viewportHeight = height;
         const aspect = width / height;
         renderer.setSize(width, height, false);
         return { width, height, aspect };
@@ -1997,6 +2640,7 @@ export function WellboreTrajectoryRenderer({
         applyPreset(viewPreset);
       }
 
+      depthTrackRuntime.update(camera);
       curveOverlayRuntime.update(camera);
       const lastOverlayQuaternion = camera.quaternion.clone();
       let lastOverviewUpdate = Number.NEGATIVE_INFINITY;
@@ -2032,64 +2676,95 @@ export function WellboreTrajectoryRenderer({
         const deltaMs = Math.max(0, frameTime - previousFrameTime);
         previousFrameTime = frameTime;
         controls.update();
+        if (
+          transientContinuity
+          && displayedTransientProjectedDistance !== null
+          && targetTransientProjectedDistance !== null
+        ) {
+          displayedTransientProjectedDistance = advanceTransientArcPresentation(
+            displayedTransientProjectedDistance,
+            targetTransientProjectedDistance,
+            deltaMs,
+          );
+          showTransientLocation(
+            transientContinuity.locationAtArc(displayedTransientProjectedDistance),
+          );
+        }
         if (1 - Math.abs(lastOverlayQuaternion.dot(camera.quaternion)) > 1e-5) {
           lastOverlayQuaternion.copy(camera.quaternion);
+          depthTrackRuntime.update(camera);
           curveOverlayRuntime.update(camera);
         }
-        if (leaderRef.current && liveReadoutRef.current) {
-          const currentPoint = selectedRuntimePoint;
-          const showLive = trackValuesRef.current && selectionMarker.visible && currentPoint !== null;
-          if (showLive && renderer && currentPoint) {
-            const rect = renderer.domElement.getBoundingClientRect();
-            const projected = selectionMarker.position.clone().project(camera);
-            const markerX = (projected.x * 0.5 + 0.5) * rect.width;
-            const markerY = (-projected.y * 0.5 + 0.5) * rect.height;
-            const placeLeft = markerX > rect.width * 0.68;
-            const lineWidth = 64;
-            leaderRef.current.hidden = false;
-            liveReadoutRef.current.hidden = false;
-            leaderRef.current.style.left = `${placeLeft ? markerX - lineWidth : markerX}px`;
-            leaderRef.current.style.top = `${markerY}px`;
-            liveReadoutRef.current.style.left = `${placeLeft ? markerX - lineWidth - 210 : markerX + lineWidth + 8}px`;
-            liveReadoutRef.current.style.top = `${markerY}px`;
-            const curveValues = typeof currentPoint.md === 'number'
-              ? curveOverlays
-                  .map((curve) => {
-                    const value = interpolateCurveValueAtMd(curve.samples, currentPoint.md as number);
-                    return value === null ? null : `${curve.display_name} ${value.toPrecision(4)}${curve.unit ? ` ${curve.unit}` : ''}`;
-                  })
-                  .filter((value): value is string => value !== null)
-              : [];
-            liveReadoutRef.current.textContent = [
-              `MD ${formatDepth(currentPoint.md, depthUnit)} / TVD ${formatDepth(currentPoint.tvd, depthUnit)}`,
-              ...curveValues,
-            ].join('\n');
+        const leaderElement = leaderRef.current;
+        const readoutElement = liveReadoutRef.current;
+        if (leaderElement && readoutElement) {
+          leaderElement.style.width = `${liveOverlayLeaderLengthPx}px`;
+          leaderElement.style.transformOrigin = 'left center';
+          leaderElement.style.willChange = 'transform';
+          readoutElement.style.width = `${liveOverlayReadoutWidthPx}px`;
+          readoutElement.style.minWidth = `${liveOverlayReadoutWidthPx}px`;
+          readoutElement.style.maxWidth = `${liveOverlayReadoutWidthPx}px`;
+          readoutElement.style.textAlign = 'left';
+          readoutElement.style.fontVariantNumeric = 'tabular-nums';
+          readoutElement.style.whiteSpace = 'pre';
+          readoutElement.style.willChange = 'transform';
+
+          const showLive = trackValuesRef.current && selectionMarker.visible && selectedRuntimePoint !== null;
+          if (showLive) {
+            projectedMarkerPosition.copy(selectionMarker.position).project(camera);
+            const markerX = Math.round((projectedMarkerPosition.x * 0.5 + 0.5) * viewportWidth);
+            const markerY = Math.round((-projectedMarkerPosition.y * 0.5 + 0.5) * viewportHeight);
+            const leaderLeft = markerX;
+            const leaderTop = markerY;
+            const readoutLeft = markerX + liveOverlayOffsetXPx;
+            const readoutTop = markerY + liveOverlayOffsetYPx;
+            const layoutKey = `${leaderLeft}:${leaderTop}:${readoutLeft}:${readoutTop}`;
+            leaderElement.hidden = false;
+            readoutElement.hidden = false;
+            if (layoutKey !== lastReadoutLayoutKey) {
+              lastReadoutLayoutKey = layoutKey;
+              leaderElement.style.transform = `translate3d(${leaderLeft}px, ${leaderTop}px, 0)`;
+              readoutElement.style.transform = `translate3d(${readoutLeft}px, ${readoutTop}px, 0)`;
+            }
+            if (readoutElement.textContent !== cachedLiveReadoutText) {
+              readoutElement.textContent = cachedLiveReadoutText;
+            }
           } else {
-            leaderRef.current.hidden = true;
-            liveReadoutRef.current.hidden = true;
+            leaderElement.hidden = true;
+            readoutElement.hidden = true;
+            lastReadoutLayoutKey = '';
           }
         }
-        const textScale = textSpriteScaleForZoom(camera.zoom);
-        zoomScaledTextSprites.forEach((sprite) => {
-          const baseScale = sprite.userData.baseTextScale as THREE.Vector3 | undefined;
-          if (baseScale) sprite.scale.copy(baseScale).multiplyScalar(textScale);
-        });
-        const markerScale = markerScaleForZoom(camera.zoom);
+        if (camera.zoom !== lastAppliedZoom) {
+          lastAppliedZoom = camera.zoom;
+          const textScale = textSpriteScaleForZoom(camera.zoom);
+          zoomScaledTextSprites.forEach((sprite) => {
+            const baseScale = sprite.userData.baseTextScale as THREE.Vector3 | undefined;
+            if (baseScale) sprite.scale.copy(baseScale).multiplyScalar(textScale);
+          });
+          const markerScale = markerScaleForZoom(camera.zoom);
+          [intervalStartMarker, intervalEndMarker].forEach((marker) => {
+            marker.scale.setScalar(0.105 * markerScale);
+          });
+          if (surveyStationMaterial) {
+            surveyStationMaterial.size = surveyStationPointSizeForZoom(camera.zoom);
+          }
+        }
         const smoothingAlpha = markerSmoothingAlpha(deltaMs, camera.zoom);
-        const cameraDirection = new THREE.Vector3();
         camera.getWorldDirection(cameraDirection);
         [selectionMarker, intervalStartMarker, intervalEndMarker].forEach((marker) => {
-          if (marker.visible) {
-            const basePosition = marker.userData.basePosition as THREE.Vector3;
-            const targetPosition = marker.userData.targetPosition as THREE.Vector3;
+          if (!marker.visible) return;
+          if (marker === selectionMarker && transientContinuity) return;
+          const basePosition = marker.userData.basePosition as THREE.Vector3;
+          const targetPosition = marker.userData.targetPosition as THREE.Vector3;
+          if (marker === selectionMarker) {
+            basePosition.copy(targetPosition);
+            marker.position.copy(basePosition);
+          } else {
             basePosition.lerp(targetPosition, smoothingAlpha);
             marker.position.copy(cameraFacingMarkerPosition(basePosition, cameraDirection, 0.045));
           }
-          marker.scale.setScalar(0.105 * markerScale);
         });
-        if (surveyStationMaterial) {
-          surveyStationMaterial.size = surveyStationPointSizeForZoom(camera.zoom);
-        }
         renderer.render(scene, camera);
         animationFrame = window.requestAnimationFrame(renderScene);
         if (!overviewDisabledRef.current && frameTime - lastOverviewUpdate >= 100) {
@@ -2126,12 +2801,16 @@ export function WellboreTrajectoryRenderer({
           window.cancelAnimationFrame(animationFrame);
         }
         resizeObserver?.disconnect();
-        if (dragDispatchTimer !== null) window.clearTimeout(dragDispatchTimer);
+        window.removeEventListener('keydown', handleKeyboardTraversal);
         renderer?.domElement.removeEventListener('pointerdown', handlePointerDown, true);
         renderer?.domElement.removeEventListener('pointermove', handlePointerMove, true);
         renderer?.domElement.removeEventListener('pointerup', handlePointerUp, true);
         renderer?.domElement.removeEventListener('pointercancel', handlePointerCancel, true);
         renderer?.domElement.removeEventListener('dblclick', handleDoubleClick, true);
+        window.removeEventListener('pointermove', handlePointerMove, true);
+        window.removeEventListener('pointerup', handlePointerUp, true);
+        window.removeEventListener('pointercancel', handlePointerCancel, true);
+        clearTransientContinuity();
         controls?.dispose();
         disposeObject(scene);
         renderer?.dispose();
@@ -2149,6 +2828,7 @@ export function WellboreTrajectoryRenderer({
   }, [
     curveOverlays,
     curveTracks,
+    depthTracks,
     curveTrackSpacing,
     depthTicks,
     depthUnit,
