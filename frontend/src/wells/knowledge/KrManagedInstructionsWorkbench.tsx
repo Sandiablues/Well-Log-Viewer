@@ -1,3 +1,5 @@
+import { LithologyCatalogueWorkbench } from './LithologyCatalogueWorkbench';
+import { KrCompletionsWorkbench } from './KrCompletionsWorkbench';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type KrInstructionSummary = {
@@ -14,6 +16,9 @@ type KrInstructionSummary = {
   curve_family?: string | null;
   canonical_curve_id?: string | null;
   alias?: string | null;
+  mnemonic?: string | null;
+  unit_hint?: string | null;
+  description?: string | null;
   must_do: string;
   must_not_do?: string | null;
   evidence_ref_count: number;
@@ -29,6 +34,11 @@ type KrInstructionListResponse = {
   deprecated_records_used: boolean;
   total_count: number;
   returned_count: number;
+  offset: number;
+  limit: number;
+  has_previous: boolean;
+  has_next: boolean;
+  search_ranked: boolean;
   instructions: KrInstructionSummary[];
 };
 
@@ -84,6 +94,9 @@ type KrCandidatePayload = {
   curve_family?: string | null;
   canonical_curve_id?: string | null;
   alias?: string | null;
+  mnemonic?: string | null;
+  unit_hint?: string | null;
+  description?: string | null;
   must_do: string;
   must_not_do?: string | null;
   allowed_use?: string | null;
@@ -123,7 +136,7 @@ type KrCurationFormState = {
 };
 
 type KrStatusFilter = 'all' | 'approved' | 'candidate' | 'rejected' | 'deprecated' | 'superseded' | 'runtime' | 'production';
-type KrInstructionTypeFilter = 'all' | 'curve_instruction' | 'template_instruction' | 'track_instruction' | 'selection_instruction' | 'application_instruction';
+type KrInstructionTypeFilter = 'all' | 'mnemonic_mapping' | 'curve_definition' | 'curve_instruction' | 'template_instruction' | 'track_instruction' | 'selection_instruction' | 'application_instruction';
 
 type RuntimeWindow = Window & { __WLV_API_BASE_URL__?: string };
 
@@ -395,6 +408,7 @@ function KrInstructionDetailPanel({ detail, loading, error }: { detail: KrInstru
         <dt>Track</dt><dd>{safeText(detail.track_id)}</dd>
         <dt>Curve family</dt><dd>{safeText(detail.curve_family)}</dd>
         <dt>Canonical curve</dt><dd>{safeText(detail.canonical_curve_id)}</dd>
+        <dt>Mnemonic</dt><dd>{safeText(detail.mnemonic || detail.alias)}</dd>
       </dl>
 
       <section className="wlv-kr-rule-box must">
@@ -499,24 +513,34 @@ function TemplateDecisionPanel({ templateKey }: { templateKey: string }) {
   );
 }
 
-function buildInstructionPath(search: string, instructionType: KrInstructionTypeFilter, truthFilter: KrStatusFilter, templateFilter: string, curveFamilyFilter: string): string {
+function buildInstructionPath(search: string, instructionType: KrInstructionTypeFilter, truthFilter: KrStatusFilter, templateFilter: string, curveFamilyFilter: string, offset: number): string {
   const params = new URLSearchParams();
   params.set('limit', String(PAGE_LIMIT));
+  params.set('offset', String(offset));
   params.set('approved_only', truthFilter === 'all' || truthFilter === 'approved' || truthFilter === 'runtime' || truthFilter === 'production' ? 'true' : 'false');
   const q = search.trim();
   if (q) params.set('q', q);
-  if (instructionType !== 'all') params.set('instruction_type', instructionType);
+  if (instructionType === 'mnemonic_mapping' || instructionType === 'curve_definition') {
+    params.set('record_type', instructionType);
+  } else if (instructionType !== 'all') {
+    params.set('instruction_type', instructionType);
+  }
   if (truthFilter === 'candidate' || truthFilter === 'rejected' || truthFilter === 'deprecated' || truthFilter === 'superseded') params.set('status', truthFilter);
   if (templateFilter !== 'all') params.set('template_key', templateFilter);
   if (curveFamilyFilter !== 'all') params.set('curve_family', curveFamilyFilter);
   return `/api/wlv/knowledge/instructions?${params.toString()}`;
 }
 
-export function KrManagedInstructionsWorkbench() {
+function KrManagedInstructionsWorkbenchInstructions() {
   const [summary, setSummary] = useState<KrInstructionSummaryResponse | null>(null);
   const [instructions, setInstructions] = useState<KrInstructionSummary[]>([]);
   const [listTotalCount, setListTotalCount] = useState(0);
   const [listReturnedCount, setListReturnedCount] = useState(0);
+  const [pageOffset, setPageOffset] = useState(0);
+  const [hasPreviousPage, setHasPreviousPage] = useState(false);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [searchRanked, setSearchRanked] = useState(false);
+  const [pageJumpValue, setPageJumpValue] = useState('1');
   const [selectedInstructionId, setSelectedInstructionId] = useState<string | null>(null);
   const [detail, setDetail] = useState<KrInstructionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -525,7 +549,7 @@ export function KrManagedInstructionsWorkbench() {
   const [listLoading, setListLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [instructionType, setInstructionType] = useState<KrInstructionTypeFilter>('all');
+  const [instructionType, setInstructionType] = useState<KrInstructionTypeFilter>('mnemonic_mapping');
   const [truthFilter, setTruthFilter] = useState<KrStatusFilter>('all');
   const [templateFilter, setTemplateFilter] = useState('all');
   const [curveFamilyFilter, setCurveFamilyFilter] = useState('all');
@@ -549,7 +573,7 @@ export function KrManagedInstructionsWorkbench() {
   const loadInstructions = useCallback(() => {
     setListLoading(true);
     setError(null);
-    const path = buildInstructionPath(search, instructionType, truthFilter, templateFilter, curveFamilyFilter);
+    const path = buildInstructionPath(search, instructionType, truthFilter, templateFilter, curveFamilyFilter, pageOffset);
     void fetchKrJson<KrInstructionListResponse>(path)
       .then((list) => {
         const rows = (list.instructions ?? []).filter((item) => {
@@ -560,6 +584,9 @@ export function KrManagedInstructionsWorkbench() {
         setInstructions(rows);
         setListTotalCount(list.total_count ?? rows.length);
         setListReturnedCount(rows.length);
+        setHasPreviousPage(Boolean(list.has_previous));
+        setHasNextPage(Boolean(list.has_next));
+        setSearchRanked(Boolean(list.search_ranked));
         setSelectedInstructionId((current) => (
           current && rows.some((item) => item.instruction_id === current)
             ? current
@@ -571,10 +598,13 @@ export function KrManagedInstructionsWorkbench() {
         setListTotalCount(0);
         setListReturnedCount(0);
         setSelectedInstructionId(null);
+        setHasPreviousPage(false);
+        setHasNextPage(false);
+        setSearchRanked(false);
         setError(caught instanceof Error ? caught.message : 'KR instruction service unavailable');
       })
       .finally(() => setListLoading(false));
-  }, [curveFamilyFilter, instructionType, search, templateFilter, truthFilter]);
+  }, [curveFamilyFilter, instructionType, pageOffset, search, templateFilter, truthFilter]);
 
   const refreshAll = useCallback(() => {
     loadSummary();
@@ -584,6 +614,14 @@ export function KrManagedInstructionsWorkbench() {
   useEffect(() => {
     loadSummary();
   }, [loadSummary]);
+
+  useEffect(() => {
+    setPageOffset(0);
+  }, [search, instructionType, truthFilter, templateFilter, curveFamilyFilter]);
+
+  useEffect(() => {
+    setPageJumpValue(String(Math.floor(pageOffset / PAGE_LIMIT) + 1));
+  }, [pageOffset]);
 
   useEffect(() => {
     loadInstructions();
@@ -621,13 +659,28 @@ export function KrManagedInstructionsWorkbench() {
   const templateOptions = useMemo(() => uniqueSorted([...TEMPLATE_KEYS, ...instructions.map((item) => item.template_key)]), [instructions]);
   const curveFamilyOptions = useMemo(() => uniqueSorted(instructions.map((item) => item.curve_family)), [instructions]);
   const hasActiveFilters = search.trim() || instructionType !== 'all' || truthFilter !== 'all' || templateFilter !== 'all' || curveFamilyFilter !== 'all';
+  const mnemonicCatalogueView = instructionType === 'mnemonic_mapping';
+  const pageStart = listTotalCount === 0 ? 0 : pageOffset + 1;
+  const pageEnd = Math.min(pageOffset + listReturnedCount, listTotalCount);
+  const currentPage = Math.floor(pageOffset / PAGE_LIMIT) + 1;
+  const totalPages = Math.max(1, Math.ceil(listTotalCount / PAGE_LIMIT));
+
+  const goToPage = () => {
+    const parsed = Number.parseInt(pageJumpValue, 10);
+    const boundedPage = Number.isFinite(parsed)
+      ? Math.min(Math.max(parsed, 1), totalPages)
+      : currentPage;
+    setPageJumpValue(String(boundedPage));
+    setPageOffset((boundedPage - 1) * PAGE_LIMIT);
+  };
 
   const clearFilters = () => {
     setSearch('');
-    setInstructionType('all');
+    setInstructionType('mnemonic_mapping');
     setTruthFilter('all');
     setTemplateFilter('all');
     setCurveFamilyFilter('all');
+    setPageOffset(0);
   };
 
 
@@ -686,6 +739,124 @@ export function KrManagedInstructionsWorkbench() {
 
   return (
     <section className="wlv-kr-workbench" aria-label="Knowledge Repository manager">
+      <style>{`
+        .wlv-kr-workbench > .wlv-kr-header {
+          padding: 12px 16px;
+          gap: 12px;
+        }
+
+        .wlv-kr-workbench > .wlv-kr-header h1 {
+          margin: 2px 0 2px;
+          font-size: 20px;
+          line-height: 1.15;
+        }
+
+        .wlv-kr-workbench > .wlv-kr-header p {
+          margin: 0;
+          font-size: 11px;
+          line-height: 1.3;
+        }
+
+        .wlv-kr-workbench > .wlv-kr-header .wlv-page-kicker {
+          font-size: 9px;
+          letter-spacing: 0.12em;
+        }
+
+        .wlv-kr-workbench > .wlv-kr-header .wlv-kr-header-actions {
+          gap: 6px;
+        }
+
+        .wlv-kr-workbench > .wlv-kr-header .wlv-kr-header-actions button {
+          min-height: 30px;
+          padding: 6px 10px;
+          border-radius: 4px;
+          font-size: 12px;
+          line-height: 1.1;
+          background: #101216 !important;
+          color: #ffffff !important;
+          border: 1px solid #454b55 !important;
+          box-shadow: none !important;
+          font-weight: 500;
+        }
+
+        .wlv-kr-workbench > .wlv-kr-header .wlv-kr-header-actions button:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+        }
+
+        .wlv-kr-workbench > .wlv-kr-header .wlv-kr-header-actions button.danger {
+          border-color: #a94a54 !important;
+          color: #ffb3bb !important;
+        }
+
+        .wlv-kr-workbench > .wlv-kr-header .wlv-kr-header-actions button:hover:not(:disabled) {
+          filter: brightness(1.05);
+        }
+
+        .wlv-kr-workbench > .wlv-kr-summary-grid {
+          gap: 8px;
+          margin-block: 8px;
+        }
+
+        .wlv-kr-workbench > .wlv-kr-summary-grid .wlv-kr-count-card {
+          min-height: 54px;
+          padding: 8px 12px;
+          border-radius: 10px;
+        }
+
+        .wlv-kr-workbench > .wlv-kr-summary-grid .wlv-kr-count-card strong {
+          font-size: 9px;
+          letter-spacing: 0.1em;
+        }
+
+        .wlv-kr-workbench > .wlv-kr-summary-grid .wlv-kr-count-card span {
+          margin-top: 2px;
+          font-size: 18px;
+          line-height: 1.1;
+        }
+
+        .wlv-kr-workbench > .wlv-kr-controls {
+          gap: 8px;
+          padding: 8px 12px;
+        }
+
+        .wlv-kr-workbench > .wlv-kr-controls label {
+          gap: 4px;
+          font-size: 9px;
+          letter-spacing: 0.08em;
+        }
+
+        .wlv-kr-workbench > .wlv-kr-controls input,
+        .wlv-kr-workbench > .wlv-kr-controls select {
+          min-height: 30px;
+          padding: 4px 9px;
+          font-size: 12px;
+        }
+
+        .wlv-kr-workbench [aria-label="KR catalogue pagination"] {
+          margin-top: 5px !important;
+          padding-block: 3px;
+        }
+
+        .wlv-kr-workbench [aria-label="KR catalogue pagination"] button {
+          min-width: 28px !important;
+          min-height: 28px;
+          padding: 3px 6px !important;
+          border-radius: 7px;
+          font-size: 14px;
+        }
+
+        .wlv-kr-workbench [aria-label="KR catalogue pagination"] input {
+          width: 52px !important;
+          min-height: 28px;
+          padding: 2px 5px;
+          font-size: 12px;
+        }
+
+        .wlv-kr-workbench [aria-label="KR catalogue pagination"] .wlv-kr-muted {
+          font-size: 11px;
+        }
+      `}</style>
       <header className="wlv-kr-header">
         <div>
           <span className="wlv-page-kicker">Knowledge Repository</span>
@@ -711,7 +882,14 @@ export function KrManagedInstructionsWorkbench() {
 
       <section className="wlv-kr-summary-grid" aria-label="KR instruction summary">
         <KrCountCard label="Approved live instructions" value={summaryLoading ? '…' : summary?.runtime_eligible_count ?? '—'} />
-        <KrCountCard label="Visible result set" value={listLoading ? '…' : `${listReturnedCount} / ${listTotalCount}`} />
+        <KrCountCard
+          label="Visible result set"
+          value={
+            listLoading
+              ? '…'
+              : `${pageStart.toLocaleString()}–${pageEnd.toLocaleString()} of ${listTotalCount.toLocaleString()}`
+          }
+        />
         <KrCountCard label="Production eligible" value={summaryLoading ? '…' : summary?.production_eligible_count ?? '—'} />
         <KrCountCard label="Evidence records" value={summaryLoading ? '…' : summary?.evidence_record_count ?? '—'} />
       </section>
@@ -719,17 +897,19 @@ export function KrManagedInstructionsWorkbench() {
       <section className="wlv-kr-controls" aria-label="KR instruction filters">
         <label>
           Search
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="CALI, BS, NPHI, resistivity, template…" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Mnemonic, canonical curve, family, description…" />
         </label>
         <label>
-          Instruction type
+          Catalogue view
           <select value={instructionType} onChange={(event) => setInstructionType(event.target.value as KrInstructionTypeFilter)}>
-            <option value="all">All</option>
-            <option value="curve_instruction">Curve</option>
-            <option value="template_instruction">Template</option>
-            <option value="track_instruction">Track</option>
-            <option value="selection_instruction">Selection</option>
-            <option value="application_instruction">Application</option>
+            <option value="mnemonic_mapping">Mnemonics</option>
+            <option value="curve_definition">Curve definitions</option>
+            <option value="curve_instruction">All curve knowledge</option>
+            <option value="template_instruction">Templates</option>
+            <option value="track_instruction">Tracks</option>
+            <option value="selection_instruction">Selection rules</option>
+            <option value="application_instruction">Application instructions</option>
+            <option value="all">All KR records</option>
           </select>
         </label>
         <label>
@@ -765,19 +945,33 @@ export function KrManagedInstructionsWorkbench() {
         <section className="wlv-kr-instruction-list" aria-label="Approved KR instructions">
           <div className="wlv-kr-section-heading">
             <h2>Managed application instructions</h2>
-            <span>{listLoading ? 'Loading…' : `${listReturnedCount} shown of ${listTotalCount}`}</span>
+            <span>{listLoading ? 'Loading…' : `${pageStart}–${pageEnd} of ${listTotalCount}${searchRanked ? ' ranked results' : ''}`}</span>
           </div>
           <div className="wlv-kr-table-wrap">
             <table className="wlv-kr-table">
               <thead>
                 <tr>
                   <th>Truth</th>
-                  <th>Type</th>
-                  <th>Subject</th>
-                  <th>Applies to</th>
-                  <th>Application must</th>
-                  <th>Must not</th>
-                  <th>Evidence</th>
+                  {mnemonicCatalogueView ? (
+                    <>
+                      <th>Mnemonic</th>
+                      <th>Canonical curve</th>
+                      <th>Curve family</th>
+                      <th>Unit</th>
+                      <th>Description</th>
+                      <th>Evidence</th>
+                    </>
+                  ) : (
+                    <>
+                      <th>Type</th>
+                      <th>Subject</th>
+                      <th>Mnemonic</th>
+                      <th>Applies to</th>
+                      <th>Application must</th>
+                      <th>Must not</th>
+                      <th>Evidence</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -788,19 +982,116 @@ export function KrManagedInstructionsWorkbench() {
                     onClick={() => setSelectedInstructionId(item.instruction_id)}
                   >
                     <td><KrTruthBadge item={item} /></td>
-                    <td>{labelFromKey(item.instruction_type)}</td>
-                    <td><strong>{item.subject}</strong><span>{item.source_record_type}</span></td>
-                    <td>{safeText(item.template_key || item.curve_family || item.application_area)}</td>
-                    <td>{item.must_do}</td>
-                    <td>{safeText(item.must_not_do)}</td>
-                    <td>{item.evidence_ref_count}</td>
+                    {mnemonicCatalogueView ? (
+                      <>
+                        <td><strong>{safeText(item.mnemonic || item.alias)}</strong><span>{item.source_record_type}</span></td>
+                        <td>{safeText(item.canonical_curve_id)}</td>
+                        <td>{safeText(item.curve_family || item.application_area)}</td>
+                        <td>{safeText(item.unit_hint)}</td>
+                        <td>{safeText(item.description)}</td>
+                        <td>{item.evidence_ref_count}</td>
+                      </>
+                    ) : (
+                      <>
+                        <td>{labelFromKey(item.instruction_type)}</td>
+                        <td><strong>{item.subject}</strong><span>{item.source_record_type}</span></td>
+                        <td>{safeText(item.mnemonic || item.alias)}</td>
+                        <td>{safeText(item.template_key || item.curve_family || item.application_area)}</td>
+                        <td>{item.must_do}</td>
+                        <td>{safeText(item.must_not_do)}</td>
+                        <td>{item.evidence_ref_count}</td>
+                      </>
+                    )}
                   </tr>
                 ))}
                 {!listLoading && instructions.length === 0 ? (
-                  <tr><td colSpan={7}>No KR instructions match the current filters.</td></tr>
+                  <tr><td colSpan={mnemonicCatalogueView ? 7 : 8}>No KR records match the current filters.</td></tr>
                 ) : null}
               </tbody>
             </table>
+          </div>
+          <div
+            aria-label="KR catalogue pagination"
+            style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginTop: 8,
+            }}
+          >
+            <div
+              className="wlv-kr-header-actions"
+              style={{
+                gap: 4,
+                flexWrap: 'nowrap',
+                alignItems: 'center',
+              }}
+            >
+              <button
+                type="button"
+                className="wlv-kr-outline-button"
+                aria-label="First page"
+                title="First page"
+                onClick={() => setPageOffset(0)}
+                disabled={listLoading || !hasPreviousPage}
+                style={{ minWidth: 34, paddingInline: 8 }}
+              >
+                «
+              </button>
+              <button
+                type="button"
+                className="wlv-kr-outline-button"
+                aria-label="Previous page"
+                title="Previous page"
+                onClick={() => setPageOffset((current) => Math.max(0, current - PAGE_LIMIT))}
+                disabled={listLoading || !hasPreviousPage}
+                style={{ minWidth: 34, paddingInline: 8 }}
+              >
+                ‹
+              </button>
+
+              <span className="wlv-kr-muted" style={{ marginLeft: 6 }}>Page</span>
+              <input
+                aria-label="KR page number"
+                type="number"
+                min={1}
+                max={totalPages}
+                value={pageJumpValue}
+                onChange={(event) => setPageJumpValue(event.target.value)}
+                onBlur={goToPage}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    goToPage();
+                  }
+                }}
+                style={{ width: 64, textAlign: 'center' }}
+              />
+              <span className="wlv-kr-muted" style={{ marginRight: 6 }}>of {totalPages}</span>
+
+              <button
+                type="button"
+                className="wlv-kr-outline-button"
+                aria-label="Next page"
+                title="Next page"
+                onClick={() => setPageOffset((current) => current + PAGE_LIMIT)}
+                disabled={listLoading || !hasNextPage}
+                style={{ minWidth: 34, paddingInline: 8 }}
+              >
+                ›
+              </button>
+              <button
+                type="button"
+                className="wlv-kr-outline-button"
+                aria-label="Last page"
+                title="Last page"
+                onClick={() => setPageOffset((totalPages - 1) * PAGE_LIMIT)}
+                disabled={listLoading || !hasNextPage}
+                style={{ minWidth: 34, paddingInline: 8 }}
+              >
+                »
+              </button>
+            </div>
           </div>
         </section>
 
@@ -832,5 +1123,31 @@ export function KrManagedInstructionsWorkbench() {
         />
       ) : null}
     </section>
+  );
+}
+
+export function KrManagedInstructionsWorkbench() {
+  const [section, setSection] = useState<'instructions' | 'lithology' | 'completions'>('instructions');
+  const tabStyle = (active: boolean) => ({
+    padding: '8px 14px',
+    border: 0,
+    borderBottom: active ? '2px solid #e0a72f' : '2px solid transparent',
+    background: 'transparent',
+    color: active ? '#fff' : '#a7adb6',
+    cursor: 'pointer',
+  });
+  return (
+    <div className="wlv-kr-section-shell">
+      <nav aria-label="Knowledge Repository sections" style={{ display: 'flex', gap: 6, padding: '10px 18px 0', borderBottom: '1px solid #353a42', background: '#15181d' }}>
+        <button type="button" onClick={() => setSection('instructions')} style={tabStyle(section === 'instructions')}>Curves</button>
+        <button type="button" onClick={() => setSection('lithology')} style={tabStyle(section === 'lithology')}>Lithology</button>
+        <button type="button" onClick={() => setSection('completions')} style={tabStyle(section === 'completions')}>Completions</button>
+      </nav>
+      {section === 'instructions'
+        ? <KrManagedInstructionsWorkbenchInstructions />
+        : section === 'lithology'
+          ? <LithologyCatalogueWorkbench />
+          : <KrCompletionsWorkbench />}
+    </div>
   );
 }

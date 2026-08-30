@@ -48,6 +48,9 @@ def run_source_intake_qaqc(candidate: SourceFileCandidate) -> SourceIntakeQaqcRe
     if candidate.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
         _check_wellbore_geometry_preview(candidate, checks)
 
+    if candidate.candidate_role == SourceIntakeCandidateRole.FORMATION_TOPS_CANDIDATE:
+        _check_formation_tops(candidate, checks)
+
     return summarize_source_intake_qaqc(checks)
 
 
@@ -166,6 +169,27 @@ def _check_wellbore_geometry_preview(candidate: SourceFileCandidate, checks: lis
                 severity=SourceIntakeQaqcSeverity.MEDIUM,
             )
         )
+
+
+def _check_formation_tops(candidate: SourceFileCandidate, checks: list[SourceIntakeQaqcCheck]) -> None:
+    payload = candidate.formation_tops
+    if candidate.parser_status == SourceIntakeParseStatus.PARSE_FAILED:
+        checks.append(_fail("formation_tops.parse.failed", candidate.parse_error or "Formation tops parse failed.", field_name="formation_tops"))
+        return
+    if payload is None:
+        checks.append(_fail("formation_tops.payload.missing", "Parsed formation-tops payload is missing.", field_name="formation_tops"))
+        return
+    checks.append(_pass("formation_tops.payload.present", f"Parsed {payload.row_count} formation-top rows."))
+    if payload.wellbore:
+        checks.append(_pass("formation_tops.wellbore.present", f"Formation tops are assigned to {payload.wellbore}."))
+    else:
+        checks.append(_fail("formation_tops.wellbore.missing", "Formation tops have no wellbore identity.", field_name="wellbore"))
+    if all(top.marker_name and top.md_m_rt >= 0 for top in payload.tops):
+        checks.append(_pass("formation_tops.rows.valid", "All formation-top rows have a marker name and valid MD."))
+    else:
+        checks.append(_fail("formation_tops.rows.invalid", "One or more formation-top rows are invalid.", field_name="tops"))
+    for warning in payload.warnings:
+        checks.append(_warning("formation_tops.warning", warning, field_name="formation_tops", review_required=True, severity=SourceIntakeQaqcSeverity.MEDIUM))
 
 
 def _check_las_parse(candidate: SourceFileCandidate, checks: list[SourceIntakeQaqcCheck]) -> None:

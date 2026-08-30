@@ -137,6 +137,30 @@ def canonical_metadata_from_dlis_values(
     )
 
 
+
+def canonical_metadata_from_lis_values(
+    values: dict[str, Any],
+    *,
+    parser_id: str,
+    source_section: str = "LIS HEADER",
+) -> SourceIntakeCanonicalMetadata:
+    fields: dict[str, SourceIntakeCanonicalMetadataField] = {}
+    unmapped: dict[str, Any] = {}
+    for canonical_field, raw in values.items():
+        value = _text(raw)
+        if canonical_field not in _FIELD_ALIASES:
+            unmapped[canonical_field] = raw
+            continue
+        if value is None:
+            continue
+        fields[canonical_field] = SourceIntakeCanonicalMetadataField(
+            canonical_field=canonical_field, value=value, original_field=canonical_field,
+            original_value=value, source_section=source_section, parser_id=parser_id,
+            source_format="LIS", normalization_rule="trim_whitespace",
+        )
+    return SourceIntakeCanonicalMetadata(schema_version="source_metadata_v1", source_format="LIS",
+        parser_id=parser_id, fields=fields, unmapped_header_values=unmapped)
+
 def canonical_value(
     metadata: SourceIntakeCanonicalMetadata | None,
     field_name: str,

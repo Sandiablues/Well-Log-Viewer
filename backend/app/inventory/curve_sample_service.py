@@ -20,6 +20,7 @@ from .repository import ManagedWellInventoryRepository, ManagedWellNotFoundError
 
 from .dlis_sample_reader import DlisSampleReaderError, read_dlis_curve_samples
 from app.source_intake.depth_units import clean_depth_value, convert_depth_to_target
+from app.source_intake.lis_parser import LisInspectionError, read_lis_curve_samples
 
 
 class CurveSampleServiceError(ValueError):
@@ -82,6 +83,10 @@ class CurveSampleService:
                     "dlis_frame_id",
                     "dlis_channel_mnemonic",
                     "dlis_index_channel",
+                    "lis_logical_file_id",
+                    "lis_log_set_id",
+                    "lis_channel_mnemonic",
+                    "lis_index_channel",
                 )
                 if parsed.get(key) is not None
             },
@@ -276,6 +281,19 @@ def _read_source_curve_samples(
             channel_mnemonic=str(provenance.get("dlis_channel_mnemonic") or curve_mnemonic),
             target_depth_unit=target_depth_unit,
         ), "dlis_original_path"
+    if kind in {"lis", "lti", "lis79"}:
+        try:
+            return read_lis_curve_samples(
+                source_path=source_path,
+                curve_mnemonic=curve_mnemonic,
+                max_samples=max_samples,
+                source_curve_name=str(provenance.get("source_curve_name") or "") or None,
+                logical_file_id=str(provenance.get("lis_logical_file_id") or "") or None,
+                log_set_id=str(provenance.get("lis_log_set_id") or "") or None,
+                target_depth_unit=target_depth_unit,
+            ), "lis_original_path"
+        except LisInspectionError as exc:
+            raise CurveSampleServiceError(str(exc)) from exc
     return _read_las_curve_samples(
         source_path,
         curve_mnemonic,

@@ -1,0 +1,465 @@
+{
+  "contract_revision": "deviation-survey-discovery-and-qaqc-1.1.0",
+  "principles": [
+    "Keep source extraction, normalization, calculation, inference, manual editing and publication provenance separate.",
+    "Never silently replace a source value with a calculated, inferred or normalized value.",
+    "Treat AI output as a review proposal; deterministic validation and human acceptance govern publication.",
+    "Apply rules generally to all wells, reports, scans, tables, file types and survey layouts.",
+    "Keep named wells and page ranges only in regression fixtures, never in general discovery assumptions."
+  ],
+  "source_discovery": {
+    "supported_sources": [
+      "selectable-text PDF",
+      "image-only PDF",
+      "mixed PDF",
+      "scanned table image",
+      "CSV",
+      "XLS",
+      "XLSX",
+      "TXT",
+      "ASC",
+      "LAS",
+      "DLIS",
+      "LIS",
+      "LTI",
+      "JSON response package",
+      "manual entry"
+    ],
+    "search_terms": [
+      "deviation survey",
+      "directional survey",
+      "definitive survey",
+      "final survey",
+      "survey listing",
+      "survey stations",
+      "trajectory",
+      "inclination",
+      "azimuth",
+      "measured depth",
+      "true vertical depth",
+      "vertical section",
+      "rectangular coordinates",
+      "northing",
+      "easting",
+      "dogleg",
+      "minimum curvature",
+      "extrapolated to TD",
+      "casing shoe position"
+    ],
+    "requirements": [
+      "Inspect the complete source, including page images, appendices, landscape pages, rotated pages and pages with weak or absent parsed text.",
+      "Do not reject a source merely because searchable text does not expose the survey.",
+      "Use table geometry and repeated column positions when OCR headers are weak.",
+      "Preserve PDF page number and printed or table page number separately."
+    ]
+  },
+  "applicability": {
+    "states": [
+      "confirmed_selected_well",
+      "probable_selected_well",
+      "ambiguous_well",
+      "different_well"
+    ],
+    "requirements": [
+      "Resolve the exact well, wellbore and sidetrack before creating primary candidates.",
+      "Do not assign parent-well survey data to a sidetrack, or sidetrack data to the parent, without explicit evidence.",
+      "Use well name, UWI, report title, repeated page headers and section context as evidence.",
+      "Only confirmed_selected_well is automatically primary-candidate eligible."
+    ]
+  },
+  "survey_assembly": {
+    "requirements": [
+      "Assemble related cover, metadata, station, comment and marker pages only when the relationship is defensible.",
+      "Use matching well identity, run title, units, coordinate convention, continuous MD range, repeated headers, page numbering or explicit continuation language.",
+      "Do not combine pages merely because they occur near each other.",
+      "Separate different survey dates, tools, contractors, runs, hole sections, sidetracks, planned surveys and actual surveys."
+    ],
+    "preserved_fields": [
+      "sourceFile",
+      "sourcePageRange",
+      "printedPageRange",
+      "tablePageRange",
+      "metadataPages",
+      "stationPages",
+      "commentPages",
+      "relatedMarkerPages",
+      "assemblyConfidence",
+      "assemblyReason"
+    ]
+  },
+  "canonical_station_fields": [
+    "measuredDepth",
+    "inclination",
+    "azimuth",
+    "trueVerticalDepth",
+    "northSouth",
+    "eastWest",
+    "northing",
+    "easting",
+    "doglegSeverity",
+    "verticalSection",
+    "courseLength",
+    "buildRate",
+    "turnRate",
+    "stationType",
+    "depthUnit",
+    "angleUnit",
+    "coordinateUnit",
+    "doglegUnit",
+    "sourceFile",
+    "sourcePage",
+    "sourceTablePage",
+    "sourceRow",
+    "evidenceReference",
+    "confidence",
+    "reviewStatus",
+    "notes"
+  ],
+  "column_aliases": {
+    "measuredDepth": [
+      "MD",
+      "Meas. Depth",
+      "Measured Depth",
+      "Depth"
+    ],
+    "inclination": [
+      "INC",
+      "Incl",
+      "Inclination",
+      "Angle",
+      "Drift"
+    ],
+    "azimuth": [
+      "AZI",
+      "Azim",
+      "Azimuth",
+      "Bearing",
+      "Direction"
+    ],
+    "trueVerticalDepth": [
+      "TVD",
+      "True Vertical Depth",
+      "Vert. Depth"
+    ],
+    "northSouth": [
+      "N/S",
+      "NS",
+      "North",
+      "South",
+      "Rect. Coord. 1"
+    ],
+    "eastWest": [
+      "E/W",
+      "EW",
+      "East",
+      "West",
+      "Rect. Coord. 2"
+    ],
+    "doglegSeverity": [
+      "DLS",
+      "Dogleg",
+      "Dog Leg",
+      "Dogleg Severity"
+    ],
+    "verticalSection": [
+      "VS",
+      "Vert. Sect.",
+      "Vertical Section"
+    ],
+    "courseLength": [
+      "CL",
+      "Course Length"
+    ],
+    "buildRate": [
+      "BR",
+      "Build",
+      "Build Rate"
+    ],
+    "turnRate": [
+      "TR",
+      "Turn",
+      "Turn Rate"
+    ]
+  },
+  "scan_and_ocr": {
+    "workflow": [
+      "Detect orientation",
+      "deskew",
+      "locate table",
+      "detect columns",
+      "detect row baselines",
+      "read cells independently",
+      "reconstruct using fixed geometry",
+      "compare adjacent rows",
+      "retain page and cell image coordinates",
+      "flag uncertain characters"
+    ],
+    "common_confusions": [
+      "0/O",
+      "1/I/l",
+      "2/Z",
+      "5/S",
+      "8/B",
+      "./,",
+      "-/\u2014",
+      "N/H",
+      "W/VV"
+    ],
+    "quality_flags": [
+      "clear",
+      "blurred",
+      "clipped",
+      "overwritten",
+      "artifact_crossing",
+      "low_contrast",
+      "handwritten",
+      "ambiguous_character"
+    ]
+  },
+  "normalization": {
+    "coordinate_sign_convention": {
+      "north": "positive",
+      "south": "negative",
+      "east": "positive",
+      "west": "negative"
+    },
+    "requirements": [
+      "Preserve original direction notation before producing signed normalized values.",
+      "Do not call local offsets global northings or eastings unless explicitly defined.",
+      "Preserve source units and normalized units separately.",
+      "Do not treat deg/30m and deg/100ft as numerically equivalent.",
+      "Keep missing source cells null; calculated completion remains separately identified."
+    ]
+  },
+  "station_types": [
+    "measured",
+    "calculated",
+    "extrapolated",
+    "casing",
+    "planned",
+    "manual",
+    "unknown"
+  ],
+  "review_states": [
+    "unreviewed",
+    "accepted",
+    "edited",
+    "rejected",
+    "existing"
+  ],
+  "qaqc_states": [
+    "pass",
+    "warning",
+    "failure",
+    "not_tested",
+    "not_applicable"
+  ],
+  "qaqc_severities": [
+    "information",
+    "warning",
+    "failure"
+  ],
+  "qaqc_categories": [
+    "Source and applicability",
+    "Table extraction",
+    "Required fields",
+    "Depth sequence",
+    "Inclination and azimuth",
+    "Units and references",
+    "Trajectory calculation",
+    "Coordinates and vertical section",
+    "Survey completeness",
+    "Duplicate and conflicting surveys",
+    "Extrapolated and calculated stations",
+    "Publication blockers"
+  ],
+  "qaqc_rules": [
+    {
+      "id": "DSM-REQ-001",
+      "category": "Required fields",
+      "severity": "failure",
+      "rule": "Every accepted primary station requires numeric MD, inclination and azimuth."
+    },
+    {
+      "id": "DSM-MD-001",
+      "category": "Depth sequence",
+      "severity": "failure",
+      "rule": "Accepted primary MD must be strictly increasing."
+    },
+    {
+      "id": "DSM-MD-002",
+      "category": "Depth sequence",
+      "severity": "warning",
+      "rule": "Duplicate MD with different INC/AZI requires review and must not be silently discarded."
+    },
+    {
+      "id": "DSM-MD-003",
+      "category": "Survey completeness",
+      "severity": "warning",
+      "rule": "Flag a large unexplained MD gap relative to local station spacing."
+    },
+    {
+      "id": "DSM-INC-001",
+      "category": "Inclination and azimuth",
+      "severity": "failure",
+      "rule": "Inclination must be between 0 and 180 degrees."
+    },
+    {
+      "id": "DSM-AZI-001",
+      "category": "Inclination and azimuth",
+      "severity": "failure",
+      "rule": "Normalized azimuth must be between 0 and less than 360 degrees."
+    },
+    {
+      "id": "DSM-AZI-002",
+      "category": "Inclination and azimuth",
+      "severity": "warning",
+      "rule": "Flag abrupt azimuth reversals, with reduced significance at near-zero inclination."
+    },
+    {
+      "id": "DSM-TVD-001",
+      "category": "Trajectory calculation",
+      "severity": "warning",
+      "rule": "Flag source TVD greater than MD when referenced in the same unit and datum."
+    },
+    {
+      "id": "DSM-TVD-002",
+      "category": "Trajectory calculation",
+      "severity": "warning",
+      "rule": "Compare source TVD with independent calculation without replacing the source value."
+    },
+    {
+      "id": "DSM-COORD-001",
+      "category": "Coordinates and vertical section",
+      "severity": "failure",
+      "rule": "Direction letters and normalized coordinate signs must agree."
+    },
+    {
+      "id": "DSM-COORD-002",
+      "category": "Coordinates and vertical section",
+      "severity": "warning",
+      "rule": "Flag abrupt lateral jumps inconsistent with course length, inclination and azimuth."
+    },
+    {
+      "id": "DSM-DLS-001",
+      "category": "Trajectory calculation",
+      "severity": "warning",
+      "rule": "Negative DLS is invalid; unusually high DLS uses configurable warning thresholds rather than universal rejection."
+    },
+    {
+      "id": "DSM-UNIT-001",
+      "category": "Units and references",
+      "severity": "failure",
+      "rule": "Mixed unresolved depth units block publication."
+    },
+    {
+      "id": "DSM-UNIT-002",
+      "category": "Units and references",
+      "severity": "failure",
+      "rule": "Mixed unresolved dogleg denominators block reliable DLS comparison."
+    },
+    {
+      "id": "DSM-REF-001",
+      "category": "Units and references",
+      "severity": "warning",
+      "rule": "Missing or conflicting MD datum, TVD datum, coordinate origin or azimuth reference requires review."
+    },
+    {
+      "id": "DSM-PAGE-001",
+      "category": "Table extraction",
+      "severity": "warning",
+      "rule": "Run duplicate, continuity, unit and clipped-digit checks at every source-page boundary."
+    },
+    {
+      "id": "DSM-OCR-001",
+      "category": "Table extraction",
+      "severity": "warning",
+      "rule": "Flag uncertain decimal points, direction letters and ambiguous critical characters."
+    },
+    {
+      "id": "DSM-RUN-001",
+      "category": "Duplicate and conflicting surveys",
+      "severity": "failure",
+      "rule": "Do not merge different wells, sidetracks, planned and actual surveys, or conflicting runs."
+    },
+    {
+      "id": "DSM-EXT-001",
+      "category": "Extrapolated and calculated stations",
+      "severity": "information",
+      "rule": "Extrapolated stations must remain explicitly marked and not counted as measured."
+    },
+    {
+      "id": "DSM-CAS-001",
+      "category": "Extrapolated and calculated stations",
+      "severity": "information",
+      "rule": "Casing positions are related markers and do not automatically enter the primary station sequence."
+    },
+    {
+      "id": "DSM-PUB-001",
+      "category": "Publication blockers",
+      "severity": "failure",
+      "rule": "Publication requires confirmed applicability, resolved units, at least two accepted stations and no unresolved failures."
+    }
+  ],
+  "comparison_tolerances": {
+    "measuredDepth": {
+      "value": 0.01,
+      "unit": "source depth unit"
+    },
+    "inclination": {
+      "value": 0.02,
+      "unit": "deg"
+    },
+    "azimuth": {
+      "value": 0.05,
+      "unit": "deg"
+    },
+    "trueVerticalDepth": {
+      "value": 0.25,
+      "unit": "m equivalent"
+    },
+    "northSouth": {
+      "value": 0.5,
+      "unit": "m equivalent"
+    },
+    "eastWest": {
+      "value": 0.5,
+      "unit": "m equivalent"
+    },
+    "doglegSeverity": {
+      "value": 0.1,
+      "unit": "deg/30m equivalent"
+    },
+    "verticalSection": {
+      "value": 0.5,
+      "unit": "m equivalent"
+    },
+    "note": "These are configurable QAQC review thresholds, not automatic rejection thresholds."
+  },
+  "publication": {
+    "states": [
+      "ready",
+      "ready_with_warnings",
+      "blocked"
+    ],
+    "requirements": [
+      "Only accepted or edited rows are publishable.",
+      "At least two accepted stations are required.",
+      "Accepted MD must be strictly increasing.",
+      "Depth and angle units must be resolved.",
+      "Well applicability must be confirmed.",
+      "Extrapolated rows must remain explicit.",
+      "Source and calculated values must both remain available.",
+      "WBV must consume the published trajectory independently of WDV."
+    ],
+    "non_overrideable_failures": [
+      "missing numeric MD",
+      "missing inclination",
+      "missing azimuth",
+      "duplicate accepted MD",
+      "decreasing accepted MD",
+      "mixed unresolved depth units",
+      "selected-well mismatch"
+    ]
+  }
+}

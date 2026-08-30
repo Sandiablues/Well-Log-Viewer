@@ -191,6 +191,7 @@ class WbvPublishedPackageRenderAdapter:
                     radial_width = destination.width
 
                 curves.append(WbvCurveOverlayRenderCurve(
+                    assignment_uid=assignment.assignment_uid,
                     curve_product_id=assignment.managed_product_uid,
                     display_name=assignment.display_name,
                     mnemonic=assignment.observed_mnemonic,
@@ -199,9 +200,27 @@ class WbvPublishedPackageRenderAdapter:
                     radial_lane=lane,
                     track_id=destination.track_uid,
                     radial_width=radial_width,
-                    color=assignment.color or "#58d39b",
+                    color=(
+                        override_curve.color
+                        if override_curve is not None and override_curve.color is not None
+                        else assignment.color or "#58d39b"
+                    ),
                     line_width=float(line_width),
                     opacity=float(opacity),
+                    label_visible=bool(override_curve.label_visible) if override_curve is not None and override_curve.label_visible is not None else False,
+                    label_content=override_curve.label_content if override_curve is not None and override_curve.label_content is not None else "mnemonic",
+                    label_anchor=override_curve.label_anchor if override_curve is not None and override_curve.label_anchor is not None else "top",
+                    label_custom_md=override_curve.label_custom_md if override_curve is not None else None,
+                    label_size=override_curve.label_size if override_curve is not None and override_curve.label_size is not None else 1.0,
+                    label_weight=override_curve.label_weight if override_curve is not None and override_curve.label_weight is not None else 800,
+                    label_alignment=override_curve.label_alignment if override_curve is not None and override_curve.label_alignment is not None else "center",
+                    label_position=override_curve.label_position if override_curve is not None and override_curve.label_position is not None else "on_track",
+                    label_horizontal_adjustment=override_curve.label_horizontal_adjustment if override_curve is not None and override_curve.label_horizontal_adjustment is not None else 0.0,
+                    label_vertical_adjustment=override_curve.label_vertical_adjustment if override_curve is not None and override_curve.label_vertical_adjustment is not None else 0.0,
+                    scale_color=override_curve.scale_color if override_curve is not None and override_curve.scale_color is not None else "#b7c5d0",
+                    scale_opacity=override_curve.scale_opacity if override_curve is not None and override_curve.scale_opacity is not None else 1.0,
+                    scale_line_width=override_curve.scale_line_width if override_curve is not None and override_curve.scale_line_width is not None else 1.0,
+                    scale_size=override_curve.scale_size if override_curve is not None and override_curve.scale_size is not None else 1.0,
                     fill_mode=fill_mode,
                     fill_target_curve_product_id=target_product_uid,
                     fill_color=fill_color,

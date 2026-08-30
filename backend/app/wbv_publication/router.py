@@ -14,6 +14,7 @@ from .models import (
     WbvPublishPreview,
     WbvPublishPreviewRequest,
     WbvPresentationOverridesUpdateRequest,
+    WbvPublishedTrackPresentationContract,
     WbvUpdateExistingRequest,
     WbvUpdateExistingResult,
     WbvUpdatePreview,
@@ -178,6 +179,23 @@ def update_package_presentation(
         message = str(exc)
         status = 409 if message.startswith("Stale package revision") else 422
         raise HTTPException(status_code=status, detail=message) from exc
+
+
+@router.get(
+    "/wells/{managed_well_uid}/packages/{package_uid}/track-presentation-package",
+    response_model=WbvPublishedTrackPresentationContract,
+)
+def get_published_track_presentation_package(
+    managed_well_uid: str,
+    package_uid: str,
+    service=Depends(get_service),
+):
+    try:
+        return service.get_track_presentation_package(managed_well_uid, package_uid)
+    except WbvOverlayPackageNotFound as exc:
+        raise HTTPException(status_code=404, detail=f"WBV overlay package not found: {exc.args[0]}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get(

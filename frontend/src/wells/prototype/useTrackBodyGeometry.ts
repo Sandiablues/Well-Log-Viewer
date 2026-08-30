@@ -40,14 +40,22 @@ export function useTrackBodyGeometry(options: TrackBodyGeometryOptions): TrackBo
     }
 
     const rect = container.getBoundingClientRect();
-    const availableBodyHeight = rect.height - headerHeightPx - footerClearancePx - stripPaddingPx * 2;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    const availableBodyHeight =
+      viewportHeight
+      - rect.top
+      - headerHeightPx
+      - footerClearancePx
+      - stripPaddingPx * 2;
 
     if (!Number.isFinite(availableBodyHeight) || availableBodyHeight <= 0) {
       setTrackBodyHeightPx(fallbackBodyHeightPx);
       return;
     }
 
-    const nextHeight = Math.round(clampValue(availableBodyHeight, minBodyHeightPx, maxBodyHeightPx));
+    const nextHeight = Math.round(
+      clampValue(availableBodyHeight, minBodyHeightPx, maxBodyHeightPx),
+    );
     setTrackBodyHeightPx((current) => (current === nextHeight ? current : nextHeight));
   }, [fallbackBodyHeightPx, footerClearancePx, headerHeightPx, maxBodyHeightPx, minBodyHeightPx, stripPaddingPx]);
 
@@ -65,10 +73,12 @@ export function useTrackBodyGeometry(options: TrackBodyGeometryOptions): TrackBo
     const resizeObserver = new ResizeObserver(recompute);
     resizeObserver.observe(container);
     window.addEventListener('resize', recompute);
+    window.visualViewport?.addEventListener('resize', recompute);
 
     return () => {
       resizeObserver.disconnect();
       window.removeEventListener('resize', recompute);
+      window.visualViewport?.removeEventListener('resize', recompute);
     };
   }, [recompute]);
 

@@ -28,6 +28,7 @@ _USABLE_QAQC = {
 _SUPPORTED_ROLES = {
     SourceIntakeCandidateRole.WELL_LOG_CANDIDATE,
     SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE,
+    SourceIntakeCandidateRole.FORMATION_TOPS_CANDIDATE,
 }
 
 
@@ -128,6 +129,10 @@ def evaluate_wmd_availability_readiness(
         if candidate.parsed_metadata is None:
             hard_issues.append("Candidate has no parsed LAS metadata.")
 
+    if candidate.candidate_role == SourceIntakeCandidateRole.FORMATION_TOPS_CANDIDATE:
+        if candidate.formation_tops is None or not candidate.formation_tops.tops:
+            hard_issues.append("Formation-tops candidate has no parsed marker payload.")
+
     if (
         candidate.candidate_role
         == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE
@@ -149,12 +154,34 @@ def evaluate_wmd_availability_readiness(
 
     review_issues: list[str] = []
 
+    # WLV-WSI-REOPENED-READINESS-REGRESSION-FIX:
+    # A human REOPENED / clear_decision action intentionally returns the
+    # candidate to unresolved review. Readiness must preserve that explicit
+    # human state and must not recalculate the candidate back to READY.
+    current_decision = getattr(candidate, "current_decision", None)
+    current_decision_value = getattr(
+        getattr(current_decision, "decision", None),
+        "value",
+        None,
+    )
+    if current_decision_value == "clear_decision":
+        review_issues.append(
+            "Candidate was reopened and requires human resolution."
+        )
+
     depth_contract = candidate.depth_normalization
     if depth_contract is not None and getattr(depth_contract.status, "value", depth_contract.status) == "review_required":
         review_issues.append("A human must choose the normalized depth unit: metres or feet.")
 
+    # WLV-WSI-GEOMETRY-METADATA-READINESS-ENTERPRISE-FIX:
+    # Well identity/ownership is mandatory for both well logs and geometry.
     if (
-        candidate.candidate_role == SourceIntakeCandidateRole.WELL_LOG_CANDIDATE
+        candidate.candidate_role
+        in {
+            SourceIntakeCandidateRole.WELL_LOG_CANDIDATE,
+            SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE,
+            SourceIntakeCandidateRole.FORMATION_TOPS_CANDIDATE,
+        }
         and not _canonical_well_name(candidate)
         and not _has_existing_well_assignment(candidate)
     ):

@@ -1,10 +1,14 @@
 import { fetchWlvApi } from '../api/wlvApiClient';
 
-export type CurveFillRuleTypeV2 = 'conditional' | 'crossover' | 'between_curves' | 'to_boundary';
+export const WDV_CURVE_SAMPLE_LIMIT = 12000;
+
+export type CurveFillRuleTypeV2 = 'conditional' | 'crossover' | 'between_curves' | 'to_boundary' | 'value_band' | 'curve_to_value' | 'threshold' | 'curve_envelope' | 'separation';
 export type CurveFillComparisonV2 = 'greater_than' | 'less_than';
-export type CurveFillBoundaryV2 = 'left' | 'right';
+export type CurveFillBoundaryV2 = 'left' | 'right'; // threshold: selected boundary is the fill anchor; null means curve↔threshold
+export type CurveFillSeparationModeV2 = 'absolute' | 'a_right_of_b' | 'a_left_of_b';
 export type CurveFillRuleStateV2 = 'stored' | 'pending_geometry' | 'resolved' | 'disabled' | 'invalid';
 export type CurveFillAppearanceV2 = 'solid' | 'pattern' | 'raster';
+export type CurveFillDepthExtentV2 = 'entire_track' | 'specified_interval';
 export interface CurveFillStyleV2 { appearance?: CurveFillAppearanceV2; color: string; opacity: number; pattern_uid?: string | null; pattern_scale?: number; raster_asset_uid?: string | null }
 
 export interface CanonicalCurveFillRuleV2 {
@@ -13,15 +17,24 @@ export interface CanonicalCurveFillRuleV2 {
   track_uid: string;
   curve_a_assignment_uid: string;
   curve_b_assignment_uid: string | null;
+  curve_operand_assignment_uids: string[];
   order: number;
   enabled: boolean;
   rule_type: CurveFillRuleTypeV2;
   comparison: CurveFillComparisonV2 | null;
   boundary: CurveFillBoundaryV2 | null;
+  reference_value: number | null;
+  band_min_value: number | null;
+  band_max_value: number | null;
+  minimum_separation_px: number;
+  separation_mode: CurveFillSeparationModeV2;
   overlay_policy_uid: string | null;
   overlay_policy_revision: string | null;
   deadband: number;
   minimum_interval: number;
+  depth_extent: CurveFillDepthExtentV2;
+  interval_from_md: number | null;
+  interval_to_md: number | null;
   style: CurveFillStyleV2;
   state: CurveFillRuleStateV2;
   state_reason: string | null;
@@ -135,7 +148,7 @@ async function postWorkflow<TSession>(
 }
 
 export function hydrateCurveFillV2<TSession>(managedWellUid: string, expectedRevision: number, fetchImpl: typeof fetch = fetch) {
-  return postWorkflow<TSession>(managedWellUid, 'hydrate', { expected_revision: expectedRevision }, fetchImpl);
+  return postWorkflow<TSession>(managedWellUid, 'hydrate', { expected_revision: expectedRevision, max_samples: WDV_CURVE_SAMPLE_LIMIT }, fetchImpl);
 }
 export function createCurveFillRuleV2<TSession>(managedWellUid: string, body: Readonly<Record<string, unknown>>, fetchImpl: typeof fetch = fetch) {
   return postWorkflow<TSession>(managedWellUid, 'rules', body, fetchImpl);
@@ -154,8 +167,20 @@ export function applyCurveFillGeometryDeltaV2(
   current: ReadonlyMap<string, CurveFillGeometryV2>, delta: CurveFillGeometryDeltaV2,
 ): Map<string, CurveFillGeometryV2> {
   const next = new Map(current);
-  for (const ruleUid of delta.remove) next.delete(ruleUid);
-  for (const geometry of delta.upsert) next.set(geometry.rule_uid, geometry);
+
+  // A geometry delta is owned by exactly one managed well. Hydration and
+  // interactive commands for that well must never remove geometry belonging
+  // to another well that is already represented on the shared canvas.
+  for (const ruleUid of delta.remove) {
+    const existing = next.get(ruleUid);
+    if (existing && existing.managed_well_uid !== delta.managed_well_uid) continue;
+    next.delete(ruleUid);
+  }
+
+  for (const geometry of delta.upsert) {
+    if (geometry.managed_well_uid !== delta.managed_well_uid) continue;
+    next.set(geometry.rule_uid, geometry);
+  }
   return next;
 }
 

@@ -790,22 +790,66 @@
   white-space: nowrap;
 }
 
-.wlv-wbv-panel--left .wlv-wbv-control-group {
+.wlv-wbv-view-controls {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.42rem;
+  gap: 0.7rem;
   margin-top: 0.82rem;
+  padding-top: 0.72rem;
+  border-top: 1px solid rgba(148, 156, 166, 0.18);
 }
 
-.wlv-wbv-panel--left .wlv-wbv-control-group button {
+.wlv-wbv-view-controls > h2,
+.wlv-wbv-view-control-block > h3 {
+  margin: 0;
+  color: #dce6eb;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.wlv-wbv-view-controls > h2 { font-size: 0.72rem; }
+.wlv-wbv-view-control-block > h3 { font-size: 0.58rem; color: #91a2ac; }
+
+.wlv-wbv-view-control-block { display: grid; gap: 0.4rem; }
+.wlv-wbv-view-control-grid { display: grid; gap: 0.4rem; }
+.wlv-wbv-view-control-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wlv-wbv-view-control-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.wlv-wbv-view-control-grid--four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.wlv-wbv-view-control-grid--five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+
+.wlv-wbv-view-controls button {
   min-width: 0;
   min-height: 1.72rem;
   padding: 0.34rem 0.48rem;
+  border: 1px solid rgba(113, 132, 151, 0.42);
   border-radius: 999px;
-  font-size: 0.72rem;
+  background: #101820;
+  color: #dce4e9;
+  font-size: 0.68rem;
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
+  box-shadow: none;
 }
+
+.wlv-wbv-view-controls button:hover:not(:disabled) {
+  border-color: #65b98a;
+  background: #141f29;
+  color: #f5faf7;
+}
+
+.wlv-wbv-view-controls button.is-active {
+  border-color: #4fbe86;
+  background: #153126;
+  color: #eafaf1;
+}
+
+.wlv-wbv-view-controls button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.wlv-wbv-zoom-controls { display: grid; grid-template-columns: 2.2rem minmax(0, 1fr) 2.2rem; gap: 0.4rem; }
+.wlv-wbv-zoom-value { font-variant-numeric: tabular-nums; }
 
 
 /* WMD-registered WBV display-layer selectors */
@@ -1040,7 +1084,15 @@
 .wlv-wbv-active-layer-list>div { display:flex; justify-content:space-between; gap:.75rem; color:#aeb8c1; font-size:.68rem; }
 .wlv-wbv-active-layer-list strong { color:#dfe6eb; font-weight:500; }
 
-.wlv-wbv-modal-backdrop--floating { position:fixed; inset:0; z-index:80; pointer-events:none; background:transparent; }
+.wlv-wbv-modal-backdrop--floating {
+  position:fixed;
+  inset:0;
+  z-index:80;
+  pointer-events:none;
+  background:transparent;
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
+}
 .wlv-wbv-layer-manager-modal {
   position:fixed; pointer-events:auto; display:grid; grid-template-rows:auto auto minmax(0,1fr) auto;
   min-width:860px; min-height:600px; max-width:calc(100vw - 16px); max-height:calc(100vh - 60px);
@@ -1060,7 +1112,7 @@
 .wlv-wbv-layer-tabs { display:flex; overflow-x:auto; padding:0 .75rem; border-bottom:1px solid rgba(148,156,166,.18); background:#0d151c; }
 .wlv-wbv-layer-tabs button { border:0; border-bottom:2px solid transparent; border-radius:0; background:transparent; color:#8997a5; padding:.62rem .75rem; white-space:nowrap; font:500 .7rem/1 inherit; cursor:pointer; }
 .wlv-wbv-layer-tabs button.is-active { color:#f0f4f7; border-bottom-color:#65b98a; }
-.wlv-wbv-layer-manager-body { display:grid; grid-template-columns:minmax(390px,1.65fr) minmax(220px,.75fr) minmax(300px,1fr); min-height:0; overflow:hidden; }
+.wlv-wbv-layer-manager-body { display:grid; grid-template-columns:minmax(250px,.72fr) minmax(390px,1.18fr) minmax(310px,.92fr); min-height:0; overflow:hidden; }
 .wlv-wbv-layer-manager-body>section { min-width:0; min-height:0; overflow:auto; border-right:1px solid rgba(148,156,166,.14); background:#0c141b; }
 .wlv-wbv-layer-manager-body>section:last-child { border-right:0; background:#101820; }
 .wlv-wbv-manager-panel-title { position:sticky; top:0; z-index:2; display:flex; justify-content:space-between; padding:.52rem .62rem; border-bottom:1px solid rgba(148,156,166,.15); background:#111a22; }
@@ -1103,7 +1155,7 @@
 
 @media (max-width:1050px) {
   .wlv-wbv-layer-manager-modal { min-width:760px; }
-  .wlv-wbv-layer-manager-body { grid-template-columns:minmax(340px,1.45fr) minmax(190px,.7fr) minmax(270px,1fr); }
+  .wlv-wbv-layer-manager-body { grid-template-columns:minmax(230px,.72fr) minmax(310px,1.14fr) minmax(270px,.92fr); }
 }
 
 .wlv-wbv-layer-manager-modal .wlv-wbv-control-button,
@@ -1280,7 +1332,7 @@
 
 /* WBV Curve Overlays cleanup: merged package/content cards and wider post-production. */
 .wlv-wbv-layer-manager-body.is-curve-overlays {
-  grid-template-columns: minmax(430px, 44%) minmax(560px, 56%);
+  grid-template-columns: minmax(250px, 24%) minmax(680px, 76%);
 }
 .wlv-wbv-layer-manager-body.is-curve-overlays > section {
   border-right: 1px solid rgba(148,156,166,.14);
@@ -1443,7 +1495,7 @@
 }
 @media (max-width: 1100px) {
   .wlv-wbv-layer-manager-body.is-curve-overlays {
-    grid-template-columns: minmax(390px, 48%) minmax(470px, 52%);
+    grid-template-columns: minmax(260px, 30%) minmax(560px, 70%);
   }
 }
 
@@ -1694,4 +1746,1765 @@
   stroke-linejoin: round;
   filter: drop-shadow(0 0 3px rgba(103, 213, 153, 0.44));
   pointer-events: all;
+}
+
+
+/* WBV interval selection typography — match adjacent right-panel menus. */
+.wlv-wbv-interval-table .wlv-wbv-selected-point-row {
+  min-height: 1.8rem;
+}
+
+.wlv-wbv-interval-table .wlv-wbv-selected-point-label,
+.wlv-wbv-interval-table .wlv-wbv-selected-point-value {
+  padding: 0.34rem 0.5rem;
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 400;
+  line-height: 1.2;
+}
+
+.wlv-wbv-interval-table .wlv-wbv-selected-point-label {
+  color: #a5acb5;
+}
+
+.wlv-wbv-interval-table .wlv-wbv-selected-point-value {
+  color: #eef0f2;
+}
+
+
+/* WBV managed-well selector */
+.wlv-wbv-well-selector {
+  width:min(540px,48vw);
+  display:grid;
+  grid-template-columns:auto minmax(260px,1fr);
+  grid-template-rows:auto minmax(1rem,auto);
+  align-items:center;
+  column-gap:.72rem;
+  row-gap:.24rem;
+  align-self:start;
+  margin-top:-.08rem;
+}
+.wlv-wbv-well-selector label {
+  grid-column:1;
+  grid-row:1;
+  color:#9aa8b6;
+  font-size:.68rem;
+  font-weight:800;
+  letter-spacing:.12em;
+  line-height:1;
+  text-transform:uppercase;
+  white-space:nowrap;
+}
+.wlv-wbv-well-selector select {
+  grid-column:2;
+  grid-row:1;
+  width:100%;
+  min-height:2.15rem;
+  border:1px solid rgba(126,146,165,.56);
+  border-radius:9px;
+  background:#111922;
+  color:#f2f6fa;
+  padding:.34rem 2.1rem .34rem .68rem;
+  font-size:.74rem;
+  font-weight:700;
+}
+.wlv-wbv-well-selector select.is-wdv-loaded { border-color:rgba(238,167,58,.78); color:#f2b34f; }
+.wlv-wbv-well-selector option.is-unavailable { color:#6f7d8c; }
+.wlv-wbv-well-selector option.is-trajectory-only { color:#f2f6fa; }
+.wlv-wbv-well-selector option.is-wdv-loaded { color:#f2b34f; }
+.wlv-wbv-well-selector p { grid-column:2; margin:0; font-size:.7rem; line-height:1.3; }
+.wlv-wbv-well-selector__warning { color:#ff746d; }
+.wlv-wbv-well-selector__notice { color:#f0c55a; }
+.wlv-wbv-well-selector__active { color:#f2f6fa; }
+.wlv-wbv-well-selector__error { color:#ff746d; }
+@media (max-width:980px) {
+  .wlv-wbv-well-selector { width:100%; grid-template-columns:auto minmax(0,1fr); }
+}
+@media (max-width:640px) {
+  .wlv-wbv-well-selector { grid-template-columns:1fr; margin-top:0; }
+  .wlv-wbv-well-selector label,
+  .wlv-wbv-well-selector select,
+  .wlv-wbv-well-selector p { grid-column:1; }
+  .wlv-wbv-well-selector label { grid-row:auto; }
+  .wlv-wbv-well-selector select { grid-row:auto; }
+}
+
+
+/* WBV rotation center and isolated horizontal axis lock */
+.wlv-wbv-rotation-center-controls {
+  padding-top: 0.58rem;
+  border-top: 1px solid rgba(148, 156, 166, 0.18);
+}
+
+.wlv-wbv-rotation-center-row {
+  display: grid;
+  grid-template-columns: 2.2rem minmax(0, 1fr) 2.2rem;
+  gap: 0.4rem;
+}
+
+.wlv-wbv-rotation-center-row button {
+  grid-column: 2;
+  min-height: 1.72rem;
+  font-size: 0.64rem;
+  font-weight: 400;
+}
+
+.wlv-wbv-horizontal-rotation-controls {
+  display: grid;
+  grid-template-columns: 2.2rem minmax(0, 1fr) 2.2rem;
+  gap: 0.4rem;
+}
+
+.wlv-wbv-horizontal-rotation-controls button {
+  min-height: 1.72rem;
+  font-weight: 400;
+}
+
+.wlv-wbv-horizontal-rotation-controls button:nth-child(2) {
+  font-size: 0.68rem;
+}
+
+
+/* WBV isolated vertical axis lock */
+.wlv-wbv-vertical-rotation-controls {
+  display: grid;
+  grid-template-columns: 2.2rem minmax(0, 1fr) 2.2rem;
+  gap: 0.4rem;
+}
+
+.wlv-wbv-vertical-rotation-controls button {
+  min-height: 1.72rem;
+  font-weight: 400;
+}
+
+.wlv-wbv-vertical-rotation-controls button:nth-child(2) {
+  font-size: 0.68rem;
+}
+
+
+.wlv-wbv-compass{position:absolute;z-index:18;border:1px solid rgba(185,243,255,.55);border-radius:50%;background:rgba(5,13,18,.55);color:#dff8ff;pointer-events:none;box-sizing:border-box;text-shadow:0 1px 2px #000}.wlv-wbv-compass.is-top-left{top:18px;left:18px}.wlv-wbv-compass.is-top-right{top:18px;right:18px}.wlv-wbv-compass.is-bottom-left{bottom:18px;left:18px}.wlv-wbv-compass.is-bottom-right{bottom:18px;right:18px}.wlv-wbv-compass span{position:absolute;font-weight:700;line-height:1}.wlv-wbv-compass .n{top:5px;left:50%;transform:translateX(-50%)}.wlv-wbv-compass .s{bottom:5px;left:50%;transform:translateX(-50%)}.wlv-wbv-compass .e{right:6px;top:50%;transform:translateY(-50%)}.wlv-wbv-compass .w{left:6px;top:50%;transform:translateY(-50%)}.wlv-wbv-compass i{position:absolute;left:50%;top:17%;width:2px;height:33%;background:#f3fbff;transform:translateX(-50%);transform-origin:50% 100%}.wlv-wbv-compass i:after{content:"";position:absolute;top:-3px;left:-3px;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:7px solid #f3fbff}.wlv-wbv-view-properties-list{min-width:250px}.wlv-wbv-layer-manager-body:has(.wlv-wbv-view-properties-list){grid-template-columns:minmax(240px,32%) minmax(420px,1fr)}
+
+/* WBV View Properties V1.0.2: compact property editor presentation. */
+.wlv-wbv-layer-manager-body:has(.wlv-wbv-view-properties-rail) {
+  grid-template-columns: 210px minmax(0, 1fr);
+}
+.wlv-wbv-view-properties-rail {
+  min-width: 0;
+  border-right: 1px solid #27343e;
+  background: #0d161d;
+  overflow: auto;
+}
+.wlv-wbv-view-properties-rail-heading {
+  padding: .72rem .8rem .55rem;
+  color: #aeb9c1;
+  font-size: .62rem;
+  font-weight: 750;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.wlv-wbv-view-properties-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 .45rem .6rem;
+}
+.wlv-wbv-view-properties-nav button {
+  position: relative;
+  min-height: 2rem;
+  padding: .45rem .65rem .45rem .82rem;
+  border: 0;
+  border-radius: .28rem;
+  background: transparent;
+  color: #b8c3ca;
+  text-align: left;
+  cursor: pointer;
+}
+.wlv-wbv-view-properties-nav button:hover {
+  background: #152129;
+  color: #edf4f6;
+}
+.wlv-wbv-view-properties-nav button.is-current {
+  background: #1b2d27;
+  color: #eef7f1;
+}
+.wlv-wbv-view-properties-nav button.is-current::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: .3rem;
+  bottom: .3rem;
+  width: 3px;
+  border-radius: 3px;
+  background: #70c79a;
+}
+.wlv-wbv-view-properties-nav button span {
+  font-size: .72rem;
+  font-weight: 650;
+}
+.wlv-wbv-view-properties-editor {
+  min-width: 0;
+  overflow: auto;
+  background: #0e171e;
+}
+.wlv-wbv-view-properties-header {
+  display: flex;
+  align-items: center;
+  min-height: 3.05rem;
+  padding: .58rem .9rem;
+  border-bottom: 1px solid #27343e;
+}
+.wlv-wbv-view-properties-header h3 {
+  margin: 0;
+  color: #eef3f5;
+  font-size: .78rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.wlv-wbv-view-properties-header p {
+  margin: .14rem 0 0;
+  color: #7f8d97;
+  font-size: .58rem;
+}
+.wlv-wbv-view-properties-content {
+  width: min(820px, calc(100% - 1.5rem));
+  padding: .75rem;
+}
+.wlv-wbv-property-card {
+  margin: 0 0 .65rem;
+  padding: .68rem .72rem .74rem;
+  border: 1px solid #2b3944;
+  border-radius: .42rem;
+  background: #111b22;
+}
+.wlv-wbv-property-card.is-compact {
+  padding: .35rem .45rem;
+}
+.wlv-wbv-property-card h4 {
+  margin: 0 0 .45rem;
+  color: #aeb9c1;
+  font-size: .6rem;
+  font-weight: 750;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.wlv-wbv-property-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  gap: .5rem .7rem;
+}
+.wlv-wbv-property-grid.is-three {
+  grid-template-columns: repeat(3, minmax(130px, 1fr));
+}
+.wlv-wbv-property-card .wlv-wbv-field {
+  margin: 0;
+  font-size: .6rem;
+}
+.wlv-wbv-property-card .wlv-wbv-field small {
+  color: #72808a;
+  font-size: .52rem;
+  font-weight: 500;
+}
+.wlv-wbv-property-card .wlv-wbv-field input,
+.wlv-wbv-property-card .wlv-wbv-field select {
+  min-height: 1.85rem;
+  font-size: .66rem;
+}
+.wlv-wbv-property-card .wlv-wbv-field input[type=color] {
+  width: 4rem;
+  min-width: 4rem;
+  max-width: 4rem;
+  height: 1.85rem;
+  min-height: 1.85rem;
+}
+.wlv-wbv-property-card .wlv-wbv-check-row {
+  margin: .1rem;
+  font-size: .66rem;
+}
+.wlv-wbv-segmented-control {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(145px, 1fr));
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid #3a4a56;
+  border-radius: .34rem;
+}
+.wlv-wbv-segmented-control button {
+  min-height: 1.9rem;
+  padding: .35rem .7rem;
+  border: 0;
+  border-right: 1px solid #3a4a56;
+  background: #0b141b;
+  color: #9eabb4;
+  font-size: .63rem;
+  cursor: pointer;
+}
+.wlv-wbv-segmented-control button:last-child { border-right: 0; }
+.wlv-wbv-segmented-control button.is-active {
+  background: #234034;
+  color: #effaf4;
+  box-shadow: inset 0 0 0 1px #63b989;
+}
+@media (max-width: 980px) {
+  .wlv-wbv-layer-manager-body:has(.wlv-wbv-view-properties-rail) { grid-template-columns: 185px minmax(0,1fr); }
+  .wlv-wbv-property-grid.is-three { grid-template-columns: repeat(2, minmax(150px,1fr)); }
+}
+
+/* V1.0.6 — keep the Track Layout type selector visually consistent with the manager UI. */
+.wlv-wbv-layer-manager-modal .wlv-wbv-track-toolbar select,
+.wlv-wbv-layer-manager-modal .wlv-wbv-track-toolbar select option {
+  font-size: .72rem;
+  line-height: 1.2;
+}
+
+
+/* WBV multi-well display */
+.wlv-wbv-well-selector__label-button { grid-column:1; grid-row:1; justify-self:center; align-self:center; display:inline-flex; align-items:center; justify-content:center; min-height:2rem; padding:0; border:0; background:transparent; color:#f2f6fa; font-size:.78rem; font-weight:700; letter-spacing:.05em; line-height:1; text-transform:uppercase; white-space:nowrap; cursor:pointer; transition:background-color .16s ease, border-color .16s ease, box-shadow .16s ease, color .16s ease, padding .16s ease; }
+.wlv-wbv-well-selector__label-button.is-ready { color:#f2f6fa; }
+.wlv-wbv-well-selector__label-button.is-pending { padding:.44rem .9rem; border:1px solid rgba(143, 240, 185, 0.5); border-radius:999px; background:linear-gradient(180deg, rgba(22, 72, 48, 0.92) 0%, rgba(15, 55, 37, 0.92) 100%); color:#8ff0b9; box-shadow:0 0 0 1px rgba(143, 240, 185, 0.08), 0 10px 22px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04); }
+.wlv-wbv-well-selector__label-button.is-pending:hover { border-color:rgba(143, 240, 185, 0.72); box-shadow:0 0 0 1px rgba(143, 240, 185, 0.12), 0 12px 24px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.wlv-wbv-well-selector__label-button:disabled { opacity:1; cursor:default; }
+.wlv-wbv-well-selector__pending { color:#8ff0b9; }
+.wlv-wbv-multiwell-select { position: relative; width: 100%; }
+.wlv-wbv-multiwell-select__trigger { width: 100%; min-height: 42px; display:flex; align-items:center; justify-content:space-between; padding:0 14px; border:1px solid #41627a; border-radius:12px; background:#111a23; color:#f4f7fa; font-size:.78rem; font-weight:700; line-height:1.2; text-align:left; cursor:pointer; }
+.wlv-wbv-multiwell-select.is-open .wlv-wbv-multiwell-select__trigger { border-color:#3d9cff; box-shadow:0 0 0 2px rgba(61,156,255,.24); }
+.wlv-wbv-multiwell-select__menu { position:absolute; z-index:200; top:calc(100% + 6px); left:0; right:0; max-height:320px; overflow:auto; padding:6px; border:1px solid #34495a; border-radius:10px; background:#101820; box-shadow:0 14px 34px rgba(0,0,0,.48); }
+.wlv-wbv-multiwell-select__option { display:grid; grid-template-columns:auto 1fr auto; gap:10px; align-items:center; min-height:34px; padding:6px 9px; border-radius:7px; color:#e9f0f5; font-size:.76rem; cursor:pointer; }
+.wlv-wbv-multiwell-select__option:hover { background:#182734; }
+.wlv-wbv-multiwell-select__option.is-active { background:#183427; }
+.wlv-wbv-multiwell-select__option.is-unavailable { color:#71808b; cursor:not-allowed; }
+.wlv-wbv-multiwell-select__name { font-size:.76rem; font-weight:700; }
+.wlv-wbv-multiwell-select__badge { font-size:.62rem; font-weight:700; letter-spacing:.08em; color:#8ff0b9; }
+.wlv-wbv-multiwell-select__badge.is-loading { color:#7fc8ff; }
+.wlv-wbv-active-well-label { display:block; margin-top:4px; color:#8ff0b9; font-size:11px; letter-spacing:.06em; }
+.wlv-wbv-layer-well-selector { display:flex; align-items:center; gap:10px; margin-left:auto; color:#9eabb6; font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+.wlv-wbv-layer-well-selector select { min-width:220px; height:32px; border:1px solid #34495a; border-radius:7px; background:#101820; color:#f1f5f8; padding:0 28px 0 9px; text-transform:none; letter-spacing:normal; }
+
+
+/* WBV floating compass dial */
+.wlv-wbv-compass-dial {
+  position: absolute;
+  top: 0.9rem;
+  left: 0.9rem;
+  z-index: 12;
+  width: 6.2rem;
+  height: 6.2rem;
+  padding: 0.42rem;
+  border: 1px solid rgba(84, 203, 229, 0.42);
+  border-radius: 1rem;
+  background: rgba(4, 11, 15, 0.8);
+  box-shadow: 0 0.45rem 1.2rem rgba(0, 0, 0, 0.34), inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.wlv-wbv-compass-dial__bezel {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(121, 222, 241, 0.45);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, rgba(80, 206, 230, 0.12) 0 7%, transparent 8%),
+    repeating-conic-gradient(from -1deg, rgba(151, 231, 245, 0.32) 0deg 1deg, transparent 1deg 15deg),
+    radial-gradient(circle at center, rgba(2, 10, 14, 0.42) 0 56%, rgba(1, 6, 9, 0.9) 57% 100%);
+  box-shadow: inset 0 0 1rem rgba(52, 195, 220, 0.1), 0 0 0.5rem rgba(52, 195, 220, 0.08);
+}
+
+.wlv-wbv-compass-dial__bezel::after {
+  content: '';
+  position: absolute;
+  inset: 0.42rem;
+  border: 1px solid rgba(121, 222, 241, 0.16);
+  border-radius: 50%;
+}
+
+.wlv-wbv-compass-dial__viewer-eye {
+  position: absolute;
+  bottom: 0.06rem;
+  left: 50%;
+  z-index: 6;
+  width: 1.18rem;
+  height: 0.78rem;
+  transform: translateX(-50%);
+  color: #dffaff;
+  filter: drop-shadow(0 0 0.22rem rgba(121, 229, 245, 0.52));
+}
+
+.wlv-wbv-compass-dial__viewer-eye svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.wlv-wbv-compass-dial__viewer-eye path {
+  fill: rgba(5, 18, 24, 0.94);
+  stroke: currentColor;
+  stroke-width: 1.45;
+  stroke-linejoin: round;
+}
+
+.wlv-wbv-compass-dial__viewer-eye circle {
+  fill: #8ff2ff;
+  stroke: rgba(225, 252, 255, 0.96);
+  stroke-width: 0.85;
+}
+
+.wlv-wbv-compass-dial__viewer-eye .wlv-wbv-compass-dial__viewer-eye-highlight {
+  fill: #ffffff;
+  stroke: none;
+}
+
+.wlv-wbv-compass-dial__rose {
+  position: absolute;
+  inset: 0.22rem;
+  transform-origin: 50% 50%;
+  will-change: transform;
+}
+
+.wlv-wbv-compass-dial__rose[data-edge-on='true'] { opacity: 0.58; }
+
+.wlv-wbv-compass-dial__cardinal {
+  position: absolute;
+  z-index: 3;
+  color: #cdebf0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 0.35rem rgba(0, 0, 0, 0.95);
+}
+
+.wlv-wbv-compass-dial__cardinal.is-north { top: 0.38rem; left: 50%; color: #8ff2ff; transform: translateX(-50%); }
+.wlv-wbv-compass-dial__cardinal.is-south { bottom: 0.38rem; left: 50%; transform: translateX(-50%) rotate(180deg); }
+.wlv-wbv-compass-dial__cardinal.is-east { top: 50%; right: 0.42rem; transform: translateY(-50%) rotate(90deg); }
+.wlv-wbv-compass-dial__cardinal.is-west { top: 50%; left: 0.42rem; transform: translateY(-50%) rotate(-90deg); }
+
+.wlv-wbv-compass-dial__center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 5;
+  width: 0.42rem;
+  height: 0.42rem;
+  border: 1px solid rgba(214, 250, 255, 0.92);
+  border-radius: 50%;
+  background: #10242b;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0.35rem rgba(86, 220, 241, 0.42);
+}
+
+/* ==========================================================================
+   WBV / WDV STYLE PARITY V1.0.0
+   Presentation-only, WBV-scoped overrides.
+   No DOM, control, renderer, table, state or interaction changes.
+   ========================================================================== */
+
+.wlv-wbv-page {
+  padding: 0.62rem;
+}
+
+.wlv-wbv-header {
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.72rem;
+  border-radius: 5px;
+  background: #151b22;
+}
+
+.wlv-wbv-header .wlv-page-kicker {
+  margin-bottom: 0.12rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+}
+
+.wlv-wbv-header h1 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.wlv-wbv-header p {
+  font-size: 0.74rem;
+  line-height: 1.3;
+}
+
+.wlv-wbv-layout {
+  gap: 0.55rem;
+}
+
+.wlv-wbv-panel {
+  padding: 0.62rem;
+  border-radius: 5px;
+  background: #151b22;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-panel-heading,
+.wlv-wbv-panel--right .wlv-wbv-panel-heading {
+  margin-bottom: 0.48rem;
+  padding-bottom: 0.45rem;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-panel-heading > span,
+.wlv-wbv-panel--right .wlv-wbv-panel-heading > span {
+  margin-bottom: 0.1rem;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-panel-heading > strong,
+.wlv-wbv-panel--right .wlv-wbv-panel-heading > strong {
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.wlv-wbv-left-section {
+  padding: 0.52rem 0;
+}
+
+.wlv-wbv-left-section h2,
+.wlv-wbv-information-section h2 {
+  margin-bottom: 0.38rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-control-list {
+  gap: 0.3rem;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-control-list label {
+  min-height: 1.18rem;
+  gap: 0.42rem;
+  font-size: 0.7rem;
+}
+
+.wlv-wbv-view-controls {
+  gap: 0.5rem;
+  margin-top: 0.56rem;
+  padding-top: 0.5rem;
+}
+
+.wlv-wbv-view-controls > h2 {
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+}
+
+.wlv-wbv-view-control-block {
+  gap: 0.3rem;
+}
+
+.wlv-wbv-view-control-block > h3 {
+  font-size: 0.54rem;
+  letter-spacing: 0.06em;
+}
+
+.wlv-wbv-information-section {
+  padding: 0.58rem 0;
+}
+
+.wlv-wbv-information-section--well {
+  padding-top: 0.48rem;
+}
+
+.wlv-wbv-trajectory-list {
+  margin-top: 0.46rem;
+  padding-top: 0.4rem;
+}
+
+.wlv-wbv-trajectory-list__row {
+  min-height: 1.62rem;
+}
+
+.wlv-wbv-trajectory-list__row > span,
+.wlv-wbv-trajectory-list__row > strong {
+  font-size: 0.7rem;
+}
+
+.wlv-wbv-selected-point-table,
+.wlv-wbv-geometry-table {
+  border-radius: 4px;
+}
+
+/* ==========================================================================
+   WBV INSPECTION HEADER SPACING V1.0.1
+   Right-panel heading only.
+   ========================================================================== */
+
+.wlv-wbv-panel--right .wlv-wbv-panel-heading {
+  margin-bottom: 0.62rem;
+  padding-bottom: 0.68rem;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-panel-heading > span:first-child {
+  margin-bottom: 0.22rem;
+  font-size: 0.62rem;
+  line-height: 1.2;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-panel-heading > strong {
+  margin-bottom: 0.24rem;
+  font-size: 0.86rem;
+  line-height: 1.22;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-panel-heading > .wlv-wbv-active-well-label {
+  display: block;
+  margin: 0;
+  color: #9da7b2;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   WBV RIGHT PANEL TYPE SCALE V1.0.2
+   Consistent compact typography throughout the Inspection panel.
+   ========================================================================== */
+
+.wlv-wbv-panel--right {
+  font-size: 0.68rem;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-information-section h2,
+.wlv-wbv-panel--right .wlv-wbv-section-heading-row h2 {
+  margin-bottom: 0.38rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.18;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-well-summary__row > span,
+.wlv-wbv-panel--right .wlv-wbv-well-summary__row > strong,
+.wlv-wbv-panel--right .wlv-wbv-trajectory-list__row > span,
+.wlv-wbv-panel--right .wlv-wbv-trajectory-list__row > strong,
+.wlv-wbv-panel--right .wlv-wbv-selected-point-label,
+.wlv-wbv-panel--right .wlv-wbv-selected-point-value,
+.wlv-wbv-panel--right .wlv-wbv-qaqc-summary > strong,
+.wlv-wbv-panel--right .wlv-wbv-qaqc-summary > span {
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-well-summary__row > span,
+.wlv-wbv-panel--right .wlv-wbv-trajectory-list__row > span,
+.wlv-wbv-panel--right .wlv-wbv-selected-point-label {
+  font-weight: 600;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-well-summary__row > strong,
+.wlv-wbv-panel--right .wlv-wbv-trajectory-list__row > strong,
+.wlv-wbv-panel--right .wlv-wbv-selected-point-value {
+  font-weight: 400;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-information-empty,
+.wlv-wbv-panel--right .wlv-wbv-track-values-control,
+.wlv-wbv-panel--right .wlv-wbv-information-section > p,
+.wlv-wbv-panel--right .wlv-wbv-interaction-error {
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-track-values-control > span {
+  font-size: 0.66rem;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-control-button--compact {
+  font-size: 0.62rem;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-depth-unit-toggle button {
+  font-size: 0.64rem;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-qaqc-summary {
+  align-items: baseline;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-qaqc-summary > strong {
+  font-weight: 700;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-section-heading-row {
+  min-height: 1.35rem;
+  gap: 0.45rem;
+}
+
+.wlv-wbv-panel--right .wlv-wbv-information-section {
+  padding-top: 0.52rem;
+  padding-bottom: 0.52rem;
+}
+
+/* ==========================================================================
+   WBV LEFT PANEL TYPE SCALE V1.0.3
+   Mirrors the compact relative hierarchy established in the Inspection panel.
+   ========================================================================== */
+
+.wlv-wbv-panel--left {
+  font-size: 0.68rem;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-panel-heading > span:first-child {
+  font-size: 0.62rem;
+  line-height: 1.2;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-panel-heading > strong {
+  font-size: 0.86rem;
+  line-height: 1.22;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-left-section h2,
+.wlv-wbv-panel--left .wlv-wbv-section-heading-row h2,
+.wlv-wbv-panel--left .wlv-wbv-view-controls > h2 {
+  margin-bottom: 0.38rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.18;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-control-list label,
+.wlv-wbv-panel--left .wlv-wbv-layer-list label,
+.wlv-wbv-panel--left .wlv-wbv-track-values-control,
+.wlv-wbv-panel--left .wlv-wbv-information-empty {
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-view-control-block > h3 {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1.15;
+}
+
+.wlv-wbv-panel--left button,
+.wlv-wbv-panel--left .wlv-wbv-control-button,
+.wlv-wbv-panel--left .wlv-wbv-control-button--compact,
+.wlv-wbv-panel--left .wlv-wbv-view-control-button,
+.wlv-wbv-panel--left .wlv-wbv-orientation-button,
+.wlv-wbv-panel--left .wlv-wbv-zoom-button,
+.wlv-wbv-panel--left .wlv-wbv-rotation-button {
+  font-size: 0.62rem;
+  line-height: 1.15;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-zoom-value,
+.wlv-wbv-panel--left .wlv-wbv-rotation-value {
+  font-size: 0.68rem;
+  line-height: 1.15;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-section-heading-row {
+  min-height: 1.35rem;
+  gap: 0.45rem;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-left-section,
+.wlv-wbv-panel--left .wlv-wbv-view-controls {
+  font-size: 0.68rem;
+}
+
+
+
+/* WBV Formation Tops selectable-row presentation */
+.wlv-wbv-manager-top-actions {
+  display:flex;
+  gap:.4rem;
+  padding:.5rem .62rem .35rem;
+  border-bottom:1px solid rgba(113,133,146,.18);
+}
+.wlv-wbv-manager-top-list {
+  display:flex;
+  flex-direction:column;
+  gap:0;
+  max-height:calc(100% - 3.2rem);
+  overflow:auto;
+  padding:.15rem .35rem .5rem;
+}
+.wlv-wbv-manager-top-row {
+  display:grid;
+  grid-template-columns:1.1rem minmax(0,1fr) auto;
+  align-items:center;
+  gap:.5rem;
+  min-height:2rem;
+  padding:.22rem .3rem;
+  border-bottom:1px solid rgba(113,133,146,.12);
+  cursor:pointer;
+  font-size:.72rem;
+  line-height:1.2;
+}
+.wlv-wbv-manager-top-row:hover { background:rgba(88,211,155,.06); }
+.wlv-wbv-manager-top-row input { margin:0; }
+.wlv-wbv-manager-top-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wlv-wbv-manager-top-md { color:#9aa8b3; font-variant-numeric:tabular-nums; white-space:nowrap; text-align:right; }
+
+
+/* WBV Formation Tops manager layout cleanup V1.0.3 */
+.wlv-wbv-formation-top-properties { padding:.42rem .5rem .7rem; }
+.wlv-wbv-property-group { margin:0 0 .55rem; padding:.2rem .35rem .4rem; border:1px solid #2f3b46; border-radius:.35rem; background:#0d151c; }
+.wlv-wbv-property-group:last-child { margin-bottom:0; }
+.wlv-wbv-property-group legend { margin-left:.25rem; padding:0 .28rem; color:#93a1ad; font-size:.56rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+.wlv-wbv-formation-top-properties .wlv-wbv-field { margin:.38rem .35rem; }
+.wlv-wbv-range-field { grid-template-columns:minmax(3.6rem,auto) minmax(0,1fr) 3.2rem; align-items:center; column-gap:.5rem; }
+.wlv-wbv-range-field > span { color:#9ba8b4; }
+.wlv-wbv-range-field input[type=range] { width:100%; min-width:0; min-height:0 !important; padding:0 !important; }
+.wlv-wbv-range-field output { color:#9aa8b3; font-size:.58rem; font-variant-numeric:tabular-nums; text-align:right; }
+.wlv-wbv-manager-toggle-row { display:flex; align-items:center; gap:.42rem; margin:.42rem .35rem; color:#c7d0d7; font-size:.6rem; cursor:pointer; }
+.wlv-wbv-layer-manager-modal .wlv-wbv-manager-toggle-row input[type=checkbox] { width:.82rem; min-width:.82rem; max-width:.82rem; height:.82rem; min-height:.82rem; margin:0; padding:0; accent-color:#58bf87; }
+.wlv-wbv-colour-field { grid-template-columns:auto 1fr; align-items:center; }
+.wlv-wbv-manager-top-row { grid-template-columns:.9rem minmax(0,1fr) 5.6rem; gap:.42rem; }
+.wlv-wbv-manager-top-name { font-size:.68rem; }
+.wlv-wbv-manager-top-md { font-size:.64rem; }
+
+/* WBV Formation Tops label/layout controls V1.1.0 */
+.wlv-wbv-layer-manager-body.is-formation-tops {
+  grid-template-columns: minmax(245px, .72fr) minmax(330px, .96fr) minmax(430px, 1.24fr);
+}
+.wlv-wbv-layer-manager-body.is-formation-tops .wlv-wbv-manager-properties-panel {
+  min-width: 430px;
+}
+.wlv-wbv-layer-manager-body.is-formation-tops .wlv-wbv-manager-selected-panel {
+  min-width: 0;
+}
+.wlv-wbv-formation-top-properties .wlv-wbv-range-field output {
+  min-width: 3.4rem;
+}
+@media (max-width: 1120px) {
+  .wlv-wbv-layer-manager-body.is-formation-tops {
+    grid-template-columns: minmax(220px, .72fr) minmax(300px, .95fr) minmax(370px, 1.18fr);
+  }
+  .wlv-wbv-layer-manager-body.is-formation-tops .wlv-wbv-manager-properties-panel {
+    min-width: 370px;
+  }
+}
+
+
+/* WBV -> WDV shared control styling adoption V1.1.1
+ * Formation Tops is the first fully governed WBV tab. The token scope itself
+ * applies to the whole Manage Display Layers modal so subsequent tabs can use
+ * the same primitives without defining a second viewer-specific standard.
+ */
+.wlv-wbv-layer-manager-modal .wlv-wbv-formation-top-properties {
+  padding: var(--wlv-modal-row-gap) var(--wlv-modal-control-gap) var(--wlv-modal-section-gap);
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-formation-top-properties .wlv-wbv-property-group {
+  display: grid;
+  justify-items: start;
+  align-content: start;
+  row-gap: var(--wlv-modal-row-gap);
+  margin: 0 0 var(--wlv-modal-section-gap);
+  padding: 12px;
+  border: 1px solid #353b44;
+  border-radius: 6px;
+  background: #16181c;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-formation-top-properties .wlv-wbv-property-group:last-child {
+  margin-bottom: 0;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-formation-top-properties .wlv-wbv-field {
+  margin: 0;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-formation-top-properties .wlv-wbv-range-field {
+  display: grid;
+  grid-template-columns: 58px var(--wlv-modal-slider) 52px;
+  align-items: center;
+  justify-content: start;
+  column-gap: 12px;
+  width: max-content;
+  max-width: 100%;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-formation-top-properties .wlv-wbv-range-field input[type="range"] {
+  width: var(--wlv-modal-slider) !important;
+  max-width: var(--wlv-modal-slider) !important;
+  min-width: 0;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-formation-top-properties .wlv-wbv-range-field output {
+  min-width: 52px;
+  color: #aeb4bd;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-formation-top-properties .wlv-wbv-colour-field {
+  display: grid;
+  grid-template-columns: max-content var(--wlv-modal-swatch);
+  align-items: center;
+  justify-content: start;
+  column-gap: 12px;
+  width: max-content;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-formation-top-properties .wlv-wbv-field > select {
+  width: var(--wlv-modal-select-medium) !important;
+  min-width: var(--wlv-modal-select-medium) !important;
+  max-width: var(--wlv-modal-select-medium) !important;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-formation-top-properties .wlv-wbv-manager-toggle-row {
+  margin: 0;
+  min-height: 28px;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-manager-top-row {
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-manager-top-name {
+  font-size: 10.5px;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-manager-top-md {
+  font-size: 10px;
+}
+
+/* Override the older WBV stretch rules now governed by shared WDV dimensions. */
+.wlv-wbv-layer-manager-modal .wlv-wbv-range-field input[type="range"] {
+  width: var(--wlv-modal-slider);
+  max-width: var(--wlv-modal-slider);
+}
+
+.wlv-wbv-active-control-well {
+  margin: 2px 12px 8px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: #9fb2be;
+}
+
+
+/* WBV Lithology interval selection — shared WDV modal-control standard */
+.wlv-wbv-layer-manager-body.is-lithology {
+  grid-template-columns: minmax(300px, .76fr) minmax(500px, 1.22fr) minmax(430px, 1.02fr);
+}
+.wlv-wbv-layer-manager-body.is-lithology .wlv-wbv-manager-inventory-panel { min-width:300px; }
+.wlv-wbv-layer-manager-body.is-lithology .wlv-wbv-manager-selected-panel { min-width:500px; }
+.wlv-wbv-layer-manager-body.is-lithology .wlv-wbv-manager-properties-panel { min-width:430px; }
+.wlv-wbv-layer-manager-body.is-lithology .wlv-wbv-manager-inventory-panel .wlv-wbv-field > select {
+  width:var(--wlv-modal-select-long) !important;
+  min-width:var(--wlv-modal-select-long) !important;
+  max-width:var(--wlv-modal-select-long) !important;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-lithology-properties {
+  padding:var(--wlv-modal-row-gap) var(--wlv-modal-control-gap) var(--wlv-modal-section-gap);
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-lithology-properties .wlv-wbv-property-group {
+  display:grid; justify-items:start; align-content:start; row-gap:var(--wlv-modal-row-gap);
+  margin:0 0 var(--wlv-modal-section-gap); padding:12px; border:1px solid #353b44;
+  border-radius:6px; background:#16181c; box-sizing:border-box; width:100%;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-lithology-properties .wlv-wbv-field { margin:0; }
+.wlv-wbv-layer-manager-modal .wlv-wbv-lithology-properties .wlv-wbv-range-field {
+  display:grid; grid-template-columns:58px var(--wlv-modal-slider) 52px; align-items:center;
+  justify-content:start; column-gap:12px; width:max-content; max-width:100%;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-lithology-properties .wlv-wbv-range-field input[type="range"] {
+  width:var(--wlv-modal-slider) !important; max-width:var(--wlv-modal-slider) !important;
+  min-width:0; padding:0 !important; margin:0 !important;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-lithology-properties .wlv-wbv-range-field output {
+  min-width:52px; color:#aeb4bd; font-size:10px; font-weight:650; line-height:1.2;
+  font-variant-numeric:tabular-nums; text-align:right;
+}
+.wlv-wbv-lithology-actions { min-height:42px; align-items:center; }
+.wlv-wbv-lithology-list { padding-top:0; }
+.wlv-wbv-lithology-list-header {
+  position:sticky; top:0; z-index:2; display:grid;
+  grid-template-columns:16px minmax(220px,1fr) 190px; align-items:center; column-gap:10px;
+  min-height:28px; padding:0 8px; border-bottom:1px solid rgba(148,156,166,.22);
+  background:#111a22; color:#81919d; font-size:9.5px; font-weight:700;
+  letter-spacing:.06em; text-transform:uppercase;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-lithology-row {
+  grid-template-columns:16px minmax(220px,1fr) 190px; column-gap:10px;
+  min-height:34px; padding:5px 8px; cursor:pointer;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-lithology-row input[type="checkbox"] {
+  width:15px; min-width:15px; max-width:15px; height:15px; min-height:15px;
+  margin:0; padding:0; accent-color:#58bf87;
+}
+.wlv-wbv-lithology-name-wrap {
+  display:grid; grid-template-columns:18px minmax(0,1fr); align-items:center;
+  column-gap:8px; min-width:0;
+}
+.wlv-wbv-lithology-swatch {
+  width:16px; height:16px; border:1px solid #46515b; border-radius:2px; box-sizing:border-box;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-lithology-name {
+  overflow:visible; text-overflow:clip; white-space:normal; line-height:1.25;
+  font-size:10.5px; font-weight:600; color:#d5dde3;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-lithology-md {
+  min-width:190px; font-size:10px; font-weight:600; text-align:right; color:#9aa8b3;
+}
+@media (max-width:1180px) {
+  .wlv-wbv-layer-manager-body.is-lithology {
+    grid-template-columns:minmax(270px,.72fr) minmax(440px,1.15fr) minmax(380px,1fr);
+  }
+  .wlv-wbv-layer-manager-body.is-lithology .wlv-wbv-manager-selected-panel { min-width:440px; }
+  .wlv-wbv-layer-manager-body.is-lithology .wlv-wbv-manager-properties-panel { min-width:380px; }
+}
+
+
+/* WBV Lithology — genuine KR pattern swatches */
+.wlv-wbv-lithology-swatch--kr {
+  display:block;
+  overflow:hidden;
+  background:#ffffff;
+}
+.wlv-wbv-lithology-swatch--kr img {
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  background:transparent;
+}
+.wlv-wbv-lithology-swatch--fallback {
+  position:relative;
+}
+.wlv-wbv-lithology-swatch--fallback::after {
+  content:"";
+  position:absolute;
+  inset:2px;
+  border:1px dashed rgba(20,24,28,.55);
+  border-radius:1px;
+}
+
+
+/* Manage Display Layers — slider + direct numeric-entry standard */
+.wlv-wbv-layer-manager-modal .wlv-wbv-range-field {
+  grid-template-columns: 58px var(--wlv-modal-slider) 86px !important;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-range-number-box {
+  display: grid;
+  grid-template-columns: 64px 16px;
+  align-items: center;
+  column-gap: 4px;
+  min-width: 84px;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-range-number {
+  width: 64px !important;
+  min-width: 64px !important;
+  max-width: 64px !important;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 3px 6px !important;
+  border: 1px solid #45515c;
+  border-radius: 4px;
+  background: #10171d;
+  color: #d8e0e6;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-range-number:focus {
+  outline: 1px solid #55a7ff;
+  outline-offset: 0;
+  border-color: #55a7ff;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-range-number:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-range-number-box > span {
+  color: #aeb4bd;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+}
+
+/* WBV_SAVE_CANVAS_TITLE_FIXED_WIDTH_V1_0_0
+   Titled fixed-width WBV Save Canvas field. Shared menu behavior is unchanged.
+*/
+.wlv-wbv-header-tools {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: .82rem;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.wlv-wbv-save-canvas-field {
+  display: grid;
+  grid-template-columns: auto 168px;
+  column-gap: .58rem;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: -8px;
+}
+
+.wlv-wbv-save-canvas-title {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  color: #f1f5f9;
+  font-size: .78rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  text-transform: none;
+  letter-spacing: .02em;
+}
+
+.wlv-wbv-save-canvas-slot {
+  position: relative;
+  width: 168px;
+  margin: 3.5px 0 0 0;
+}
+
+.wlv-wbv-save-canvas-slot .wlv-toolbar-actions {
+  margin: 0;
+  width: 100%;
+}
+
+.wlv-wbv-save-canvas-slot .wlv-saved-canvas-control {
+  display: block;
+  width: 100%;
+}
+
+.wlv-wbv-save-canvas-slot .wlv-saved-canvas-control > button {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wlv-wbv-header-tools .wlv-wbv-well-selector {
+  margin-left: 0;
+  margin-top: -.08rem;
+  column-gap: .62rem;
+}
+
+.wlv-wbv-header-tools .wlv-wbv-well-selector__label-button {
+  min-height: 42px;
+  align-self: center;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1;
+  text-transform: none !important;
+  letter-spacing: .02em !important;
+}
+
+.wlv-wbv-header-tools .wlv-wbv-multiwell-select__trigger {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+}
+
+@media (max-width: 1180px) {
+  .wlv-wbv-header-tools {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .wlv-wbv-save-canvas-field {
+    margin-left: 0;
+  }
+}
+
+/* WBV_FORMATION_TOP_LIST_NAME_VISIBILITY_V1_0_0
+   External-window portal safety: do not rely on document-level inherited text colour. */
+.wlv-wbv-layer-manager-body.is-formation-tops .wlv-wbv-manager-top-name {
+  color: #d5dde3;
+}
+
+/* WBV_SAVE_CANVAS_TITLE_FONT_REDUCTION_V1_0_0 */
+
+/* WBV_SAVE_CANVAS_TITLE_MATCH_WELL_SELECTION_V1_0_0 */
+
+
+/* WBV Core manager layout + locator appearance V1.0.0 */
+.wlv-wbv-layer-manager-body.is-core-images {
+  grid-template-columns: minmax(240px,.72fr) minmax(330px,.92fr) minmax(500px,1.18fr);
+}
+.wlv-wbv-layer-manager-body.is-core-images .wlv-wbv-manager-properties-panel {
+  min-width: 500px;
+}
+.wlv-wbv-layer-manager-body.is-core-images .wlv-wbv-manager-selected-panel {
+  min-width: 330px;
+}
+.wlv-wbv-core-properties {
+  display: grid;
+  gap: .72rem;
+  padding: .62rem .72rem .85rem;
+}
+.wlv-wbv-core-properties .wlv-wbv-property-group {
+  margin: 0;
+  padding: .34rem .48rem .52rem;
+}
+.wlv-wbv-core-properties .wlv-wbv-property-note {
+  margin: .45rem .5rem;
+  line-height: 1.45;
+}
+.wlv-wbv-core-properties .wlv-wbv-field {
+  margin: .52rem .5rem;
+}
+.wlv-wbv-core-action-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .55rem;
+  margin: .65rem .5rem .3rem;
+}
+.wlv-wbv-core-action-row .wlv-wbv-control-button {
+  min-width: 7.2rem;
+  justify-content: center;
+}
+.wlv-wbv-core-properties .wlv-wbv-colour-field {
+  grid-template-columns: 78px minmax(0,1fr);
+  column-gap: .75rem;
+}
+.wlv-wbv-core-properties .wlv-wbv-colour-field input[type="color"] {
+  width: 4rem;
+  min-width: 4rem;
+  max-width: 4rem;
+}
+.wlv-wbv-core-properties .wlv-wbv-range-field {
+  grid-template-columns: 78px minmax(150px,1fr) 86px !important;
+  column-gap: .65rem;
+}
+@media (max-width: 1120px) {
+  .wlv-wbv-layer-manager-body.is-core-images {
+    grid-template-columns: minmax(220px,.7fr) minmax(290px,.86fr) minmax(430px,1.22fr);
+  }
+  .wlv-wbv-layer-manager-body.is-core-images .wlv-wbv-manager-properties-panel { min-width:430px; }
+  .wlv-wbv-layer-manager-body.is-core-images .wlv-wbv-manager-selected-panel { min-width:290px; }
+}
+
+/* WBV_CURVE_OVERLAY_EDITOR_VISIBILITY_FIX_V1_0_0_AUDITED
+   External Manage Display Layers windows do not reliably inherit every
+   foreground treatment from the host WBV page.  Keep the curve
+   post-production editor visually self-contained. */
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit {
+  color: #dce4e8;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit > strong {
+  color: #e7edef;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit label,
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit label > span {
+  color: #aebac4;
+  opacity: 1;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit input[type="number"] {
+  border-color: #41515f;
+  background: #091118;
+  color: #e7edef;
+  caret-color: #e7edef;
+  opacity: 1;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit input[type="number"]:focus {
+  border-color: #65b98a;
+  outline: 1px solid rgba(101, 185, 138, 0.28);
+  outline-offset: 0;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit input[type="checkbox"] {
+  accent-color: #4fbe86;
+  opacity: 1;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit input:disabled,
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit label:has(input:disabled) {
+  opacity: .48;
+}
+
+
+/* WBV_CURVE_LABEL_OPTIONS_V1_0_0_AUDITED */
+.wlv-wbv-curve-label-controls {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: max-content repeat(3, max-content);
+  gap: var(--wlv-modal-row-gap) var(--wlv-modal-control-gap);
+  align-items: end;
+  justify-content: start;
+  padding-top: 8px;
+  border-top: 1px solid rgba(92,108,118,.28);
+}
+.wlv-wbv-curve-label-controls .wlv-wbv-curve-label-toggle {
+  display: grid;
+  gap: var(--wlv-modal-label-control-gap);
+  color: #aeb4bd;
+  font-size: 10px;
+  font-weight: 650;
+}
+.wlv-wbv-curve-label-controls .wlv-wbv-curve-label-toggle input[type="checkbox"] { width:15px; height:15px; accent-color:#4fbe86; }
+.wlv-wbv-curve-label-controls .wlv-wbv-field select { width:var(--wlv-modal-select-short); max-width:var(--wlv-modal-select-short); }
+.wlv-wbv-curve-label-controls .wlv-wbv-curve-label-range { grid-column:1 / -1; width:max-content; max-width:100%; }
+.wlv-wbv-curve-label-controls .wlv-wbv-curve-label-range + .wlv-wbv-curve-label-range { margin-top:-4px; }
+
+
+/* WBV_CURVE_SCALE_SCREENSPACE_MODAL_REBALANCE_V1_0_1_AUDITED */
+.wlv-wbv-curve-scale-overlay {
+  position:absolute;
+  inset:0;
+  z-index:12;
+  overflow:hidden;
+  pointer-events:none;
+}
+.wlv-wbv-curve-scale-overlay-item {
+  box-sizing:border-box;
+  color:#dce7ec;
+  font-family:inherit;
+  text-shadow:0 1px 2px rgba(0,0,0,.95),0 0 4px rgba(0,0,0,.78);
+}
+.wlv-wbv-curve-scale-overlay-mnemonic {
+  margin-bottom:6px;
+  text-align:center;
+  font-weight:800;
+  line-height:1;
+  white-space:nowrap;
+}
+.wlv-wbv-curve-scale-overlay-scale {
+  position:relative;
+  width:100%;
+  height:44px;
+}
+.wlv-wbv-curve-scale-overlay-axis {
+  position:absolute;
+  left:0;
+  right:0;
+  top:9px;
+  height:1px;
+  background:rgba(190,211,221,.94);
+  box-shadow:0 1px 2px rgba(0,0,0,.82);
+}
+.wlv-wbv-curve-scale-overlay-tick {
+  position:absolute;
+  top:-5px;
+  width:1px;
+  height:11px;
+  background:rgba(190,211,221,.98);
+  transform:translateX(-50%);
+}
+.wlv-wbv-curve-scale-overlay-tick em {
+  position:absolute;
+  top:15px;
+  left:50%;
+  transform:translateX(-50%);
+  color:#edf3f6;
+  font-style:normal;
+  font-size:10px;
+  font-weight:650;
+  line-height:1;
+  white-space:nowrap;
+}
+.wlv-wbv-curve-scale-overlay-unit {
+  position:absolute;
+  top:-12px;
+  right:0;
+  color:#aebcc5;
+  font-size:9px;
+  font-weight:700;
+  line-height:1;
+  white-space:nowrap;
+}
+
+
+/* WBV_CURVE_SCALE_DYNAMIC_STYLE_COMPACT_V1_0_0_AUDITED
+   Compact curve post-production geometry using the shared modal contract. */
+.wlv-wbv-layer-manager-modal .wlv-wbv-combined-track-header {
+  grid-template-columns: minmax(170px, max-content) max-content;
+  justify-content: start;
+  column-gap: var(--wlv-modal-control-gap);
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-combined-track-header label {
+  width: max-content;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-combined-track-header select {
+  width: var(--wlv-modal-select-medium);
+  max-width: var(--wlv-modal-select-medium);
+  min-width: 0;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit {
+  grid-template-columns: max-content repeat(5, max-content);
+  justify-content: start;
+  column-gap: var(--wlv-modal-control-gap);
+  row-gap: var(--wlv-modal-row-gap);
+  align-items: end;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit > strong {
+  min-width: 44px;
+  align-self: center;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit .wlv-wbv-curve-compact-toggle {
+  width: max-content;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit .wlv-wbv-curve-number-compact input[type="number"] {
+  width: var(--wlv-modal-number-compact) !important;
+  max-width: var(--wlv-modal-number-compact) !important;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit .wlv-wbv-curve-number-standard input[type="number"] {
+  width: var(--wlv-modal-number-standard) !important;
+  max-width: var(--wlv-modal-number-standard) !important;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-controls {
+  grid-template-columns: repeat(4, max-content);
+  justify-content: start;
+  align-items: end;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-controls .wlv-wbv-field select {
+  width: var(--wlv-modal-select-short);
+  max-width: var(--wlv-modal-select-short);
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-controls input[type="number"]:not(.wlv-wbv-range-number) {
+  width: var(--wlv-modal-number-depth) !important;
+  max-width: var(--wlv-modal-number-depth) !important;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-scale-style-controls {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, max-content);
+  gap: var(--wlv-modal-row-gap) var(--wlv-modal-control-gap);
+  align-items: end;
+  justify-content: start;
+}
+.wlv-wbv-curve-scale-overlay-item {
+  --wlv-curve-scale-color: #b7c5d0;
+  --wlv-curve-scale-line-width: 1px;
+}
+.wlv-wbv-curve-scale-overlay-axis {
+  height: var(--wlv-curve-scale-line-width);
+  background: var(--wlv-curve-scale-color);
+}
+.wlv-wbv-curve-scale-overlay-tick {
+  width: var(--wlv-curve-scale-line-width);
+  background: var(--wlv-curve-scale-color);
+}
+.wlv-wbv-curve-scale-overlay-tick em,
+.wlv-wbv-curve-scale-overlay-unit {
+  color: var(--wlv-curve-scale-color);
+}
+
+
+/* WBV_CURVE_SCALE_APPEARANCE_SIZE_WEIGHT_V1_0_0_AUDITED
+   Scale Size changes visual prominence only; horizontal scale span remains renderer-owned. */
+.wlv-wbv-curve-scale-overlay-item {
+  --wlv-curve-scale-size: 1;
+}
+.wlv-wbv-curve-scale-overlay-scale {
+  height: calc(44px * var(--wlv-curve-scale-size));
+}
+.wlv-wbv-curve-scale-overlay-axis {
+  top: calc(9px * var(--wlv-curve-scale-size));
+}
+.wlv-wbv-curve-scale-overlay-tick {
+  top: calc(-5px * var(--wlv-curve-scale-size));
+  height: calc(11px * var(--wlv-curve-scale-size));
+}
+.wlv-wbv-curve-scale-overlay-tick em {
+  top: calc(15px * var(--wlv-curve-scale-size));
+  font-size: calc(10px * var(--wlv-curve-scale-size));
+}
+.wlv-wbv-curve-scale-overlay-unit {
+  top: calc(-12px * var(--wlv-curve-scale-size));
+  font-size: calc(9px * var(--wlv-curve-scale-size));
+}
+
+
+/* WBV_CURVE_EDITOR_COMPACT_MNEMONIC_WEIGHT_V1_0_0_AUDITED */
+.wlv-wbv-layer-manager-modal .wlv-wbv-combined-track-editor {
+  width: min(100%, 820px);
+  max-width: 820px;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-combined-track-header {
+  grid-template-columns: max-content max-content;
+  justify-content: start;
+  gap: 6px 12px;
+  width: min(100%, 720px);
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit {
+  grid-template-columns: repeat(3, max-content);
+  justify-content: start;
+  align-items: end;
+  gap: 8px 14px;
+  width: min(100%, 780px);
+  max-width: 780px;
+  padding: 8px 10px 10px;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit > strong {
+  grid-column: 1 / -1;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-controls {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  justify-content: start;
+  align-items: end;
+  gap: 8px 14px;
+  width: min(100%, 760px);
+  padding-top: 8px;
+  border-top: 1px solid rgba(114,145,160,.22);
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-controls select {
+  width: var(--wlv-modal-select-short);
+  max-width: var(--wlv-modal-select-short);
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-range {
+  width: 300px;
+  max-width: 300px;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-scale-style-controls {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  justify-content: start;
+  gap: 8px 14px;
+  width: min(100%, 680px);
+  padding: 8px;
+  border: 1px solid rgba(114,145,160,.18);
+  border-radius: 5px;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-scale-style-controls .wlv-wbv-range-field {
+  width: 300px;
+  max-width: 300px;
+}
+@media (max-width: 980px) {
+  .wlv-wbv-layer-manager-modal .wlv-wbv-published-curve-edit,
+  .wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-controls,
+  .wlv-wbv-layer-manager-modal .wlv-wbv-curve-scale-style-controls {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+}
+
+
+/* WBV_CURVE_LABEL_SYSTEM_CLEAN_REBUILD_V1_0_0_AUDITED */
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-summary {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(114,145,160,.22);
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor {
+  width: min(100%, 760px);
+  margin: 10px 0 4px;
+  padding: 10px;
+  border: 1px solid #3d505a;
+  border-radius: 6px;
+  background: #0a141a;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-header span {
+  color: #8fa2ad;
+  font-size: 10px;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid rgba(114,145,160,.24);
+  border-radius: 5px;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid legend {
+  padding: 0 5px;
+  color: #b7c7cf;
+  font-size: 10px;
+  font-weight: 800;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .wlv-wbv-field {
+  width: 100%;
+  max-width: 330px;
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .wlv-wbv-field select {
+  width: var(--wlv-modal-select-short);
+  max-width: var(--wlv-modal-select-short);
+}
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .wlv-wbv-range-field {
+  grid-template-columns: 88px minmax(120px, 1fr) max-content;
+  width: 100%;
+  max-width: 330px;
+}
+@media (max-width: 1000px) {
+  .wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* WBV_CURVE_LABEL_EDITOR_LAYOUT_CLEANUP_V1_0_0_AUDITED */
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor {
+  width: min(100%, 780px);
+  max-width: 780px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .wlv-wbv-curve-label-section {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .wlv-wbv-curve-label-section.is-position {
+  grid-column: 1 / -1;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .wlv-wbv-field {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  margin: 0 0 8px;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .wlv-wbv-field:last-child {
+  margin-bottom: 0;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid
+  .wlv-wbv-field:not(.wlv-wbv-range-field):not(.wlv-wbv-colour-field) {
+  width: max-content;
+  max-width: 100%;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid
+  .wlv-wbv-field:not(.wlv-wbv-range-field):not(.wlv-wbv-colour-field) select {
+  width: var(--wlv-modal-select-short);
+  max-width: min(100%, var(--wlv-modal-select-short));
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid
+  .wlv-wbv-field:not(.wlv-wbv-range-field):not(.wlv-wbv-colour-field)
+  input[type="number"] {
+  width: var(--wlv-modal-number-depth);
+  max-width: min(100%, var(--wlv-modal-number-depth));
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .wlv-wbv-range-field {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) 86px !important;
+  align-items: center;
+  column-gap: 8px;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .wlv-wbv-range-field > span:first-child {
+  min-width: 0;
+  white-space: normal;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .wlv-wbv-range-field input[type="range"] {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .wlv-wbv-range-number-box {
+  width: 84px;
+  min-width: 84px;
+  max-width: 84px;
+  justify-self: end;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .wlv-wbv-colour-field {
+  display: grid;
+  grid-template-columns: 76px var(--wlv-modal-swatch);
+  align-items: center;
+  justify-content: start;
+  column-gap: 8px;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .is-position .wlv-wbv-range-field {
+  max-width: 520px;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .is-anchor {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  align-content: start;
+  justify-content: start;
+  gap: 8px 12px;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .is-anchor .wlv-wbv-field {
+  margin: 0;
+}
+
+@media (max-width: 860px) {
+  .wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor {
+    width: 100%;
+  }
+
+  .wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .wlv-wbv-curve-label-section.is-position {
+    grid-column: auto;
+  }
+
+  .wlv-wbv-layer-manager-modal .wlv-wbv-curve-label-editor-grid .is-anchor {
+    grid-template-columns: 1fr;
+  }
 }

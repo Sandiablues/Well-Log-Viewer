@@ -17,6 +17,7 @@ import type {
   CurveCatalogItemV21,
   CurveTrackV21,
   DepthTrackV21,
+  CoreTrackV21,
   WellLogTrackV21,
 } from '../prototype/trackLayoutModelV21';
 import type {
@@ -268,14 +269,28 @@ function toLegacyDepthTrack(
   };
 }
 
+function toLegacyCoreTrack(track: CoreTrackV21): WellLogTrack {
+  return {
+    trackId: track.trackUid,
+    trackIndex: track.trackIndex,
+    title: track.title || 'Core',
+    widthPx: track.widthPx,
+    visible: track.visible,
+    trackType: 'core',
+    reservedReason: 'Depth-calibrated Core Image track',
+    rendererType: track.rendererType,
+    trackRole: track.trackRole,
+  };
+}
+
 function toLegacyTrack(
   track: WellLogTrackV21,
   curveIndex: ReadonlyMap<ManagedCurveUid, CurveCatalogItemV21>,
   issues: OriginalWdvAdapterIssue[],
 ): WellLogTrack {
-  return track.trackType === 'curve'
-    ? toLegacyCurveTrack(track, curveIndex, issues)
-    : toLegacyDepthTrack(track, issues);
+  if (track.trackType === 'curve') return toLegacyCurveTrack(track, curveIndex, issues);
+  if (track.trackType === 'core') return toLegacyCoreTrack(track);
+  return toLegacyDepthTrack(track, issues);
 }
 
 function firstSelection(tracks: readonly WellLogTrack[]): SelectionRef {

@@ -60,3 +60,4 @@ def clear_session(
         ))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+

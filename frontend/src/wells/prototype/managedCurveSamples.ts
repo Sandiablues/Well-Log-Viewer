@@ -117,14 +117,90 @@ export function parseManagedCurveSamples(payload: ManagedCurveSamplesPayload): M
   return parsed;
 }
 
+export type ManagedCurveIdentity = {
+  managedWellUid?: string | null;
+  curveUid?: string | null;
+  curveId?: string | null;
+};
+
+export function managedCurveOwnerKey(
+  managedWellUid: string | null | undefined,
+  curveIdentity: string | null | undefined,
+): string | null {
+  const owner = String(managedWellUid ?? '').trim();
+  const identity = String(curveIdentity ?? '').trim();
+  if (!owner || !identity) return null;
+  return `well:${owner}:curve:${identity}`;
+}
+
+export function managedCurveIdentityKeys(identity: ManagedCurveIdentity): string[] {
+  const rawIdentities = [identity.curveUid, identity.curveId]
+    .filter((value, index, all): value is string => (
+      typeof value === 'string'
+      && value.length > 0
+      && all.indexOf(value) === index
+    ));
+  const ownerKeys = rawIdentities
+    .map((curveIdentity) => managedCurveOwnerKey(identity.managedWellUid, curveIdentity))
+    .filter((value): value is string => Boolean(value));
+
+  // Managed tracks are intentionally strict: once a well owner exists, only
+  // owner-qualified keys are valid. Generic aliases are reserved for legacy /
+  // synthetic data with no durable owner and can never shadow another well.
+  return ownerKeys.length > 0 ? ownerKeys : rawIdentities;
+}
+
 export function managedCurveSampleKeys(request: ManagedCurveSampleRequest): string[] {
-  return [
-    request.curveId,
+  const identities = [
     request.curveUid,
     request.managedCurveUid ?? null,
+    request.curveId,
   ].filter((value, index, all): value is string => (
     typeof value === 'string' && value.length > 0 && all.indexOf(value) === index
   ));
+  const ownerKeys = identities
+    .map((curveIdentity) => managedCurveOwnerKey(request.managedWellId, curveIdentity))
+    .filter((value): value is string => Boolean(value));
+
+  // Keep generic aliases in the index only for compatibility with legacy
+  // consumers. Managed renderers use managedCurveIdentityKeys(), which is
+  // owner-strict and therefore cannot consume another well's generic alias.
+  return [...ownerKeys, ...identities].filter(
+    (value, index, all) => all.indexOf(value) === index,
+  );
+}
+
+export function resolveManagedCurveSamples(
+  samplesByCurveId: ManagedCurveSamplesByCurveId,
+  identity: ManagedCurveIdentity,
+): ManagedCurveSample[] | null {
+  for (const key of managedCurveIdentityKeys(identity)) {
+    const samples = samplesByCurveId[key];
+    if (samples?.length) return samples;
+  }
+  return null;
+}
+
+export function resolveManagedCurveContract(
+  contractsByCurveId: ManagedCurveSampleContractsByCurveId,
+  identity: ManagedCurveIdentity,
+): ManagedCurveSamplesPayload | null {
+  for (const key of managedCurveIdentityKeys(identity)) {
+    const contract = contractsByCurveId[key];
+    if (contract) return contract;
+  }
+  return null;
+}
+
+export function resolveManagedCurveError(
+  errorsByCurveId: Record<string, string>,
+  identity: ManagedCurveIdentity,
+): string | null {
+  for (const key of managedCurveIdentityKeys(identity)) {
+    const error = errorsByCurveId[key];
+    if (error) return error;
+  }
+  return null;
 }
 
 export async function loadManagedCurveSamples(

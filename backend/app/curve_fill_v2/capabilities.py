@@ -132,6 +132,31 @@ class CanonicalCurveFillCapabilityService:
                 overlay_policy_revision=GENERIC_VISUAL_CROSSOVER_V1.revision,
                 curve_b_operands=operands,
             ),
+            CurveFillModeCapability(
+                rule_type=RuleType.VALUE_BAND,
+                eligible=True,
+            ),
+            CurveFillModeCapability(
+                rule_type=RuleType.CURVE_TO_VALUE,
+                eligible=True,
+            ),
+            CurveFillModeCapability(
+                rule_type=RuleType.THRESHOLD,
+                eligible=True,
+                comparisons=(Comparison.GREATER_THAN, Comparison.LESS_THAN),
+            ),
+            CurveFillModeCapability(
+                rule_type=RuleType.CURVE_ENVELOPE,
+                eligible=has_curve_b,
+                disable_reason=None if has_curve_b else "requires_at_least_two_curves",
+                curve_b_operands=operands,
+            ),
+            CurveFillModeCapability(
+                rule_type=RuleType.SEPARATION,
+                eligible=has_curve_b,
+                disable_reason=None if has_curve_b else "no_curve_b_assignment",
+                curve_b_operands=operands,
+            ),
         )
         return CurveFillCapabilities(
             managed_well_uid=managed_well_uid,

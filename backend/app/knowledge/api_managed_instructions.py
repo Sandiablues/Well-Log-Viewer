@@ -24,6 +24,7 @@ CONTRACT_VERSION = "kr_managed_instructions_v1"
 TRUTH_RECORD_TYPES = {
     "managed_instruction",
     "curve_definition",
+    "standard_mnemonic",
     "alias",
     "classification_rule",
     "display_rule",
@@ -62,6 +63,9 @@ class InstructionSummary(BaseModel):
     curve_family: str | None = None
     canonical_curve_id: str | None = None
     alias: str | None = None
+    mnemonic: str | None = None
+    unit_hint: str | None = None
+    description: str | None = None
     must_do: str
     must_not_do: str | None = None
     evidence_ref_count: int = 0
@@ -82,6 +86,11 @@ class InstructionListResponse(BaseModel):
     deprecated_records_used: bool = False
     total_count: int
     returned_count: int
+    offset: int = 0
+    limit: int = 100
+    has_previous: bool = False
+    has_next: bool = False
+    search_ranked: bool = False
     instructions: list[InstructionSummary]
 
 
@@ -111,6 +120,9 @@ class CandidateInstructionCreateRequest(BaseModel):
     curve_family: str | None = None
     canonical_curve_id: str | None = None
     alias: str | None = None
+    mnemonic: str | None = None
+    unit_hint: str | None = None
+    description: str | None = None
     must_do: str
     must_not_do: str | None = None
     allowed_use: str | None = None
@@ -130,6 +142,9 @@ class CandidateInstructionUpdateRequest(BaseModel):
     curve_family: str | None = None
     canonical_curve_id: str | None = None
     alias: str | None = None
+    mnemonic: str | None = None
+    unit_hint: str | None = None
+    description: str | None = None
     must_do: str | None = None
     must_not_do: str | None = None
     allowed_use: str | None = None
@@ -219,7 +234,7 @@ def _instruction_type(record_type: str, record: dict[str, Any] | None = None) ->
         return str(record.get("instruction_type"))
     if record_type == "managed_instruction":
         return "application_instruction"
-    if record_type in {"curve_definition", "alias", "classification_rule", "display_rule"}:
+    if record_type in {"curve_definition", "standard_mnemonic", "alias", "classification_rule", "display_rule"}:
         return "curve_instruction"
     if record_type in {"preview_template", "template_selection_rule"}:
         return "template_instruction"
@@ -233,7 +248,7 @@ def _instruction_type(record_type: str, record: dict[str, Any] | None = None) ->
 def _subject(record: dict[str, Any]) -> str:
     if record.get("instruction_subject"):
         return str(record.get("instruction_subject"))
-    for key in ("template_label", "track_name", "display_name", "alias", "curve_family", "family", "canonical_curve_id", "rule_id", "record_id"):
+    for key in ("template_label", "track_name", "display_name", "mnemonic", "alias", "curve_family", "family", "canonical_curve_id", "rule_id", "record_id"):
         value = record.get(key)
         if value:
             return str(value)
@@ -257,6 +272,8 @@ def _must_do(record: dict[str, Any]) -> str:
     rt = record.get("record_type")
     if rt == "curve_definition":
         return f"Treat {record.get('display_name') or record.get('canonical_curve_id')} as curve family {record.get('family') or 'unknown'}."
+    if rt == "standard_mnemonic":
+        return f"Resolve mnemonic {record.get('mnemonic')} to canonical curve {record.get('canonical_curve_id')}."
     if rt == "alias":
         return f"Resolve alias {record.get('alias')} to canonical curve {record.get('canonical_curve_id')}."
     if rt == "classification_rule":
@@ -282,7 +299,7 @@ def _must_not(record: dict[str, Any]) -> str | None:
     rt = record.get("record_type")
     if rt in {"preview_template", "template_selection_rule", "template_curve_family_requirement"}:
         return "Do not use candidate, deprecated, or frontend-inferred rules for this decision."
-    if rt in {"curve_definition", "alias", "classification_rule"}:
+    if rt in {"curve_definition", "standard_mnemonic", "alias", "classification_rule"}:
         return "Do not override this approved classification with unapproved candidate knowledge."
     return None
 
@@ -302,6 +319,9 @@ def _summary(record: dict[str, Any]) -> InstructionSummary:
         curve_family=record.get("curve_family") or record.get("family"),
         canonical_curve_id=record.get("canonical_curve_id"),
         alias=record.get("alias"),
+        mnemonic=record.get("mnemonic"),
+        unit_hint=record.get("unit_hint") or record.get("default_unit"),
+        description=(record.get("description_hint") or record.get("description")),
         must_do=_must_do(record),
         must_not_do=_must_not(record),
         evidence_ref_count=len(record.get("evidence_refs") or []),
@@ -339,6 +359,125 @@ def get_summary() -> InstructionSummaryResponse:
     )
 
 
+
+_SEARCH_EXACT_FIELDS = (
+    "mnemonic",
+    "normalized_mnemonic",
+    "alias",
+    "canonical_curve_id",
+    "record_id",
+    "instruction_subject",
+    "display_name",
+    "curve_family",
+    "family",
+    "template_key",
+    "track_id",
+    "rule_id",
+)
+
+_SEARCH_PREFIX_FIELDS = (
+    "mnemonic",
+    "normalized_mnemonic",
+    "alias",
+    "canonical_curve_id",
+    "instruction_subject",
+    "display_name",
+    "curve_family",
+    "family",
+    "template_key",
+)
+
+_SEARCH_TEXT_FIELDS = (
+    "description",
+    "description_hint",
+    "instruction_must_do",
+    "instruction_must_not_do",
+    "instruction_application_area",
+    "source_label",
+    "source_reference",
+    "notes",
+    "change_reason",
+)
+
+
+def _search_value(record: dict[str, Any], key: str) -> str:
+    value = record.get(key)
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple, set)):
+        return " ".join(str(item) for item in value)
+    if isinstance(value, dict):
+        return json.dumps(value, sort_keys=True)
+    return str(value)
+
+
+def _search_score(record: dict[str, Any], query: str) -> int:
+    """Return deterministic relevance score across the complete KR record."""
+    q = query.strip().lower()
+    if not q:
+        return 0
+
+    score = 0
+    for key in _SEARCH_EXACT_FIELDS:
+        value = _search_value(record, key).strip().lower()
+        if not value:
+            continue
+        if value == q:
+            score = max(score, 1000)
+        elif value.startswith(q):
+            score = max(score, 800)
+        elif q in value:
+            score = max(score, 600)
+
+    for key in _SEARCH_PREFIX_FIELDS:
+        value = _search_value(record, key).strip().lower()
+        if value.startswith(q):
+            score = max(score, 750)
+        elif q in value:
+            score = max(score, 500)
+
+    for key in _SEARCH_TEXT_FIELDS:
+        value = _search_value(record, key).lower()
+        if q in value:
+            score = max(score, 250)
+
+    serialized = json.dumps(record, sort_keys=True, default=str).lower()
+    if q in serialized:
+        score = max(score, 100)
+
+    # Prefer approved runtime truth when textual relevance is otherwise equal.
+    if score and record.get("status") == "approved":
+        score += 10
+    if score and record.get("runtime_eligible") is not False:
+        score += 5
+    return score
+
+
+def _record_visible_for_browse(record: dict[str, Any], approved_only: bool, status: str | None) -> bool:
+    if approved_only:
+        return _truth(record)
+    if not _is_instruction_record(record):
+        return False
+    rec_status = str(record.get("status"))
+    if status and rec_status != status:
+        return False
+    return True
+
+
+def _record_visible_for_search(record: dict[str, Any], approved_only: bool, status: str | None) -> bool:
+    """Search the complete managed catalogue, then honor explicit status filters.
+
+    Search is intentionally broader than browse. Records are not discarded merely
+    because their record type is outside the default instruction browse subset.
+    """
+    rec_status = str(record.get("status") or "")
+    if status and rec_status != status:
+        return False
+    if approved_only and rec_status and rec_status != "approved":
+        return False
+    return True
+
+
 @router.get("", response_model=InstructionListResponse)
 def list_instructions(
     q: str | None = None,
@@ -349,47 +488,82 @@ def list_instructions(
     status: str | None = None,
     approved_only: bool = True,
     limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
 ) -> InstructionListResponse:
     records, _ = _load()
     query = (q or "").strip().lower()
-    out: list[InstructionSummary] = []
+    ranked: list[tuple[int, InstructionSummary]] = []
     candidate_used = False
     deprecated_used = False
+
     for record in records:
-        if approved_only:
-            if not _truth(record):
-                continue
-        else:
-            if not _is_instruction_record(record):
-                continue
-            rec_status = str(record.get("status"))
-            if status and rec_status != status:
-                continue
-            if rec_status != "approved":
-                candidate_used = True
-            if rec_status in {"deprecated", "superseded"}:
-                deprecated_used = True
+        visible = (
+            _record_visible_for_search(record, approved_only, status)
+            if query
+            else _record_visible_for_browse(record, approved_only, status)
+        )
+        if not visible:
+            continue
+
         item = _summary(record)
         if instruction_type and item.instruction_type != instruction_type:
             continue
-        if record_type and item.source_record_type != record_type:
-            continue
+        if record_type:
+            if record_type == "mnemonic_mapping":
+                if item.source_record_type not in {"alias", "standard_mnemonic"}:
+                    continue
+            elif item.source_record_type != record_type:
+                continue
         if template_key and item.template_key != template_key:
             continue
         if curve_family and (item.curve_family or "").lower() != curve_family.lower():
             continue
-        if query and query not in json.dumps(record, sort_keys=True).lower():
+
+        score = _search_score(record, query) if query else 0
+        if query and score <= 0:
             continue
-        out.append(item)
-    out.sort(key=lambda x: (x.status, x.instruction_type, x.template_key or "", x.subject, x.instruction_id))
-    returned = out[:limit]
+
+        rec_status = str(record.get("status") or "")
+        if rec_status and rec_status != "approved":
+            candidate_used = True
+        if rec_status in {"deprecated", "superseded"}:
+            deprecated_used = True
+        ranked.append((score, item))
+
+    if query:
+        ranked.sort(
+            key=lambda pair: (
+                -pair[0],
+                pair[1].subject.lower(),
+                pair[1].source_record_type,
+                pair[1].instruction_id,
+            )
+        )
+    else:
+        ranked.sort(
+            key=lambda pair: (
+                pair[1].status,
+                pair[1].instruction_type,
+                pair[1].template_key or "",
+                pair[1].subject,
+                pair[1].instruction_id,
+            )
+        )
+
+    total = len(ranked)
+    page = [item for _, item in ranked[offset : offset + limit]]
     return InstructionListResponse(
         approved_only=approved_only,
         candidate_records_used=candidate_used,
         deprecated_records_used=deprecated_used,
-        total_count=len(out),
-        returned_count=len(returned),
-        instructions=returned,
+        total_count=total,
+        returned_count=len(page),
+        offset=offset,
+        limit=limit,
+        has_previous=offset > 0,
+        has_next=offset + len(page) < total,
+        search_ranked=bool(query),
+        instructions=page,
     )
 
 
@@ -607,7 +781,7 @@ def template_decision(template_key: str) -> TemplateDecisionResponse:
 @router.get("/{instruction_id}", response_model=InstructionDetailResponse)
 def instruction_detail(instruction_id: str) -> InstructionDetailResponse:
     records, evidence_records = _load()
-    record = next((r for r in records if r.get("record_id") == instruction_id and _is_instruction_record(r)), None)
+    record = next((r for r in records if r.get("record_id") == instruction_id), None)
     if record is None:
         raise HTTPException(status_code=404, detail="KR instruction not found")
     evidence_by_id = _evidence_index(evidence_records)

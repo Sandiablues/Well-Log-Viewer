@@ -8,6 +8,9 @@ from app.inventory.repository import ManagedInventoryStoreError, ManagedWellNotF
 
 from .models import (
     WbvDisplayLayerFilesContract,
+    WbvFormationTopProductsContract,
+    WbvLithologyProductsContract,
+    WbvCompletionProductsContract,
     WbvDisplayLayerConfigurationContract,
     WbvDisplayLayerConfigurationRequest,
     WbvCurveOverlayNormalizationContract,
@@ -29,10 +32,18 @@ from .interaction import (
     WbvAoiTransferResult, WbvInteractionService, WbvInteractionState,
     WbvIntervalPickRequest, WbvPointSelectionRequest, WbvSelectionModeRequest,
 )
+from .interaction_domain.contracts import (
+    WbvAoiTransferResultV2, WbvInteractionModeRequestV2, WbvInteractionObservationV2,
+    WbvInteractionStateV2, WbvTrackSessionCommandV2,
+)
+from .interaction_domain.service import WbvInteractionDomainService
 
 router = APIRouter(prefix="/api/wlv/wbv", tags=["wlv-wbv"])
 _service = WbvService()
 _interaction_service = WbvInteractionService(
+    _service.repository, trajectory_package_provider=_service.get_viewer_package
+)
+_interaction_domain_service = WbvInteractionDomainService(
     _service.repository, trajectory_package_provider=_service.get_viewer_package
 )
 
@@ -42,7 +53,7 @@ def health() -> dict[str, object]:
     return {"ok": True, "service": "wlv-wbv", "scope": "wbv_backend_contract"}
 
 
-@router.get("/session", response_model=WbvSessionContract, summary="Fetch active WBV session from backend-owned WDV load state")
+@router.get("/session", response_model=WbvSessionContract, summary="Fetch the independently selected active WBV session")
 def get_wbv_session() -> WbvSessionContract:
     try:
         return _service.get_session()
@@ -53,7 +64,7 @@ def get_wbv_session() -> WbvSessionContract:
 @router.put(
     "/session/active-well",
     response_model=WbvSessionContract,
-    summary="Set the backend-owned active WDV/WBV managed well",
+    summary="Set the active WBV managed well without changing WDV selection",
 )
 def set_wbv_active_well(request: WbvSetActiveWellRequest) -> WbvSessionContract:
     try:
@@ -84,6 +95,42 @@ def get_wbv_display_layer_files(managed_well_id: str) -> WbvDisplayLayerFilesCon
         ) from exc
     except ManagedInventoryStoreError as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
+
+
+@router.get(
+    "/wells/{managed_well_id}/formation-top-products",
+    response_model=WbvFormationTopProductsContract,
+    summary="List MWD formation-top products and managed top rows for WBV",
+)
+def get_wbv_formation_top_products(managed_well_id: str) -> WbvFormationTopProductsContract:
+    try:
+        return _service.get_formation_top_products(managed_well_id)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/wells/{managed_well_id}/lithology-products",
+    response_model=WbvLithologyProductsContract,
+    summary="List MWD reviewed lithology products and intervals for WBV",
+)
+def get_wbv_lithology_products(managed_well_id: str) -> WbvLithologyProductsContract:
+    try:
+        return _service.get_lithology_products(managed_well_id)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get(
+    "/wells/{managed_well_id}/completion-products",
+    response_model=WbvCompletionProductsContract,
+    summary="List MWD reviewed completion products and KR-governed components for WBV",
+)
+def get_wbv_completion_products(managed_well_id: str) -> WbvCompletionProductsContract:
+    try:
+        return _service.get_completion_products(managed_well_id)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get(
@@ -317,3 +364,76 @@ def send_wbv_interval_to_wdv(managed_well_id: str) -> WbvAoiTransferResult:
         raise HTTPException(status_code=404, detail=f"Managed well not found: {exc.args[0]}") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+# WBV Interaction Domain v2 — isolated backend-owned projection/state contract.
+@router.get("/wells/{managed_well_id}/interaction-v2", response_model=WbvInteractionStateV2)
+def get_wbv_interaction_v2(managed_well_id: str) -> WbvInteractionStateV2:
+    try:
+        return _interaction_domain_service.get(managed_well_id)
+    except (ManagedWellNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.put("/wells/{managed_well_id}/interaction-v2/mode", response_model=WbvInteractionStateV2)
+def set_wbv_interaction_mode_v2(managed_well_id: str, request: WbvInteractionModeRequestV2) -> WbvInteractionStateV2:
+    try:
+        return _interaction_domain_service.set_mode(managed_well_id, request)
+    except (ManagedWellNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.post("/wells/{managed_well_id}/interaction-v2/observe", response_model=WbvInteractionStateV2)
+def observe_wbv_interaction_v2(managed_well_id: str, request: WbvInteractionObservationV2) -> WbvInteractionStateV2:
+    try:
+        return _interaction_domain_service.observe(managed_well_id, request)
+    except (ManagedWellNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.post("/wells/{managed_well_id}/interaction-v2/tracking/start", response_model=WbvInteractionStateV2)
+def start_wbv_tracking_v2(managed_well_id: str, request: WbvTrackSessionCommandV2) -> WbvInteractionStateV2:
+    try:
+        return _interaction_domain_service.start_tracking(managed_well_id, request)
+    except (ManagedWellNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.post("/wells/{managed_well_id}/interaction-v2/tracking/update", response_model=WbvInteractionStateV2)
+def update_wbv_tracking_v2(managed_well_id: str, request: WbvTrackSessionCommandV2) -> WbvInteractionStateV2:
+    try:
+        return _interaction_domain_service.update_tracking(managed_well_id, request)
+    except (ManagedWellNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.post("/wells/{managed_well_id}/interaction-v2/tracking/commit", response_model=WbvInteractionStateV2)
+def commit_wbv_tracking_v2(managed_well_id: str, request: WbvTrackSessionCommandV2) -> WbvInteractionStateV2:
+    try:
+        return _interaction_domain_service.commit_tracking(managed_well_id, request)
+    except (ManagedWellNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.post("/wells/{managed_well_id}/interaction-v2/tracking/cancel", response_model=WbvInteractionStateV2)
+def cancel_wbv_tracking_v2(managed_well_id: str, request: WbvTrackSessionCommandV2) -> WbvInteractionStateV2:
+    try:
+        return _interaction_domain_service.cancel_tracking(managed_well_id, request)
+    except (ManagedWellNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.delete("/wells/{managed_well_id}/interaction-v2/interval", response_model=WbvInteractionStateV2)
+def clear_wbv_interval_v2(managed_well_id: str, expected_revision: int | None = None) -> WbvInteractionStateV2:
+    try:
+        return _interaction_domain_service.clear_interval(managed_well_id, expected_revision)
+    except (ManagedWellNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.post("/wells/{managed_well_id}/interaction-v2/interval/send-to-wdv", response_model=WbvAoiTransferResultV2)
+def send_wbv_interval_to_wdv_v2(managed_well_id: str) -> WbvAoiTransferResultV2:
+    try:
+        return _interaction_domain_service.send_interval_to_wdv(managed_well_id)
+    except (ManagedWellNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc

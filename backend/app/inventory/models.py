@@ -117,6 +117,7 @@ class WmdReferenceBinding(BaseModel):
 class ManagedSourceKind(str, Enum):
     LAS = "las"
     DLIS = "dlis"
+    LIS = "lis"
     CSV_INTERVALS = "csv_intervals"
     RASTER_LOG = "raster_log"
     DOCUMENT = "document"
@@ -311,6 +312,247 @@ class ManagedInventorySnapshot(BaseModel):
     schema_version: str = "wlv_managed_inventory_v2"
     records: list[ManagedWellRecord] = Field(default_factory=list)
     updated_at: str = Field(default_factory=utc_now_iso)
+
+
+class FormationTopEvidenceRecord(BaseModel):
+    source: str | None = None
+    evidence: str | None = None
+    confidence: str | None = None
+    authority: str | None = None
+
+
+class FormationTopPublishRecord(BaseModel):
+    group: str | None = None
+    marker_name: str
+    marker_type: str = "Formation Top"
+    pick_status: str = "Actual"
+    md_m_rt: float
+    tvd_m_rt: float | None = None
+    tvdss_m_msl: float | None = None
+    depth_unit: str = "m"
+    depth_reference: str = "RT"
+    uncertainty_m: float | None = None
+    source_document: str | None = None
+    source_reference: str | None = None
+    evidence_records: list[FormationTopEvidenceRecord] = Field(default_factory=list)
+    confidence: str | None = None
+    notes: str | None = None
+
+
+class PublishFormationTopsRequest(BaseModel):
+    dataset_type: str = "formation_tops"
+    dataset_status: str = "reviewed"
+    source: str = "Formation Tops Manager"
+    managed_well_id: str
+    formation_tops: list[FormationTopPublishRecord]
+
+
+class PublishFormationTopsResponse(BaseModel):
+    action: str
+    managed_well_id: str
+    published_count: int
+    product_id: str
+    record: ManagedWellRecord
+
+
+class LithologyIntervalPublishRecord(BaseModel):
+    lithology: str
+    canonical_lithology: str | None = None
+    top_md: float
+    base_md: float
+    top_tvd: float | None = None
+    base_tvd: float | None = None
+    top_tvdss: float | None = None
+    base_tvdss: float | None = None
+    depth_unit: str = "m"
+    depth_reference: str = "RT"
+    pattern_id: str | None = None
+    background_color: str | None = None
+    pattern_color: str | None = None
+    description: str | None = None
+    source_document: str | None = None
+    source_reference: str | None = None
+    evidence_records: list[FormationTopEvidenceRecord] = Field(default_factory=list)
+    confidence: str | None = None
+    notes: str | None = None
+
+
+class PublishLithologyIntervalsRequest(BaseModel):
+    dataset_type: str = "lithology_intervals"
+    dataset_status: str = "reviewed"
+    source: str = "Lithology Column Manager"
+    managed_well_id: str
+    lithology_intervals: list[LithologyIntervalPublishRecord]
+
+
+class PublishLithologyIntervalsResponse(BaseModel):
+    action: str
+    managed_well_id: str
+    published_count: int
+    product_id: str
+    record: ManagedWellRecord
+
+
+class CompletionComponentPublishRecord(BaseModel):
+    canonical_id: str
+    canonical_component_key: str
+    kr_instruction_id: str
+    kr_version: str
+    label: str
+    top_md: float
+    base_md: float | None = None
+    depth_unit: str = "m"
+    diameter: float | None = None
+    status: str | None = None
+    source_document: str | None = None
+    source_reference: str | None = None
+    evidence_records: list[FormationTopEvidenceRecord] = Field(default_factory=list)
+    confidence: str | None = None
+    notes: str | None = None
+
+
+class PublishCompletionComponentsRequest(BaseModel):
+    dataset_type: str = "completion_components"
+    dataset_status: str = "reviewed"
+    source: str = "Completion Data Manager"
+    managed_well_id: str
+    kr_catalogue_version: int
+    completion_components: list[CompletionComponentPublishRecord]
+
+
+class PublishCompletionComponentsResponse(BaseModel):
+    action: str
+    managed_well_id: str
+    published_count: int
+    product_id: str
+    record: ManagedWellRecord
+
+
+class CoreDescriptionIntervalPublishRecord(BaseModel):
+    description_id: str
+    top_depth: float
+    base_depth: float | None = None
+    text: str
+    category: str = "core_description"
+
+
+class CompoundCoreDisplayChunkPublishRecord(BaseModel):
+    chunk_id: str
+    sequence_index: int
+    top_depth: float
+    base_depth: float
+    depth_unit: str = "m"
+    image_filename: str
+    mime_type: str
+    image_data_url: str
+    pixel_width: int
+    pixel_height: int
+
+
+class CompoundCoreSegmentPublishRecord(BaseModel):
+    segment_id: str
+    segment_name: str
+    core_run: str | None = None
+    section: str | None = None
+    top_depth: float
+    base_depth: float
+    depth_unit: str = "m"
+    image_type: str = "white_light"
+    orientation: str = "top_to_bottom"
+    source_document: str | None = None
+    source_page: str | None = None
+
+    # Legacy V1 single-asset publication. Retained so existing packages
+    # and individual core-image publication remain readable.
+    image_filename: str | None = None
+    mime_type: str | None = None
+    image_data_url: str | None = None
+
+    # V2 continuous-core display contract. CIM owns creation of these
+    # immutable depth-indexed raster chunks. WDV only displays them.
+    display_contract_version: str | None = None
+    display_chunks: list[CompoundCoreDisplayChunkPublishRecord] = []
+
+    # Continuous-core logical lineage.  The display chunks are the
+    # immutable render representation; these fields preserve the CIM
+    # compound definition and known depth discontinuities.
+    component_segment_ids: list[str] = []
+    continuity_warnings: list[str] = []
+
+    confidence: str | None = None
+    notes: str | None = None
+    descriptions: list[CoreDescriptionIntervalPublishRecord] = []
+
+
+class PublishCompoundCoreSegmentsRequest(BaseModel):
+    dataset_type: str = "compound_core_segments"
+    dataset_status: str = "reviewed"
+    source: str = "Core Image Manager"
+    managed_well_id: str
+    segments: list[CompoundCoreSegmentPublishRecord]
+
+
+class PublishCompoundCoreSegmentsResponse(BaseModel):
+    action: str
+    managed_well_id: str
+    published_count: int
+    product_ids: list[str]
+    record: ManagedWellRecord
+
+
+class DeviationSurveyStationPublishRecord(BaseModel):
+    measured_depth: float
+    inclination: float
+    azimuth: float
+    true_vertical_depth: float | None = None
+    north_south: float | None = None
+    east_west: float | None = None
+    dogleg_severity: float | None = None
+    vertical_section: float | None = None
+    depth_unit: str = "m"
+    coordinate_unit: str = "m"
+    dogleg_unit: str = "deg/30m"
+    station_type: str = "measured"
+    source_document: str | None = None
+    source_page: str | None = None
+    source_table_page: str | None = None
+    source_reference: str | None = None
+    evidence_records: list[FormationTopEvidenceRecord] = Field(default_factory=list)
+    confidence: str | None = None
+    notes: str | None = None
+
+
+class DeviationSurveyMetadataPublishRecord(BaseModel):
+    survey_name: str
+    survey_type: str = "Definitive"
+    status: str = "reviewed"
+    rig: str | None = None
+    datum: str | None = "RKB"
+    coordinate_origin: str | None = None
+    vertical_section_origin: str | None = None
+    vertical_section_azimuth: float | None = None
+    calculation_method: str = "minimum_curvature"
+    created_date: str | None = None
+    revised_date: str | None = None
+    source_notes: str | None = None
+
+
+class PublishDeviationSurveyRequest(BaseModel):
+    dataset_type: str = "deviation_survey"
+    dataset_status: str = "reviewed"
+    source: str = "Deviation Survey Manager"
+    managed_well_id: str
+    survey_metadata: DeviationSurveyMetadataPublishRecord
+    stations: list[DeviationSurveyStationPublishRecord]
+
+
+class PublishDeviationSurveyResponse(BaseModel):
+    action: str
+    managed_well_id: str
+    published_count: int
+    product_id: str
+    calculation_warning_count: int = 0
+    record: ManagedWellRecord
 
 
 class ManagedInventoryStatus(BaseModel):

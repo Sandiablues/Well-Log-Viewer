@@ -25,6 +25,13 @@ type ResolvedField = {
   review_required?: boolean;
 };
 
+type EditableMetadataFields = {
+  well_name: string;
+  uwi: string;
+  operator: string;
+  field: string;
+};
+
 type QaqcStatus = {
   status?: string;
   severity?: string;
@@ -401,6 +408,14 @@ export function SourceIntakeWorkbench() {
   const [candidateDiagnostics, setCandidateDiagnostics] = useState<CandidateDiagnosticsResponse | null>(null);
   const [diagnosticLoading, setDiagnosticLoading] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState<string>('');
+  // WLV-WSI-DETAIL-METADATA-EDITOR-STAGE1
+  const [metadataEditMode, setMetadataEditMode] = useState(false);
+  const [metadataDraft, setMetadataDraft] = useState<EditableMetadataFields>({
+    well_name: '',
+    uwi: '',
+    operator: '',
+    field: '',
+  });
   const [includeQaqcReportOnPromotion, setIncludeQaqcReportOnPromotion] = useState(false);
   const headerSelectRef = useRef<HTMLInputElement | null>(null);
   const directIngestInputRef = useRef<HTMLInputElement | null>(null);
@@ -500,6 +515,33 @@ export function SourceIntakeWorkbench() {
   const diagnosticSourcePath = candidateDiagnostics?.summary.original_path
     ?? diagnosticFallbackCandidate?.original_path
     ?? '';
+
+  const diagnosticEditableMetadata = useMemo<EditableMetadataFields>(() => {
+    const fallback = diagnosticFallbackCandidate;
+    return {
+      well_name: String(
+        candidateDiagnostics?.summary.well_name
+          ?? fallback?.resolved_metadata?.well_name?.value
+          ?? fallback?.parsed_metadata?.well_header?.well_name
+          ?? '',
+      ),
+      uwi: String(
+        fallback?.resolved_metadata?.uwi?.value
+          ?? fallback?.parsed_metadata?.well_header?.uwi
+          ?? '',
+      ),
+      operator: String(
+        fallback?.resolved_metadata?.operator?.value
+          ?? fallback?.parsed_metadata?.well_header?.operator
+          ?? '',
+      ),
+      field: String(
+        fallback?.resolved_metadata?.field?.value
+          ?? fallback?.parsed_metadata?.well_header?.field
+          ?? '',
+      ),
+    };
+  }, [candidateDiagnostics, diagnosticFallbackCandidate]);
 
   const diagnosticKnownMetadata = useMemo(() => {
     const fallback = diagnosticFallbackCandidate;
@@ -776,6 +818,13 @@ export function SourceIntakeWorkbench() {
     setDiagnosticCandidate(candidate);
     setCandidateDiagnostics(null);
     setDiagnosticError('');
+    setMetadataEditMode(false);
+    setMetadataDraft({
+      well_name: '',
+      uwi: '',
+      operator: '',
+      field: '',
+    });
     setDiagnosticLoading(true);
     try {
       const data = await fetchWlvJson<CandidateDiagnosticsResponse>(
@@ -798,7 +847,78 @@ export function SourceIntakeWorkbench() {
     setCandidateDiagnostics(null);
     setDiagnosticError('');
     setDiagnosticLoading(false);
+    setMetadataEditMode(false);
+    setMetadataDraft({
+      well_name: '',
+      uwi: '',
+      operator: '',
+      field: '',
+    });
   };
+
+  const beginMetadataEdit = () => {
+    setMetadataDraft(diagnosticEditableMetadata);
+    setMetadataEditMode(true);
+    setDiagnosticError('');
+  };
+
+  const cancelMetadataEdit = () => {
+    setMetadataDraft(diagnosticEditableMetadata);
+    setMetadataEditMode(false);
+    setDiagnosticError('');
+  };
+
+  const acceptMetadataEdit = () => runAction(
+    `metadata-correction:${diagnosticCandidateId}`,
+    async () => {
+      const candidate = diagnosticFallbackCandidate;
+      if (!candidate?.occurrence_id) {
+        throw new Error('Candidate occurrence identity is unavailable; metadata correction cannot be persisted.');
+      }
+
+      const normalizedDraft: EditableMetadataFields = {
+        well_name: metadataDraft.well_name.trim(),
+        uwi: metadataDraft.uwi.trim(),
+        operator: metadataDraft.operator.trim(),
+        field: metadataDraft.field.trim(),
+      };
+
+      const changedValues = Object.fromEntries(
+        (Object.keys(normalizedDraft) as Array<keyof EditableMetadataFields>)
+          .filter((key) => normalizedDraft[key] !== diagnosticEditableMetadata[key].trim())
+          .map((key) => [key, normalizedDraft[key] || null]),
+      );
+
+      if (Object.keys(changedValues).length === 0) {
+        setMetadataEditMode(false);
+        setMessage('No metadata changes were made.');
+        return;
+      }
+
+      await fetchWlvJson('/api/wlv/source-intake/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          decisions: [{
+            occurrence_id: candidate.occurrence_id,
+            action: 'manual_correction',
+            actor: 'user',
+            reason: 'Metadata corrected in the WSI candidate Detail panel.',
+            resolved_values: changedValues,
+          }],
+        }),
+      });
+
+      await loadWorkbench();
+
+      const refreshedDiagnostics = await fetchWlvJson<CandidateDiagnosticsResponse>(
+        `/api/wlv/source-intake/candidates/${encodeURIComponent(candidate.source_file_id)}/diagnostics`,
+      );
+      setCandidateDiagnostics(refreshedDiagnostics);
+      setMetadataEditMode(false);
+      setMessage('Candidate metadata corrections accepted.');
+    },
+  );
 
   const removeSelectedRepository = () => runAction('remove-source', async () => {
     const repositoryId = selectedRepository?.repository_id;
@@ -952,7 +1072,7 @@ export function SourceIntakeWorkbench() {
               }}
             />
             <strong>{busyAction === 'ingest-files' ? 'Opening files…' : 'Drop files here to open'}</strong>
-            <span>LAS, DLIS, CSV and other supported files</span>
+            <span>LAS, DLIS, LIS/LTI, CSV and other supported files</span>
             <small>or click to browse</small>
           </div>
         </aside>
@@ -1209,15 +1329,94 @@ export function SourceIntakeWorkbench() {
 
           <div className="wlv-si-diagnostic-drawer__body">
             <section className="wlv-si-diagnostic-section wlv-si-diagnostic-section--known-metadata">
-              <h3>Metadata</h3>
-              <dl className="wlv-si-diagnostic-summary">
-                {diagnosticKnownMetadata.map((item) => (
-                  <div key={item.label}>
-                    <dt>{item.label}</dt>
-                    <dd>{item.value}</dd>
-                  </div>
-                ))}
-              </dl>
+              <div className="wlv-si-diagnostic-section__title-row">
+                <h3>Metadata</h3>
+                <div className="wlv-si-metadata-editor__actions">
+                  {metadataEditMode ? (
+                    <>
+                      <button
+                        type="button"
+                        className="wlv-si-detail-button"
+                        onClick={cancelMetadataEdit}
+                        disabled={busyAction?.startsWith('metadata-correction:')}
+                      >
+                        Close
+                      </button>
+                      <button
+                        type="button"
+                        className="wlv-si-detail-button wlv-si-detail-button--primary"
+                        onClick={() => void acceptMetadataEdit()}
+                        disabled={busyAction?.startsWith('metadata-correction:')}
+                      >
+                        {busyAction?.startsWith('metadata-correction:') ? 'Saving…' : 'Accept and Close'}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="wlv-si-detail-button wlv-si-detail-button--compact"
+                      onClick={beginMetadataEdit}
+                      disabled={!diagnosticFallbackCandidate || diagnosticLoading}
+                    >
+                      Edit
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {metadataEditMode ? (
+                <div className="wlv-si-metadata-editor" aria-label="Editable candidate metadata">
+                  <label>
+                    <span>Well</span>
+                    <input
+                      value={metadataDraft.well_name}
+                      onChange={(event) => setMetadataDraft((current) => ({
+                        ...current,
+                        well_name: event.target.value,
+                      }))}
+                    />
+                  </label>
+                  <label>
+                    <span>UWI/API</span>
+                    <input
+                      value={metadataDraft.uwi}
+                      onChange={(event) => setMetadataDraft((current) => ({
+                        ...current,
+                        uwi: event.target.value,
+                      }))}
+                    />
+                  </label>
+                  <label>
+                    <span>Operator</span>
+                    <input
+                      value={metadataDraft.operator}
+                      onChange={(event) => setMetadataDraft((current) => ({
+                        ...current,
+                        operator: event.target.value,
+                      }))}
+                    />
+                  </label>
+                  <label>
+                    <span>Field</span>
+                    <input
+                      value={metadataDraft.field}
+                      onChange={(event) => setMetadataDraft((current) => ({
+                        ...current,
+                        field: event.target.value,
+                      }))}
+                    />
+                  </label>
+                </div>
+              ) : (
+                <dl className="wlv-si-diagnostic-summary">
+                  {diagnosticKnownMetadata.map((item) => (
+                    <div key={item.label}>
+                      <dt>{item.label}</dt>
+                      <dd>{item.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
 
               {diagnosticFallbackCandidate?.geometry_preview ? (
                 <>

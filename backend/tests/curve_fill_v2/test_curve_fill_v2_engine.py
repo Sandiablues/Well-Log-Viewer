@@ -83,11 +83,11 @@ def test_exact_crossing_interpolation_and_pixel_edge_coincidence() -> None:
     assert polygon.vertices[-1].x_a_px == pytest.approx(polygon.vertices[-1].x_b_px)
 
 
-def test_null_gap_is_not_bridged() -> None:
+def test_short_missing_sample_gap_is_bridged() -> None:
     a = CurveSeries(managed_well_uid=WELL_UID, managed_curve_uid="a", sample_revision="1", depth_unit="ft", value_unit="x", samples=((1000, 12), (1010, 13), (1030, 14), (1040, 15)))
     b = CurveSeries(managed_well_uid=WELL_UID, managed_curve_uid="b", sample_revision="1", depth_unit="ft", value_unit="x", samples=((1000, 10), (1010, 10), (1020, 10), (1030, 10), (1040, 10)))
     response = CurveFillResolutionService().resolve(rule=_conditional(a, b), series_a=a, transform_a=_transform(a, minimum=0, maximum=20), series_b=b, transform_b=_transform(b, minimum=0, maximum=20))
-    assert [(p.top_depth, p.base_depth) for p in response.polygons] == [(1000.0, 1010.0), (1030.0, 1040.0)]
+    assert [(p.top_depth, p.base_depth) for p in response.polygons] == [(1000.0, 1040.0)]
 
 
 def test_transform_matches_wdv_linear_reverse_anchor_offset_and_clip() -> None:
@@ -212,10 +212,7 @@ def test_between_curves_fills_all_shared_valid_intervals_without_comparison() ->
         series_b=b,
         transform_b=_transform(b, minimum=-0.15, maximum=0.45, direction="reversed"),
     )
-    assert [(p.top_depth, p.base_depth) for p in result.polygons] == [
-        (1000.0, 1010.0),
-        (1030.0, 1040.0),
-    ]
+    assert [(p.top_depth, p.base_depth) for p in result.polygons] == [(1000.0, 1040.0)]
     assert all(v.x_a_px != v.x_b_px for p in result.polygons for v in p.vertices)
 
 
@@ -260,3 +257,128 @@ def test_conditional_fill_compares_rendered_positions_across_different_value_uni
         transform_b=_transform(b, minimum=0.45, maximum=-0.15),
     )
     assert geometry.polygons
+
+
+def test_between_curves_splits_at_crossings_to_avoid_self_intersecting_polygons() -> None:
+    a = CurveSeries(
+        managed_well_uid=WELL_UID,
+        managed_curve_uid="a-crossing",
+        sample_revision="1",
+        depth_unit="ft",
+        value_unit="x",
+        samples=((1000, 2), (1010, 8), (1020, 2), (1030, 8)),
+    )
+    b = CurveSeries(
+        managed_well_uid=WELL_UID,
+        managed_curve_uid="b-crossing",
+        sample_revision="1",
+        depth_unit="ft",
+        value_unit="x",
+        samples=((1000, 8), (1010, 2), (1020, 8), (1030, 2)),
+    )
+    rule = CurveFillRule.model_validate({
+        "rule_uid": "rule-between-crossing",
+        "managed_well_uid": WELL_UID,
+        "track_uid": "track-crossing",
+        "order": 0,
+        "rule_type": "between_curves",
+        "curve_a_uid": a.managed_curve_uid,
+        "curve_b_uid": b.managed_curve_uid,
+        "style": {"color": "#778899", "opacity": 0.4},
+    })
+    result = CurveFillResolutionService().resolve(
+        rule=rule,
+        series_a=a,
+        transform_a=_transform(a, minimum=0, maximum=10),
+        series_b=b,
+        transform_b=_transform(b, minimum=0, maximum=10),
+    )
+    assert len(result.polygons) == 4
+    for polygon in result.polygons:
+        assert polygon.vertices[0].x_a_px == pytest.approx(polygon.vertices[0].x_b_px) or polygon.vertices[-1].x_a_px == pytest.approx(polygon.vertices[-1].x_b_px)
+        signs = [0 if abs(v.x_a_px - v.x_b_px) < 1e-9 else (1 if v.x_a_px > v.x_b_px else -1) for v in polygon.vertices]
+        nonzero = {sign for sign in signs if sign}
+        assert len(nonzero) <= 1
+
+
+def test_between_curves_bridges_short_missing_sample_dropout() -> None:
+    step = 0.1524
+    a_samples = tuple((1000.0 + index * step, 2.0 + index * 0.01) for index in range(20) if index not in {8, 9, 10})
+    b_samples = tuple((1000.0 + index * step, 8.0 - index * 0.01) for index in range(20))
+    a = CurveSeries(
+        managed_well_uid=WELL_UID,
+        managed_curve_uid="a-short-dropout",
+        sample_revision="1",
+        depth_unit="m",
+        value_unit="x",
+        samples=a_samples,
+    )
+    b = CurveSeries(
+        managed_well_uid=WELL_UID,
+        managed_curve_uid="b-short-dropout",
+        sample_revision="1",
+        depth_unit="m",
+        value_unit="x",
+        samples=b_samples,
+    )
+    rule = CurveFillRule.model_validate({
+        "rule_uid": "rule-short-dropout",
+        "managed_well_uid": WELL_UID,
+        "track_uid": "track-short-dropout",
+        "order": 0,
+        "rule_type": "between_curves",
+        "curve_a_uid": a.managed_curve_uid,
+        "curve_b_uid": b.managed_curve_uid,
+        "style": {"color": "#778899", "opacity": 0.4},
+    })
+    result = CurveFillResolutionService().resolve(
+        rule=rule,
+        series_a=a,
+        transform_a=_transform(a, minimum=0, maximum=10),
+        series_b=b,
+        transform_b=_transform(b, minimum=0, maximum=10),
+    )
+    assert len(result.polygons) == 1
+    assert result.polygons[0].top_depth == pytest.approx(1000.0)
+    assert result.polygons[0].base_depth == pytest.approx(1000.0 + 19 * step)
+
+
+def test_between_curves_preserves_material_data_gap() -> None:
+    step = 0.1524
+    a_samples = tuple((1000.0 + index * step, 2.0 + index * 0.01) for index in range(30) if index not in set(range(8, 20)))
+    b_samples = tuple((1000.0 + index * step, 8.0 - index * 0.01) for index in range(30))
+    a = CurveSeries(
+        managed_well_uid=WELL_UID,
+        managed_curve_uid="a-large-gap",
+        sample_revision="1",
+        depth_unit="m",
+        value_unit="x",
+        samples=a_samples,
+    )
+    b = CurveSeries(
+        managed_well_uid=WELL_UID,
+        managed_curve_uid="b-large-gap",
+        sample_revision="1",
+        depth_unit="m",
+        value_unit="x",
+        samples=b_samples,
+    )
+    rule = CurveFillRule.model_validate({
+        "rule_uid": "rule-large-gap",
+        "managed_well_uid": WELL_UID,
+        "track_uid": "track-large-gap",
+        "order": 0,
+        "rule_type": "between_curves",
+        "curve_a_uid": a.managed_curve_uid,
+        "curve_b_uid": b.managed_curve_uid,
+        "style": {"color": "#778899", "opacity": 0.4},
+    })
+    result = CurveFillResolutionService().resolve(
+        rule=rule,
+        series_a=a,
+        transform_a=_transform(a, minimum=0, maximum=10),
+        series_b=b,
+        transform_b=_transform(b, minimum=0, maximum=10),
+    )
+    assert len(result.polygons) == 2
+    assert result.polygons[0].base_depth < result.polygons[1].top_depth

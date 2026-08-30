@@ -175,6 +175,10 @@ class CanonicalWdvTemplateApplyService:
             for product in group.items:
                 if not product.selectable:
                     continue
+                # Overlay/dataset products remain selectable in WDV inventory but
+                # are not curve candidates for governed template recommendations.
+                if product.managed_curve_uid is None and product.display_layer_type:
+                    continue
                 if product.managed_curve_uid is None:
                     raise CanonicalIdentityResolutionError(
                         f"Product {product.product_id} has no managed_curve_uid"
@@ -267,7 +271,7 @@ class CanonicalWdvTemplateApplyService:
                     track_type=track_type,
                     renderer_type=planned.renderer_type,
                     track_role=planned.track_role,
-                    width_px=86 if track_type == "depth" else 220,
+                    width_px=65 if track_type == "depth" else 220,
                     lattice=lattice,
                     lattice_source="governed_template",
                     source_template_key=template_key,

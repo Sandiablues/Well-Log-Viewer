@@ -68,6 +68,9 @@ class WbvTrackLayoutService:
             if track_type == "curve":
                 curve_number = sum(track.track_type == "curve" for track in tracks) + 1
                 default_name = f"Track {curve_number}"
+            elif track_type == "depth":
+                depth_number = sum(track.track_type == "depth" for track in tracks) + 1
+                default_name = "Depth" if depth_number == 1 else f"Depth {depth_number}"
             else:
                 default_name = track_type.replace("_", " ").title()
             tracks.append(
@@ -116,6 +119,11 @@ class WbvTrackLayoutService:
                     "outline_visible": request.outline_visible,
                     "grid_mode": request.grid_mode,
                     "visible": request.visible,
+                    "depth_type": request.depth_type,
+                    "depth_increment": request.depth_increment,
+                    "label_increment": request.label_increment,
+                    "label_size": request.label_size,
+                    "show_depth_units": request.show_depth_units,
                 }.items()
                 if value is not None
             }

@@ -78,7 +78,7 @@ def test_wbv_session_returns_not_loaded_when_no_wdv_well_is_loaded(tmp_path: Pat
     assert session.active_managed_well_id is None
     assert session.available_layers.trajectory is False
     assert session.available_layers.loaded_curves is False
-    assert session.warnings[0].code == "no_active_wdv_workspace_well"
+    assert session.warnings[0].code == "no_active_wbv_well"
 
 
 def test_wbv_session_uses_backend_wdv_load_session_as_source_authority(tmp_path: Path) -> None:
@@ -117,16 +117,17 @@ def test_wbv_viewer_package_does_not_fabricate_trajectory_without_survey(tmp_pat
     assert [track["product_id"] for track in package.available_attribute_tracks] == ["GR", "RT"]
 
 
-def test_wbv_viewer_package_reports_unloaded_well_as_not_loaded(tmp_path: Path) -> None:
+def test_wbv_viewer_package_reports_missing_survey_independently_of_wdv(tmp_path: Path) -> None:
     repository = ManagedWellInventoryRepository(storage_path=tmp_path / "inventory.json")
     repository.upsert_record(_record("managed-well:a", ["GR"]))
 
     package = WbvService(repository=repository).get_viewer_package("managed-well:a")
 
-    assert package.viewer_state == WbvViewerState.NOT_LOADED
+    assert package.viewer_state == WbvViewerState.MISSING_SURVEY
     assert package.trajectory.render_points == []
     assert package.available_layers.loaded_curves is False
-    assert package.warnings[0].code == "managed_well_not_loaded_to_wdv"
+    assert any(warning.code == "wdv_link_unavailable" for warning in package.warnings)
+    assert any(warning.code == "missing_deviation_survey" for warning in package.warnings)
 
 
 def test_wbv_viewer_package_can_surface_future_backend_owned_trajectory_package(tmp_path: Path) -> None:
@@ -172,19 +173,34 @@ def test_wbv_session_uses_backend_workspace_active_well_when_multiple_wells_are_
     assert all(warning.code != "multiple_loaded_wdv_wells" for warning in session.warnings)
 
 
-def test_wbv_set_active_well_commands_backend_workspace(tmp_path: Path) -> None:
+def test_wbv_set_active_well_does_not_command_backend_wdv_workspace(tmp_path: Path) -> None:
     repository = ManagedWellInventoryRepository(storage_path=tmp_path / "inventory.json")
     inventory = ManagedWellInventoryService(repository=repository)
     first = _record("managed-well:a", ["GR"])
     second = _record("managed-well:b", ["RT"])
     second.managed_well_uid = "019f2000-0000-7000-8000-000000000003"
+    first.metadata["wbv_trajectory_package"] = {
+        "method": "minimum_curvature",
+        "source": "deviation_survey",
+        "stations": [
+            {"md": 0.0, "inclination": 0.0, "azimuth": 0.0},
+            {"md": 100.0, "inclination": 5.0, "azimuth": 90.0},
+        ],
+        "render_points": [
+            {"md": 0.0, "tvd": 0.0, "x": 0.0, "y": 0.0, "z": 0.0},
+            {"md": 100.0, "tvd": 99.8, "x": 4.4, "y": 0.0, "z": -99.8},
+        ],
+    }
     repository.upsert_record(first)
     repository.upsert_record(second)
-
-    inventory.load_managed_well_to_wdv("managed-well:a", product_ids=["GR"])
     inventory.load_managed_well_to_wdv("managed-well:b", product_ids=["RT"])
+    assert inventory.get_wdv_workspace().active_managed_well_id == "managed-well:b"
 
     session = WbvService(repository=repository).set_active_well("managed-well:a")
 
     assert session.active_managed_well_id == "managed-well:a"
-    assert inventory.get_wdv_workspace().active_managed_well_id == "managed-well:a"
+    assert session.viewer_state == WbvViewerState.RELATIVE_ONLY
+    assert session.available_layers.trajectory is True
+    assert session.available_layers.loaded_curves is False
+    assert any(warning.code == "wdv_link_unavailable" for warning in session.warnings)
+    assert inventory.get_wdv_workspace().active_managed_well_id == "managed-well:b"

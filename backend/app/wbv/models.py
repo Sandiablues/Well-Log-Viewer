@@ -41,6 +41,7 @@ class WbvAvailableLayers(BaseModel):
     depth_labels: bool = False
     formation_tops: bool = False
     lithology: bool = False
+    core: bool = False
     casing: bool = False
     completions: bool = False
     loaded_curves: bool = False
@@ -160,6 +161,107 @@ class WbvDisplayLayerFilesContract(BaseModel):
     layers: dict[str, list[WbvDisplayLayerFile]] = Field(default_factory=dict)
 
 
+class WbvFormationTopItem(BaseModel):
+    top_id: str
+    product_id: str | None = None
+    name: str
+    marker_type: str = "Formation top"
+    group: str | None = None
+    md: float
+    tvd: float | None = None
+    tvdss: float | None = None
+    uncertainty: float | None = None
+    pick_status: str | None = None
+    source_document: str | None = None
+    source_page: int | None = None
+
+
+class WbvFormationTopProduct(BaseModel):
+    product_id: str
+    display_name: str
+    tops: list[WbvFormationTopItem] = Field(default_factory=list)
+
+
+class WbvFormationTopProductsContract(BaseModel):
+    contract_kind: str = "wbv_formation_top_products"
+    contract_version: str = "wbv_formation_top_products_v1"
+    viewer: Literal["WBV"] = "WBV"
+    managed_well_id: str
+    products: list[WbvFormationTopProduct] = Field(default_factory=list)
+
+
+class WbvLithologyIntervalItem(BaseModel):
+    interval_id: str
+    product_id: str | None = None
+    lithology: str
+    canonical_lithology: str | None = None
+    top_md: float
+    base_md: float
+    top_tvd: float | None = None
+    base_tvd: float | None = None
+    top_tvdss: float | None = None
+    base_tvdss: float | None = None
+    depth_unit: str = "m"
+    depth_reference: str = "RT"
+    pattern_id: str | None = None
+    background_color: str | None = None
+    pattern_color: str | None = None
+    description: str | None = None
+    source_document: str | None = None
+    source_reference: str | None = None
+    confidence: str | None = None
+    notes: str | None = None
+
+
+class WbvLithologyProduct(BaseModel):
+    product_id: str
+    display_name: str
+    intervals: list[WbvLithologyIntervalItem] = Field(default_factory=list)
+
+
+class WbvLithologyProductsContract(BaseModel):
+    contract_kind: str = "wbv_lithology_products"
+    contract_version: str = "wbv_lithology_products_v1"
+    viewer: Literal["WBV"] = "WBV"
+    managed_well_id: str
+    products: list[WbvLithologyProduct] = Field(default_factory=list)
+
+
+class WbvCompletionComponentItem(BaseModel):
+    component_id: str
+    product_id: str | None = None
+    canonical_id: str
+    canonical_component_key: str
+    label: str
+    top_md: float
+    base_md: float | None = None
+    depth_unit: str = "m"
+    diameter: float | None = None
+    status: str | None = None
+    confidence: str | None = None
+    source_document: str | None = None
+    source_reference: str | None = None
+    notes: str | None = None
+    geometry_class: str = "point_or_interval"
+    geometry_family: str = "toolbody_inline"
+    material_family: str = "metal_dark_tool"
+    annotation_policy: str = "aligned_conditional_leader"
+
+
+class WbvCompletionProduct(BaseModel):
+    product_id: str
+    display_name: str
+    components: list[WbvCompletionComponentItem] = Field(default_factory=list)
+
+
+class WbvCompletionProductsContract(BaseModel):
+    contract_kind: str = "wbv_completion_products"
+    contract_version: str = "wbv_completion_products_v1"
+    viewer: Literal["WBV"] = "WBV"
+    managed_well_id: str
+    products: list[WbvCompletionProduct] = Field(default_factory=list)
+
+
 class WbvCurveOverlayCurve(BaseModel):
     curve_product_id: str
     managed_curve_uid: CanonicalUuid7 | None = None
@@ -251,6 +353,7 @@ class WbvTrackConfiguration(BaseModel):
 
 
 class WbvCurveOverlayRenderCurve(BaseModel):
+    assignment_uid: str | None = None
     curve_product_id: str
     display_name: str
     mnemonic: str
@@ -261,6 +364,20 @@ class WbvCurveOverlayRenderCurve(BaseModel):
     radial_width: float = 1.0
     color: str = "#58d39b"
     line_width: float = 1.5
+    label_visible: bool = False
+    label_content: Literal["mnemonic", "mnemonic_value", "scale", "mnemonic_scale"] = "mnemonic"
+    label_anchor: Literal["top", "base", "custom_md"] = "top"
+    label_custom_md: float | None = None
+    label_size: float = Field(default=1.0, ge=0.5, le=2.5)
+    label_weight: int = Field(default=800, ge=400, le=900, multiple_of=100)
+    label_alignment: Literal["left", "center", "right"] = "center"
+    label_position: Literal["on_track", "left", "right", "center"] = "on_track"
+    label_horizontal_adjustment: float = Field(default=0.0, ge=-4.0, le=4.0)
+    label_vertical_adjustment: float = Field(default=0.0, ge=-4.0, le=4.0)
+    scale_color: str = "#b7c5d0"
+    scale_opacity: float = Field(default=1.0, ge=0.0, le=1.0)  # deprecated compatibility field
+    scale_line_width: float = Field(default=1.0, ge=0.5, le=4.0)
+    scale_size: float = Field(default=1.0, ge=0.5, le=2.0)
     opacity: float = 1.0
     fill_mode: Literal["none", "to_baseline", "between_curves", "crossover"] = "none"
     fill_target_curve_product_id: str | None = None
@@ -311,6 +428,24 @@ class WbvLayerAppearanceSettings(BaseModel):
     line_width: float = Field(default=1.0, ge=0.1, le=20.0)
     display_mode: str | None = None
     show_labels: bool = True
+    marker_style: Literal["ring", "disc", "tick", "flag"] = "ring"
+    marker_size: float = Field(default=1.0, ge=0.25, le=5.0)
+    color_mode: Literal["formation", "well", "classification", "single"] = "formation"
+    label_mode: Literal["name", "name_md", "name_tvd", "name_md_tvd"] = "name_md"
+    label_size: float = Field(default=1.0, ge=0.15, le=3.0)
+    label_offset: float = Field(default=1.0, ge=0.0, le=8.0)
+    label_position: Literal["right", "left", "above", "below"] = "right"
+    brightness: float = Field(default=1.35, ge=0.75, le=2.5)
+    pattern_scale: float = Field(default=1.5, ge=0.75, le=4.0)
+    hide_underlay: bool = False
+    # None means use all tops in the selected MWD product; [] intentionally means display none.
+    selected_top_ids: list[str] | None = None
+    # None = all intervals; [] = intentionally no lithology intervals.
+    selected_interval_ids: list[str] | None = None
+    # None = all completion components in the selected product; [] = intentionally display none.
+    selected_component_ids: list[str] | None = None
+    # Uniform completion-label colour. Other layer types may ignore this value.
+    label_color: str | None = None
 
 
 class WbvCurveScaleSettings(BaseModel):

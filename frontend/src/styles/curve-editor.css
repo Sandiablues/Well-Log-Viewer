@@ -12,7 +12,7 @@
 
 .wlv-curve-editor-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 400px 400px;
   grid-template-areas:
     "scale line"
     "position position";
@@ -86,7 +86,6 @@
   input:not([type="checkbox"]):not([type="range"]):not([type="color"]),
 .wlv-curve-editor-section select {
   box-sizing: border-box;
-  width: 100%;
   min-width: 0;
   min-height: 30px;
   padding: 0 8px;
@@ -110,7 +109,8 @@
 }
 
 .wlv-curve-editor-section input[type="range"] {
-  width: 100%;
+  width: 260px;
+  max-width: 260px;
   min-width: 0;
   margin: 4px 0 1px;
 }
@@ -131,8 +131,8 @@
 }
 
 .wlv-curve-editor-field--offset > input[type="range"] {
-  width: 100%;
-  max-width: none;
+  width: 260px;
+  max-width: 260px;
   min-width: 0;
   margin: 0;
 }
@@ -217,3 +217,5 @@
   flex: 0 0 auto !important;
   margin: 0 !important;
 }
+
+

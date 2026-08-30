@@ -29,6 +29,7 @@ from app.wdv_session.canonical_commands import (
     ResetCurveTrackWidthsCommand,
     SelectTrackCommand,
     UpdateCurveAssignmentCommand,
+    UpdateCurveLineStyleCommand,
     UpdateTrackCommand,
 )
 from app.wdv_session.assignment_policy_service import (
@@ -299,17 +300,41 @@ class CanonicalWdvCommandService:
         command: RemoveTrackCommand,
     ) -> WdvCanonicalSession:
         def mutate(session: WdvCanonicalSession) -> WdvCanonicalSession:
-            tracks = tuple(
+            retained_tracks = tuple(
                 track for track in session.tracks
                 if track.track_uid != command.track_uid
             )
-            if len(tracks) == len(session.tracks):
+            if len(retained_tracks) == len(session.tracks):
                 raise CanonicalWdvCommandError(
                     f"Unknown track_uid: {command.track_uid}"
                 )
+
+            # WDV_REMOVE_TRACK_INBOUND_REFERENCE_CLEANUP_V1_0_0
+            #
+            # Track deletion is an atomic canonical mutation. A retained track
+            # must never be left pointing at the removed track through its
+            # Depth Range Locator source UID, because canonical validation
+            # requires that source UID to resolve to a track in the same
+            # session.
+            tracks = tuple(
+                track.model_copy(
+                    update={
+                        "depth_range_locator_enabled": False,
+                        "depth_range_locator_source_track_uid": None,
+                        "depth_range_locator_mode": None,
+                        "depth_range_locator_presentation": None,
+                        "depth_range_locator_side": None,
+                    }
+                )
+                if track.depth_range_locator_source_track_uid == command.track_uid
+                else track
+                for track in retained_tracks
+            )
+
             selected = session.selected_track_uid
             if selected == command.track_uid:
                 selected = tracks[0].track_uid if tracks else None
+
             return session.model_copy(
                 update={
                     "tracks": tracks,
@@ -611,6 +636,53 @@ class CanonicalWdvCommandService:
                         raise CanonicalWdvCommandError(
                             "depth_basis may only be set on depth tracks"
                         )
+                    if (
+                        command.renderer_type is not None
+                        or command.track_role is not None
+                    ) and track.track_type != "annotation":
+                        raise CanonicalWdvCommandError(
+                            "renderer_type/track_role updates are only valid "
+                            "for annotation tracks"
+                        )
+                    has_core_appearance_patch = any(value is not None for value in (
+                        command.core_base_color,
+                        command.core_brightness,
+                        command.core_shading_mode,
+                        command.core_shading_strength,
+                        command.core_description_overlay_enabled,
+                        command.core_description_overlay_position,
+                        command.core_description_overlay_width_pct,
+                        command.core_description_overlay_font_size,
+                        command.core_description_overlay_show_md,
+                    ))
+                    if has_core_appearance_patch and not (
+                        track.track_type == "image"
+                        and track.renderer_type == "core_image"
+                    ):
+                        raise CanonicalWdvCommandError(
+                            "Core appearance updates are valid only for core_image tracks"
+                        )
+                    has_completion_appearance_patch = any(value is not None for value in (
+                        command.completion_schematic_position,
+                        command.completion_schematic_width_px,
+                        command.completion_symbol_scale,
+                        command.completion_line_weight,
+                        command.completion_show_labels,
+                        command.completion_label_position,
+                        command.completion_label_font_size,
+                        command.completion_label_offset_px,
+                        command.completion_label_vertical_offset_px,
+                        command.completion_label_max_width_px,
+                        command.completion_label_collision_mode,
+                        command.completion_label_wrap,
+                    ))
+                    if has_completion_appearance_patch and not (
+                        track.track_type == "annotation"
+                        and track.renderer_type == "completion_components"
+                    ):
+                        raise CanonicalWdvCommandError(
+                            "Completion appearance updates are valid only for completion_components tracks"
+                        )
                     track = track.model_copy(update=patch)
                 tracks.append(track)
             if not found:
@@ -656,6 +728,47 @@ class CanonicalWdvCommandService:
             return session.model_copy(update={"tracks": tracks})
 
         return self._execute(managed_well_uid, command, mutate)
+
+    def update_curve_line_style(
+        self,
+        managed_well_uid: str,
+        command: UpdateCurveLineStyleCommand,
+    ) -> WdvCanonicalSession:
+        """Atomically replace user-owned Line values without policy refresh."""
+
+        def mutate(session: WdvCanonicalSession) -> WdvCanonicalSession:
+            found = False
+            tracks: list[WdvCanonicalTrack] = []
+            style_patch = {
+                "line_visible": command.line_visible,
+                "color": command.color,
+                "line_width": command.line_width,
+                "line_style": command.line_style,
+                "line_opacity": command.line_opacity,
+            }
+
+            for track in session.tracks:
+                assignments: list[WdvCanonicalAssignment] = []
+                changed = False
+                for assignment in track.assignments:
+                    if assignment.assignment_uid == command.assignment_uid:
+                        found = True
+                        changed = True
+                        assignment = assignment.model_copy(update=style_patch)
+                    assignments.append(assignment)
+                if changed:
+                    track = track.model_copy(update={"assignments": tuple(assignments)})
+                tracks.append(track)
+
+            if not found:
+                raise CanonicalWdvCommandError(
+                    f"Unknown assignment_uid: {command.assignment_uid}"
+                )
+
+            return session.model_copy(update={"tracks": tuple(tracks)})
+
+        return self._execute(managed_well_uid, command, mutate)
+
 
     def update_assignment(
         self,

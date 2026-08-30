@@ -14,7 +14,7 @@ import {
   type CanonicalCurveCatalogItemV21,
 } from '../identity/wdvIdentityV21';
 
-export type TrackTypeV21 = 'depth' | 'curve' | 'lithology' | 'raster' | 'marker' | 'interval';
+export type TrackTypeV21 = 'depth' | 'curve' | 'lithology' | 'raster' | 'interval' | 'core';
 export type CurveLatticeV21 = 'linear' | 'logarithmic';
 export type LatticeSourceV21 = 'front_curve_default' | 'user_override' | 'template';
 export type ScaleModeV21 = 'shared' | 'per_curve' | 'dual' | 'normalized';
@@ -105,7 +105,21 @@ export interface DepthTrackV21 {
   unit: string;
 }
 
-export type WellLogTrackV21 = CurveTrackV21 | DepthTrackV21;
+export interface CoreTrackV21 {
+  trackUid: TrackUid;
+  trackIndex: number;
+  title: string;
+  widthPx: number;
+  visible: boolean;
+  trackType: 'core';
+  trackKey: string | null;
+  rendererType: string | null;
+  trackRole: string | null;
+  sourceTemplateKey: string | null;
+  sourceApplicationPlanUid: string | null;
+}
+
+export type WellLogTrackV21 = CurveTrackV21 | DepthTrackV21 | CoreTrackV21;
 
 export interface BackendAssignmentSeedV21 {
   assignmentUid: AssignmentUid;

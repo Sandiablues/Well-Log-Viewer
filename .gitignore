@@ -34,3 +34,64 @@ backend/data/
 .wlv_freeze_evidence/
 backend.log
 frontend.log
+
+# BEGIN MULTIVIEWER_GIT_RECON_PHASE2_IGNORE_NOISE_V1_0_0
+# Repository-local development backup / rollback artifacts.
+# These are operational recovery material, not application source.
+.formation_tops_*_backups/
+.lcm_backups/
+.wbv_backups/
+.wbv_patch_backups/
+.wdv_backups/
+.wdv_*_backups/
+.wdv_*_backup_*/
+.wdv_architecture_backups/
+.wdv_emergency_state_backups/
+.wdv_patch_backups/
+.wlv_backups/
+.wlv_rollback_states/
+.wlv_*_backups/
+.multiviewer_backups/
+.multiviewer_install_backups/
+rollback_points/
+
+# Local runtime/model caches. Do not source-control downloaded model state.
+runtime/
+
+# Local generated reconciliation/audit artifacts if ever copied into repo.
+MULTIVIEWER_GIT_RECON_*/
+MULTIVIEWER_GIT_RECON_*.zip
+MULTIVIEWER_GIT_RECON_*.sh
+# END MULTIVIEWER_GIT_RECON_PHASE2_IGNORE_NOISE_V1_0_0
+
+# BEGIN MULTIVIEWER_GIT_RECON_PHASE3_IGNORE_RESIDUAL_BACKUPS_V1_0_0
+# Residual local backup/snapshot families.
+.kr_wdv_backups/
+.mwd_backups/
+.mwd_selected_delete_backups/
+.source_intake_duplicate_lifecycle_backups/
+.track_content_order_typography_backups/
+.wbv_*_backup_*/
+.wdv_last_*_backup
+.wdv_last_*_backup/
+*.bak
+*.pre-*
+*.before-*
+
+# Local secrets / provider credentials.
+.env.ai
+
+# Local generated build log.
+post_build.log
+# END MULTIVIEWER_GIT_RECON_PHASE3_IGNORE_RESIDUAL_BACKUPS_V1_0_0
+
+# BEGIN MULTIVIEWER_GIT_RECON_PHASE6_FINAL_IGNORE_DEBRIS_V1_0_0
+# Final known reconciliation debris from Phase 5 focused review.
+/BLANK
+*.before_*
+# END MULTIVIEWER_GIT_RECON_PHASE6_FINAL_IGNORE_DEBRIS_V1_0_0
+
+# BEGIN MULTIVIEWER_GIT_RECON_PHASE8_IGNORE_NAMED_BACKUP_SNAPSHOTS_V1_0_0
+# Historical source snapshots that encode BACKUP in the filename.
+*BACKUP_*
+# END MULTIVIEWER_GIT_RECON_PHASE8_IGNORE_NAMED_BACKUP_SNAPSHOTS_V1_0_0

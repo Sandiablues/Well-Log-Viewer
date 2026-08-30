@@ -34,6 +34,12 @@ class CanonicalSessionCommandReplayConflict(ValueError):
     pass
 
 
+class CanonicalViewRevisionConflict(ValueError):
+    """Raised when a durable viewport commit is based on stale viewport state."""
+
+    pass
+
+
 def _refresh_assignments_and_stamp(
     session: WdvCanonicalSession,
     display_policy_revision: str,
@@ -192,6 +198,53 @@ class CanonicalWdvSessionService:
             return self._project_working_well(session, well_uid)
 
 
+    @staticmethod
+    def _track_graph_compatible_for_view_rebase(
+        before: WdvCanonicalSession,
+        after: WdvCanonicalSession,
+    ) -> bool:
+        """Return True when a committed depth view remains safe across a content revision.
+
+        Viewport state is intentionally orthogonal to ordinary canonical content/style
+        revisions.  A committed view may be carried forward only when the track identity
+        graph is unchanged.  Add/remove/replace-track operations therefore continue to
+        invalidate the prior committed view instead of silently rebasing it.
+        """
+        before_track_uids = tuple(track.track_uid for track in before.tracks)
+        after_track_uids = tuple(track.track_uid for track in after.tracks)
+        return before_track_uids == after_track_uids
+
+    @classmethod
+    def _rebase_exact_committed_view_locked(
+        cls,
+        store: dict[str, Any],
+        storage_key: str,
+        *,
+        before: WdvCanonicalSession,
+        after: WdvCanonicalSession,
+    ) -> None:
+        """Carry an exact current committed view across a compatible content revision.
+
+        Safety rules:
+        - the committed view must have been authored against ``before.revision`` exactly;
+        - the track identity/order graph must be unchanged;
+        - the viewport payload and view revision are not modified;
+        - already-stale views are never resurrected.
+        """
+        committed = store.setdefault("committed_view_states", {})
+        raw_view = committed.get(storage_key)
+        if not isinstance(raw_view, dict):
+            return
+        if raw_view.get("session_revision") != before.revision:
+            return
+        if not cls._track_graph_compatible_for_view_rebase(before, after):
+            return
+
+        rebased = json.loads(json.dumps(raw_view))
+        rebased["session_revision"] = after.revision
+        rebased["rebased_at"] = datetime.now(timezone.utc).isoformat()
+        committed[storage_key] = rebased
+
     def mutate_session(
         self,
         managed_well_uid: str,
@@ -317,6 +370,12 @@ class CanonicalWdvSessionService:
 
             persisted_json = persisted.model_dump(mode="json")
             store["sessions"][storage_key] = persisted_json
+            self._rebase_exact_committed_view_locked(
+                store,
+                storage_key,
+                before=current,
+                after=persisted,
+            )
             if command_id is not None:
                 well_receipts = receipts_by_well.setdefault(storage_key, {})
                 well_receipts[command_id] = {
@@ -325,6 +384,134 @@ class CanonicalWdvSessionService:
                 }
             self._write_store(store)
             return persisted
+
+    def replace_session_and_committed_view_transactionally(
+        self,
+        managed_well_uid: str,
+        *,
+        expected_revision: int,
+        session: WdvCanonicalSession,
+        view_state: dict[str, Any],
+        validator: Callable[[WdvCanonicalSession], object] | None = None,
+    ) -> tuple[WdvCanonicalSession, dict[str, Any]]:
+        """Atomically replace canonical session and its committed view state.
+
+        Recovery and the legacy single saved-workspace slot are not consulted
+        and are not rewritten. Older recovery records become stale by revision.
+        """
+        well_uid = str(parse_uuid7(managed_well_uid))
+        storage_key = self._storage_key(well_uid)
+        with self._lock:
+            store = self._read_store()
+            raw_current = store["sessions"].get(storage_key)
+            if raw_current is None and storage_key != well_uid:
+                raw_current = store["sessions"].get(well_uid)
+            current = (
+                self._empty_session(well_uid)
+                if raw_current is None
+                else self._project_working_well(
+                    WdvCanonicalSession.model_validate(
+                        _migrate_legacy_session_payload(raw_current)
+                    ),
+                    well_uid,
+                )
+            )
+            if current.revision != expected_revision:
+                raise CanonicalSessionRevisionConflict(
+                    f"Expected revision {expected_revision}, found {current.revision}"
+                )
+            candidate = self._project_working_well(
+                WdvCanonicalSession.model_validate(
+                    session.model_dump(mode="json")
+                ),
+                well_uid,
+            )
+            persisted = candidate.model_copy(
+                update={
+                    "revision": current.revision + 1,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            persisted = WdvCanonicalSession.model_validate(
+                persisted.model_dump(mode="json")
+            )
+            if validator is not None:
+                validator(persisted)
+            committed_payload = {
+                "committed_at": datetime.now(timezone.utc).isoformat(),
+                "session_revision": persisted.revision,
+                "view_revision": 0,
+                "view_state": json.loads(json.dumps(view_state)),
+            }
+            store["sessions"][storage_key] = persisted.model_dump(mode="json")
+            store.setdefault("committed_view_states", {})[storage_key] = (
+                committed_payload
+            )
+            store.setdefault("command_receipts", {}).pop(storage_key, None)
+            self._write_store(store)
+            return persisted, json.loads(json.dumps(committed_payload))
+
+    def replace_session_and_committed_view_authoritatively(
+        self,
+        managed_well_uid: str,
+        *,
+        session: WdvCanonicalSession,
+        view_state: dict[str, Any],
+        validator: Callable[[WdvCanonicalSession], object] | None = None,
+    ) -> tuple[WdvCanonicalSession, dict[str, Any]]:
+        """Atomically replace canonical session + committed view without a client revision guard.
+
+        This is reserved for explicit backend-authoritative historical restore
+        operations such as Saved Canvas. The shared canonical lock determines
+        the action boundary. Whatever canonical revision exists when the lock is
+        acquired is replaced in one transaction and the restored session is
+        assigned the next revision.
+        """
+        well_uid = str(parse_uuid7(managed_well_uid))
+        storage_key = self._storage_key(well_uid)
+        with self._lock:
+            store = self._read_store()
+            raw_current = store["sessions"].get(storage_key)
+            if raw_current is None and storage_key != well_uid:
+                raw_current = store["sessions"].get(well_uid)
+            current = (
+                self._empty_session(well_uid)
+                if raw_current is None
+                else self._project_working_well(
+                    WdvCanonicalSession.model_validate(
+                        _migrate_legacy_session_payload(raw_current)
+                    ),
+                    well_uid,
+                )
+            )
+            candidate = self._project_working_well(
+                WdvCanonicalSession.model_validate(
+                    session.model_dump(mode="json")
+                ),
+                well_uid,
+            )
+            persisted = candidate.model_copy(
+                update={
+                    "revision": current.revision + 1,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            persisted = WdvCanonicalSession.model_validate(
+                persisted.model_dump(mode="json")
+            )
+            if validator is not None:
+                validator(persisted)
+            committed_payload = {
+                "committed_at": datetime.now(timezone.utc).isoformat(),
+                "session_revision": persisted.revision,
+                "view_revision": 0,
+                "view_state": json.loads(json.dumps(view_state)),
+            }
+            store["sessions"][storage_key] = persisted.model_dump(mode="json")
+            store.setdefault("committed_view_states", {})[storage_key] = committed_payload
+            store.setdefault("command_receipts", {}).pop(storage_key, None)
+            self._write_store(store)
+            return persisted, json.loads(json.dumps(committed_payload))
 
     def put_session(self, session: WdvCanonicalSession) -> WdvCanonicalSession:
         with self._lock:
@@ -341,6 +528,433 @@ class CanonicalWdvSessionService:
             store["sessions"][storage_key] = persisted.model_dump(mode="json")
             self._write_store(store)
             return persisted
+
+
+    def commit_workspace_view_state(
+        self,
+        managed_well_uid: str,
+        *,
+        expected_session_revision: int,
+        expected_view_revision: int,
+        view_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Atomically persist the latest committed WDV viewport/relationship state.
+
+        View state has its own monotonic revision so two asynchronous viewport
+        commits cannot overwrite one another merely because the canonical track
+        session revision did not change. The canonical session revision is still
+        checked to ensure the view was built against the current track graph.
+        """
+        well_uid = str(parse_uuid7(managed_well_uid))
+        storage_key = self._storage_key(well_uid)
+        with self._lock:
+            store = self._read_store()
+            raw_session = store["sessions"].get(storage_key)
+            if raw_session is None and storage_key != well_uid:
+                raw_session = store["sessions"].get(well_uid)
+            current = (
+                self._empty_session(well_uid)
+                if raw_session is None
+                else self._project_working_well(
+                    WdvCanonicalSession.model_validate(
+                        _migrate_legacy_session_payload(raw_session)
+                    ),
+                    well_uid,
+                )
+            )
+            if current.revision != expected_session_revision:
+                raise CanonicalSessionRevisionConflict(
+                    f"Expected revision {expected_session_revision}, found {current.revision}"
+                )
+
+            committed = store.setdefault("committed_view_states", {})
+            raw_view = committed.get(storage_key)
+            # A viewport record built against an older canonical session is not
+            # eligible concurrency state for the current track graph. Treat it
+            # as absent so the first commit for the new session begins at 0.
+            current_view_revision = (
+                int(raw_view.get("view_revision", -1))
+                if isinstance(raw_view, dict)
+                and raw_view.get("session_revision") == current.revision
+                else -1
+            )
+            if current_view_revision != expected_view_revision:
+                raise CanonicalViewRevisionConflict(
+                    f"Expected view revision {expected_view_revision}, found {current_view_revision}"
+                )
+
+            next_view_revision = current_view_revision + 1
+            committed_at = datetime.now(timezone.utc).isoformat()
+            payload = {
+                "committed_at": committed_at,
+                "session_revision": current.revision,
+                "view_revision": next_view_revision,
+                "view_state": json.loads(json.dumps(view_state)),
+            }
+            committed[storage_key] = payload
+            self._write_store(store)
+            return {
+                "available": True,
+                **json.loads(json.dumps(payload)),
+            }
+
+    def get_workspace_committed_view_state(
+        self,
+        managed_well_uid: str,
+    ) -> dict[str, Any] | None:
+        well_uid = str(parse_uuid7(managed_well_uid))
+        storage_key = self._storage_key(well_uid)
+        with self._lock:
+            store = self._read_store()
+            raw = store.setdefault("committed_view_states", {}).get(storage_key)
+            if raw is None:
+                return None
+            return {
+                "available": True,
+                "committed_at": raw.get("committed_at"),
+                "session_revision": raw.get("session_revision"),
+                "view_revision": raw.get("view_revision"),
+                "view_state": json.loads(json.dumps(raw.get("view_state", {}))),
+            }
+
+    def _exact_committed_view_locked(
+        self,
+        store: dict[str, Any],
+        storage_key: str,
+        *,
+        expected_session_revision: int,
+        expected_view_revision: int,
+    ) -> dict[str, Any]:
+        raw_view = store.setdefault("committed_view_states", {}).get(storage_key)
+        if (
+            not isinstance(raw_view, dict)
+            or raw_view.get("session_revision") != expected_session_revision
+        ):
+            raise CanonicalViewRevisionConflict(
+                "No committed view exists for the expected canonical session revision"
+            )
+        current_view_revision = int(raw_view.get("view_revision", -1))
+        if current_view_revision != expected_view_revision:
+            raise CanonicalViewRevisionConflict(
+                f"Expected view revision {expected_view_revision}, found {current_view_revision}"
+            )
+        return raw_view
+
+    def save_workspace_snapshot_from_committed_view(
+        self,
+        managed_well_uid: str,
+        *,
+        expected_revision: int,
+        expected_view_revision: int,
+    ) -> dict[str, Any]:
+        """Atomically snapshot the exact current committed view.
+
+        Save is no longer a second authoring path for viewport semantics. The
+        frontend must first commit its settled view through committed-view-state;
+        this operation only copies that exact revision into the explicit snapshot.
+        """
+        well_uid = str(parse_uuid7(managed_well_uid))
+        storage_key = self._storage_key(well_uid)
+        with self._lock:
+            store = self._read_store()
+            raw_session = store["sessions"].get(storage_key)
+            if raw_session is None and storage_key != well_uid:
+                raw_session = store["sessions"].get(well_uid)
+            current = (
+                self._empty_session(well_uid)
+                if raw_session is None
+                else self._project_working_well(
+                    WdvCanonicalSession.model_validate(
+                        _migrate_legacy_session_payload(raw_session)
+                    ),
+                    well_uid,
+                )
+            )
+            if current.revision != expected_revision:
+                raise CanonicalSessionRevisionConflict(
+                    f"Expected revision {expected_revision}, found {current.revision}"
+                )
+            raw_view = self._exact_committed_view_locked(
+                store,
+                storage_key,
+                expected_session_revision=current.revision,
+                expected_view_revision=expected_view_revision,
+            )
+            view_state = json.loads(json.dumps(raw_view.get("view_state", {})))
+            saved_at = datetime.now(timezone.utc).isoformat()
+            store.setdefault("saved_workspaces", {})[storage_key] = {
+                "saved_at": saved_at,
+                "session": current.model_dump(mode="json"),
+                "session_revision": current.revision,
+                "view_revision": expected_view_revision,
+                "view_state": view_state,
+            }
+            self._write_store(store)
+            return {
+                "available": True,
+                "saved_at": saved_at,
+                "session_revision": current.revision,
+                "view_revision": expected_view_revision,
+                "view_state": view_state,
+            }
+
+    def save_workspace_recovery_from_committed_view(
+        self,
+        managed_well_uid: str,
+        *,
+        expected_revision: int,
+        expected_view_revision: int,
+    ) -> dict[str, Any]:
+        """Atomically checkpoint the exact current committed view.
+
+        Recovery is a copy/checkpoint operation only; it cannot author a
+        different viewport payload than committed-view-state.
+        """
+        well_uid = str(parse_uuid7(managed_well_uid))
+        storage_key = self._storage_key(well_uid)
+        with self._lock:
+            store = self._read_store()
+            raw_session = store["sessions"].get(storage_key)
+            if raw_session is None and storage_key != well_uid:
+                raw_session = store["sessions"].get(well_uid)
+            current = (
+                self._empty_session(well_uid)
+                if raw_session is None
+                else self._project_working_well(
+                    WdvCanonicalSession.model_validate(
+                        _migrate_legacy_session_payload(raw_session)
+                    ),
+                    well_uid,
+                )
+            )
+            if current.revision != expected_revision:
+                raise CanonicalSessionRevisionConflict(
+                    f"Expected revision {expected_revision}, found {current.revision}"
+                )
+            raw_view = self._exact_committed_view_locked(
+                store,
+                storage_key,
+                expected_session_revision=current.revision,
+                expected_view_revision=expected_view_revision,
+            )
+            view_state = json.loads(json.dumps(raw_view.get("view_state", {})))
+            saved_at = datetime.now(timezone.utc).isoformat()
+            store.setdefault("recovery_workspaces", {})[storage_key] = {
+                "saved_at": saved_at,
+                "session_revision": current.revision,
+                "view_revision": expected_view_revision,
+                "view_state": view_state,
+            }
+            self._write_store(store)
+            return {
+                "available": True,
+                "saved_at": saved_at,
+                "session_revision": current.revision,
+                "view_revision": expected_view_revision,
+                "view_state": view_state,
+            }
+
+    def save_workspace_snapshot(
+        self,
+        managed_well_uid: str,
+        *,
+        expected_revision: int,
+        view_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist an explicit WDV workspace snapshot.
+
+        The saved snapshot is separate from the continuously updated canonical
+        working session. It captures the complete canonical canvas content plus
+        the frontend-owned viewport/group state at the instant the user presses
+        Zoom/View Save.
+        """
+        well_uid = str(parse_uuid7(managed_well_uid))
+        storage_key = self._storage_key(well_uid)
+        with self._lock:
+            store = self._read_store()
+            raw = store["sessions"].get(storage_key)
+            if raw is None and storage_key != well_uid:
+                raw = store["sessions"].get(well_uid)
+            current = (
+                self._empty_session(well_uid)
+                if raw is None
+                else self._project_working_well(
+                    WdvCanonicalSession.model_validate(
+                        _migrate_legacy_session_payload(raw)
+                    ),
+                    well_uid,
+                )
+            )
+            if current.revision != expected_revision:
+                raise CanonicalSessionRevisionConflict(
+                    f"Expected revision {expected_revision}, found {current.revision}"
+                )
+            saved_at = datetime.now(timezone.utc).isoformat()
+            snapshots = store.setdefault("saved_workspaces", {})
+            snapshots[storage_key] = {
+                "saved_at": saved_at,
+                "session": current.model_dump(mode="json"),
+                "view_state": json.loads(json.dumps(view_state)),
+            }
+            self._write_store(store)
+            return {
+                "available": True,
+                "saved_at": saved_at,
+                "view_state": json.loads(json.dumps(view_state)),
+            }
+
+    def save_workspace_recovery_state(
+        self,
+        managed_well_uid: str,
+        *,
+        expected_revision: int,
+        view_state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist continuously updated restart-recovery view state.
+
+        Unlike an explicit saved workspace snapshot, recovery state never copies or
+        restores the canonical session. Canonical session content is already durable
+        and must never be rolled back merely because the application restarted.
+        """
+        well_uid = str(parse_uuid7(managed_well_uid))
+        storage_key = self._storage_key(well_uid)
+        with self._lock:
+            store = self._read_store()
+            raw = store["sessions"].get(storage_key)
+            if raw is None and storage_key != well_uid:
+                raw = store["sessions"].get(well_uid)
+            current = (
+                self._empty_session(well_uid)
+                if raw is None
+                else self._project_working_well(
+                    WdvCanonicalSession.model_validate(
+                        _migrate_legacy_session_payload(raw)
+                    ),
+                    well_uid,
+                )
+            )
+            if current.revision != expected_revision:
+                raise CanonicalSessionRevisionConflict(
+                    f"Expected revision {expected_revision}, found {current.revision}"
+                )
+            saved_at = datetime.now(timezone.utc).isoformat()
+            recovery = store.setdefault("recovery_workspaces", {})
+            recovery[storage_key] = {
+                "saved_at": saved_at,
+                "session_revision": current.revision,
+                "view_state": json.loads(json.dumps(view_state)),
+            }
+            self._write_store(store)
+            return {
+                "available": True,
+                "saved_at": saved_at,
+                "view_state": json.loads(json.dumps(view_state)),
+            }
+
+    def get_workspace_recovery_state(
+        self,
+        managed_well_uid: str,
+    ) -> dict[str, Any] | None:
+        well_uid = str(parse_uuid7(managed_well_uid))
+        storage_key = self._storage_key(well_uid)
+        with self._lock:
+            store = self._read_store()
+            raw = store.setdefault("recovery_workspaces", {}).get(storage_key)
+            if raw is None:
+                return None
+            return {
+                "available": True,
+                "saved_at": raw.get("saved_at"),
+                "session_revision": raw.get("session_revision"),
+                "view_state": json.loads(json.dumps(raw.get("view_state", {}))),
+            }
+
+    def get_workspace_snapshot(
+        self,
+        managed_well_uid: str,
+    ) -> dict[str, Any] | None:
+        well_uid = str(parse_uuid7(managed_well_uid))
+        storage_key = self._storage_key(well_uid)
+        with self._lock:
+            store = self._read_store()
+            raw = store.setdefault("saved_workspaces", {}).get(storage_key)
+            if raw is None:
+                return None
+            session = self._project_working_well(
+                WdvCanonicalSession.model_validate(
+                    _migrate_legacy_session_payload(raw["session"])
+                ),
+                well_uid,
+            )
+            return {
+                "available": True,
+                "saved_at": raw.get("saved_at"),
+                "session": session,
+                "view_state": json.loads(json.dumps(raw.get("view_state", {}))),
+            }
+
+    def restore_workspace_snapshot(
+        self,
+        managed_well_uid: str,
+        *,
+        expected_revision: int,
+        validator: Callable[[WdvCanonicalSession], object] | None = None,
+    ) -> tuple[WdvCanonicalSession, dict[str, Any], str | None]:
+        """Restore the last explicit Save as a new canonical session revision."""
+        well_uid = str(parse_uuid7(managed_well_uid))
+        storage_key = self._storage_key(well_uid)
+        with self._lock:
+            store = self._read_store()
+            raw_current = store["sessions"].get(storage_key)
+            if raw_current is None and storage_key != well_uid:
+                raw_current = store["sessions"].get(well_uid)
+            current = (
+                self._empty_session(well_uid)
+                if raw_current is None
+                else self._project_working_well(
+                    WdvCanonicalSession.model_validate(
+                        _migrate_legacy_session_payload(raw_current)
+                    ),
+                    well_uid,
+                )
+            )
+            if current.revision != expected_revision:
+                raise CanonicalSessionRevisionConflict(
+                    f"Expected revision {expected_revision}, found {current.revision}"
+                )
+
+            snapshot = store.setdefault("saved_workspaces", {}).get(storage_key)
+            if snapshot is None:
+                raise ValueError("No saved WDV workspace snapshot exists")
+
+            saved_session = self._project_working_well(
+                WdvCanonicalSession.model_validate(
+                    _migrate_legacy_session_payload(snapshot["session"])
+                ),
+                well_uid,
+            )
+            restored = saved_session.model_copy(
+                update={
+                    "revision": current.revision + 1,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            restored = WdvCanonicalSession.model_validate(
+                restored.model_dump(mode="json")
+            )
+            if validator is not None:
+                validator(restored)
+
+            store["sessions"][storage_key] = restored.model_dump(mode="json")
+            # Receipts reference later working revisions and must never replay
+            # over an explicitly restored snapshot.
+            store.setdefault("command_receipts", {}).pop(storage_key, None)
+            self._write_store(store)
+            return (
+                restored,
+                json.loads(json.dumps(snapshot.get("view_state", {}))),
+                snapshot.get("saved_at"),
+            )
 
     def clear_session(self, managed_well_uid: str, reason: str) -> WdvCanonicalSession:
         well_uid = str(parse_uuid7(managed_well_uid))
@@ -381,12 +995,24 @@ class CanonicalWdvSessionService:
                 "schema_version": WDV_SESSION_CONTRACT_VERSION,
                 "sessions": {},
                 "command_receipts": {},
+                "saved_workspaces": {},
+                "recovery_workspaces": {},
+                "committed_view_states": {},
             }
         raw = json.loads(self.storage_path.read_text())
         if not isinstance(raw, dict) or not isinstance(raw.get("sessions", {}), dict):
             raise ValueError("Canonical WDV session store is malformed")
         raw.setdefault("schema_version", WDV_SESSION_CONTRACT_VERSION)
         raw.setdefault("sessions", {})
+        snapshots = raw.setdefault("saved_workspaces", {})
+        if not isinstance(snapshots, dict):
+            raise ValueError("Canonical WDV saved workspace store is malformed")
+        recovery = raw.setdefault("recovery_workspaces", {})
+        if not isinstance(recovery, dict):
+            raise ValueError("Canonical WDV recovery workspace store is malformed")
+        committed_views = raw.setdefault("committed_view_states", {})
+        if not isinstance(committed_views, dict):
+            raise ValueError("Canonical WDV committed view-state store is malformed")
         receipts = raw.setdefault("command_receipts", {})
         if not isinstance(receipts, dict):
             raise ValueError("Canonical WDV command receipt store is malformed")

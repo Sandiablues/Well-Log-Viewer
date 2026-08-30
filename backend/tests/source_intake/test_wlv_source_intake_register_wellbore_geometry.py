@@ -54,6 +54,33 @@ def _resolve_geometry(source: WlvSourceIntakeService, candidate) -> None:
         )
     )
 
+    # WLV-WSI-GEOMETRY-EXPLICIT-WELL-RESOLUTION-REGRESSION-ALIGNMENT:
+    # Filename/path text is no longer authoritative well identity. Legacy
+    # geometry registration tests explicitly model the required human correction.
+    refreshed = next(
+        item
+        for item in source.get_workbench().candidates
+        if item.source_file_id == candidate.source_file_id
+    )
+    if (
+        refreshed.resolved_metadata is None
+        or not refreshed.resolved_metadata.well_name.value
+    ):
+        source.resolve_candidates(
+            SourceIntakeBulkResolutionRequest(
+                decisions=[
+                    SourceIntakeResolutionDecision(
+                        occurrence_id=refreshed.occurrence_id,
+                        action=SourceIntakeResolutionAction.MANUAL_CORRECTION,
+                        actor="test",
+                        reason="Explicitly confirm geometry destination well.",
+                        resolved_values={"well_name": "Forge 21-31"},
+                    )
+                ]
+            )
+        )
+
+
 def _scan_geometry(tmp_path: Path, file_name: str, text: str):
     root = tmp_path / "source"
     _write(root / file_name, text)

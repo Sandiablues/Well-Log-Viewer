@@ -58,6 +58,7 @@ from .depth_units import (
 )
 from .las_asset_store import LasAssetStore, LasAssetStoreError, StoredLasAsset
 from .dlis_asset_store import DlisAssetStore, DlisAssetStoreError, StoredDlisAsset
+from .lis_asset_store import LisAssetStore, LisAssetStoreError, StoredLisAsset
 from .readiness import evaluate_wmd_availability_readiness
 from .models import (
     SourceFileCandidate,
@@ -101,6 +102,15 @@ def wmd_availability_block_reason(candidate: SourceFileCandidate) -> str | None:
 
     if candidate.resolution_state == SourceIntakeResolutionState.EXCLUDED:
         return "Candidate is excluded from ingestion. Reopen it before WMD availability."
+
+    if candidate.candidate_role == SourceIntakeCandidateRole.FORMATION_TOPS_CANDIDATE:
+        if candidate.parser_status not in {SourceIntakeParseStatus.PARSED, SourceIntakeParseStatus.PARSED_WITH_WARNINGS}:
+            return f"Formation-tops candidate parser_status is not WMD-ready: {candidate.parser_status.value}."
+        if candidate.formation_tops is None or not candidate.formation_tops.tops:
+            return "Formation-tops candidate has no parsed marker payload."
+        if candidate.qaqc_status.status not in _ALLOWED_REGISTER_QAQC_STATUSES or candidate.qaqc_status.failure_count > 0:
+            return "Formation-tops candidate QAQC has failures and cannot be made available."
+        return candidate.readiness_issues[0] if candidate.readiness_issues else None
 
     if candidate.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
         if candidate.parser_status not in {SourceIntakeParseStatus.PARSED, SourceIntakeParseStatus.PARSED_WITH_WARNINGS}:
@@ -181,6 +191,14 @@ def register_candidate_to_inventory(
     qaqc_report: dict[str, object] | None = None,
 ) -> tuple[str, ManagedWellRecord]:
     """Create/update one Managed Well Inventory record from an intake candidate."""
+    if candidate.candidate_role == SourceIntakeCandidateRole.FORMATION_TOPS_CANDIDATE:
+        return _register_formation_tops_candidate(
+            candidate=candidate,
+            inventory_service=inventory_service,
+            approved_by=approved_by,
+            approval_note=approval_note,
+            qaqc_report=qaqc_report,
+        )
     blocked = wmd_availability_block_reason(candidate)
     if blocked is not None:
         raise ValueError(blocked)
@@ -324,7 +342,21 @@ def register_candidate_to_inventory(
     provenance = _source_intake_provenance(candidate)
     las_asset: StoredLasAsset | None = None
     dlis_asset: StoredDlisAsset | None = None
-    if candidate.detected_file_type == SourceIntakeFileType.DLIS:
+    lis_asset: StoredLisAsset | None = None
+    if candidate.detected_file_type == SourceIntakeFileType.LIS:
+        try:
+            lis_asset = LisAssetStore().preserve_path(Path(candidate.original_path), source_id=candidate.source_file_id, filename=candidate.file_name)
+        except LisAssetStoreError as exc:
+            raise ValueError(f"External LIS/LTI source reference failed: {exc}") from exc
+        asset_payload = lis_asset.as_dict()
+        provenance = {**provenance, "lis_asset": asset_payload, "source_format": "LIS"}
+        source_kind = ManagedSourceKind.LIS
+        source_metadata = {**provenance, "parsed_metadata": parsed.model_dump(mode="json"),
+            "canonical_source_metadata": parsed.canonical_metadata.model_dump(mode="json") if parsed.canonical_metadata else None,
+            "storage_uri": lis_asset.original_uri, "lis_asset_id": lis_asset.asset_id,
+            **({"source_intake_qaqc_report": qaqc_report} if qaqc_report is not None else {})}
+        source_fingerprint = lis_asset.source_fingerprint
+    elif candidate.detected_file_type == SourceIntakeFileType.DLIS:
         try:
             dlis_asset = DlisAssetStore().preserve_path(Path(candidate.original_path), source_id=candidate.source_file_id, filename=candidate.file_name)
         except DlisAssetStoreError as exc:
@@ -410,6 +442,7 @@ def register_candidate_to_inventory(
         candidate,
         las_asset=las_asset,
         dlis_asset=dlis_asset,
+        lis_asset=lis_asset,
         managed_depth_unit=managed_depth_unit,
         managed_top_depth=managed_top_depth,
         managed_base_depth=managed_base_depth,
@@ -514,6 +547,148 @@ def register_candidate_to_inventory(
 
 
 
+def _register_formation_tops_candidate(
+    *,
+    candidate: SourceFileCandidate,
+    inventory_service: ManagedWellInventoryService,
+    approved_by: str | None,
+    approval_note: str | None,
+    qaqc_report: dict[str, object] | None,
+) -> tuple[str, ManagedWellRecord]:
+    blocked = wmd_availability_block_reason(candidate)
+    if blocked is not None:
+        raise ValueError(blocked)
+    payload = candidate.formation_tops
+    if payload is None or not payload.tops:
+        raise ValueError("Formation-tops candidate has no parsed marker payload.")
+
+    decision = candidate.current_decision
+    assigned_existing = bool(
+        decision and decision.decision == SourceIntakeHumanDecision.ASSIGN
+        and decision.assignment_mode == SourceIntakeWellAssignmentMode.EXISTING_WELL
+        and decision.assignment_target
+    )
+    existing = None
+    if assigned_existing:
+        managed_well_id = str(decision.assignment_target)
+        existing = _get_existing_record(inventory_service, managed_well_id)
+        if existing is None:
+            raise ValueError(f"Assigned managed well does not exist: {managed_well_id}")
+        well_id = existing.well_id
+        well_name = existing.well_name
+    else:
+        well_name = payload.wellbore
+        existing = find_record_by_canonical_name(inventory_service.repository.list_records(), well_name)
+        if existing is not None:
+            managed_well_id, well_id = existing.managed_well_id, existing.well_id
+            well_name = existing.well_name
+        else:
+            well_id, managed_well_id, _ = managed_well_identity_from_name(well_name)
+
+    source_path = Path(candidate.original_path)
+    if not source_path.is_file():
+        raise ValueError(f"External formation-tops CSV is unavailable: {source_path}")
+    source_reference = ManagedSourceReference(
+        source_id=candidate.source_file_id,
+        source_kind=ManagedSourceKind.CSV_INTERVALS,
+        display_name=candidate.file_name,
+        original_path=candidate.original_path,
+        file_name=candidate.file_name,
+        file_format="CSV",
+        checksum=candidate.checksum,
+        metadata={
+            **_source_intake_provenance(candidate),
+            "dataset_type": "formation_tops",
+            "formation_tops": payload.model_dump(mode="json"),
+            **({"source_intake_qaqc_report": qaqc_report} if qaqc_report is not None else {}),
+        },
+    )
+
+    marker_count = len(payload.tops)
+    md_min = min(top.md_m_rt for top in payload.tops)
+    md_max = max(top.md_m_rt for top in payload.tops)
+    pick_statuses = {str(top.pick_status or "").strip() for top in payload.tops if str(top.pick_status or "").strip()}
+    dataset_status = next(iter(pick_statuses)) if len(pick_statuses) == 1 else "Mixed"
+    depth_reference = "RT / MSL"
+
+    dataset_item = ManagedProductGroupItem(
+        product_id=f"source-intake-formation-tops:{candidate.source_file_id}",
+        display_name=candidate.file_name,
+        curve_name="Formation Tops",
+        curve_type=dataset_status,
+        curve_description=f"{marker_count} formation markers",
+        curve_unit="m",
+        product_category="lithology_core_markers",
+        product_subgroup_key="formation_tops",
+        product_subgroup_label="Formation Tops",
+        curve_family="Formation Tops",
+        curve_family_key="formation_tops",
+        general_curve_family="Lithology / Core / Markers",
+        general_curve_family_key="lithology_core_markers",
+        measurement_domain_key="stratigraphic_marker_dataset",
+        measurement_domain_label="Stratigraphic Marker Dataset",
+        destination_key="formation_tops",
+        destination_owner="wmd",
+        display_in_wdv=False,
+        classification_contract_version="formation_tops_csv_v2",
+        classification_confidence="high",
+        classification_source="governed_csv_contract",
+        classification_reasons=["Formation-tops CSV parsed as one governed dataset containing multiple marker records."],
+        review_required=bool(candidate.review_required),
+        run_date="—",
+        run_interval=f"{md_min:g}–{md_max:g} m",
+        run_number=f"{marker_count} markers",
+        qa_flag="Review" if candidate.review_required else "Passed",
+        selectable=True,
+        source_kind=ManagedSourceKind.CSV_INTERVALS.value,
+        source_id=candidate.source_file_id,
+        wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,
+        wdv_state=ManagedWdvState.NOT_LOADED,
+        source_intake_candidate_id=candidate.source_file_id,
+        display_layer_type="formation_tops_dataset",
+        depth_reference=depth_reference,
+        depth_units="m",
+        depth_start=md_min,
+        depth_end=md_max,
+        provenance={
+            **_source_intake_provenance(candidate),
+            "dataset_type": "formation_tops",
+            "dataset_status": dataset_status,
+            "marker_count": marker_count,
+            "md_min_m": md_min,
+            "md_max_m": md_max,
+            "depth_reference_summary": depth_reference,
+            "source_file_name": candidate.file_name,
+            "formation_tops": [top.model_dump(mode="json") for top in payload.tops],
+        },
+    )
+    items = [dataset_item]
+
+
+    incoming=[ManagedProductGroup(group_key=d.group_key, group_label=d.group_label, items=(items if d.group_key == "lithology_core_markers" else [])) for d in PRODUCT_GROUP_ORDER]
+    merged=_merge_product_groups(existing.product_groups if existing else [], incoming)
+    now=utc_now_iso()
+    lifecycle=ManagedInventoryLifecycleState.REVIEW_REQUIRED if candidate.review_required else ManagedInventoryLifecycleState.REGISTERED
+    record=ManagedWellRecord(
+        managed_well_id=managed_well_id, well_id=well_id, well_name=well_name,
+        operator=existing.operator if existing else None, field=existing.field if existing else None,
+        block=existing.block if existing else None, country=existing.country if existing else None,
+        depth_unit=existing.depth_unit if existing else "m",
+        top_depth=existing.top_depth if existing else min(t.md_m_rt for t in payload.tops),
+        base_depth=existing.base_depth if existing else max(t.md_m_rt for t in payload.tops),
+        status=lifecycle, lifecycle_state=lifecycle,
+        wmdp_state=ManagedWmdpState.STAGED_IN_WMDP, wdv_state=ManagedWdvState.NOT_LOADED,
+        source_intake_candidate_id=candidate.source_file_id, wmdp_available=True,
+        source_references=_merge_source_references(existing.source_references if existing else [], source_reference),
+        viewer_packages=existing.viewer_packages if existing else [], product_groups=merged,
+        tags=_merge_tags(existing.tags if existing else [], ["source-intake", "formation-tops", "csv"]),
+        metadata={**(existing.metadata if existing else {}), "source_intake_registered": True, "formation_tops_dataset": payload.model_dump(mode="json"), "approval": {"approved_by": approved_by, "approval_note": approval_note, "registered_at": now}},
+        lifecycle_notes=_merge_lifecycle_notes(existing.lifecycle_notes if existing else [], f"Formation tops CSV made available from Source Intake by {approved_by or 'unknown actor'}."),
+        created_at=existing.created_at if existing else now, updated_at=now,
+    )
+    return inventory_service.upsert_managed_record(record)
+
+
 def _rebuild_classified_well_log_groups_from_general_family(
     product_groups: list[ManagedProductGroup],
 ) -> list[ManagedProductGroup]:
@@ -592,6 +767,7 @@ def _product_groups_from_candidate(
     *,
     las_asset: StoredLasAsset | None = None,
     dlis_asset: StoredDlisAsset | None = None,
+    lis_asset: StoredLisAsset | None = None,
     managed_depth_unit: str,
     managed_top_depth: float | None,
     managed_base_depth: float | None,
@@ -620,6 +796,8 @@ def _product_groups_from_candidate(
         provenance = {**provenance, "las_asset": las_asset.as_dict(), "source_format": "LAS"}
     elif dlis_asset is not None:
         provenance = {**provenance, "dlis_asset": dlis_asset.as_dict(), "source_format": "DLIS"}
+    elif lis_asset is not None:
+        provenance = {**provenance, "lis_asset": lis_asset.as_dict(), "source_format": "LIS"}
     _runtime_classification_started = _perf_now()
     runtime_classifications = _runtime_classifications_for_curves(
         curve_headers=curve_headers,
@@ -637,7 +815,7 @@ def _product_groups_from_candidate(
     authority_outcomes = build_source_intake_authority_outcomes(
         curve_headers=curve_headers,
         context_terms=context_terms,
-        source_kind=(ManagedSourceKind.DLIS.value if dlis_asset is not None else ManagedSourceKind.LAS.value),
+        source_kind=(ManagedSourceKind.LIS.value if lis_asset is not None else (ManagedSourceKind.DLIS.value if dlis_asset is not None else ManagedSourceKind.LAS.value)),
         source_uid=candidate.source_file_id,
         runtime_classifications=runtime_classifications,
     )
@@ -732,7 +910,7 @@ def _product_groups_from_candidate(
                 run_number=run_number,
                 qa_flag="Review" if review_required else "Passed",
                 selectable=True,
-                source_kind=(ManagedSourceKind.DLIS.value if dlis_asset is not None else ManagedSourceKind.LAS.value),
+                source_kind=(ManagedSourceKind.LIS.value if lis_asset is not None else (ManagedSourceKind.DLIS.value if dlis_asset is not None else ManagedSourceKind.LAS.value)),
                 source_id=candidate.source_file_id,
                 viewer_package_id=None,
                 wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,

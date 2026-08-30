@@ -28,6 +28,7 @@ from app.wdv_session.canonical_commands import (
     ResetCurveTrackWidthsCommand,
     SelectTrackCommand,
     UpdateCurveAssignmentCommand,
+    UpdateCurveLineStyleCommand,
     UpdateTrackCommand,
 )
 from app.wdv_session.canonical_service import (
@@ -189,6 +190,20 @@ def reorder_tracks(
     service: CanonicalWdvCommandService = Depends(get_service),
 ) -> WdvCanonicalSessionView:
     return _translate(lambda: service.reorder_tracks(managed_well_uid, command))
+
+
+@router.post(
+    "/{managed_well_uid}/assignments/line-style",
+    response_model=WdvCanonicalSessionView,
+)
+def update_curve_line_style(
+    managed_well_uid: str,
+    command: UpdateCurveLineStyleCommand,
+    service: CanonicalWdvCommandService = Depends(get_service),
+) -> WdvCanonicalSessionView:
+    return _translate(
+        lambda: service.update_curve_line_style(managed_well_uid, command)
+    )
 
 
 @router.post("/{managed_well_uid}/assignments/update", response_model=WdvCanonicalSessionView)

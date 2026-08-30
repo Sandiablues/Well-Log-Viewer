@@ -110,7 +110,7 @@ class WdvTemplateApplicationApplyService:
                     track_type=track_type,
                     renderer_type=track.renderer_type,
                     track_role=track.track_role,
-                    width_px=86 if track_type == "depth" else 220,
+                    width_px=65 if track_type == "depth" else 220,
                     lattice="logarithmic" if self._track_uses_log_lattice(track) else "linear",
                     lattice_source="backend_template_default",
                     curves=assignments,

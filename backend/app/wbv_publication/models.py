@@ -6,11 +6,12 @@ snapshot from WBV-only presentation overrides.
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.identity.wdv_contract_v2 import CanonicalUuid7, IsoDatetimeString, WdvCanonicalSession
+from app.wbv.models import WbvCurveOverlayRenderContract
 
 WBV_OVERLAY_PACKAGE_CONTRACT_VERSION = "wbv_overlay_package_v1"
 
@@ -37,10 +38,24 @@ class WbvCurvePresentationOverride(BaseModel):
 
     assignment_uid: CanonicalUuid7
     visible: bool | None = None
+    color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     opacity: float | None = Field(default=None, ge=0.0, le=1.0)
     line_width: float | None = Field(default=None, gt=0)
-    radial_exaggeration: float | None = Field(default=None, gt=0)
+    radial_exaggeration: float | None = Field(default=None, ge=0.25, le=3.0)
     label_visible: bool | None = None
+    label_content: Literal["mnemonic", "mnemonic_value", "scale", "mnemonic_scale"] | None = None
+    label_anchor: Literal["top", "base", "custom_md"] | None = None
+    label_custom_md: float | None = None
+    label_size: float | None = Field(default=None, ge=0.5, le=2.5)
+    label_weight: int | None = Field(default=None, ge=400, le=900, multiple_of=100)
+    label_alignment: Literal["left", "center", "right"] | None = None
+    label_position: Literal["on_track", "left", "right", "center"] | None = None
+    label_horizontal_adjustment: float | None = Field(default=None, ge=-4.0, le=4.0)
+    label_vertical_adjustment: float | None = Field(default=None, ge=-4.0, le=4.0)
+    scale_color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    scale_opacity: float | None = Field(default=None, ge=0.0, le=1.0)  # deprecated compatibility field
+    scale_line_width: float | None = Field(default=None, ge=0.5, le=4.0)
+    scale_size: float | None = Field(default=None, ge=0.5, le=2.0)
 
 
 class WbvPresentationOverrides(BaseModel):
@@ -92,6 +107,8 @@ class WbvOverlayPackageRevisionSnapshot(BaseModel):
     source_wdv_session_uid: CanonicalUuid7
     source_wdv_revision: int = Field(ge=0)
     published_snapshot: WdvCanonicalSession
+    source_wdv_view_revision: int | None = Field(default=None, ge=0)
+    published_view_state: dict[str, Any] = Field(default_factory=dict)
     wbv_overrides: WbvPresentationOverrides
     provenance: WbvPublicationProvenance
     saved_at: IsoDatetimeString
@@ -111,6 +128,8 @@ class WbvOverlayPackage(BaseModel):
     source_wdv_session_uid: CanonicalUuid7
     source_wdv_revision: int = Field(ge=0)
     published_snapshot: WdvCanonicalSession
+    source_wdv_view_revision: int | None = Field(default=None, ge=0)
+    published_view_state: dict[str, Any] = Field(default_factory=dict)
     wbv_overrides: WbvPresentationOverrides = WbvPresentationOverrides()
     provenance: WbvPublicationProvenance
     revision_history: tuple[WbvOverlayPackageRevisionSnapshot, ...] = ()
@@ -144,6 +163,27 @@ class WbvOverlayPackage(BaseModel):
         if unknown_curves:
             raise ValueError("WBV curve overrides must reference assignments in the published snapshot")
         return self
+
+
+class WbvPublishedTrackPresentationContract(BaseModel):
+    """Renderer-neutral WDV presentation snapshot retained by one WBV publication."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    contract_version: Literal["wbv_published_track_presentation_v1"] = "wbv_published_track_presentation_v1"
+    managed_well_uid: CanonicalUuid7
+    package_uid: CanonicalUuid7
+    package_revision: int = Field(ge=1)
+    source_wdv_session_uid: CanonicalUuid7
+    source_wdv_revision: int = Field(ge=0)
+    source_wdv_view_revision: int | None = Field(default=None, ge=0)
+    presentation_state: dict[str, Any] = Field(default_factory=dict)
+    selected_formation_top_ids: tuple[str, ...] = ()
+    selected_lithology_interval_ids: tuple[str, ...] = ()
+    formation_top_overlay_styles_by_track_id: dict[str, Any] = Field(default_factory=dict)
+    track_order_uids: tuple[str, ...] = ()
+    track_widths_by_uid: dict[str, float] = Field(default_factory=dict)
+    curve_render_package: WbvCurveOverlayRenderContract
 
 
 class WbvPublishPreviewRequest(BaseModel):

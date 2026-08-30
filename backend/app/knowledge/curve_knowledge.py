@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-CURVE_KNOWLEDGE_VERSION = "wlv_curve_knowledge_v1"
+CURVE_KNOWLEDGE_VERSION = "wlv_curve_knowledge_v1_1_lis_lti"
 
 
 @dataclass(frozen=True)
@@ -58,7 +58,7 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_max=200.0,
         default_unit="API",
         standard_mnemonics=("GR",),
-        aliases=("GAM", "GRC", "ECGR", "HGR", "GR_EDTC"),
+        aliases=("GAM", "GRC", "ECGR", "HGR", "GR_EDTC", "GRBM", "GRDM"),
     ),
     CurveDisplayDefinition(
         canonical_curve_id="spontaneous_potential",
@@ -83,7 +83,7 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_max=200.0,
         default_unit="OHMM",
         standard_mnemonics=("AT90",),
-        aliases=("AF90", "RT", "ILD", "LLD", "AORX", "AORT"),
+        aliases=("AF90", "RT", "ILD", "LLD", "AORX", "AORT", "HRD"),
     ),
     CurveDisplayDefinition(
         canonical_curve_id="shallow_resistivity",
@@ -96,7 +96,20 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_max=200.0,
         default_unit="OHMM",
         standard_mnemonics=("AT10",),
-        aliases=("AF10", "LLS", "ILM", "RXO", "RXOZ", "RXO8"),
+        aliases=("AF10", "LLS", "ILM", "RXO", "RXOZ", "RXO8", "HRS"),
+    ),
+    CurveDisplayDefinition(
+        canonical_curve_id="medium_resistivity",
+        curve_family="resistivity",
+        display_name="Medium Resistivity",
+        track_family="resistivity",
+        render_curve_id="HRM",
+        scale_type="log",
+        display_min=0.2,
+        display_max=200.0,
+        default_unit="OHMM",
+        standard_mnemonics=("HRM",),
+        aliases=(),
     ),
     CurveDisplayDefinition(
         canonical_curve_id="bulk_density",
@@ -108,7 +121,19 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_max=2.95,
         default_unit="G/C3",
         standard_mnemonics=("RHOB", "RHOZ"),
-        aliases=("DEN", "DENS", "ZDEN", "DPHZ"),
+        aliases=("DEN", "DENS", "ZDEN", "DPHZ", "HDEN"),
+    ),
+    CurveDisplayDefinition(
+        canonical_curve_id="density_auxiliary_count_rate",
+        curve_family="density_auxiliary",
+        display_name="Density Auxiliary Count Rate",
+        track_family="lithology_density",
+        render_curve_id="HRD1",
+        display_min=0.0,
+        display_max=10000.0,
+        default_unit="CPS",
+        standard_mnemonics=("HRD1", "HRD2"),
+        aliases=(),
     ),
     CurveDisplayDefinition(
         canonical_curve_id="neutron_porosity",
@@ -120,7 +145,7 @@ CURVE_DEFINITIONS: tuple[CurveDisplayDefinition, ...] = (
         display_max=-0.15,
         default_unit="V/V",
         standard_mnemonics=("NPHI", "TNPH"),
-        aliases=("NPOR", "DNPH", "HNPO", "HTNP"),
+        aliases=("NPOR", "DNPH", "HNPO", "HTNP", "HCNL"),
     ),
     CurveDisplayDefinition(
         canonical_curve_id="sonic_compressional",

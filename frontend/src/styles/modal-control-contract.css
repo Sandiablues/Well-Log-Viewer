@@ -1,0 +1,487 @@
+
+/*
+ * MultiViewer shared modal-control geometry contract.
+ *
+ * Governing principles:
+ * - controls use the smallest content class that fits their actual option set;
+ * - no modal control stretches merely because width is available;
+ * - all sliders use one standard width;
+ * - all colour swatches are square;
+ * - tables, summaries and genuinely long content may remain full width.
+ */
+
+:is(.wlv-curve-edit-modal-body, .wlv-interval-builder-modal, .wlv-wbv-layer-manager-modal) {
+  --wlv-modal-select-short: 200px;
+  --wlv-modal-select-medium: 260px;
+  --wlv-modal-select-long: 300px;
+  --wlv-modal-number-compact: 96px;
+  --wlv-modal-number-standard: 120px;
+  --wlv-modal-number-depth: 180px;
+  --wlv-modal-slider: 260px;
+  --wlv-modal-swatch: 34px;
+  --wlv-modal-label-control-gap: 8px;
+  --wlv-modal-control-gap: 14px;
+  --wlv-modal-row-gap: 12px;
+  --wlv-modal-section-gap: 16px;
+}
+
+/* Native slider behavior: no z-index or pointer-event hacks. */
+.wlv-curve-edit-modal-body input[type="range"] {
+  width: var(--wlv-modal-slider);
+  max-width: var(--wlv-modal-slider);
+  min-width: 0;
+  margin-inline: 0;
+  cursor: pointer;
+}
+
+/* One square swatch geometry across every Edit Track section. */
+.wlv-curve-edit-modal-body input[type="color"],
+.wlv-curve-edit-modal-body .wlv-curve-editor__color-swatch,
+.wlv-edit-track-overlay-panel input[type="color"] {
+  width: var(--wlv-modal-swatch) !important;
+  min-width: var(--wlv-modal-swatch) !important;
+  max-width: var(--wlv-modal-swatch) !important;
+  height: var(--wlv-modal-swatch) !important;
+  min-height: var(--wlv-modal-swatch) !important;
+  max-height: var(--wlv-modal-swatch) !important;
+  padding: 2px !important;
+  border-radius: 5px !important;
+  box-sizing: border-box !important;
+}
+
+/* Standard label-to-control separation throughout Edit Track.
+ * Labels with intentionally horizontal geometry are excluded and retain their
+ * explicit section layouts below.
+ */
+.wlv-curve-edit-modal-body
+  label:not(.wlv-curve-editor-checkbox-row):not(.wlv-curve-editor__color-control):not(.wlv-curve-editor-field--line-opacity):not(.wlv-curve-editor-field--offset) {
+  display: grid;
+  grid-auto-flow: row;
+  align-content: start;
+  justify-items: start;
+  row-gap: var(--wlv-modal-label-control-gap);
+}
+
+/* Do not retain legacy control margins inside the governed vertical labels. */
+.wlv-curve-edit-modal-body
+  label:not(.wlv-curve-editor-checkbox-row):not(.wlv-curve-editor__color-control):not(.wlv-curve-editor-field--line-opacity):not(.wlv-curve-editor-field--offset)
+  > select,
+.wlv-curve-edit-modal-body
+  label:not(.wlv-curve-editor-checkbox-row):not(.wlv-curve-editor__color-control):not(.wlv-curve-editor-field--line-opacity):not(.wlv-curve-editor-field--offset)
+  > input:not([type="checkbox"]):not([type="color"]):not([type="range"]) {
+  margin-top: 0;
+}
+
+/* ---------------- Curve Controls ---------------- */
+
+.wlv-curve-editor-controls {
+  grid-template-columns: 400px 400px !important;
+  grid-template-areas:
+    "scale line"
+    "position position" !important;
+  justify-content: start;
+  align-items: start;
+  gap: var(--wlv-modal-control-gap) !important;
+}
+
+.wlv-curve-editor-section {
+  align-content: start;
+}
+
+.wlv-curve-editor-section--scale label,
+.wlv-curve-editor-section--line label {
+  width: max-content;
+  max-width: 100%;
+}
+
+.wlv-curve-editor-section--scale label:nth-of-type(1) select {
+  width: var(--wlv-modal-select-short) !important;
+}
+.wlv-curve-editor-section--scale label:nth-of-type(2) select {
+  width: var(--wlv-modal-select-long) !important;
+}
+.wlv-curve-editor-section--scale label:nth-of-type(3) input,
+.wlv-curve-editor-section--scale label:nth-of-type(4) input {
+  width: var(--wlv-modal-number-standard) !important;
+}
+
+.wlv-curve-editor-section--line {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  justify-content: start;
+  align-items: end;
+  column-gap: 24px;
+  row-gap: var(--wlv-modal-row-gap);
+}
+.wlv-curve-editor-section--line > h4,
+.wlv-curve-editor-section--line > .wlv-curve-editor-checkbox-row {
+  grid-column: 1 / -1;
+}
+.wlv-curve-editor-section--line .wlv-curve-editor__line-color {
+  grid-column: 1;
+}
+
+.wlv-curve-editor-field--line-width {
+  grid-column: 1;
+  display: grid;
+  grid-template-rows: auto 30px;
+  row-gap: var(--wlv-modal-label-control-gap);
+}
+.wlv-curve-editor-field--line-width input {
+  width: var(--wlv-modal-number-standard) !important;
+}
+
+.wlv-curve-editor-field--line-style {
+  grid-column: 2;
+  display: grid;
+  grid-template-rows: auto 30px;
+  row-gap: var(--wlv-modal-label-control-gap);
+}
+.wlv-curve-editor-field--line-style select {
+  width: var(--wlv-modal-select-short) !important;
+}
+
+.wlv-curve-editor-field--line-opacity {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: max-content var(--wlv-modal-slider);
+  align-items: center;
+  justify-content: start;
+  column-gap: 12px;
+  row-gap: 0;
+  width: max-content;
+  position: relative;
+  isolation: isolate;
+}
+.wlv-curve-editor-field--line-opacity input[type="range"] {
+  width: var(--wlv-modal-slider) !important;
+  max-width: var(--wlv-modal-slider) !important;
+  margin: 0 !important;
+}
+
+.wlv-curve-editor-section--position {
+  grid-template-columns:
+    var(--wlv-modal-select-short)
+    calc(var(--wlv-modal-slider) + 60px)
+    max-content !important;
+  justify-content: start;
+  column-gap: 24px !important;
+}
+.wlv-curve-editor-field--position select {
+  width: var(--wlv-modal-select-short) !important;
+}
+.wlv-curve-editor-field--offset {
+  grid-template-columns: max-content var(--wlv-modal-slider) !important;
+  width: max-content;
+  column-gap: 12px;
+}
+.wlv-curve-editor-field--offset input[type="range"] {
+  width: var(--wlv-modal-slider) !important;
+  max-width: var(--wlv-modal-slider) !important;
+}
+
+/* ---------------- Curve Infill ---------------- */
+
+.wlv-curve-fill-new-rule.wlv-curve-fill-menu {
+  display: grid !important;
+  grid-template-columns:
+    var(--wlv-modal-select-medium)
+    var(--wlv-modal-select-medium) !important;
+  width: max-content !important;
+  max-width: 100%;
+  justify-content: start;
+  align-items: end;
+  gap: var(--wlv-modal-row-gap) var(--wlv-modal-control-gap) !important;
+}
+
+.wlv-curve-fill-new-rule.wlv-curve-fill-menu > label select {
+  width: var(--wlv-modal-select-medium);
+  max-width: 100%;
+}
+
+.wlv-curve-fill-new-rule .wlv-compact-curve-pair,
+.wlv-curve-fill-new-rule .wlv-curve-fill-depth-extent,
+.wlv-curve-fill-new-rule .wlv-curve-fill-paint-editor,
+.wlv-curve-fill-new-rule .wlv-curve-fill-lithology-picker-row,
+.wlv-curve-fill-new-rule .wlv-property-note,
+.wlv-curve-fill-new-rule .wlv-curve-fill-style-row {
+  grid-column: 1 / -1 !important;
+  justify-self: start;
+}
+
+.wlv-curve-fill-paint-editor {
+  display: grid !important;
+  grid-template-columns:
+    var(--wlv-modal-select-medium)
+    var(--wlv-modal-select-long) !important;
+  width: max-content !important;
+  max-width: 100%;
+  gap: var(--wlv-modal-control-gap) !important;
+}
+.wlv-curve-fill-paint-editor select {
+  width: 100% !important;
+}
+.wlv-curve-fill-paint-editor input[type="range"] {
+  width: var(--wlv-modal-slider) !important;
+  max-width: var(--wlv-modal-slider) !important;
+}
+
+.wlv-curve-fill-style-row {
+  display: flex !important;
+  align-items: end !important;
+  justify-content: flex-start !important;
+  gap: 28px !important;
+  width: max-content !important;
+  max-width: 100%;
+  margin-top: 2px !important;
+}
+.wlv-curve-fill-style-row > label {
+  width: max-content !important;
+}
+.wlv-curve-fill-style-row .wlv-curve-editor__color-control {
+  display: grid !important;
+  grid-template-columns: max-content var(--wlv-modal-swatch) !important;
+  gap: 10px !important;
+  align-items: center !important;
+}
+.wlv-curve-fill-style-row > label:last-child {
+  display: grid !important;
+  grid-template-columns: max-content var(--wlv-modal-slider) !important;
+  gap: 12px !important;
+  align-items: center !important;
+}
+.wlv-curve-fill-style-row input[type="range"] {
+  width: var(--wlv-modal-slider) !important;
+  max-width: var(--wlv-modal-slider) !important;
+}
+
+.wlv-curve-fill-depth-extent {
+  grid-template-columns:
+    var(--wlv-modal-select-medium)
+    var(--wlv-modal-number-depth)
+    var(--wlv-modal-number-depth) !important;
+  width: max-content !important;
+  max-width: 100%;
+}
+.wlv-curve-fill-depth-extent select {
+  width: var(--wlv-modal-select-medium) !important;
+}
+
+/* ---------------- Formation Tops ---------------- */
+
+.wlv-edit-track-overlay-boundary-head,
+.wlv-edit-track-overlay-boundary-row {
+  grid-template-columns:
+    220px
+    var(--wlv-modal-swatch)
+    var(--wlv-modal-number-compact)
+    var(--wlv-modal-select-short) !important;
+  width: max-content;
+  max-width: 100%;
+  justify-content: start;
+  column-gap: var(--wlv-modal-control-gap) !important;
+}
+
+.wlv-edit-track-overlay-boundary-row select {
+  width: var(--wlv-modal-select-short) !important;
+}
+.wlv-edit-track-overlay-boundary-row input[type="number"] {
+  width: var(--wlv-modal-number-compact) !important;
+}
+
+.wlv-edit-track-overlay-two-column-row {
+  grid-template-columns:
+    var(--wlv-modal-slider)
+    var(--wlv-modal-slider) !important;
+  width: max-content !important;
+  justify-content: start !important;
+  gap: 24px !important;
+}
+.wlv-edit-track-overlay-two-column-row input[type="range"] {
+  width: var(--wlv-modal-slider) !important;
+}
+
+.wlv-edit-track-overlay-label-grid {
+  grid-template-columns:
+    var(--wlv-modal-select-short)
+    var(--wlv-modal-number-standard)
+    130px
+    130px !important;
+  width: max-content !important;
+  max-width: 100%;
+  justify-content: start;
+  gap: var(--wlv-modal-control-gap) !important;
+}
+.wlv-edit-track-overlay-label-grid select {
+  width: var(--wlv-modal-select-short) !important;
+}
+.wlv-edit-track-overlay-label-grid input:not([type="range"]):not([type="color"]):not([type="checkbox"]) {
+  width: var(--wlv-modal-number-standard) !important;
+}
+.wlv-edit-track-overlay-label-grid > label:nth-child(5),
+.wlv-edit-track-overlay-label-grid > label:nth-child(6) {
+  width: var(--wlv-modal-slider) !important;
+}
+.wlv-edit-track-overlay-label-grid input[type="range"] {
+  width: var(--wlv-modal-slider) !important;
+}
+
+/* ---------------- Fill Zones ---------------- */
+
+.wlv-edit-track-fill-zone-card .wlv-curve-fill-depth-extent {
+  grid-template-columns:
+    var(--wlv-modal-select-medium)
+    var(--wlv-modal-number-depth)
+    var(--wlv-modal-number-depth) !important;
+}
+
+.wlv-edit-track-fill-zone-row {
+  grid-template-columns:
+    var(--wlv-modal-select-long)
+    var(--wlv-modal-select-long) !important;
+  width: max-content !important;
+  max-width: 100%;
+  justify-content: start !important;
+  gap: var(--wlv-modal-control-gap) !important;
+}
+.wlv-edit-track-fill-zone-row select {
+  width: var(--wlv-modal-select-long) !important;
+}
+
+.wlv-edit-track-fill-zone-source-buttons {
+  grid-template-columns:
+    var(--wlv-modal-select-long)
+    var(--wlv-modal-select-long) !important;
+  width: max-content !important;
+  max-width: 100%;
+  justify-content: start;
+  gap: var(--wlv-modal-control-gap) !important;
+}
+
+.wlv-edit-track-fill-zone-opacity,
+.wlv-edit-track-fill-zone-opacity input[type="range"] {
+  width: var(--wlv-modal-slider) !important;
+  max-width: var(--wlv-modal-slider) !important;
+}
+
+.wlv-edit-track-fill-zone-card > label:last-child,
+.wlv-edit-track-fill-zone-card > label:last-child select {
+  width: var(--wlv-modal-select-medium) !important;
+  max-width: var(--wlv-modal-select-medium) !important;
+}
+
+/* Responsive fallback */
+@media (max-width: 900px) {
+  .wlv-curve-editor-controls {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-areas:
+      "scale"
+      "line"
+      "position" !important;
+  }
+  .wlv-curve-fill-new-rule.wlv-curve-fill-menu,
+  .wlv-curve-fill-paint-editor,
+  .wlv-edit-track-fill-zone-row,
+  .wlv-edit-track-fill-zone-source-buttons,
+  .wlv-edit-track-overlay-label-grid,
+  .wlv-edit-track-overlay-two-column-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+    width: 100% !important;
+  }
+  .wlv-curve-fill-style-row {
+    flex-wrap: wrap;
+  }
+}
+
+
+/* ---------------- WBV shared WDV control contract ----------------
+ * WBV Manage Display Layers consumes the same control geometry and typography
+ * as the established WDV Edit Track modal. Viewer-specific layout may differ;
+ * native control dimensions and spacing do not.
+ */
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-field {
+  width: max-content;
+  max-width: 100%;
+  margin: 0;
+  color: #aeb4bd;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-field:not(.wlv-wbv-range-field):not(.wlv-wbv-colour-field) {
+  display: grid;
+  grid-auto-flow: row;
+  align-content: start;
+  justify-items: start;
+  row-gap: var(--wlv-modal-label-control-gap);
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-field select,
+.wlv-wbv-layer-manager-modal .wlv-wbv-field input:not([type="checkbox"]):not([type="range"]):not([type="color"]) {
+  box-sizing: border-box;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid #454c56;
+  border-radius: 4px;
+  background: #121417;
+  color: #e5e7eb;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-field select {
+  width: var(--wlv-modal-select-medium);
+  max-width: var(--wlv-modal-select-medium);
+}
+
+.wlv-wbv-layer-manager-modal input[type="range"] {
+  width: var(--wlv-modal-slider);
+  max-width: var(--wlv-modal-slider);
+  min-width: 0;
+  margin-inline: 0;
+  cursor: pointer;
+}
+
+.wlv-wbv-layer-manager-modal input[type="color"] {
+  width: var(--wlv-modal-swatch) !important;
+  min-width: var(--wlv-modal-swatch) !important;
+  max-width: var(--wlv-modal-swatch) !important;
+  height: var(--wlv-modal-swatch) !important;
+  min-height: var(--wlv-modal-swatch) !important;
+  max-height: var(--wlv-modal-swatch) !important;
+  padding: 2px !important;
+  border: 1px solid #454c56 !important;
+  border-radius: 5px !important;
+  box-sizing: border-box !important;
+  background: #121417;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-manager-toggle-row {
+  gap: var(--wlv-modal-label-control-gap);
+  color: #d2d6dc;
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-manager-toggle-row input[type="checkbox"],
+.wlv-wbv-layer-manager-modal .wlv-wbv-manager-top-row input[type="checkbox"] {
+  width: 15px;
+  min-width: 15px;
+  max-width: 15px;
+  height: 15px;
+  min-height: 15px;
+  max-height: 15px;
+  margin: 0;
+  padding: 0;
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-property-group legend {
+  color: #e5e7eb;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: .075em;
+}

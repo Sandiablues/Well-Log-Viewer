@@ -22,13 +22,40 @@ class RasterPaint(BaseModel):
     depth_unit: str
     horizontal_fit: str = "cover"
 
-PATTERNS = (
+_BASE_PATTERNS = (
     PatternPaint(pattern_uid="hatch-45-v1", label="Diagonal hatch", kind="hatch_45"),
     PatternPaint(pattern_uid="crosshatch-v1", label="Crosshatch", kind="crosshatch"),
     PatternPaint(pattern_uid="dots-v1", label="Dots", kind="dots"),
     PatternPaint(pattern_uid="bricks-v1", label="Bricks", kind="bricks"),
     PatternPaint(pattern_uid="stipple-v1", label="Stipple", kind="stipple"),
+    PatternPaint(pattern_uid="lithology-column-v1", label="Loaded lithology column", kind="lithology_column"),
 )
+
+def lithology_catalogue_path() -> Path:
+    return (
+        Path(__file__).resolve().parents[2]
+        / "data"
+        / "knowledge"
+        / "lithology"
+        / "lithology-catalogue.json"
+    )
+
+def load_lithology_patterns() -> tuple[PatternPaint, ...]:
+    path = lithology_catalogue_path()
+    if not path.is_file():
+        return ()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return tuple(
+        PatternPaint(
+            pattern_uid=item["id"],
+            label=f'{item["name"]} · FGDC {item["fgdcCode"]}',
+            kind="lithology_svg",
+        )
+        for item in payload.get("entries", ())
+        if item.get("status") == "active"
+    )
+
+PATTERNS = _BASE_PATTERNS + load_lithology_patterns()
 
 def raster_registry_path() -> Path:
     return Path(__file__).resolve().parents[2] / "data" / "curve_fill" / "raster_assets.json"

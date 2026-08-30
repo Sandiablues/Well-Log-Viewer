@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 import hashlib
+import json
 import math
 import re
 from pathlib import Path
@@ -17,6 +18,10 @@ from app.wells.seed_repository import SeedWellRepository
 from app.classification.well_log_classifier import classify_well_log_curve
 from app.classification.well_log_vocabulary import PRODUCT_GROUP_ORDER
 from app.knowledge.curve_knowledge import normalize_viewer_package_for_wdv
+from app.knowledge.completion_repository import CompletionKnowledgeRepository
+from app.wbv.trajectory_models import DeviationSurveyStation
+from app.wbv.trajectory_service import calculate_minimum_curvature_trajectory
+from app.inventory.deviation_survey_rules import assess_deviation_survey, publication_state
 from app.classification_orchestration.family_registry import canonical_family_key
 from app.classification_orchestration.general_family_projection import project_general_curve_family
 
@@ -50,6 +55,16 @@ from .models import (
     RestoreManagedDataToMdpResult,
     ManagedProductGroup,
     ManagedProductGroupItem,
+    PublishFormationTopsRequest,
+    PublishFormationTopsResponse,
+    PublishLithologyIntervalsRequest,
+    PublishLithologyIntervalsResponse,
+    PublishCompletionComponentsRequest,
+    PublishCompletionComponentsResponse,
+    PublishCompoundCoreSegmentsRequest,
+    PublishCompoundCoreSegmentsResponse,
+    PublishDeviationSurveyRequest,
+    PublishDeviationSurveyResponse,
     ManagedSourceKind,
     ManagedSourceReference,
     ManagedWellRecord,
@@ -85,6 +100,7 @@ class ManagedWellInventoryService:
         self.curve_sample_service = CurveSampleService(repository=self.repository)
         self.workspace_service = workspace_service or WdvWorkspaceService(repository=self.repository)
         self.wmd_lifecycle_service = WmdLifecycleService()
+        self.completion_knowledge_repository = CompletionKnowledgeRepository()
         self._source_intake_service = source_intake_service
         self._use_default_source_intake = use_default_source_intake
 
@@ -2285,7 +2301,19 @@ class ManagedWellInventoryService:
 
     def _wdv_curve_sample_statistics(self, record: ManagedWellRecord, item: ManagedProductGroupItem) -> dict[str, Any]:
         persisted = item.curve_statistics
-        if persisted is not None:
+        persisted_has_samples = bool(
+            persisted is not None
+            and persisted.statistics_status == "available"
+            and int(persisted.valid_sample_count or 0) > 0
+            and persisted.depth_min is not None
+            and persisted.depth_max is not None
+        )
+        # LIS / LTI WDV CURVE SAMPLES V1.0.0:
+        # Earlier LIS/LTI intake registered a managed_curve_statistics_v1 object
+        # with status=available but zero samples and no depth range.  That object
+        # is not authoritative sample evidence.  Fall through to the live source
+        # reader so WDV renderability is based on actual recoverable samples.
+        if persisted_has_samples:
             return {
                 "statistics_status": persisted.statistics_status,
                 "observed_min": persisted.value_min,
@@ -2583,6 +2611,1227 @@ class ManagedWellInventoryService:
         if changed:
             updates["updated_at"] = utc_now_iso()
         return normalized_record.model_copy(update=updates)
+
+
+    @staticmethod
+    def _dsm_source_label(source_documents: list[str]) -> str:
+        if source_documents:
+            return "DSM — " + ", ".join(source_documents)
+        return "DSM Reviewed Survey"
+
+    def _retain_dsm_publication_artifact(
+        self,
+        *,
+        managed_well_id: str,
+        trajectory_id: str,
+        artifact_payload: dict[str, Any],
+        source_documents: list[str],
+        managed_source_uid: str | None = None,
+    ) -> tuple[ManagedSourceReference, str, str]:
+        """Persist an immutable DSM publication artifact and return its managed source reference."""
+        repo_root = Path(__file__).resolve().parents[3]
+        artifact_dir = repo_root / "backend" / "data" / "managed_inventory" / "dsm_publications"
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        token = trajectory_id.split(":", 1)[-1]
+        safe_well = re.sub(r"[^A-Za-z0-9._-]+", "_", managed_well_id).strip("_") or "managed_well"
+        file_name = f"{safe_well}__{token}__DSM_PUBLICATION_PROVENANCE.json"
+        artifact_path = artifact_dir / file_name
+        serialized = json.dumps(artifact_payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+        temp_path = artifact_path.with_suffix(artifact_path.suffix + ".tmp")
+        temp_path.write_text(serialized, encoding="utf-8")
+        temp_path.replace(artifact_path)
+        checksum = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+        source_id = f"dsm-publication:{token}"
+        source_uid = managed_source_uid or new_uuid7_str()
+        source_label = self._dsm_source_label(source_documents)
+        source_reference = ManagedSourceReference(
+            source_id=source_id,
+            managed_source_uid=source_uid,
+            source_kind=ManagedSourceKind.OTHER,
+            display_name=f"{source_label} publication provenance",
+            original_path=str(artifact_path),
+            file_name=file_name,
+            file_format="JSON",
+            checksum=checksum,
+            metadata={
+                "source": "deviation_survey_manager_publication",
+                "trajectory_id": trajectory_id,
+                "managed_well_id": managed_well_id,
+                "source_documents": source_documents,
+                "artifact_contract": "dsm_publication_provenance_v1",
+            },
+        )
+        return source_reference, str(artifact_path.relative_to(repo_root)), checksum
+
+    def repair_dsm_publication_sources(self) -> dict[str, Any]:
+        """Backfill retained provenance artifacts for legacy direct-DSM publications missing source references."""
+        repaired_records = 0
+        repaired_products = 0
+        artifact_paths: list[str] = []
+        for record in self.repository.list_records():
+            source_references = list(record.source_references)
+            updated_groups: list[ManagedProductGroup] = []
+            group_changed = False
+            trajectory_labels: dict[str, str] = {}
+
+            for group in record.product_groups:
+                updated_items: list[ManagedProductGroupItem] = []
+                item_changed = False
+                for item in group.items:
+                    if not str(item.product_id or "").startswith("dsm-trajectory:"):
+                        updated_items.append(item)
+                        continue
+                    matching = next(
+                        (
+                            source
+                            for source in source_references
+                            if source.source_id == item.source_id
+                            or (
+                                item.managed_source_uid is not None
+                                and source.managed_source_uid == item.managed_source_uid
+                            )
+                        ),
+                        None,
+                    )
+                    if matching is not None and matching.original_path:
+                        updated_items.append(item)
+                        continue
+
+                    provenance = dict(item.provenance or {})
+                    stations = list(provenance.get("deviation_survey_stations") or [])
+                    source_documents = sorted({
+                        str(station.get("source_document") or "").strip()
+                        for station in stations
+                        if isinstance(station, dict) and str(station.get("source_document") or "").strip()
+                    })
+                    trajectory_id = str(provenance.get("trajectory_id") or item.product_id)
+                    source_label = self._dsm_source_label(source_documents)
+                    managed_source_uid = item.managed_source_uid or new_uuid7_str()
+                    artifact_payload = {
+                        "schema_version": "dsm_publication_provenance_v1",
+                        "artifact_role": "retained_source_for_managed_trajectory",
+                        "backfilled": True,
+                        "managed_well_id": record.managed_well_id,
+                        "trajectory_id": trajectory_id,
+                        "source_documents": source_documents,
+                        "product_provenance": provenance,
+                    }
+                    source_reference, relative_path, checksum = self._retain_dsm_publication_artifact(
+                        managed_well_id=record.managed_well_id,
+                        trajectory_id=trajectory_id,
+                        artifact_payload=artifact_payload,
+                        source_documents=source_documents,
+                        managed_source_uid=managed_source_uid,
+                    )
+                    source_references.append(source_reference)
+                    artifact_paths.append(source_reference.original_path or relative_path)
+                    provenance.update({
+                        "source_label": source_label,
+                        "source_document_names": source_documents,
+                        "source_artifact_kind": "dsm_publication_provenance",
+                        "source_artifact_relative_path": relative_path,
+                        "original_path": source_reference.original_path,
+                        "checksum": checksum,
+                    })
+                    updated_items.append(item.model_copy(update={
+                        "source_id": source_reference.source_id,
+                        "managed_source_uid": managed_source_uid,
+                        "provenance": provenance,
+                    }))
+                    trajectory_labels[trajectory_id] = source_label
+                    item_changed = True
+                    group_changed = True
+                    repaired_products += 1
+
+                updated_groups.append(group.model_copy(update={"items": updated_items}) if item_changed else group)
+
+            if not group_changed:
+                continue
+
+            metadata = dict(record.metadata)
+            if trajectory_labels:
+                datasets = []
+                for dataset in list(metadata.get("deviation_survey_datasets") or []):
+                    if isinstance(dataset, dict):
+                        dataset = dict(dataset)
+                        trajectory_id = str(dataset.get("trajectory_id") or "")
+                        if trajectory_id in trajectory_labels:
+                            dataset["source_label"] = trajectory_labels[trajectory_id]
+                    datasets.append(dataset)
+                if datasets:
+                    metadata["deviation_survey_datasets"] = datasets
+                    metadata["deviation_survey_dataset"] = datasets[-1]
+
+                trajectory_records = []
+                for trajectory in list(metadata.get("wbv_trajectory_records") or []):
+                    if isinstance(trajectory, dict):
+                        trajectory = dict(trajectory)
+                        trajectory_id = str(trajectory.get("trajectory_id") or "")
+                        if trajectory_id in trajectory_labels:
+                            trajectory["source_label"] = trajectory_labels[trajectory_id]
+                            package = dict(trajectory.get("trajectory_package") or {})
+                            matching_product = next(
+                                (
+                                    item
+                                    for group in updated_groups
+                                    for item in group.items
+                                    if item.product_id == trajectory_id
+                                ),
+                                None,
+                            )
+                            if matching_product is not None:
+                                prov = dict(matching_product.provenance or {})
+                                package["source_relative_path"] = prov.get("source_artifact_relative_path")
+                                package["source_checksum"] = prov.get("checksum")
+                                trajectory["trajectory_package"] = package
+                    trajectory_records.append(trajectory)
+                if trajectory_records:
+                    metadata["wbv_trajectory_records"] = trajectory_records
+
+            updated = record.model_copy(update={
+                "product_groups": updated_groups,
+                "source_references": source_references,
+                "metadata": metadata,
+                "updated_at": utc_now_iso(),
+            })
+            self.repository.upsert_record(updated)
+            repaired_records += 1
+
+        if repaired_records:
+            self.workspace_service.reconcile(self.repository.list_records())
+        return {
+            "repaired_records": repaired_records,
+            "repaired_products": repaired_products,
+            "artifact_paths": artifact_paths,
+        }
+
+
+    def publish_deviation_survey(
+        self,
+        managed_well_id: str,
+        request: PublishDeviationSurveyRequest,
+    ) -> PublishDeviationSurveyResponse:
+        """Append a reviewed deviation survey without changing the active WBV survey."""
+        record = self.repository.get_record(managed_well_id)
+        if request.managed_well_id != managed_well_id:
+            raise ValueError("Payload managed_well_id does not match the selected MWD well.")
+        if request.dataset_type != "deviation_survey":
+            raise ValueError("dataset_type must be deviation_survey.")
+        if len(request.stations) < 2:
+            raise ValueError("At least two approved deviation-survey stations are required.")
+
+        ordered = sorted(request.stations, key=lambda station: float(station.measured_depth))
+        normalized: list[dict[str, Any]] = []
+        previous_md: float | None = None
+        depth_unit = str(ordered[0].depth_unit or record.depth_unit or "m").strip().lower()
+        if depth_unit not in {"m", "ft"}:
+            raise ValueError("Deviation survey depth_unit must be m or ft.")
+
+        for index, station in enumerate(ordered, start=1):
+            md = float(station.measured_depth)
+            inclination = float(station.inclination)
+            azimuth = float(station.azimuth)
+            if previous_md is not None and md <= previous_md:
+                raise ValueError(f"Deviation survey row {index} MD must be strictly increasing.")
+            if inclination < 0 or inclination > 180:
+                raise ValueError(f"Deviation survey row {index} inclination must be between 0 and 180 degrees.")
+            if azimuth < 0 or azimuth >= 360:
+                raise ValueError(f"Deviation survey row {index} azimuth must be between 0 and less than 360 degrees.")
+            station_unit = str(station.depth_unit or depth_unit).strip().lower()
+            if station_unit != depth_unit:
+                raise ValueError(f"Deviation survey row {index} depth unit does not match {depth_unit}.")
+            previous_md = md
+            normalized.append(station.model_dump(mode="json"))
+
+        survey_metadata = request.survey_metadata.model_dump(mode="json")
+        governed_findings = assess_deviation_survey(
+            normalized,
+            survey_metadata=survey_metadata,
+        )
+        governed_state = publication_state(governed_findings)
+        governed_failures = [finding.message for finding in governed_findings if finding.severity == "failure"]
+        if governed_failures:
+            raise ValueError("DSM publication blocked: " + "; ".join(governed_failures))
+
+        calculated = calculate_minimum_curvature_trajectory(
+            [
+                DeviationSurveyStation(
+                    md=station.measured_depth,
+                    inclination=station.inclination,
+                    azimuth=station.azimuth,
+                    depth_unit=depth_unit,
+                    angle_unit="deg",
+                    source_row=index + 1,
+                    source_id=station.source_reference,
+                )
+                for index, station in enumerate(ordered)
+            ],
+            depth_unit=depth_unit,
+            angle_unit="deg",
+            source="deviation_survey_manager",
+        )
+        if not calculated.is_valid:
+            errors = [issue.message for issue in calculated.warnings if issue.severity == "error"]
+            raise ValueError("Minimum-curvature validation failed: " + "; ".join(errors))
+
+        now = utc_now_iso()
+        md_min = float(ordered[0].measured_depth)
+        md_max = float(ordered[-1].measured_depth)
+        published_date = now[:10]
+        survey_type_raw = str(survey_metadata.get("survey_type") or "Deviation").strip()
+        survey_type_label = re.sub(r"[_\-]+", " ", survey_type_raw).strip().title() or "Deviation"
+        if survey_type_label.lower().endswith("deviation survey"):
+            survey_name = f"{survey_type_label} {published_date}"
+        else:
+            survey_name = f"{survey_type_label} Deviation Survey {published_date}"
+        trajectory_id = f"dsm-trajectory:{new_uuid7_str()}"
+        product_id = trajectory_id
+        managed_trajectory_uid = new_uuid7_str()
+        trajectory_package = calculated.to_wbv_trajectory_package() | {
+            "trajectory_class": "reviewed_deviation_survey",
+            "viewer_state": "approved",
+            "coordinate_mode": calculated.coordinate_mode.value,
+            "depth_unit": depth_unit,
+            "angle_unit": "deg",
+            "station_count": len(calculated.stations),
+            "source_station_count": len(normalized),
+            "warnings": [issue.model_dump(mode="json") for issue in calculated.warnings],
+            "source_type": "deviation_survey_manager",
+            "source_relative_path": None,
+            "frame": {
+                "datum": survey_metadata.get("datum"),
+                "coordinate_origin": survey_metadata.get("coordinate_origin"),
+                "vertical_section_origin": survey_metadata.get("vertical_section_origin"),
+                "vertical_section_azimuth": survey_metadata.get("vertical_section_azimuth"),
+            },
+            "source_values_preserved": True,
+        }
+        source_documents = sorted({
+            str(station.source_document or "").strip()
+            for station in ordered
+            if str(station.source_document or "").strip()
+        })
+        source_label = self._dsm_source_label(source_documents)
+        managed_source_uid = new_uuid7_str()
+        artifact_payload = {
+            "schema_version": "dsm_publication_provenance_v1",
+            "artifact_role": "retained_source_for_managed_trajectory",
+            "backfilled": False,
+            "managed_well_id": managed_well_id,
+            "trajectory_id": trajectory_id,
+            "source_documents": source_documents,
+            "publication_request": request.model_dump(mode="json"),
+            "governed_qaqc": {
+                "contract_revision": "deviation-survey-discovery-and-qaqc-1.1.0",
+                "publication_state": governed_state,
+                "findings": [finding.to_dict() for finding in governed_findings],
+            },
+            "minimum_curvature_comparison": trajectory_package,
+        }
+        source_reference, source_relative_path, source_checksum = self._retain_dsm_publication_artifact(
+            managed_well_id=managed_well_id,
+            trajectory_id=trajectory_id,
+            artifact_payload=artifact_payload,
+            source_documents=source_documents,
+            managed_source_uid=managed_source_uid,
+        )
+        trajectory_package["source_relative_path"] = source_relative_path
+        trajectory_package["source_checksum"] = source_checksum
+
+        dataset_item = ManagedProductGroupItem(
+            product_id=product_id,
+            display_name=survey_name,
+            curve_name=survey_name,
+            curve_type=survey_type_label,
+            curve_description=f"{len(normalized)} reviewed survey stations",
+            curve_unit=depth_unit,
+            product_category="wellbore_geometry",
+            product_subgroup_key="deviation_survey",
+            product_subgroup_label="Deviation Survey",
+            curve_family="Wellbore Geometry",
+            curve_family_key="deviation_survey",
+            general_curve_family="Wellbore Geometry",
+            general_curve_family_key="wellbore_geometry",
+            measurement_domain_key="directional_survey_dataset",
+            measurement_domain_label="Directional Survey Dataset",
+            destination_key="deviation_survey",
+            destination_owner="mwd",
+            display_in_wdv=False,
+            classification_contract_version="deviation_survey_manager_reviewed_v1",
+            classification_confidence="high",
+            classification_source="deviation_survey_manager_review",
+            classification_reasons=["Approved and published from Deviation Survey Manager."],
+            review_required=False,
+            run_date=published_date,
+            run_interval=f"{md_min:,.0f}–{md_max:,.0f} {depth_unit}",
+            run_number=str(len(normalized)),
+            qa_flag="Reviewed",
+            selectable=True,
+            source_kind=ManagedSourceKind.OTHER.value,
+            source_id=source_reference.source_id,
+            managed_source_uid=managed_source_uid,
+            wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,
+            wdv_state=record.wdv_state,
+            display_layer_type="deviation_survey_dataset",
+            depth_reference=str(survey_metadata.get("datum") or "RKB"),
+            depth_units=depth_unit,
+            depth_start=md_min,
+            depth_end=md_max,
+            provenance={
+                "dataset_type": "deviation_survey",
+                "dataset_status": request.dataset_status,
+                "publication_source": request.source,
+                "published_at": now,
+                "managed_well_id": managed_well_id,
+                "station_count": len(normalized),
+                "md_min": md_min,
+                "md_max": md_max,
+                "survey_metadata": survey_metadata,
+                "deviation_survey_stations": normalized,
+                "governed_qaqc": {
+                    "contract_revision": "deviation-survey-discovery-and-qaqc-1.1.0",
+                    "publication_state": governed_state,
+                    "findings": [finding.to_dict() for finding in governed_findings],
+                },
+                "minimum_curvature_comparison": trajectory_package,
+                "trajectory_id": trajectory_id,
+                "managed_trajectory_uid": managed_trajectory_uid,
+                "survey_name": survey_name,
+                "survey_type_label": survey_type_label,
+                "source_label": source_label,
+                "source_document_names": source_documents,
+                "source_artifact_kind": "dsm_publication_provenance",
+                "source_artifact_relative_path": source_relative_path,
+                "original_path": source_reference.original_path,
+                "checksum": source_checksum,
+            },
+        )
+
+        updated_groups: list[ManagedProductGroup] = []
+        geometry_items: list[ManagedProductGroupItem] = []
+        geometry_insert_index: int | None = None
+
+        for group in record.product_groups:
+            if group.group_key in {"wellbore_geometry", "well_geometry"}:
+                if geometry_insert_index is None:
+                    geometry_insert_index = len(updated_groups)
+                geometry_items.extend(group.items)
+                continue
+            updated_groups.append(group)
+
+        geometry_items.append(dataset_item)
+        canonical_geometry_group = ManagedProductGroup(
+            group_key="wellbore_geometry",
+            group_label="Wellbore Geometry",
+            items=geometry_items,
+        )
+        updated_groups.insert(
+            geometry_insert_index if geometry_insert_index is not None else len(updated_groups),
+            canonical_geometry_group,
+        )
+
+        metadata = dict(record.metadata)
+        survey_dataset = {
+            "dataset_type": "deviation_survey",
+            "dataset_status": request.dataset_status,
+            "source": request.source,
+            "published_at": now,
+            "survey_name": survey_name,
+            "survey_type": survey_type_label,
+            "source_label": source_label,
+            "survey_metadata": survey_metadata,
+            "stations": normalized,
+            "row_count": len(normalized),
+            "trajectory_id": trajectory_id,
+            "managed_trajectory_uid": managed_trajectory_uid,
+            "governed_qaqc": {
+                "contract_revision": "deviation-survey-discovery-and-qaqc-1.1.0",
+                "publication_state": governed_state,
+                "findings": [finding.to_dict() for finding in governed_findings],
+            },
+        }
+        datasets = list(metadata.get("deviation_survey_datasets") or [])
+        datasets.append(survey_dataset)
+        metadata["deviation_survey_datasets"] = datasets
+        metadata["deviation_survey_dataset"] = survey_dataset
+        trajectory_records = list(metadata.get("wbv_trajectory_records") or [])
+        trajectory_records.append({
+            "trajectory_id": trajectory_id,
+            "managed_trajectory_uid": managed_trajectory_uid,
+            "trajectory_name": survey_name,
+            "trajectory_type": survey_type_label.lower().replace(" ", "_"),
+            "status": "approved",
+            "wbv_eligible": True,
+            "is_active": False,
+            "is_canonical": False,
+            "is_synthetic": False,
+            "source_label": source_label,
+            "station_count": len(normalized),
+            "md_min": md_min,
+            "md_max": md_max,
+            "depth_unit": depth_unit,
+            "datum": str(survey_metadata.get("datum") or "RKB"),
+            "coordinate_mode": calculated.coordinate_mode.value,
+            "trajectory_package": trajectory_package,
+            "published_at": now,
+        })
+        metadata["wbv_trajectory_records"] = trajectory_records
+        notes = list(record.lifecycle_notes)
+        notes.append(
+            f"Deviation Survey Manager published {len(normalized)} reviewed station(s) directly to MWD at {now}."
+        )
+        updated = record.model_copy(
+            update={
+                "product_groups": updated_groups,
+                "source_references": [*record.source_references, source_reference],
+                "metadata": metadata,
+                "lifecycle_notes": notes[-100:],
+                "updated_at": now,
+            }
+        )
+        action, saved = self.repository.upsert_record(updated)
+        self.workspace_service.reconcile(self.repository.list_records())
+        return PublishDeviationSurveyResponse(
+            action=action,
+            managed_well_id=managed_well_id,
+            published_count=len(normalized),
+            product_id=product_id,
+            calculation_warning_count=len(calculated.warnings),
+            record=self._with_inventory_identity_contract(self._with_product_groups(saved)),
+        )
+
+
+    def publish_lithology_intervals(
+        self, managed_well_id: str, request: PublishLithologyIntervalsRequest,
+    ) -> PublishLithologyIntervalsResponse:
+        """Replace the selected well's authoritative reviewed lithology intervals."""
+        record = self.repository.get_record(managed_well_id)
+        if request.managed_well_id != managed_well_id:
+            raise ValueError("Payload managed_well_id does not match the selected MWD well.")
+        if request.dataset_type != "lithology_intervals":
+            raise ValueError("dataset_type must be lithology_intervals.")
+        if not request.lithology_intervals:
+            raise ValueError("At least one approved lithology interval is required.")
+        normalized: list[dict[str, Any]] = []
+        for index, interval in enumerate(request.lithology_intervals, start=1):
+            lithology = str(interval.lithology or "").strip()
+            if not lithology:
+                raise ValueError(f"Lithology row {index} has no lithology.")
+            if interval.base_md <= interval.top_md:
+                raise ValueError(f"Lithology row {index} Base MD must be deeper than Top MD.")
+            normalized.append(interval.model_dump(mode="json") | {"lithology": lithology})
+        ordered = sorted(normalized, key=lambda row: float(row["top_md"]))
+        for index in range(1, len(ordered)):
+            if float(ordered[index]["top_md"]) < float(ordered[index - 1]["base_md"]):
+                raise ValueError(f"Lithology rows {index} and {index + 1} overlap.")
+        md_min = min(float(row["top_md"]) for row in normalized)
+        md_max = max(float(row["base_md"]) for row in normalized)
+        product_id = f"lcm-reviewed-lithology:{managed_well_id}"
+        now = utc_now_iso()
+        units = str(normalized[0].get("depth_unit") or record.depth_unit or "m")
+        references = sorted({str(row.get("depth_reference") or "").strip() for row in normalized if str(row.get("depth_reference") or "").strip()})
+        depth_reference = " / ".join(references) if references else "RT"
+        dataset_item = ManagedProductGroupItem(
+            product_id=product_id, display_name="Lithology Column Manager — Reviewed Lithology",
+            curve_name="Lithology Intervals", curve_type="Reviewed",
+            curve_description=f"{len(normalized)} reviewed lithology intervals", curve_unit=units,
+            product_category="lithology_core_markers", product_subgroup_key="lithology_intervals",
+            product_subgroup_label="Lithology Intervals", curve_family="Lithology", curve_family_key="lithology_intervals",
+            general_curve_family="Lithology / Core / Markers", general_curve_family_key="lithology_core_markers",
+            measurement_domain_key="lithology_interval_dataset", measurement_domain_label="Lithology Interval Dataset",
+            destination_key="lithology_intervals", destination_owner="mwd", display_in_wdv=False,
+            classification_contract_version="lithology_column_manager_reviewed_v1", classification_confidence="high",
+            classification_source="lithology_column_manager_review", classification_reasons=["Approved and published from Lithology Column Manager."],
+            review_required=False, run_date=now, run_interval=f"{md_min:g}–{md_max:g} {units}",
+            run_number=f"{len(normalized)} intervals", qa_flag="Approved", selectable=True,
+            source_kind=ManagedSourceKind.OTHER.value, source_id="lithology-column-manager",
+            wmdp_state=ManagedWmdpState.STAGED_IN_WMDP, wdv_state=record.wdv_state,
+            display_layer_type="lithology_interval_dataset", depth_reference=depth_reference, depth_units=units,
+            depth_start=md_min, depth_end=md_max, provenance={
+                "dataset_type": "lithology_intervals", "dataset_status": request.dataset_status,
+                "publication_source": request.source, "published_at": now, "managed_well_id": managed_well_id,
+                "interval_count": len(normalized), "md_min": md_min, "md_max": md_max, "lithology_intervals": normalized,
+            },
+        )
+        updated_groups: list[ManagedProductGroup] = []
+        target_found = False
+        for group in record.product_groups:
+            retained = [item for item in group.items if item.product_subgroup_key != "lithology_intervals"]
+            if group.group_key == "lithology_core_markers": retained.append(dataset_item); target_found = True
+            updated_groups.append(group.model_copy(update={"items": retained}))
+        if not target_found:
+            definition = next((item for item in PRODUCT_GROUP_ORDER if item.group_key == "lithology_core_markers"), None)
+            updated_groups.append(ManagedProductGroup(group_key="lithology_core_markers", group_label=definition.group_label if definition else "Lithology / Core / Markers", items=[dataset_item]))
+        metadata = dict(record.metadata)
+        metadata["lithology_intervals_dataset"] = {"dataset_type":"lithology_intervals","dataset_status":request.dataset_status,"source":request.source,"published_at":now,"intervals":normalized,"row_count":len(normalized)}
+        notes = list(record.lifecycle_notes); notes.append(f"Lithology Column Manager published {len(normalized)} reviewed interval(s) directly to MWD at {now}.")
+        updated = record.model_copy(update={"product_groups":updated_groups,"metadata":metadata,"lifecycle_notes":notes[-100:],"updated_at":now})
+        action, saved = self.repository.upsert_record(updated)
+        self.workspace_service.reconcile(self.repository.list_records())
+        return PublishLithologyIntervalsResponse(action=action, managed_well_id=managed_well_id, published_count=len(normalized), product_id=product_id, record=saved)
+
+
+
+    def publish_completion_components(
+        self, managed_well_id: str, request: PublishCompletionComponentsRequest,
+    ) -> PublishCompletionComponentsResponse:
+        """Replace a reviewed completion dataset using KR canonical component authority."""
+        record = self.repository.get_record(managed_well_id)
+        if request.managed_well_id != managed_well_id:
+            raise ValueError("Payload managed_well_id does not match the selected MWD well.")
+        if request.dataset_type != "completion_components":
+            raise ValueError("dataset_type must be completion_components.")
+        if not request.completion_components:
+            raise ValueError("At least one approved completion component is required.")
+
+        kr_catalogue = self.completion_knowledge_repository.catalogue(production_only=True)
+        current_catalogue_version = int(kr_catalogue.get("catalogueVersion") or 0)
+        if request.kr_catalogue_version != current_catalogue_version:
+            raise ValueError(
+                "Completion KR catalogue changed while this review was open. "
+                f"Refresh CDM before publishing (client {request.kr_catalogue_version}, "
+                f"current {current_catalogue_version})."
+            )
+
+        authority_by_canonical = {
+            str(item.get("canonicalId") or ""): item
+            for item in kr_catalogue.get("records", [])
+            if item.get("recordType") == "component"
+        }
+
+        normalized: list[dict[str, Any]] = []
+        for index, component in enumerate(request.completion_components, start=1):
+            label = str(component.label or "").strip()
+            if not label:
+                raise ValueError(f"Completion row {index} has no label.")
+
+            authority = authority_by_canonical.get(component.canonical_id)
+            if authority is None:
+                raise ValueError(
+                    f"Completion row {index} references non-production KR identity "
+                    f"{component.canonical_id!r}."
+                )
+
+            expected_key = str(authority.get("componentKey") or "")
+            expected_instruction = str(authority.get("instructionId") or "")
+            expected_version = str(authority.get("version") or "")
+            if component.canonical_component_key != expected_key:
+                raise ValueError(
+                    f"Completion row {index} component key does not match KR authority "
+                    f"({component.canonical_component_key!r} != {expected_key!r})."
+                )
+            if component.kr_instruction_id != expected_instruction or component.kr_version != expected_version:
+                raise ValueError(
+                    f"Completion row {index} uses stale KR provenance. Refresh CDM before publishing."
+                )
+
+            geometry_class = str(authority.get("geometryClass") or "point_or_interval")
+            if geometry_class == "interval":
+                if component.base_md is None or component.base_md <= component.top_md:
+                    raise ValueError(
+                        f"Completion row {index} ({authority.get('componentLabel')}) "
+                        "requires Base MD deeper than Top MD."
+                    )
+            elif component.base_md is not None and component.base_md < component.top_md:
+                raise ValueError(f"Completion row {index} Base MD cannot be shallower than Top MD.")
+
+            row = component.model_dump(mode="json") | {
+                "label": label,
+                "kr_component_label": authority.get("componentLabel"),
+                "kr_geometry_class": geometry_class,
+                "kr_catalogue_version": current_catalogue_version,
+            }
+            normalized.append(row)
+
+        ordered = sorted(normalized, key=lambda row: float(row["top_md"]))
+        md_min = min(float(row["top_md"]) for row in ordered)
+        md_max = max(float(row["base_md"] if row.get("base_md") is not None else row["top_md"]) for row in ordered)
+        product_id = f"cdm-reviewed-completions:{managed_well_id}"
+        now = utc_now_iso()
+        units = str(ordered[0].get("depth_unit") or record.depth_unit or "m")
+
+        dataset_item = ManagedProductGroupItem(
+            product_id=product_id,
+            display_name="Completion Data Manager — Reviewed Completions",
+            curve_name="Completion Components",
+            curve_type="Reviewed",
+            curve_description=f"{len(ordered)} reviewed completion landmarks / intervals",
+            curve_unit=units,
+            product_category="wellbore_geometry",
+            product_subgroup_key="completion_components",
+            product_subgroup_label="Completion Components",
+            curve_family="Completions",
+            curve_family_key="completion_components",
+            general_curve_family="Wellbore Geometry",
+            general_curve_family_key="wellbore_geometry",
+            measurement_domain_key="completion_visualization_dataset",
+            measurement_domain_label="Completion Visualization Dataset",
+            destination_key="completion_components",
+            destination_owner="mwd",
+            display_in_wdv=False,
+            classification_contract_version="completion_data_manager_kr_canonical_v2",
+            classification_confidence="high",
+            classification_source="completion_data_manager_review",
+            classification_reasons=[
+                "Approved and published from Completion Data Manager.",
+                "Canonical completion identity validated against KR production truth.",
+            ],
+            review_required=False,
+            run_date=now,
+            run_interval=f"{md_min:g}–{md_max:g} {units}",
+            run_number=f"{len(ordered)} components",
+            qa_flag="Approved",
+            selectable=True,
+            source_kind=ManagedSourceKind.OTHER.value,
+            source_id="completion-data-manager",
+            wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,
+            wdv_state=record.wdv_state,
+            display_layer_type="completion_components_dataset",
+            depth_reference="MD",
+            depth_units=units,
+            depth_start=md_min,
+            depth_end=md_max,
+            provenance={
+                "dataset_type": "completion_components",
+                "dataset_status": request.dataset_status,
+                "publication_source": request.source,
+                "published_at": now,
+                "managed_well_id": managed_well_id,
+                "component_count": len(ordered),
+                "md_min": md_min,
+                "md_max": md_max,
+                "kr_catalogue_version": current_catalogue_version,
+                "identity_authority": "knowledge_repository",
+                "completion_components": ordered,
+            },
+        )
+
+        updated_groups: list[ManagedProductGroup] = []
+        target_found = False
+        for group in record.product_groups:
+            retained = [
+                item
+                for item in group.items
+                if not (
+                    item.product_subgroup_key == "completion_components"
+                    or item.product_id == product_id
+                )
+            ]
+            if group.group_key == "wellbore_geometry":
+                target_found = True
+                updated_groups.append(group.model_copy(update={"items": [*retained, dataset_item]}))
+            else:
+                updated_groups.append(group.model_copy(update={"items": retained}))
+        if not target_found:
+            definition = next((item for item in PRODUCT_GROUP_ORDER if item.group_key == "wellbore_geometry"), None)
+            updated_groups.append(
+                ManagedProductGroup(
+                    group_key="wellbore_geometry",
+                    group_label=definition.group_label if definition else "Wellbore Geometry",
+                    items=[dataset_item],
+                )
+            )
+
+        metadata = dict(record.metadata)
+        metadata["completion_components_dataset"] = {
+            "dataset_type": "completion_components",
+            "dataset_status": request.dataset_status,
+            "source": request.source,
+            "published_at": now,
+            "kr_catalogue_version": current_catalogue_version,
+            "identity_authority": "knowledge_repository",
+            "completion_components": ordered,
+            "row_count": len(ordered),
+        }
+        notes = list(record.lifecycle_notes)
+        notes.append(
+            f"Completion Data Manager published {len(ordered)} KR-canonical reviewed component(s) directly to MWD at {now}."
+        )
+        updated = record.model_copy(
+            update={
+                "product_groups": updated_groups,
+                "metadata": metadata,
+                "lifecycle_notes": notes[-100:],
+                "updated_at": now,
+            }
+        )
+        action, saved = self.repository.upsert_record(updated)
+        self.workspace_service.reconcile(self.repository.list_records())
+        return PublishCompletionComponentsResponse(
+            action=action,
+            managed_well_id=managed_well_id,
+            published_count=len(ordered),
+            product_id=product_id,
+            record=saved,
+        )
+
+
+
+    def publish_compound_core_segments(
+        self, managed_well_id: str, request: PublishCompoundCoreSegmentsRequest,
+    ) -> PublishCompoundCoreSegmentsResponse:
+        """Write self-contained core packages and expose virtual WDV views."""
+        import base64
+        import hashlib
+        import io
+        import json
+        import zipfile
+
+        record = self.repository.get_record(managed_well_id)
+        if request.managed_well_id != managed_well_id:
+            raise ValueError("Payload managed_well_id does not match the selected MWD well.")
+        if request.dataset_type != "compound_core_segments" or not request.segments:
+            raise ValueError("At least one accepted compound core segment is required.")
+
+        package_root = self.repository.storage_path.parent / "core_packages" / managed_well_id
+        package_root.mkdir(parents=True, exist_ok=True)
+        now = utc_now_iso()
+        items: list[ManagedProductGroupItem] = []
+        product_ids: list[str] = []
+        staged: list[tuple[object, object]] = []
+
+        try:
+            # MWD-CORE-IMAGE-DISPLAY-REPAIR-V1-0-2
+            for index, segment in enumerate(request.segments, start=1):
+                if not segment.segment_name.strip() or segment.base_depth <= segment.top_depth:
+                    raise ValueError(f"Core segment row {index} has invalid identity or depths.")
+                for description in segment.descriptions:
+                    if (
+                        not description.text.strip()
+                        or description.base_depth <= description.top_depth
+                        or description.top_depth < segment.top_depth
+                        or description.base_depth > segment.base_depth
+                    ):
+                        raise ValueError(
+                            f"Description interval in row {index} is invalid or outside the segment."
+                        )
+                descriptions = [item.model_dump(mode="json") for item in segment.descriptions]
+
+            display_chunks = []
+            chunk_payloads: list[tuple[str, bytes]] = []
+
+            if segment.display_chunks:
+                seen_chunk_ids: set[str] = set()
+                previous_base: float | None = None
+
+                for chunk in sorted(
+                    segment.display_chunks,
+                    key=lambda item: (item.sequence_index, item.top_depth),
+                ):
+                    if chunk.chunk_id in seen_chunk_ids:
+                        raise ValueError(
+                            f"Core segment row {index} has duplicate display chunk id "
+                            f"{chunk.chunk_id}."
+                        )
+                    seen_chunk_ids.add(chunk.chunk_id)
+
+                    if chunk.base_depth <= chunk.top_depth:
+                        raise ValueError(
+                            f"Core segment row {index} display chunk "
+                            f"{chunk.chunk_id} has invalid depths."
+                        )
+
+                    if (
+                        chunk.top_depth < segment.top_depth
+                        or chunk.base_depth > segment.base_depth
+                    ):
+                        raise ValueError(
+                            f"Core segment row {index} display chunk "
+                            f"{chunk.chunk_id} lies outside the published interval."
+                        )
+
+                    if (
+                        previous_base is not None
+                        and chunk.top_depth < previous_base - 1e-6
+                    ):
+                        raise ValueError(
+                            f"Core segment row {index} display chunks overlap."
+                        )
+
+                    previous_base = chunk.base_depth
+
+                    prefix = "data:" + chunk.mime_type + ";base64,"
+                    if not chunk.image_data_url.startswith(prefix):
+                        raise ValueError(
+                            f"Core segment row {index} display chunk "
+                            f"{chunk.chunk_id} has no valid image payload."
+                        )
+
+                    chunk_bytes = base64.b64decode(
+                        chunk.image_data_url[len(prefix):],
+                        validate=True,
+                    )
+
+                    archive_name = f"display/{chunk.image_filename}"
+                    chunk_payloads.append((archive_name, chunk_bytes))
+
+                    display_chunks.append(
+                        {
+                            "chunk_id": chunk.chunk_id,
+                            "sequence_index": chunk.sequence_index,
+                            "top_depth": chunk.top_depth,
+                            "base_depth": chunk.base_depth,
+                            "depth_unit": chunk.depth_unit,
+                            "image_filename": archive_name,
+                            "mime_type": chunk.mime_type,
+                            "pixel_width": chunk.pixel_width,
+                            "pixel_height": chunk.pixel_height,
+                            "image_sha256": hashlib.sha256(chunk_bytes).hexdigest(),
+                        }
+                    )
+
+                image_filename = None
+                image_sha256 = None
+
+            else:
+                if (
+                    not segment.mime_type
+                    or not segment.image_data_url
+                    or not segment.image_filename
+                ):
+                    raise ValueError(
+                        f"Core segment row {index} has no display chunks "
+                        "or legacy image payload."
+                    )
+
+                prefix = "data:" + segment.mime_type + ";base64,"
+                if not segment.image_data_url.startswith(prefix):
+                    raise ValueError(
+                        f"Core segment row {index} has no valid image payload."
+                    )
+
+                image_bytes = base64.b64decode(
+                    segment.image_data_url[len(prefix):],
+                    validate=True,
+                )
+
+                image_filename = segment.image_filename
+                image_sha256 = hashlib.sha256(image_bytes).hexdigest()
+
+            manifest = {
+                "schema": "multiviewer.compound-core-segment",
+                "schema_version": "2.0" if segment.display_chunks else "1.0",
+                "segment_id": segment.segment_id,
+                "well_id": managed_well_id,
+                "segment_name": segment.segment_name,
+                "top_depth": segment.top_depth,
+                "base_depth": segment.base_depth,
+                "depth_unit": segment.depth_unit,
+                "image_type": segment.image_type,
+                "orientation": segment.orientation,
+                "image_filename": image_filename,
+                "image_sha256": image_sha256,
+                "display_contract_version": segment.display_contract_version,
+                "display_chunks": display_chunks,
+                "component_count": len(segment.component_segment_ids),
+                "component_segment_ids": segment.component_segment_ids,
+                "continuity_warnings": segment.continuity_warnings,
+                "description_count": len(descriptions),
+                "virtual_views": [
+                    "complete_segment",
+                    "core_image",
+                    "core_descriptions",
+                ],
+            }
+
+            buffer = io.BytesIO()
+
+            with zipfile.ZipFile(
+                buffer,
+                "w",
+                compression=zipfile.ZIP_DEFLATED,
+            ) as archive:
+                archive.writestr(
+                    "manifest.json",
+                    json.dumps(manifest, indent=2, sort_keys=True),
+                )
+
+                if segment.display_chunks:
+                    for archive_name, chunk_bytes in chunk_payloads:
+                        archive.writestr(archive_name, chunk_bytes)
+                else:
+                    archive.writestr(segment.image_filename, image_bytes)
+
+                archive.writestr(
+                    "descriptions.json",
+                    json.dumps(
+                        {"descriptions": descriptions},
+                        indent=2,
+                        sort_keys=True,
+                    ),
+                )
+                archive.writestr(
+                    "provenance.json",
+                    json.dumps(
+                        {
+                            "source_document": segment.source_document,
+                            "source_page": segment.source_page,
+                            "confidence": segment.confidence,
+                            "notes": segment.notes,
+                            "published_at": now,
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    ),
+                )
+
+            package_bytes = buffer.getvalue()
+            final_path = package_root / f"{segment.segment_id}.corepkg"
+            temporary_path = package_root / f".{segment.segment_id}.corepkg.tmp"
+            temporary_path.write_bytes(package_bytes)
+            staged.append((temporary_path, final_path))
+
+            product_id = f"cim-core-package:{managed_well_id}:{segment.segment_id}"
+            product_ids.append(product_id)
+            items.append(
+                ManagedProductGroupItem(
+                    product_id=product_id,
+                    display_name=segment.segment_name,
+                    curve_name="Core Image",
+                    curve_type="Continuous core from segments",
+                    curve_description="Continuous core from segments",
+                    curve_unit=segment.depth_unit,
+                    product_category="lithology_core_markers",
+                    product_subgroup_key="compound_core_segment",
+                    product_subgroup_label="Core Segments",
+                    curve_family="Core Data",
+                    curve_family_key="core_data",
+                    general_curve_family="Lithology / Core / Markers",
+                    general_curve_family_key="lithology_core_markers",
+                    measurement_domain_key="depth_tied_core_package",
+                    measurement_domain_label="Depth-tied Core Package",
+                    destination_key="compound_core_segment",
+                    destination_owner="mwd",
+                    display_in_wdv=True,
+                    classification_contract_version="compound_core_segment_v1",
+                    classification_confidence="high",
+                    classification_source="core_image_manager_review",
+                    classification_reasons=["Accepted compound core package."],
+                    review_required=False,
+                    run_date=now,
+                    run_interval=(
+                        f"{segment.top_depth:g}–{segment.base_depth:g} "
+                        f"{segment.depth_unit}"
+                    ),
+                    run_number=(
+                        segment.core_run or segment.section or segment.segment_name
+                    ),
+                    qa_flag="Approved",
+                    selectable=True,
+                    source_kind=ManagedSourceKind.OTHER.value,
+                    source_id="core-image-manager",
+                    wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,
+                    wdv_state=record.wdv_state,
+                    display_layer_type="compound_core_segment",
+                    depth_reference="MD",
+                    depth_units=segment.depth_unit,
+                    depth_start=segment.top_depth,
+                    depth_end=segment.base_depth,
+                    provenance={
+                        "package_path": str(final_path),
+                        "package_sha256": hashlib.sha256(package_bytes).hexdigest(),
+                        "schema_version": "2.0" if segment.display_chunks else "1.0",
+                        "virtual_views": [
+                            "complete_segment", "core_image", "core_descriptions"
+                        ],
+                        "description_intervals": descriptions,
+                        "image_type": segment.image_type,
+                        "orientation": segment.orientation,
+                        "published_display_name": segment.segment_name,
+                        "published_curve_name": "Core Image",
+                        "published_curve_type": "Continuous core from segments",
+                        "source_label": "Core Image Manager",
+                    },
+                )
+            )
+
+            replacement_ids = set(product_ids)
+            groups: list[ManagedProductGroup] = []
+            found = False
+            for group in record.product_groups:
+                retained = [
+                    item for item in group.items if item.product_id not in replacement_ids
+                ]
+                if group.group_key == "lithology_core_markers":
+                    retained.extend(items)
+                    found = True
+                groups.append(group.model_copy(update={"items": retained}))
+            if not found:
+                groups.append(
+                    ManagedProductGroup(
+                        group_key="lithology_core_markers",
+                        group_label="Lithology / Core / Markers",
+                        items=items,
+                    )
+                )
+            updated = record.model_copy(
+                update={
+                    "product_groups": groups,
+                    "lifecycle_notes": list(record.lifecycle_notes)
+                    + [
+                        f"CIM promoted {len(items)} compound core package(s) at {now}."
+                    ],
+                    "updated_at": now,
+                }
+            )
+            action, saved = self.repository.upsert_record(updated)
+            for temporary_path, final_path in staged:
+                temporary_path.replace(final_path)
+            self.workspace_service.reconcile(self.repository.list_records())
+            return PublishCompoundCoreSegmentsResponse(
+                action=action,
+                managed_well_id=managed_well_id,
+                published_count=len(items),
+                product_ids=product_ids,
+                record=saved,
+            )
+        except Exception:
+            for temporary_path, _ in staged:
+                if temporary_path.exists():
+                    temporary_path.unlink()
+            raise
+
+    def publish_formation_tops(
+        self,
+        managed_well_id: str,
+        request: PublishFormationTopsRequest,
+    ) -> PublishFormationTopsResponse:
+        """Replace the selected well's authoritative reviewed Formation Tops dataset."""
+        record = self.repository.get_record(managed_well_id)
+        if request.managed_well_id != managed_well_id:
+            raise ValueError("Payload managed_well_id does not match the selected MWD well.")
+        if request.dataset_type != "formation_tops":
+            raise ValueError("dataset_type must be formation_tops.")
+        if not request.formation_tops:
+            raise ValueError("At least one approved Formation Top is required.")
+
+        normalized_tops: list[dict[str, Any]] = []
+        for index, top in enumerate(request.formation_tops, start=1):
+            marker_name = str(top.marker_name or "").strip()
+            if not marker_name:
+                raise ValueError(f"Formation Top row {index} has no marker name.")
+            normalized_tops.append(top.model_dump(mode="json") | {"marker_name": marker_name})
+
+        md_values = [float(top["md_m_rt"]) for top in normalized_tops]
+        md_min = min(md_values)
+        md_max = max(md_values)
+        product_id = f"ftm-reviewed-formation-tops:{managed_well_id}"
+        now = utc_now_iso()
+        depth_units = str(normalized_tops[0].get("depth_unit") or record.depth_unit or "m")
+        depth_references = sorted({
+            str(top.get("depth_reference") or "").strip()
+            for top in normalized_tops
+            if str(top.get("depth_reference") or "").strip()
+        })
+        depth_reference = " / ".join(depth_references) if depth_references else "RT"
+
+        dataset_item = ManagedProductGroupItem(
+            product_id=product_id,
+            display_name="Formation Tops Manager — Reviewed Formation Tops",
+            curve_name="Formation Tops",
+            curve_type="Reviewed",
+            curve_description=f"{len(normalized_tops)} reviewed formation markers",
+            curve_unit=depth_units,
+            product_category="lithology_core_markers",
+            product_subgroup_key="formation_tops",
+            product_subgroup_label="Formation Tops",
+            curve_family="Formation Tops",
+            curve_family_key="formation_tops",
+            general_curve_family="Lithology / Core / Markers",
+            general_curve_family_key="lithology_core_markers",
+            measurement_domain_key="stratigraphic_marker_dataset",
+            measurement_domain_label="Stratigraphic Marker Dataset",
+            destination_key="formation_tops",
+            destination_owner="mwd",
+            display_in_wdv=True,
+            classification_contract_version="formation_tops_manager_reviewed_v1",
+            classification_confidence="high",
+            classification_source="formation_tops_manager_review",
+            classification_reasons=["Approved and published from Formation Tops Manager."],
+            review_required=False,
+            run_date=now,
+            run_interval=f"{md_min:g}–{md_max:g} {depth_units}",
+            run_number=f"{len(normalized_tops)} markers",
+            qa_flag="Approved",
+            selectable=True,
+            source_kind=ManagedSourceKind.OTHER.value,
+            source_id="formation-tops-manager",
+            wmdp_state=ManagedWmdpState.STAGED_IN_WMDP,
+            wdv_state=record.wdv_state,
+            display_layer_type="formation_tops_dataset",
+            depth_reference=depth_reference,
+            depth_units=depth_units,
+            depth_start=md_min,
+            depth_end=md_max,
+            provenance={
+                "dataset_type": "formation_tops",
+                "dataset_status": request.dataset_status,
+                "publication_source": request.source,
+                "published_at": now,
+                "managed_well_id": managed_well_id,
+                "marker_count": len(normalized_tops),
+                "md_min": md_min,
+                "md_max": md_max,
+                "formation_tops": normalized_tops,
+            },
+        )
+
+        updated_groups: list[ManagedProductGroup] = []
+        target_found = False
+        for group in record.product_groups:
+            retained = [
+                item for item in group.items
+                if item.product_subgroup_key != "formation_tops"
+            ]
+            if group.group_key == "lithology_core_markers":
+                retained.append(dataset_item)
+                target_found = True
+            updated_groups.append(group.model_copy(update={"items": retained}))
+
+        if not target_found:
+            definition = next(
+                (item for item in PRODUCT_GROUP_ORDER if item.group_key == "lithology_core_markers"),
+                None,
+            )
+            updated_groups.append(
+                ManagedProductGroup(
+                    group_key="lithology_core_markers",
+                    group_label=definition.group_label if definition else "Lithology / Core / Markers",
+                    items=[dataset_item],
+                )
+            )
+
+        metadata = dict(record.metadata)
+        metadata["formation_tops_dataset"] = {
+            "dataset_type": "formation_tops",
+            "dataset_status": request.dataset_status,
+            "source": request.source,
+            "published_at": now,
+            "tops": normalized_tops,
+            "row_count": len(normalized_tops),
+        }
+        notes = list(record.lifecycle_notes)
+        notes.append(
+            f"Formation Tops Manager published {len(normalized_tops)} reviewed marker(s) directly to MWD at {now}."
+        )
+        updated = record.model_copy(
+            update={
+                "product_groups": updated_groups,
+                "metadata": metadata,
+                "lifecycle_notes": notes[-100:],
+                "updated_at": now,
+            }
+        )
+        action, saved = self.repository.upsert_record(updated)
+        self.workspace_service.reconcile(self.repository.list_records())
+        return PublishFormationTopsResponse(
+            action=action,
+            managed_well_id=managed_well_id,
+            published_count=len(normalized_tops),
+            product_id=product_id,
+            record=self._with_inventory_identity_contract(self._with_product_groups(saved)),
+        )
+
 
     def _with_product_groups(self, record: ManagedWellRecord) -> ManagedWellRecord:
         """Return a record with backend-owned product_groups populated."""

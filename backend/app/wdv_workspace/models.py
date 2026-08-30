@@ -8,9 +8,9 @@ it reaches a frontend consumer.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.identity.wdv_contract_v2 import CanonicalUuid7, NonBlankString, WdvCanonicalSession
 from app.identity.wdv_viewer_package_v21 import (
@@ -110,3 +110,98 @@ class WdvCanonicalWorkspace(BaseModel):
                     )
 
         return self
+
+
+class WdvSavedDepthViewport(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    min: float
+    max: float
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "WdvSavedDepthViewport":
+        if self.min >= self.max:
+            raise ValueError("Saved viewport min must be less than max")
+        return self
+
+
+
+
+class WdvSavedViewportTieGroup(BaseModel):
+    """Backend-validated committed viewport Tie relationship."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    group_id: NonBlankString
+    leader_track_uid: CanonicalUuid7
+    member_track_uids: tuple[CanonicalUuid7, ...]
+    viewport: WdvSavedDepthViewport
+
+    @field_validator("member_track_uids")
+    @classmethod
+    def validate_members(cls, members: tuple[CanonicalUuid7, ...]) -> tuple[CanonicalUuid7, ...]:
+        if len(members) < 2:
+            raise ValueError("Viewport Tie must contain at least two tracks")
+        if len(set(members)) != len(members):
+            raise ValueError("Viewport Tie members must be unique")
+        return members
+
+    @model_validator(mode="after")
+    def validate_leader(self) -> "WdvSavedViewportTieGroup":
+        if self.leader_track_uid not in self.member_track_uids:
+            raise ValueError("Viewport Tie leader must be a Tie member")
+        return self
+
+
+class WdvSavedViewState(BaseModel):
+    """Frontend-owned view/group state paired with a canonical session snapshot."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    depth_unit: Literal["m", "ft"] = "m"
+    global_viewport: WdvSavedDepthViewport
+    group_viewport: WdvSavedDepthViewport | None = None
+    active_track_uids: tuple[CanonicalUuid7, ...] = ()
+    highlighted_track_uids: tuple[CanonicalUuid7, ...] = ()
+    locked_track_uids: tuple[CanonicalUuid7, ...] = ()
+    locked_viewports_by_track_uid: dict[str, WdvSavedDepthViewport] = {}
+    # Committed per-track viewport state is durable independently of Lock.
+    # This prevents unlock/restart from reconstructing a track from a global
+    # viewport merely because the track is not currently locked.
+    track_viewports_by_track_uid: dict[str, WdvSavedDepthViewport] = {}
+    viewport_tie_groups: tuple[WdvSavedViewportTieGroup, ...] = ()
+    viewport_tie_suspended_track_uids: tuple[CanonicalUuid7, ...] = ()
+    presentation_state: dict[str, Any] = {}
+
+
+class WdvSaveWorkspaceSnapshotRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    expected_revision: int
+    view_state: WdvSavedViewState
+
+
+
+
+class WdvPersistCommittedViewRequest(BaseModel):
+    """Persist an exact already-committed view into Save or Recovery."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    expected_revision: int
+    expected_view_revision: int
+
+class WdvRestoreWorkspaceSnapshotRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    expected_revision: int
+
+class WdvCommitViewStateRequest(BaseModel):
+    """Revision-guarded durable commit of viewport/relationship state."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    expected_session_revision: int
+    expected_view_revision: int
+    view_state: WdvSavedViewState
+

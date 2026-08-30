@@ -1328,3 +1328,177 @@ def recommend_display_curves(
     )
     result = service.recommend_display(request)
     return _batch_recommend_result_to_response(result)
+
+
+# ---------------------------------------------------------------------------
+# KR Completions governed backend authority
+# ---------------------------------------------------------------------------
+
+from .completion_repository import (
+    CompletionKnowledgeConflict,
+    CompletionKnowledgeError,
+    CompletionKnowledgeNotFound,
+    CompletionKnowledgeRepository,
+)
+
+_completion_repository = CompletionKnowledgeRepository()
+
+
+class CompletionEvidencePayload(BaseModel):
+    sourceType: str = Field(min_length=1, max_length=120)
+    title: str = Field(min_length=1, max_length=300)
+    documentId: str = Field(min_length=1, max_length=160)
+    section: str = Field(min_length=1, max_length=300)
+
+
+class CompletionCandidatePayload(BaseModel):
+    instructionId: str | None = Field(default=None, max_length=160)
+    recordType: str = Field(pattern="^(component|standard)$")
+    componentKey: str = Field(min_length=1, max_length=120)
+    componentLabel: str = Field(min_length=1, max_length=200)
+    canonicalId: str = Field(min_length=1, max_length=200)
+    category: str = Field(pattern="^(Completions|Standards)$")
+    version: str = Field(default="v1.0", max_length=40)
+    description: str = Field(min_length=1, max_length=3000)
+    mustDo: str = Field(min_length=1, max_length=4000)
+    mustNotDo: str = Field(min_length=1, max_length=4000)
+    evidence: list[CompletionEvidencePayload] = Field(default_factory=list, max_length=100)
+    changeReason: str | None = Field(default=None, max_length=1000)
+
+
+class CompletionCandidateClonePayload(BaseModel):
+    actor: str = Field(default="kr-manager", min_length=1, max_length=120)
+    changeReason: str | None = Field(default=None, max_length=1000)
+    updates: dict[str, Any] = Field(default_factory=dict)
+
+
+class CompletionGovernancePayload(BaseModel):
+    actor: str = Field(default="kr-manager", min_length=1, max_length=120)
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+def _completion_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, CompletionKnowledgeNotFound):
+        return HTTPException(status_code=404, detail="Completion KR record not found")
+    if isinstance(exc, CompletionKnowledgeConflict):
+        return HTTPException(status_code=409, detail=str(exc))
+    if isinstance(exc, CompletionKnowledgeError):
+        return HTTPException(status_code=422, detail=str(exc))
+    return HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/completions/health", summary="Completion KR backend authority health")
+def completion_knowledge_health() -> dict[str, Any]:
+    summary = _completion_repository.summary()
+    return {
+        "ok": True,
+        "service": "wlv-kr-completions",
+        **summary,
+    }
+
+
+@router.get("/completions/catalogue", summary="Completion KR governed catalogue")
+def completion_knowledge_catalogue(
+    status_filter: str | None = Query(default=None, alias="status"),
+    production_only: bool = Query(default=False),
+) -> dict[str, Any]:
+    try:
+        return _completion_repository.catalogue(
+            status=status_filter,
+            production_only=production_only,
+        )
+    except Exception as exc:
+        raise _completion_error(exc)
+
+
+@router.get("/completions/summary", summary="Completion KR governance summary")
+def completion_knowledge_summary() -> dict[str, Any]:
+    return _completion_repository.summary()
+
+
+@router.get("/completions/production-eligible", summary="Production eligible completion KR truth")
+def completion_knowledge_production() -> dict[str, Any]:
+    return _completion_repository.catalogue(production_only=True)
+
+
+@router.get("/completions/records/{instruction_id}", summary="Get one completion KR record")
+def completion_knowledge_record(instruction_id: str) -> dict[str, Any]:
+    try:
+        return _completion_repository.get(instruction_id)
+    except Exception as exc:
+        raise _completion_error(exc)
+
+
+@router.post("/completions/records", summary="Create completion KR candidate")
+def completion_knowledge_create_candidate(
+    payload: CompletionCandidatePayload,
+    actor: str = Query(default="kr-manager", min_length=1, max_length=120),
+) -> dict[str, Any]:
+    try:
+        return _completion_repository.create_candidate(
+            payload.model_dump(),
+            actor=actor,
+        )
+    except Exception as exc:
+        raise _completion_error(exc)
+
+
+@router.post("/completions/records/{instruction_id}/candidate", summary="Edit completion KR record as candidate")
+def completion_knowledge_clone_candidate(
+    instruction_id: str,
+    payload: CompletionCandidateClonePayload,
+) -> dict[str, Any]:
+    try:
+        return _completion_repository.clone_as_candidate(
+            instruction_id,
+            actor=payload.actor,
+            updates=payload.updates,
+            change_reason=payload.changeReason,
+        )
+    except Exception as exc:
+        raise _completion_error(exc)
+
+
+@router.post("/completions/records/{instruction_id}/approve", summary="Approve completion KR candidate")
+def completion_knowledge_approve(
+    instruction_id: str,
+    payload: CompletionGovernancePayload,
+) -> dict[str, Any]:
+    try:
+        return _completion_repository.approve(
+            instruction_id,
+            actor=payload.actor,
+            reason=payload.reason,
+        )
+    except Exception as exc:
+        raise _completion_error(exc)
+
+
+@router.post("/completions/records/{instruction_id}/reject", summary="Reject completion KR candidate")
+def completion_knowledge_reject(
+    instruction_id: str,
+    payload: CompletionGovernancePayload,
+) -> dict[str, Any]:
+    try:
+        return _completion_repository.reject(
+            instruction_id,
+            actor=payload.actor,
+            reason=payload.reason,
+        )
+    except Exception as exc:
+        raise _completion_error(exc)
+
+
+@router.post("/completions/records/{instruction_id}/deprecate", summary="Deprecate approved completion KR truth")
+def completion_knowledge_deprecate(
+    instruction_id: str,
+    payload: CompletionGovernancePayload,
+) -> dict[str, Any]:
+    try:
+        return _completion_repository.deprecate(
+            instruction_id,
+            actor=payload.actor,
+            reason=payload.reason,
+        )
+    except Exception as exc:
+        raise _completion_error(exc)

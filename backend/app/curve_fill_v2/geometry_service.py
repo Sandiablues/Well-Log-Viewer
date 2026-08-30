@@ -34,7 +34,7 @@ class ResolveCurveFillGeometryCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     expected_revision: int = Field(ge=0)
     rule_uid: str = Field(min_length=1)
-    max_samples: int = Field(default=100000, ge=2, le=100000)
+    max_samples: int = Field(default=12000, ge=2, le=100000)
 
 
 class CurveFillGeometryDelta(BaseModel):
@@ -144,7 +144,8 @@ class CanonicalCurveFillGeometryService:
         assignments = {a.assignment_uid: a for a in track.assignments}
         a = assignments.get(canonical.curve_a_assignment_uid)
         b = assignments.get(canonical.curve_b_assignment_uid) if canonical.curve_b_assignment_uid else None
-        if a is None or (canonical.curve_b_assignment_uid and b is None):
+        envelope_assignments = tuple(assignments.get(uid) for uid in canonical.curve_operand_assignment_uids)
+        if a is None or (canonical.curve_b_assignment_uid and b is None) or any(item is None for item in envelope_assignments):
             raise CurveFillGeometryCommandError("Rule assignment is absent")
 
         common_depth_unit = self.workspace_service.get_workspace().common_depth_unit
@@ -167,6 +168,14 @@ class CanonicalCurveFillGeometryService:
         width = track.width_px or 180
         transform_a = self._transform(a, width, session.display_policy_revision)
         transform_b = self._transform(b, width, session.display_policy_revision) if b else None
+        envelope_series = tuple(
+            self._series(session.managed_well_uid, item, max_samples, target_depth_unit=common_depth_unit)
+            for item in envelope_assignments if item is not None
+        )
+        envelope_transforms = tuple(
+            self._transform(item, width, session.display_policy_revision)
+            for item in envelope_assignments if item is not None
+        )
         if canonical.style.appearance == FillAppearance.PATTERN:
             pattern_by_uid(canonical.style.pattern_uid or "")
         elif canonical.style.appearance == FillAppearance.RASTER:
@@ -180,12 +189,21 @@ class CanonicalCurveFillGeometryService:
             rule_type=canonical.rule_type,
             curve_a_uid=a.managed_curve_uid,
             curve_b_uid=b.managed_curve_uid if b else None,
+            curve_operand_uids=tuple(item.managed_curve_uid for item in envelope_assignments if item is not None),
             comparison=canonical.comparison,
             boundary=canonical.boundary,
+            reference_value=canonical.reference_value,
+            band_min_value=canonical.band_min_value,
+            band_max_value=canonical.band_max_value,
+            minimum_separation_px=canonical.minimum_separation_px,
+            separation_mode=canonical.separation_mode,
             overlay_policy_uid=canonical.overlay_policy_uid,
             overlay_policy_revision=canonical.overlay_policy_revision,
             deadband=canonical.deadband,
             minimum_interval=canonical.minimum_interval,
+            depth_extent=canonical.depth_extent,
+            interval_from_md=canonical.interval_from_md,
+            interval_to_md=canonical.interval_to_md,
             style=canonical.style,
         )
         geometry = self.resolution_service.resolve(
@@ -194,6 +212,8 @@ class CanonicalCurveFillGeometryService:
             transform_a=transform_a,
             series_b=series_b,
             transform_b=transform_b,
+            envelope_series=envelope_series,
+            envelope_transforms=envelope_transforms,
         )
         if canonical.style.appearance == FillAppearance.RASTER:
             asset = raster_by_uid(session.managed_well_uid, canonical.style.raster_asset_uid or "")
@@ -288,6 +308,25 @@ class CanonicalCurveFillGeometryService:
         state_reason: str | None,
         geometry_revision: str | None,
     ) -> WdvCanonicalSession:
+        # Hydration is derived-state reconciliation, not a user mutation.
+        # If the canonical rule already carries the exact resolved state, return
+        # the current session without creating another canonical revision.
+        current = self.session_service.get_session(managed_well_uid)
+        if current.revision != expected_revision:
+            from app.wdv_session.canonical_service import CanonicalSessionRevisionConflict
+            raise CanonicalSessionRevisionConflict(
+                f"Expected revision {expected_revision}, found {current.revision}"
+            )
+        current_rule = next((rule for rule in current.curve_fills if rule.rule_uid == rule_uid), None)
+        if current_rule is None:
+            raise CurveFillGeometryCommandError(f"Unknown rule_uid: {rule_uid}")
+        if (
+            current_rule.state == state
+            and current_rule.state_reason == state_reason
+            and current_rule.geometry_revision == geometry_revision
+        ):
+            return current
+
         def mutate(session: WdvCanonicalSession) -> WdvCanonicalSession:
             found = False
             rules = []

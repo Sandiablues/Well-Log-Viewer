@@ -34,6 +34,7 @@ from .lifecycle_service import SourceIntakeLifecycleService
 from .las_asset_store import LasAssetStore
 from .canonical_metadata import (
     canonical_metadata_from_dlis_values,
+    canonical_metadata_from_lis_values,
     canonical_metadata_from_las_header,
 )
 from .identity_gate import apply_identity_gate
@@ -49,6 +50,12 @@ from .resolution_service import (
 )
 from .depth_units import convert_depth_to_target
 from .dlis_parser import DlisInspectionError, inspect_dlis
+from .lis_parser import LisInspectionError, inspect_lis
+from .formation_tops_parser import (
+    FormationTopsParseError,
+    looks_like_formation_tops_csv,
+    parse_formation_tops_csv,
+)
 from .deviation_survey_parser import (
     DeviationSurveyParseError,
     parse_deviation_survey_full,
@@ -71,7 +78,10 @@ from .models import (
     SourceIntakeLogHeader,
     SourceIntakeParseStatus,
     SourceIntakeParsedMetadata,
+    SourceIntakeResolvedField,
+    SourceIntakeResolvedMetadata,
     SourceIntakeQaqcStatus,
+    SourceIntakeReadinessState,
     SourceIntakeRegisterRequest,
     SourceIntakeRegisterResponse,
     SourceIntakeRegisterResult,
@@ -1235,6 +1245,7 @@ class WlvSourceIntakeService:
     def _geometry_registration_block_reason(self, candidate: SourceFileCandidate) -> str | None:
         if candidate.candidate_role != SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
             return f"Only wellbore_geometry_candidate records can use geometry registration; got {candidate.candidate_role.value}."
+
         if candidate.is_available_to_wmd:
             return "Candidate is already available in WMD."
         if candidate.parser_status not in {SourceIntakeParseStatus.PARSED, SourceIntakeParseStatus.PARSED_WITH_WARNINGS}:
@@ -1251,6 +1262,16 @@ class WlvSourceIntakeService:
             return f"Geometry candidate QAQC status is not registration-ready: {candidate.qaqc_status.status.value}."
         if candidate.qaqc_status.failure_count > 0:
             return "Geometry candidate QAQC has failures and cannot be registered."
+        # WLV-WSI-GEOMETRY-REGISTRATION-VALIDATION-ORDER-FIX:
+        # Specific parser/geometry validation reasons are evaluated first.
+        # Authoritative readiness is then enforced before any inventory write.
+        evaluate_wmd_availability_readiness(candidate)
+        if candidate.readiness_state != SourceIntakeReadinessState.READY:
+            return (
+                "Candidate is not MWD-ready: "
+                f"{candidate.readiness_state.value}."
+            )
+
         return None
 
     def _register_geometry_candidate_to_inventory(
@@ -1431,8 +1452,11 @@ class WlvSourceIntakeService:
         render_points: list[dict[str, float]] = []
         for station in full_survey.stations_preview:
             tvd = station.tvd if station.tvd is not None else station.md
-            x_value = station.x_offset if station.x_offset is not None else station.easting if station.easting is not None else 0.0
-            y_value = station.y_offset if station.y_offset is not None else station.northing if station.northing is not None else 0.0
+            # Reported Easting/Northing are authoritative spatial coordinates.
+            # Generic x/y offsets are fallback only; x_offset may represent scalar
+            # horizontal departure and must never override an available Easting.
+            x_value = station.easting if station.easting is not None else station.x_offset if station.x_offset is not None else 0.0
+            y_value = station.northing if station.northing is not None else station.y_offset if station.y_offset is not None else 0.0
             render_points.append(
                 {
                     "md": float(station.md),
@@ -1601,11 +1625,10 @@ class WlvSourceIntakeService:
         records = inventory_service.list_wells()
         if not records:
             return None
-        candidate_text = self._normalize_identity_text(" ".join([candidate.file_name, candidate.relative_path]))
-        for record in records:
-            record_key = self._normalize_identity_text(record.well_name)
-            if record_key and record_key in candidate_text:
-                return record
+
+        # WLV-WSI-GEOMETRY-METADATA-READINESS-ENTERPRISE-FIX:
+        # Never infer ownership from filename or path text. Match only against
+        # backend-owned resolved/parsed/managed identity.
         candidate_name = self._normalize_identity_text(self._geometry_well_name(candidate))
         for record in records:
             if self._normalize_identity_text(record.well_name) == candidate_name:
@@ -1628,18 +1651,25 @@ class WlvSourceIntakeService:
         return records
 
     def _geometry_well_name(self, candidate: SourceFileCandidate) -> str:
-        resolved = candidate.resolved_metadata.well_name.value if candidate.resolved_metadata and candidate.resolved_metadata.well_name else None
-        if resolved:
-            return str(resolved)
-        stem = Path(candidate.file_name).stem
-        cleaned = stem
-        for token in [
-            "final", "corrected", "preliminary", "prelim", "deviation", "directional", "survey",
-            "trajectory", "wellbore", "geometry", "md", "inc", "incl", "azi", "azimuth", "tvd",
-        ]:
-            cleaned = cleaned.replace(token, " ").replace(token.upper(), " ").replace(token.title(), " ")
-        cleaned = " ".join(part for part in cleaned.replace("_", " ").replace("-", " ").split() if part)
-        return cleaned or stem
+        resolved = (
+            candidate.resolved_metadata.well_name.value
+            if candidate.resolved_metadata and candidate.resolved_metadata.well_name
+            else None
+        )
+        if resolved and str(resolved).strip():
+            return str(resolved).strip()
+
+        if candidate.parsed_metadata and candidate.parsed_metadata.well_header.well_name:
+            parsed = str(candidate.parsed_metadata.well_header.well_name).strip()
+            if parsed:
+                return parsed
+
+        if candidate.managed_well_name and str(candidate.managed_well_name).strip():
+            return str(candidate.managed_well_name).strip()
+
+        raise ValueError(
+            "Geometry candidate has no authoritative resolved well identity."
+        )
 
     @staticmethod
     def _managed_geometry_well_id(well_name: str) -> str:
@@ -2144,6 +2174,8 @@ class WlvSourceIntakeService:
         candidate.parser_status = self._initial_parser_status(file_path, detected_file_type)
         if candidate.candidate_role == SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE:
             self._attach_deviation_survey_preview(candidate, file_path)
+        elif candidate.candidate_role == SourceIntakeCandidateRole.FORMATION_TOPS_CANDIDATE:
+            self._attach_formation_tops(candidate, file_path)
         elif candidate.parser_status == SourceIntakeParseStatus.CONTAINER_PENDING_EXTRACTION:
             candidate.review_required = True
             candidate.warnings.append("Container/archive candidate pending extraction and child-file classification.")
@@ -2154,6 +2186,8 @@ class WlvSourceIntakeService:
             self._attach_las_metadata(candidate, file_path)
         elif detected_file_type == SourceIntakeFileType.DLIS:
             self._attach_dlis_metadata(candidate, file_path)
+        elif detected_file_type == SourceIntakeFileType.LIS:
+            self._attach_lis_metadata(candidate, file_path)
 
         candidate.qaqc_status = run_source_intake_qaqc(candidate)
         candidate.review_required = candidate.review_required or candidate.qaqc_status.review_required
@@ -2163,7 +2197,7 @@ class WlvSourceIntakeService:
     def _initial_parser_status(self, file_path: Path, detected_file_type: SourceIntakeFileType) -> SourceIntakeParseStatus:
         # WLV-WSI-PARSE-STATUS-FILENAME-1: deterministic initial parse classification.
         ext = file_path.suffix.lower().lstrip(".")
-        if detected_file_type in {SourceIntakeFileType.LAS, SourceIntakeFileType.DLIS}:
+        if detected_file_type in {SourceIntakeFileType.LAS, SourceIntakeFileType.DLIS, SourceIntakeFileType.LIS}:
             return SourceIntakeParseStatus.NOT_PARSED
         if ext in {"zip", "tar", "tgz", "gz", "gzip", "7z", "rar"}:
             return SourceIntakeParseStatus.CONTAINER_PENDING_EXTRACTION
@@ -2171,6 +2205,34 @@ class WlvSourceIntakeService:
             return SourceIntakeParseStatus.UNSUPPORTED
         return SourceIntakeParseStatus.NOT_PARSED
 
+
+    def _attach_formation_tops(self, candidate: SourceFileCandidate, file_path: Path) -> None:
+        try:
+            payload = parse_formation_tops_csv(file_path)
+        except FormationTopsParseError as exc:
+            candidate.parser_status = SourceIntakeParseStatus.PARSE_FAILED
+            candidate.parse_error = str(exc)
+            candidate.review_required = True
+            candidate.warnings.append(f"Formation tops parse failed: {exc}")
+            return
+        candidate.formation_tops = payload
+        candidate.parsed_metadata = SourceIntakeParsedMetadata(
+            parser_id=payload.parser_id,
+            source_format=payload.source_format,
+            well_header=SourceIntakeWellHeader(well_name=payload.wellbore, depth_unit="m"),
+            evidence_count=payload.row_count,
+            warning_count=len(payload.warnings),
+            warnings=list(payload.warnings),
+        )
+        candidate.resolved_metadata = resolve_candidate_metadata(candidate)
+        candidate.parser_status = (
+            SourceIntakeParseStatus.PARSED_WITH_WARNINGS
+            if payload.warnings else SourceIntakeParseStatus.PARSED
+        )
+        candidate.review_required = bool(payload.warnings)
+        for warning in payload.warnings:
+            if warning not in candidate.warnings:
+                candidate.warnings.append(warning)
 
     def _attach_deviation_survey_preview(self, candidate: SourceFileCandidate, file_path: Path) -> None:
         """Attach a structured deviation-survey preview to a geometry candidate.
@@ -2201,7 +2263,35 @@ class WlvSourceIntakeService:
             if preview.warning_count or preview.error_count
             else SourceIntakeParseStatus.PARSED
         )
+
+        # WLV-WSI-GEOMETRY-METADATA-READINESS-ENTERPRISE-FIX:
+        # Geometry candidates always receive the backend-owned metadata
+        # resolution contract. Filename/path text is not authoritative identity.
+        missing_well_warning = (
+            "Well name is unresolved for this wellbore geometry candidate; "
+            "human confirmation or correction is required before promotion."
+        )
+        candidate.resolved_metadata = SourceIntakeResolvedMetadata(
+            well_name=SourceIntakeResolvedField(
+                field_name="well_name",
+                value=None,
+                source="missing",
+                confidence="missing",
+                review_required=True,
+                warnings=[missing_well_warning],
+            ),
+            uwi=SourceIntakeResolvedField(field_name="uwi"),
+            operator=SourceIntakeResolvedField(field_name="operator"),
+            field=SourceIntakeResolvedField(field_name="field"),
+            block=SourceIntakeResolvedField(field_name="block"),
+            review_required=True,
+            warning_count=1,
+            warnings=[missing_well_warning],
+            evidence_count=0,
+        )
         candidate.review_required = True
+        if missing_well_warning not in candidate.warnings:
+            candidate.warnings.append(missing_well_warning)
         for message in preview.warnings:
             if message not in candidate.warnings:
                 candidate.warnings.append(message)
@@ -2316,6 +2406,70 @@ class WlvSourceIntakeService:
         candidate.review_required = candidate.review_required or bool(inspection.warnings) or inspection.well_name is None
 
 
+
+    def _attach_lis_metadata(self, candidate: SourceFileCandidate, file_path: Path) -> None:
+        """Inspect LIS79 data carried by .lis or .lti without altering LAS/DLIS parsers."""
+        try:
+            inspection = inspect_lis(file_path)
+        except LisInspectionError as exc:
+            candidate.parser_status = SourceIntakeParseStatus.PARSE_FAILED
+            candidate.parse_error = str(exc)
+            candidate.review_required = True
+            candidate.warnings.append(f"LIS/LTI inspection failed: {exc}")
+            return
+        channels = list(inspection.scalar_channels)
+        top_values = [item.top_depth for item in channels if item.top_depth is not None]
+        base_values = [item.base_depth for item in channels if item.base_depth is not None]
+        depth_unit = next((item.depth_unit for item in channels if item.depth_unit), None)
+        candidate.parsed_metadata = SourceIntakeParsedMetadata(
+            parser_id=inspection.parser_id, source_format=inspection.source_format,
+            canonical_metadata=canonical_metadata_from_lis_values({
+                "well_name": inspection.well_name, "uwi": inspection.uwi,
+                "operator": inspection.operator, "field": inspection.field,
+                "producer": inspection.service_company,
+            }, parser_id=inspection.parser_id),
+            well_header=SourceIntakeWellHeader(well_name=inspection.well_name, uwi=inspection.uwi,
+                operator=inspection.operator, field=inspection.field, depth_unit=depth_unit),
+            log_header=SourceIntakeLogHeader(file_name=candidate.file_name,
+                file_type=SourceIntakeFileType.LIS, service_company=inspection.service_company,
+                start_depth=min(top_values) if top_values else None,
+                stop_depth=max(base_values) if base_values else None,
+                depth_unit=depth_unit, curve_count=len(channels)),
+            curve_headers=[SourceIntakeCurveHeader(
+                mnemonic=item.mnemonic, description=item.description, unit=item.unit,
+                source_curve_name=item.source_curve_name, depth_unit=item.depth_unit,
+                top_depth=item.top_depth, base_depth=item.base_depth,
+                sample_count=item.sample_count, raw_depth_unit=item.raw_depth_unit,
+                depth_scale_factor=item.depth_scale_factor,
+                depth_normalization_status=item.depth_normalization_status,
+                depth_normalization_reason=item.depth_normalization_reason,
+                raw_top_depth=item.raw_top_depth, raw_base_depth=item.raw_base_depth,
+                curve_statistics=item.curve_statistics,
+            ) for item in channels],
+            logical_file_count=inspection.logical_file_count,
+            frame_count=inspection.log_set_count,
+            dlis_channels=[SourceIntakeDlisChannelHeader(
+                logical_file_id=item.logical_file_id, frame_id=item.log_set_id,
+                mnemonic=item.mnemonic, description=item.description, unit=item.unit,
+                dimensions=[], index_channel=item.index_channel, sample_count=item.sample_count,
+                role=item.role, supported=item.supported,
+                unsupported_reason=item.unsupported_reason,
+                raw_depth_unit=item.raw_depth_unit,
+                depth_scale_factor=item.depth_scale_factor,
+                normalized_depth_unit=item.normalized_depth_unit,
+                depth_normalization_status=item.depth_normalization_status,
+                depth_normalization_reason=item.depth_normalization_reason,
+            ) for item in inspection.channel_inventory],
+            evidence_count=inspection.logical_file_count + inspection.log_set_count + len(inspection.channel_inventory),
+            warning_count=len(inspection.warnings), error_count=0, warnings=list(inspection.warnings),
+        )
+        candidate.resolved_metadata = resolve_candidate_metadata(candidate)
+        candidate.parser_status = SourceIntakeParseStatus.PARSED_WITH_WARNINGS if inspection.warnings else SourceIntakeParseStatus.PARSED
+        candidate.parse_error = None
+        for warning in inspection.warnings:
+            if warning not in candidate.warnings: candidate.warnings.append(warning)
+        candidate.review_required = candidate.review_required or bool(inspection.warnings) or inspection.well_name is None
+
     def _attach_las_metadata(self, candidate: SourceFileCandidate, file_path: Path) -> None:
         """Parse LAS headers into the three-level source-intake metadata model.
 
@@ -2415,12 +2569,17 @@ class WlvSourceIntakeService:
             return SourceIntakeFileType.LAS, SourceIntakeCandidateRole.WELL_LOG_CANDIDATE
         if ext == "dlis":
             return SourceIntakeFileType.DLIS, SourceIntakeCandidateRole.WELL_LOG_CANDIDATE
+        if ext in {"lis", "lti"}:
+            return SourceIntakeFileType.LIS, SourceIntakeCandidateRole.WELL_LOG_CANDIDATE
         if ext == "lis":
             return SourceIntakeFileType.LIS, SourceIntakeCandidateRole.WELL_LOG_CANDIDATE
 
         if self._looks_like_wellbore_geometry_candidate(path):
             file_type = self._file_type_for_geometry_extension(ext)
             return file_type, SourceIntakeCandidateRole.WELLBORE_GEOMETRY_CANDIDATE
+
+        if ext == "csv" and looks_like_formation_tops_csv(path):
+            return SourceIntakeFileType.CSV, SourceIntakeCandidateRole.FORMATION_TOPS_CANDIDATE
 
         if ext == "cgm":
             return SourceIntakeFileType.CGM, SourceIntakeCandidateRole.RASTER_IMAGE_CANDIDATE

@@ -20,6 +20,26 @@ from app.wdv_session.las_reconstruction_models import (
 )
 
 
+
+COMPLETE_LAS_CANONICAL_PALETTE = (
+    "#2f80ed",
+    "#27ae60",
+    "#f2994a",
+    "#eb5757",
+    "#9b51e0",
+    "#00a6a6",
+    "#f2c94c",
+)
+
+
+def complete_las_canonical_color(source_curve_position: int) -> str:
+    if source_curve_position < 1:
+        raise ValueError("source_curve_position must be >= 1")
+    return COMPLETE_LAS_CANONICAL_PALETTE[
+        (source_curve_position - 1) % len(COMPLETE_LAS_CANONICAL_PALETTE)
+    ]
+
+
 class LasReconstructionError(ValueError):
     pass
 
@@ -213,6 +233,7 @@ class LasReconstructionService:
                     track_uid=track_uid,
                     stack_index=0,
                     assignment_source="complete_las_backend_reconstruction",
+                    color=complete_las_canonical_color(curve.source_curve_position),
                 )
                 tracks.append(WdvCanonicalTrack(
                     track_uid=track_uid,

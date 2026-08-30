@@ -3,6 +3,7 @@ export interface WdvMetadataValue {
   label: string;
   value: string | number | null;
   unit: string | null;
+  source?: string | null;
 }
 
 export interface WdvMetadataSection {

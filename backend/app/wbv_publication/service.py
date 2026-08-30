@@ -20,6 +20,7 @@ from .models import (
     WbvPackageChangeSummary,
     WbvPresentationOverrides,
     WbvPresentationOverridesUpdateRequest,
+    WbvPublishedTrackPresentationContract,
     WbvPublicationProvenance,
     WbvPublishAsNewRequest,
     WbvPublishPreview,
@@ -61,6 +62,25 @@ class WbvOverlayPublicationService:
             self.layout_service = WbvTrackLayoutService()
         self.render_adapter = render_adapter or WbvPublishedPackageRenderAdapter(layout_service=self.layout_service)
 
+    def _committed_view_for_session(self, well_uid: str, session: WdvCanonicalSession) -> tuple[int | None, dict[str, Any]]:
+        """Return only the committed WDV view authored for this exact canonical revision."""
+        committed = self.session_service.get_workspace_committed_view_state(well_uid)
+        if not committed:
+            return None, {}
+        if committed.get("session_revision") != session.revision:
+            return None, {}
+        view_revision = committed.get("view_revision")
+        view_state = committed.get("view_state")
+        return (
+            int(view_revision) if isinstance(view_revision, int) and view_revision >= 0 else None,
+            dict(view_state) if isinstance(view_state, dict) else {},
+        )
+
+    @staticmethod
+    def _presentation_state(view_state: dict[str, Any]) -> dict[str, Any]:
+        raw = view_state.get("presentation_state")
+        return dict(raw) if isinstance(raw, dict) else {}
+
     def preview(self, managed_well_uid: str, request: WbvPublishPreviewRequest) -> WbvPublishPreview:
         well_uid = str(parse_uuid7(managed_well_uid))
         session = self.session_service.get_session(well_uid)
@@ -70,6 +90,11 @@ class WbvOverlayPublicationService:
             warnings.append("WDV session is not active")
         if assignment_count == 0:
             warnings.append("WDV session has no curve assignments")
+        view_revision, view_state = self._committed_view_for_session(well_uid, session)
+        if view_revision is None:
+            warnings.append("WDV has no committed presentation state for the current canonical revision")
+        elif not self._presentation_state(view_state):
+            warnings.append("WDV committed view has no presentation_state payload")
         return WbvPublishPreview(
             managed_well_uid=well_uid,
             source_session_uid=session.session_uid,
@@ -93,6 +118,7 @@ class WbvOverlayPublicationService:
                 return existing
             raise ValueError("Publication command UID was already used")
         session = self._publishable_session(well_uid)
+        source_view_revision, published_view_state = self._committed_view_for_session(well_uid, session)
         now = datetime.now(timezone.utc).isoformat()
         package = WbvOverlayPackage(
             package_uid=new_uuid7_str(),
@@ -102,6 +128,8 @@ class WbvOverlayPublicationService:
             source_wdv_session_uid=session.session_uid,
             source_wdv_revision=session.revision,
             published_snapshot=session.model_copy(deep=True),
+            source_wdv_view_revision=source_view_revision,
+            published_view_state=published_view_state,
             wbv_overrides=self._default_layout_assignments(well_uid, session),
             provenance=WbvPublicationProvenance(
                 published_at=now,
@@ -126,6 +154,7 @@ class WbvOverlayPublicationService:
             warnings.append("WDV session is not active")
         if assignment_count == 0:
             warnings.append("WDV session has no curve assignments")
+        current_view_revision, _current_view_state = self._committed_view_for_session(well_uid, session)
         changes = self._change_summary(package, session)
         return WbvUpdatePreview(
             managed_well_uid=package.managed_well_uid,
@@ -146,6 +175,7 @@ class WbvOverlayPublicationService:
                     bool(changes.fills_added),
                     bool(changes.fills_removed),
                     bool(changes.fills_changed),
+                    current_view_revision != package.source_wdv_view_revision,
                 )
             ),
             publishable=publishable,
@@ -184,6 +214,7 @@ class WbvOverlayPublicationService:
                 f"current {current.package_revision}"
             )
         session = self._publishable_session(well_uid)
+        source_view_revision, published_view_state = self._committed_view_for_session(well_uid, session)
         changes = self._change_summary(current, session)
         now = datetime.now(timezone.utc).isoformat()
         retained_overrides = self._retain_compatible_overrides(current.wbv_overrides, session)
@@ -193,6 +224,8 @@ class WbvOverlayPublicationService:
             source_wdv_session_uid=current.source_wdv_session_uid,
             source_wdv_revision=current.source_wdv_revision,
             published_snapshot=current.published_snapshot.model_copy(deep=True),
+            source_wdv_view_revision=current.source_wdv_view_revision,
+            published_view_state=dict(current.published_view_state),
             wbv_overrides=current.wbv_overrides.model_copy(deep=True),
             provenance=current.provenance,
             saved_at=now,
@@ -204,6 +237,8 @@ class WbvOverlayPublicationService:
                 "source_wdv_session_uid": session.session_uid,
                 "source_wdv_revision": session.revision,
                 "published_snapshot": session.model_copy(deep=True),
+                "source_wdv_view_revision": source_view_revision,
+                "published_view_state": published_view_state,
                 "wbv_overrides": retained_overrides,
                 "provenance": WbvPublicationProvenance(
                     published_at=now,
@@ -334,6 +369,42 @@ class WbvOverlayPublicationService:
         if package.status == "archived":
             raise ValueError("Archived packages cannot be rendered")
         return self.render_adapter.compile(package)
+
+    def get_track_presentation_package(
+        self,
+        managed_well_uid: str,
+        package_uid: str,
+    ) -> WbvPublishedTrackPresentationContract:
+        package = self.get_package(managed_well_uid, package_uid)
+        if package.status == "archived":
+            raise ValueError("Archived packages cannot be rendered")
+        presentation = self._presentation_state(package.published_view_state)
+
+        selected_top_ids = presentation.get("selected_formation_top_ids")
+        selected_lithology_ids = presentation.get("selected_lithology_interval_ids")
+        styles = presentation.get("formation_top_overlay_styles_by_track_id")
+        order = presentation.get("track_order_uids")
+        widths = presentation.get("track_widths_by_uid")
+
+        return WbvPublishedTrackPresentationContract(
+            managed_well_uid=package.managed_well_uid,
+            package_uid=package.package_uid,
+            package_revision=package.package_revision,
+            source_wdv_session_uid=package.source_wdv_session_uid,
+            source_wdv_revision=package.source_wdv_revision,
+            source_wdv_view_revision=package.source_wdv_view_revision,
+            presentation_state=presentation,
+            selected_formation_top_ids=tuple(str(item) for item in selected_top_ids) if isinstance(selected_top_ids, list) else (),
+            selected_lithology_interval_ids=tuple(str(item) for item in selected_lithology_ids) if isinstance(selected_lithology_ids, list) else (),
+            formation_top_overlay_styles_by_track_id=dict(styles) if isinstance(styles, dict) else {},
+            track_order_uids=tuple(str(item) for item in order) if isinstance(order, list) else (),
+            track_widths_by_uid={
+                str(key): float(value)
+                for key, value in widths.items()
+                if isinstance(value, (int, float))
+            } if isinstance(widths, dict) else {},
+            curve_render_package=self.render_adapter.compile(package),
+        )
 
     def _default_layout_assignments(self, well_uid: str, session: WdvCanonicalSession) -> WbvPresentationOverrides:
         source_tracks = [track for track in session.tracks if track.track_type == "curve"]

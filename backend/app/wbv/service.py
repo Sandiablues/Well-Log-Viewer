@@ -15,6 +15,7 @@ from app.inventory.repository import ManagedWellInventoryRepository
 from app.inventory.service import ManagedWellInventoryService
 from app.inventory.wdv_workspace import WdvWorkspaceService
 from app.inventory.curve_sample_service import CurveSampleService
+from app.knowledge.completion_repository import completion_render_recipe
 from app.curve_display.contract_service import (
     BackendCurveDisplayContractService,
     BackendCurveDisplayIntent,
@@ -27,6 +28,15 @@ from .models import (
     WbvCoordinateMode,
     WbvDisplayLayerFile,
     WbvDisplayLayerFilesContract,
+    WbvFormationTopItem,
+    WbvFormationTopProduct,
+    WbvFormationTopProductsContract,
+    WbvLithologyIntervalItem,
+    WbvLithologyProduct,
+    WbvLithologyProductsContract,
+    WbvCompletionComponentItem,
+    WbvCompletionProduct,
+    WbvCompletionProductsContract,
     WbvDisplayLayerConfiguration,
     WbvDisplayLayerConfigurationContract,
     WbvCurveOverlayCurve,
@@ -64,6 +74,8 @@ _WBV_DISPLAY_LAYER_CONFIG_KEY = "wbv_display_layer_configuration_v1"
 
 
 class WbvService:
+    _active_wbv_well_id: str | None = None
+
     def __init__(self, repository: ManagedWellInventoryRepository | None = None) -> None:
         self.repository = repository or ManagedWellInventoryRepository()
         self.curve_sample_service = CurveSampleService(self.repository)
@@ -83,24 +95,24 @@ class WbvService:
         return self._workspace_service
 
     def get_session(self) -> WbvSessionContract:
-        """Return the WBV session for the backend-owned active WDV workspace well.
+        """Return the independently selected WBV well session.
 
-        WBV never selects a well independently and never falls back to repository
-        ordering. The WDV workspace is the single authority for active managed-well
-        identity across WDV and WBV.
+        Before an explicit WBV selection exists, the active WDV workspace well is
+        used only as the initial default. Subsequent WBV selection never changes
+        the WDV workspace well.
         """
         workspace = self._workspace().get_workspace()
-        managed_well_id = workspace.active_managed_well_id
+        managed_well_id = self._active_wbv_well_id or workspace.active_managed_well_id
         if not managed_well_id:
             self.inventory_service.reconcile_wbv_session_reference(None)
             return WbvSessionContract(
                 viewer_state=WbvViewerState.NOT_LOADED,
                 warnings=[
                     WbvWarning(
-                        code="no_active_wdv_workspace_well",
+                        code="no_active_wbv_well",
                         severity="info",
-                        message="The backend-owned WDV workspace has no active managed well; WBV has no active well context.",
-                        target="wdv_workspace.active_managed_well_id",
+                        message="No well has been selected in WBV and the WDV workspace has no active well to use as an initial default.",
+                        target="wbv.active_managed_well_id",
                     )
                 ],
             )
@@ -122,24 +134,22 @@ class WbvService:
         )
 
     def set_active_well(self, managed_well_id: str) -> WbvSessionContract:
-        """Explicitly command the backend workspace to change WBV/WDV active well."""
-        workspace = self._workspace().set_active_well(managed_well_id)
-        if workspace.active_managed_well_id != managed_well_id:
-            raise ValueError("Backend WDV workspace did not confirm the requested active managed well.")
+        """Set the WBV active well without changing the WDV workspace selection."""
+        record = self.repository.get_record(managed_well_id)
+        state, _, _ = self._viewer_state_for_record(record)
+        if state in {WbvViewerState.MISSING_SURVEY, WbvViewerState.UNAVAILABLE, WbvViewerState.NOT_LOADED}:
+            raise ValueError("Managed well has no connected deviation survey available to WBV.")
+        self._active_wbv_well_id = record.managed_well_id
+        self.inventory_service.reconcile_wbv_session_reference(record.managed_well_id)
         return self.get_session()
 
     def get_viewer_package(self, managed_well_id: str) -> WbvViewerPackageContract:
-        workspace = self._workspace().get_workspace()
-        if workspace.active_managed_well_id is None:
-            # Preserve the existing read-only NOT_LOADED package contract. No WBV
-            # lifecycle reference is acquired without a backend-owned active well.
-            record = self.repository.get_record(managed_well_id)
-        else:
-            if workspace.active_managed_well_id != managed_well_id:
-                raise ValueError("WBV viewer package must match the backend-owned active WDV workspace well.")
-            record = self.inventory_service.reconcile_wbv_session_reference(managed_well_id)
-            if record is None:
-                raise ValueError("Backend WDV workspace did not resolve an active WBV well.")
+        record = self.repository.get_record(managed_well_id)
+        active_wbv_well_id = self._active_wbv_well_id or self._workspace().get_workspace().active_managed_well_id
+        if active_wbv_well_id == managed_well_id:
+            reconciled = self.inventory_service.reconcile_wbv_session_reference(managed_well_id)
+            if reconciled is not None:
+                record = reconciled
         state, coordinate_mode, warnings = self._viewer_state_for_record(record)
         source_unit = self._source_depth_unit(record)
         display_unit = self._display_depth_unit(record, source_unit)
@@ -163,7 +173,7 @@ class WbvService:
                 source_unit, display_unit,
             ),
             bounding_box=self._convert_bounding_box(
-                self._bounding_box(record), source_unit, display_unit
+                self._viewer_bounding_box(record, trajectory), source_unit, display_unit
             ),
             axes=self._dict_metadata(record, "wbv_axes"),
             available_layers=layers,
@@ -194,6 +204,7 @@ class WbvService:
         layer_keys = (
             "formation_tops",
             "lithology_intervals",
+            "core_images",
             "casing_hole_sections",
             "completions",
             "curve_overlays",
@@ -203,8 +214,23 @@ class WbvService:
         for group in record.product_groups:
             for item in group.items:
                 layer_type = str(item.display_layer_type or "").strip()
+                # LCM historically published its reviewed dataset as the singular
+                # internal token `lithology_interval_dataset`; WBV's public layer
+                # contract is `lithology_intervals`.
+                if layer_type == "lithology_interval_dataset":
+                    layer_type = "lithology_intervals"
+                if layer_type == "compound_core_segment":
+                    layer_type = "core_images"
+                if layer_type == "completion_components_dataset":
+                    layer_type = "completions"
                 if layer_type not in grouped:
-                    continue
+                    classification = " ".join([
+                        str(item.source_kind or ""), str(item.product_category or ""), str(item.display_name or "")
+                    ]).strip().lower().replace("-", "_")
+                    if "formation" in classification and "top" in classification:
+                        layer_type = "formation_tops"
+                    else:
+                        continue
                 if item.wmdp_state != ManagedWmdpState.STAGED_IN_WMDP:
                     continue
                 depth_reference = str(item.depth_reference or "").strip()
@@ -228,6 +254,369 @@ class WbvService:
             managed_well_id=record.managed_well_id,
             layers=grouped,
         )
+
+
+    @staticmethod
+    def _formation_top_rows(record: ManagedWellRecord) -> list[dict[str, Any]]:
+        """Return authoritative reviewed Formation Tops rows from MWD.
+
+        FTM publication stores the reviewed dataset in two MWD-owned locations:
+        ``metadata.formation_tops_dataset.tops`` and the managed product item's
+        ``provenance.formation_tops``.  Legacy flat metadata keys remain readable
+        for backwards compatibility, but WBV does not require them.
+        """
+        rows: list[dict[str, Any]] = []
+        metadata = record.metadata if isinstance(record.metadata, dict) else {}
+
+        dataset = metadata.get("formation_tops_dataset")
+        if isinstance(dataset, dict):
+            value = dataset.get("tops")
+            if isinstance(value, list):
+                rows.extend(item for item in value if isinstance(item, dict))
+        if rows:
+            return rows
+
+        for key in ("formation_tops", "tops", "wbv_markers"):
+            value = metadata.get(key)
+            if isinstance(value, list):
+                rows.extend(item for item in value if isinstance(item, dict))
+        if rows:
+            return rows
+
+        for group in record.product_groups:
+            for item in group.items:
+                provenance = item.provenance if isinstance(item.provenance, dict) else {}
+                value = provenance.get("formation_tops")
+                if isinstance(value, list):
+                    rows.extend(entry for entry in value if isinstance(entry, dict))
+        return rows
+
+    @staticmethod
+    def _formation_top_product_items(record: ManagedWellRecord) -> list[ManagedProductGroupItem]:
+        items: list[ManagedProductGroupItem] = []
+        for group in record.product_groups:
+            for item in group.items:
+                if item.wmdp_state != ManagedWmdpState.STAGED_IN_WMDP:
+                    continue
+                classification = " ".join([
+                    str(item.display_layer_type or ""),
+                    str(item.product_subgroup_key or ""),
+                    str(item.destination_key or ""),
+                    str(item.product_category or ""),
+                    str(item.display_name or ""),
+                ]).strip().lower().replace("-", "_")
+                if (
+                    str(item.display_layer_type or "").strip().lower() in {"formation_tops", "formation_tops_dataset"}
+                    or str(item.product_subgroup_key or "").strip().lower() == "formation_tops"
+                    or str(item.destination_key or "").strip().lower() == "formation_tops"
+                    or ("formation" in classification and "top" in classification)
+                ):
+                    items.append(item)
+        return items
+
+    @staticmethod
+    def _top_number(row: dict[str, Any], *keys: str) -> float | None:
+        for key in keys:
+            value = row.get(key)
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(number):
+                return number
+        return None
+
+    def get_formation_top_products(self, managed_well_id: str) -> WbvFormationTopProductsContract:
+        record = self.repository.get_record(managed_well_id)
+        candidates = self._formation_top_product_items(record)
+
+        rows = self._formation_top_rows(record)
+        products: list[WbvFormationTopProduct] = []
+        default_product_id = candidates[0].product_id if len(candidates) == 1 else None
+        tops_by_product: dict[str, list[WbvFormationTopItem]] = {item.product_id: [] for item in candidates}
+        for index, row in enumerate(rows):
+            md = self._top_number(row, "md", "md_m", "md_m_rt", "depth", "depth_md")
+            if md is None:
+                continue
+            name = str(row.get("name") or row.get("marker_name") or row.get("formation") or row.get("marker") or "").strip()
+            if not name:
+                continue
+            row_product_id = str(row.get("product_id") or row.get("source_product_id") or "").strip() or default_product_id
+            if row_product_id not in tops_by_product:
+                # Preserve MWD authority: do not expose unmanaged/orphan rows as selectable products.
+                continue
+            marker_type = str(row.get("marker_type") or row.get("type") or "Formation top").strip() or "Formation top"
+            top = WbvFormationTopItem(
+                top_id=str(row.get("top_id") or row.get("id") or f"{row_product_id}:{index}:{md:g}"),
+                product_id=row_product_id,
+                name=name, marker_type=marker_type, group=str(row.get("group") or "").strip() or None, md=md,
+                tvd=self._top_number(row, "tvd", "tvd_m", "tvd_m_rt"),
+                tvdss=self._top_number(row, "tvdss", "tvdss_m_msl"),
+                uncertainty=self._top_number(row, "uncertainty", "uncertainty_m"),
+                pick_status=str(row.get("pick_status") or row.get("status") or "").strip() or None,
+                source_document=str(row.get("source_document") or row.get("source") or "").strip() or None,
+                source_page=int(row["source_page"]) if str(row.get("source_page") or "").isdigit() else None,
+            )
+            tops_by_product[row_product_id].append(top)
+
+        for item in candidates:
+            products.append(WbvFormationTopProduct(
+                product_id=item.product_id, display_name=item.display_name,
+                tops=sorted(tops_by_product.get(item.product_id, []), key=lambda top: top.md),
+            ))
+        products.sort(key=lambda product: (product.display_name.casefold(), product.product_id))
+        return WbvFormationTopProductsContract(managed_well_id=record.managed_well_id, products=products)
+
+    def _lithology_product_items(self, record: ManagedWellRecord) -> list[Any]:
+        items: list[Any] = []
+        for group in record.product_groups:
+            for item in group.items:
+                if (
+                    item.product_subgroup_key == "lithology_intervals"
+                    or str(item.display_layer_type or "").strip() in {
+                        "lithology_intervals",
+                        "lithology_interval_dataset",
+                    }
+                ):
+                    items.append(item)
+        return items
+
+    def _lithology_rows(self, record: ManagedWellRecord) -> list[dict[str, Any]]:
+        metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        dataset = metadata.get("lithology_intervals_dataset")
+        if isinstance(dataset, dict):
+            rows = dataset.get("intervals")
+            if isinstance(rows, list):
+                return [dict(row) for row in rows if isinstance(row, dict)]
+
+        # Fall back to the self-contained LCM product provenance. This makes the
+        # WBV bridge resilient for already-published wells even if metadata was
+        # authored by an older LCM publication path.
+        for item in self._lithology_product_items(record):
+            provenance = item.provenance if isinstance(item.provenance, dict) else {}
+            rows = provenance.get("lithology_intervals")
+            if isinstance(rows, list):
+                return [dict(row) for row in rows if isinstance(row, dict)]
+        return []
+
+    def get_lithology_products(self, managed_well_id: str) -> WbvLithologyProductsContract:
+        record = self.repository.get_record(managed_well_id)
+        rows = self._lithology_rows(record)
+        products: list[WbvLithologyProduct] = []
+
+        for product in self._lithology_product_items(record):
+            provenance = product.provenance if isinstance(product.provenance, dict) else {}
+            product_rows = provenance.get("lithology_intervals")
+            if not isinstance(product_rows, list):
+                product_rows = rows
+
+            intervals: list[WbvLithologyIntervalItem] = []
+            for index, row in enumerate(product_rows):
+                if not isinstance(row, dict):
+                    continue
+                lithology = str(row.get("lithology") or "").strip()
+                top_md = row.get("top_md")
+                base_md = row.get("base_md")
+                if not lithology or not isinstance(top_md, (int, float)) or not isinstance(base_md, (int, float)):
+                    continue
+                if float(base_md) <= float(top_md):
+                    continue
+                interval_id = str(
+                    row.get("interval_id")
+                    or row.get("id")
+                    or f"{product.product_id}:interval:{index + 1}"
+                )
+                intervals.append(
+                    WbvLithologyIntervalItem(
+                        interval_id=interval_id,
+                        product_id=product.product_id,
+                        lithology=lithology,
+                        canonical_lithology=(
+                            str(row.get("canonical_lithology")).strip()
+                            if row.get("canonical_lithology") is not None else None
+                        ),
+                        top_md=float(top_md),
+                        base_md=float(base_md),
+                        top_tvd=float(row["top_tvd"]) if isinstance(row.get("top_tvd"), (int, float)) else None,
+                        base_tvd=float(row["base_tvd"]) if isinstance(row.get("base_tvd"), (int, float)) else None,
+                        top_tvdss=float(row["top_tvdss"]) if isinstance(row.get("top_tvdss"), (int, float)) else None,
+                        base_tvdss=float(row["base_tvdss"]) if isinstance(row.get("base_tvdss"), (int, float)) else None,
+                        depth_unit=str(row.get("depth_unit") or product.depth_units or record.depth_unit or "m"),
+                        depth_reference=str(row.get("depth_reference") or product.depth_reference or "RT"),
+                        pattern_id=str(row.get("pattern_id")).strip() if row.get("pattern_id") is not None else None,
+                        background_color=str(row.get("background_color")).strip() if row.get("background_color") is not None else None,
+                        pattern_color=str(row.get("pattern_color")).strip() if row.get("pattern_color") is not None else None,
+                        description=str(row.get("description")).strip() if row.get("description") is not None else None,
+                        source_document=str(row.get("source_document")).strip() if row.get("source_document") is not None else None,
+                        source_reference=str(row.get("source_reference")).strip() if row.get("source_reference") is not None else None,
+                        confidence=str(row.get("confidence")).strip() if row.get("confidence") is not None else None,
+                        notes=str(row.get("notes")).strip() if row.get("notes") is not None else None,
+                    )
+                )
+            products.append(
+                WbvLithologyProduct(
+                    product_id=product.product_id,
+                    display_name=product.display_name,
+                    intervals=intervals,
+                )
+            )
+
+        # Older records may have the authoritative metadata dataset but no
+        # product-group item WBV can discover. Surface a deterministic virtual
+        # product rather than hiding valid MWD lithology.
+        if not products and rows:
+            product_id = f"lcm-reviewed-lithology:{managed_well_id}"
+            intervals = []
+            for index, row in enumerate(rows):
+                if not isinstance(row, dict):
+                    continue
+                lithology = str(row.get("lithology") or "").strip()
+                top_md = row.get("top_md")
+                base_md = row.get("base_md")
+                if not lithology or not isinstance(top_md, (int, float)) or not isinstance(base_md, (int, float)):
+                    continue
+                if float(base_md) <= float(top_md):
+                    continue
+                intervals.append(
+                    WbvLithologyIntervalItem(
+                        interval_id=str(row.get("interval_id") or f"{product_id}:interval:{index + 1}"),
+                        product_id=product_id,
+                        lithology=lithology,
+                        canonical_lithology=str(row.get("canonical_lithology")).strip() if row.get("canonical_lithology") is not None else None,
+                        top_md=float(top_md),
+                        base_md=float(base_md),
+                        depth_unit=display_unit,
+                        depth_reference=str(row.get("depth_reference") or "RT"),
+                        pattern_id=str(row.get("pattern_id")).strip() if row.get("pattern_id") is not None else None,
+                        background_color=str(row.get("background_color")).strip() if row.get("background_color") is not None else None,
+                        pattern_color=str(row.get("pattern_color")).strip() if row.get("pattern_color") is not None else None,
+                        description=str(row.get("description")).strip() if row.get("description") is not None else None,
+                        source_document=str(row.get("source_document")).strip() if row.get("source_document") is not None else None,
+                        source_reference=str(row.get("source_reference")).strip() if row.get("source_reference") is not None else None,
+                        confidence=str(row.get("confidence")).strip() if row.get("confidence") is not None else None,
+                        notes=str(row.get("notes")).strip() if row.get("notes") is not None else None,
+                    )
+                )
+            products.append(
+                WbvLithologyProduct(
+                    product_id=product_id,
+                    display_name="Lithology Column Manager — Reviewed Lithology",
+                    intervals=intervals,
+                )
+            )
+
+        return WbvLithologyProductsContract(
+            managed_well_id=managed_well_id,
+            products=products,
+        )
+
+    @staticmethod
+    def _completion_rows(record: ManagedWellRecord) -> list[dict[str, Any]]:
+        """Return authoritative reviewed completion rows from MWD/CDM publication."""
+        metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        dataset = metadata.get("completion_components_dataset")
+        if isinstance(dataset, dict):
+            rows = dataset.get("completion_components")
+            if isinstance(rows, list):
+                return [row for row in rows if isinstance(row, dict)]
+
+        for group in record.product_groups:
+            for item in group.items:
+                if item.wmdp_state != ManagedWmdpState.STAGED_IN_WMDP:
+                    continue
+                provenance = item.provenance if isinstance(item.provenance, dict) else {}
+                rows = provenance.get("completion_components")
+                if isinstance(rows, list):
+                    return [row for row in rows if isinstance(row, dict)]
+
+        # Legacy compatibility only. WBV does not fabricate rows from summary flags.
+        for key in ("completions", "perforations"):
+            rows = metadata.get(key)
+            if isinstance(rows, list):
+                return [row for row in rows if isinstance(row, dict)]
+        return []
+
+    @staticmethod
+    def _completion_product_items(record: ManagedWellRecord) -> list[ManagedProductGroupItem]:
+        items: list[ManagedProductGroupItem] = []
+        for group in record.product_groups:
+            for item in group.items:
+                if item.wmdp_state != ManagedWmdpState.STAGED_IN_WMDP:
+                    continue
+                if (
+                    str(item.display_layer_type or "").strip().lower() == "completion_components_dataset"
+                    or str(item.product_subgroup_key or "").strip().lower() == "completion_components"
+                    or str(item.destination_key or "").strip().lower() == "completion_components"
+                ):
+                    items.append(item)
+        return items
+
+    def get_completion_products(self, managed_well_id: str) -> WbvCompletionProductsContract:
+        record = self.repository.get_record(managed_well_id)
+        rows = self._completion_rows(record)
+        candidates = self._completion_product_items(record)
+        default_product_id = candidates[0].product_id if len(candidates) == 1 else None
+        components_by_product: dict[str, list[WbvCompletionComponentItem]] = {
+            item.product_id: [] for item in candidates
+        }
+
+        display_unit = self._display_depth_unit(record, self._source_depth_unit(record))
+        for index, row in enumerate(rows):
+            row_unit = self._normalize_depth_unit(row.get("depth_unit") or record.depth_unit or self._source_depth_unit(record)) or self._source_depth_unit(record)
+            try:
+                depth_factor = self._distance_factor(row_unit, display_unit)
+            except ValueError:
+                continue
+            top_md = self._finite_number(row.get("top_md"))
+            if top_md is None:
+                continue
+            top_md *= depth_factor
+            base_md = self._finite_number(row.get("base_md"))
+            if base_md is not None:
+                base_md *= depth_factor
+            if base_md is not None and base_md < top_md:
+                continue
+            canonical_id = str(row.get("canonical_id") or "").strip()
+            component_key = str(row.get("canonical_component_key") or "").strip()
+            label = str(row.get("label") or row.get("kr_component_label") or component_key or canonical_id).strip()
+            if not canonical_id or not component_key or not label:
+                continue
+            product_id = str(row.get("product_id") or row.get("source_product_id") or "").strip() or default_product_id
+            if product_id not in components_by_product:
+                continue
+            recipe = completion_render_recipe(canonical_id)
+            components_by_product[product_id].append(
+                WbvCompletionComponentItem(
+                    component_id=str(row.get("component_id") or f"{product_id}:component:{index + 1}"),
+                    product_id=product_id,
+                    canonical_id=canonical_id,
+                    canonical_component_key=component_key,
+                    label=label,
+                    top_md=top_md,
+                    base_md=base_md,
+                    depth_unit=str(row.get("depth_unit") or record.depth_unit or "m"),
+                    diameter=self._finite_number(row.get("diameter")),
+                    status=str(row.get("status")).strip() if row.get("status") is not None else None,
+                    confidence=str(row.get("confidence")).strip() if row.get("confidence") is not None else None,
+                    source_document=str(row.get("source_document")).strip() if row.get("source_document") is not None else None,
+                    source_reference=str(row.get("source_reference")).strip() if row.get("source_reference") is not None else None,
+                    notes=str(row.get("notes")).strip() if row.get("notes") is not None else None,
+                    geometry_class=str(row.get("kr_geometry_class") or "point_or_interval"),
+                    geometry_family=str(recipe.get("geometryFamily") or "toolbody_inline"),
+                    material_family=str(recipe.get("materialFamily") or "metal_dark_tool"),
+                    annotation_policy=str(recipe.get("annotationPolicy") or "aligned_conditional_leader"),
+                )
+            )
+
+        products = [
+            WbvCompletionProduct(
+                product_id=item.product_id,
+                display_name=item.display_name,
+                components=sorted(components_by_product.get(item.product_id, []), key=lambda component: (component.top_md, component.base_md or component.top_md, component.label.casefold())),
+            )
+            for item in candidates
+        ]
+        return WbvCompletionProductsContract(managed_well_id=managed_well_id, products=products)
 
     def get_curve_overlay_products(self, managed_well_id: str) -> WbvCurveOverlayProductsContract:
         record = self.repository.get_record(managed_well_id)
@@ -580,6 +969,7 @@ class WbvService:
         allowed = {
             "formation_tops",
             "lithology_intervals",
+            "core_images",
             "casing_hole_sections",
             "completions",
             "curve_overlays",
@@ -848,23 +1238,34 @@ class WbvService:
         if (
             not record.wmdp_available
             or record.wmdp_state == ManagedWmdpState.REMOVED_FROM_WMDP
-            or record.wdv_state != ManagedWdvState.LOADED_TO_WDV
-            or not self._loaded_wdv_items(record)
         ):
             return (
-                WbvViewerState.NOT_LOADED,
+                WbvViewerState.UNAVAILABLE,
                 WbvCoordinateMode.UNAVAILABLE,
                 [
                     WbvWarning(
-                        code="managed_well_not_loaded_to_wdv",
+                        code="managed_well_unavailable",
                         severity="info",
-                        message="This managed well is not currently loaded to WDV; WBV is unavailable for it.",
-                        target="wdv_state",
+                        message="This managed well is not available in the managed-well inventory.",
+                        target="wmdp_state",
                     )
                 ],
             )
 
-        if not isinstance(record.metadata.get("wdv_load_session_contract"), dict):
+        loaded_to_wdv = (
+            record.wdv_state == ManagedWdvState.LOADED_TO_WDV
+            and bool(self._loaded_wdv_items(record))
+        )
+        if not loaded_to_wdv:
+            warnings.append(
+                WbvWarning(
+                    code="wdv_link_unavailable",
+                    severity="info",
+                    message="This well is not active in WDV. Its trajectory remains available in WBV, but linked curve data and cross-view data exchange are unavailable.",
+                    target="wdv_state",
+                )
+            )
+        elif not isinstance(record.metadata.get("wdv_load_session_contract"), dict):
             warnings.append(
                 WbvWarning(
                     code="missing_wdv_load_session_contract",
@@ -933,10 +1334,18 @@ class WbvService:
             trajectory=bool(trajectory.render_points),
             survey_stations=bool(trajectory.stations),
             depth_labels=bool(trajectory.render_points),
-            formation_tops=bool(self._list_metadata(record, "formation_tops") or self._list_metadata(record, "tops") or self._list_metadata(record, "wbv_markers")),
-            lithology=bool(self._list_metadata(record, "lithology_intervals")),
+            formation_tops=bool(self._formation_top_product_items(record) and self._formation_top_rows(record)),
+            lithology=bool(
+                self._list_metadata(record, "lithology_intervals")
+                or self._lithology_rows(record)
+            ),
+            core=any(
+                str(item.display_layer_type or "").strip() == "compound_core_segment"
+                and item.wmdp_state == ManagedWmdpState.STAGED_IN_WMDP
+                for group in record.product_groups for item in group.items
+            ),
             casing=bool(self._list_metadata(record, "casing") or self._list_metadata(record, "hole_sections")),
-            completions=bool(self._list_metadata(record, "completions") or self._list_metadata(record, "perforations")),
+            completions=bool(self._completion_product_items(record) and self._completion_rows(record)),
             loaded_curves=bool(loaded_items),
             curve_attributes=bool(loaded_items),
         )
@@ -949,6 +1358,9 @@ class WbvService:
         stations = raw.get("stations", [])
         render_points = raw.get("render_points", [])
         warnings = raw.get("warnings", [])
+        authoritative_points, authoritative_geometry = self._authoritative_reported_render_points(record, raw)
+        if authoritative_points:
+            render_points = authoritative_points
         clean_points = [dict(point) for point in render_points if isinstance(point, dict)] if isinstance(render_points, list) else []
         enriched_points, value_sources, directional_status = self._enrich_directional_values(clean_points)
         provenance = {
@@ -959,6 +1371,7 @@ class WbvService:
             "classification_message": raw.get("classification_message"),
             "coordinate_mode": raw.get("coordinate_mode"),
             "canonical_depth_resolution": raw.get("canonical_depth_resolution"),
+            "authoritative_geometry": authoritative_geometry,
         }
         return WbvTrajectoryPackage(
             method=str(raw.get("method") or "") or None,
@@ -975,6 +1388,142 @@ class WbvService:
             directional_values_status=directional_status,
             point_value_sources=value_sources,
         )
+
+    def _authoritative_reported_render_points(
+        self,
+        record: ManagedWellRecord,
+        raw: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+        """Prefer source-reported common-frame geometry over derived geometry.
+
+        Source Intake station records can preserve TVD, Easting and Northing even
+        when their legacy render_points were built from x_offset/y_offset.
+        Direct DSM publications preserve reviewed TVD/N/S/E/W station geometry on
+        the managed product provenance.  In both cases those reported coordinates
+        are authoritative for WBV.  Existing derived/minimum-curvature render points
+        remain the fallback only when a complete reported geometry set is absent.
+        """
+
+        def build_points(rows: list[dict[str, Any]], *, field_map: dict[str, str], source_kind: str, product_id: str | None = None):
+            points: list[dict[str, Any]] = []
+            for index, row in enumerate(rows):
+                md = self._optional_float(row.get(field_map["md"]))
+                tvd = self._optional_float(row.get(field_map["tvd"]))
+                east = self._optional_float(row.get(field_map["east"]))
+                north = self._optional_float(row.get(field_map["north"]))
+                if None in (md, tvd, east, north):
+                    return [], None
+
+                point: dict[str, Any] = {
+                    "md": md,
+                    "tvd": tvd,
+                    "x": east,
+                    "y": north,
+                    "z": -tvd,
+                    "source_station_index": index,
+                }
+                if "tvdss" in field_map:
+                    point["tvdss"] = self._optional_float(row.get(field_map["tvdss"]))
+                for target, source in (
+                    ("inclination", field_map.get("inclination")),
+                    ("azimuth", field_map.get("azimuth")),
+                    ("dogleg_severity", field_map.get("dogleg_severity")),
+                ):
+                    if not source:
+                        continue
+                    value = self._optional_float(row.get(source))
+                    if value is not None:
+                        point[target] = value
+                points.append(point)
+
+            if len(points) < 2:
+                return [], None
+            return points, {
+                "kind": "authoritative_reported_station_geometry",
+                "source_kind": source_kind,
+                "product_id": product_id,
+                "station_count": len(points),
+                "coordinate_fields": [field_map["tvd"], field_map["east"], field_map["north"]],
+                "fallback": "stored_or_minimum_curvature_geometry_only_when_reported_geometry_unavailable",
+            }
+
+        # Source Intake full-registration packages retain every parsed source row,
+        # including TVD/Easting/Northing. Prefer these over legacy x_offset/y_offset
+        # render_points (where x_offset may be scalar horizontal departure).
+        method = str(raw.get("method") or "").strip().lower()
+        source = str(raw.get("source") or "").strip().lower()
+        if method == "source_intake_full_registration" or source == "source_intake_deviation_survey_full":
+            rows = raw.get("stations")
+            if isinstance(rows, list) and rows:
+                points, metadata = build_points(
+                    [row for row in rows if isinstance(row, dict)],
+                    field_map={
+                        "md": "md",
+                        "tvd": "tvd",
+                        "east": "easting",
+                        "north": "northing",
+                        "inclination": "inclination",
+                        "azimuth": "azimuth",
+                    },
+                    source_kind="source_intake_reported_tvd_easting_northing",
+                )
+                if points:
+                    return points, metadata
+
+        # Direct DSM publication: use the reviewed station table retained on the
+        # managed deviation-survey product.
+        if str(raw.get("source_type") or "").strip().lower() == "deviation_survey_manager":
+            active_id = ""
+            if isinstance(record.metadata, dict):
+                active_id = str(record.metadata.get(_ACTIVE_TRAJECTORY_ID_KEY) or "").strip()
+
+            candidates: list[tuple[ManagedProductGroupItem, list[dict[str, Any]]]] = []
+            for group in record.product_groups:
+                for item in group.items:
+                    if str(item.product_subgroup_key or "").strip().lower() != "deviation_survey":
+                        continue
+                    provenance = item.provenance if isinstance(item.provenance, dict) else {}
+                    rows = provenance.get("deviation_survey_stations")
+                    if not isinstance(rows, list) or not rows:
+                        continue
+                    clean_rows = [row for row in rows if isinstance(row, dict)]
+                    if clean_rows:
+                        candidates.append((item, clean_rows))
+
+            selected: tuple[ManagedProductGroupItem, list[dict[str, Any]]] | None = None
+            if active_id:
+                selected = next((candidate for candidate in candidates if candidate[0].product_id == active_id), None)
+
+            if selected is None:
+                raw_count = self._optional_int(raw.get("station_count")) or self._optional_int(raw.get("source_station_count"))
+                matching = [candidate for candidate in candidates if raw_count is not None and len(candidate[1]) == raw_count]
+                if len(matching) == 1:
+                    selected = matching[0]
+
+            if selected is None and len(candidates) == 1:
+                selected = candidates[0]
+
+            if selected is not None:
+                item, rows = selected
+                points, metadata = build_points(
+                    rows,
+                    field_map={
+                        "md": "measured_depth",
+                        "tvd": "true_vertical_depth",
+                        "tvdss": "tvdss",
+                        "east": "east_west",
+                        "north": "north_south",
+                        "inclination": "inclination",
+                        "azimuth": "azimuth",
+                        "dogleg_severity": "dogleg_severity",
+                    },
+                    source_kind="dsm_reviewed_reported_tvd_easting_northing",
+                    product_id=item.product_id,
+                )
+                if points:
+                    return points, metadata
+
+        return [], None
 
     @staticmethod
     def _enrich_directional_values(points: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, str], str]:
@@ -1490,6 +2039,25 @@ class WbvService:
         raw = self._raw_trajectory_metadata(record)
         unit = raw.get("depth_unit")
         return str(unit) if unit else None
+
+    def _viewer_bounding_box(
+        self,
+        record: ManagedWellRecord,
+        trajectory: WbvTrajectoryPackage,
+    ) -> dict[str, Any]:
+        provenance = trajectory.provenance if isinstance(trajectory.provenance, dict) else {}
+        authoritative = provenance.get("authoritative_geometry")
+        if isinstance(authoritative, dict) and authoritative.get("kind") == "authoritative_reported_station_geometry":
+            points = [point for point in trajectory.render_points if isinstance(point, dict)]
+            if points:
+                result: dict[str, Any] = {}
+                for key in ("md", "tvd", "x", "y", "z"):
+                    values = [self._optional_float(point.get(key)) for point in points]
+                    values = [value for value in values if value is not None]
+                    if values:
+                        result[key] = {"min": min(values), "max": max(values)}
+                return result
+        return self._bounding_box(record)
 
     def _bounding_box(self, record: ManagedWellRecord) -> dict[str, Any]:
         explicit = self._dict_metadata(record, "wbv_bounding_box")

@@ -8,8 +8,10 @@ from app.inventory.models import CanonicalUuid7
 
 WbvLayoutTrackType = Literal[
     "curve",
+    "depth",
     "formation_tops",
     "lithology",
+    "core",
     "casing_hole",
     "completions",
     "borehole_imagery",
@@ -17,6 +19,7 @@ WbvLayoutTrackType = Literal[
 WbvTrackPosition = Literal["right", "left", "center"]
 WbvTrackBackgroundMode = Literal["transparent", "solid"]
 WbvTrackGridMode = Literal["off", "linear", "logarithmic"]
+WbvDepthType = Literal["MD", "TVD", "TVDSS"]
 
 
 class WbvLayoutTrack(BaseModel):
@@ -37,6 +40,12 @@ class WbvLayoutTrack(BaseModel):
     background_color: str = "#000000"
     outline_visible: bool = True
     grid_mode: WbvTrackGridMode = "off"
+    # WLV-WBV-DEPTH-TRACK-STAGE1
+    depth_type: WbvDepthType = "MD"
+    depth_increment: float = Field(default=100.0, gt=0.0)
+    label_increment: float = Field(default=500.0, gt=0.0)
+    label_size: float = Field(default=1.0, gt=0.0)
+    show_depth_units: bool = True
 
 
 class WbvTrackLayout(BaseModel):
@@ -81,3 +90,8 @@ class WbvLayoutCommandRequest(BaseModel):
     outline_visible: bool | None = None
     grid_mode: WbvTrackGridMode | None = None
     visible: bool | None = None
+    depth_type: WbvDepthType | None = None
+    depth_increment: float | None = Field(default=None, gt=0.0)
+    label_increment: float | None = Field(default=None, gt=0.0)
+    label_size: float | None = Field(default=None, gt=0.0)
+    show_depth_units: bool | None = None

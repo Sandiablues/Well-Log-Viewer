@@ -85,6 +85,10 @@ class CanonicalCurveFillService:
                 assignment_b = assignments.get(command.curve_b_assignment_uid)
                 if assignment_b is None:
                     raise CanonicalCurveFillCommandError("Curve B assignment is not in the target track")
+            if command.curve_operand_assignment_uids:
+                missing = [uid for uid in command.curve_operand_assignment_uids if uid not in assignments]
+                if missing:
+                    raise CanonicalCurveFillCommandError("Curve envelope operand is not in the target track")
             if command.rule_type == RuleType.CROSSOVER:
                 CurveFillPolicyRegistry.require(
                     command.overlay_policy_uid or "",
@@ -100,15 +104,24 @@ class CanonicalCurveFillService:
                 track_uid=track.track_uid,
                 curve_a_assignment_uid=command.curve_a_assignment_uid,
                 curve_b_assignment_uid=command.curve_b_assignment_uid,
+                curve_operand_assignment_uids=command.curve_operand_assignment_uids,
                 order=target,
                 enabled=command.enabled,
                 rule_type=command.rule_type,
                 comparison=command.comparison,
                 boundary=command.boundary,
+                reference_value=command.reference_value,
+                band_min_value=command.band_min_value,
+                band_max_value=command.band_max_value,
+                minimum_separation_px=command.minimum_separation_px,
+                separation_mode=command.separation_mode,
                 overlay_policy_uid=command.overlay_policy_uid,
                 overlay_policy_revision=command.overlay_policy_revision,
                 deadband=command.deadband,
                 minimum_interval=command.minimum_interval,
+                depth_extent=command.depth_extent,
+                interval_from_md=command.interval_from_md,
+                interval_to_md=command.interval_to_md,
                 style=command.style,
                 state=(
                     CurveFillRuleState.PENDING_GEOMETRY
@@ -137,9 +150,15 @@ class CanonicalCurveFillService:
                 found = True
                 patch = command.model_dump(
                     mode="json",
-                    exclude={"expected_revision", "command_id", "rule_uid"},
+                    exclude={"expected_revision", "command_id", "rule_uid", "clear_interval"},
                     exclude_none=True,
                 )
+                if command.clear_interval:
+                    patch.update({
+                        "depth_extent": "entire_track",
+                        "interval_from_md": None,
+                        "interval_to_md": None,
+                    })
                 enabled = patch.get("enabled", rule.enabled)
                 patch.update(
                     {

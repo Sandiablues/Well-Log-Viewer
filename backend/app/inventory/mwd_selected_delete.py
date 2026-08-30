@@ -100,7 +100,10 @@ class SelectedManagedDataDeleteService:
                 product_references,
             )
 
-            selected_product_ids = set(product_references)
+            unresolved_product_references = self._unresolved_product_references(
+                inventory_before.records,
+                product_references,
+            )
             removed_well_ids: list[str] = []
             removed_product_ids: list[str] = []
             touched_well_ids: set[str] = set()
@@ -209,9 +212,8 @@ class SelectedManagedDataDeleteService:
                 )
                 records_after.append(record)
 
-            if selected_product_ids - set(product_owners):
-                missing = sorted(selected_product_ids - set(product_owners))
-                raise ManagedWellNotFoundError(missing[0])
+            if unresolved_product_references:
+                raise ManagedWellNotFoundError(unresolved_product_references[0])
 
             if not touched_well_ids:
                 missing = well_references[0] if well_references else product_references[0]
@@ -317,6 +319,32 @@ class SelectedManagedDataDeleteService:
                 raise ManagedWellNotFoundError(reference)
             resolved.add(matches[0].managed_well_id)
         return resolved
+
+    @staticmethod
+    def _unresolved_product_references(
+        records: list[ManagedWellRecord],
+        references: list[str],
+    ) -> list[str]:
+        unresolved: list[str] = []
+        for reference in references:
+            matched = False
+            for record in records:
+                for group in record.product_groups:
+                    for item in group.items:
+                        if reference in {
+                            item.product_id,
+                            str(item.managed_product_uid or ""),
+                            str(item.managed_curve_uid or ""),
+                        }:
+                            matched = True
+                            break
+                    if matched:
+                        break
+                if matched:
+                    break
+            if not matched:
+                unresolved.append(reference)
+        return unresolved
 
     @staticmethod
     def _resolve_product_owners(

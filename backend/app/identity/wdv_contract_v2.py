@@ -16,6 +16,7 @@ migration are implemented in later bounded blocks.
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -204,6 +205,48 @@ class WdvCanonicalAssignment(BaseModel):
         return self
 
 
+_TEXT_BOX_ALLOWED_TAG = re.compile(
+    r"</?(?:div|p|br|b|strong|i|em|u)\s*/?>",
+    flags=re.IGNORECASE,
+)
+
+
+class WdvTextOverlay(BaseModel):
+    """One depth-anchored rich text box owned by a WDV track."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    overlay_uid: str = Field(min_length=1, max_length=128)
+    # `text` remains optional for backward compatibility with the abandoned
+    # single-line V1 payload. New writes use content_html.
+    text: str | None = Field(default=None, max_length=240)
+    content_html: str = Field(default="<div>Text</div>", min_length=1, max_length=6000)
+    md: FiniteNumber
+    horizontal_anchor: Literal["left", "center", "right"] = "center"
+    horizontal_offset: int = Field(default=0, ge=-100, le=100)
+    vertical_offset: int = Field(default=0, ge=-100, le=100)
+    width_percent: int = Field(default=70, ge=25, le=100)
+    font_size: int = Field(default=11, ge=9, le=14)
+    color: str = Field(default="#1f2937", pattern=r"^#[0-9a-fA-F]{6}$")
+    background: Literal["none", "light"] = "none"
+    text_align: Literal["left", "center", "right"] = "left"
+
+    @model_validator(mode="after")
+    def validate_rich_text_box(self) -> "WdvTextOverlay":
+        html = self.content_html.strip()
+        # No HTML attributes are accepted; the editor stores only a deliberately
+        # tiny formatting subset: paragraphs/line breaks + B/I/U.
+        if re.search(r"\bon\w+\s*=|\bstyle\s*=|javascript:", html, re.IGNORECASE):
+            raise ValueError("Text Box HTML contains unsupported attributes")
+        residual = _TEXT_BOX_ALLOWED_TAG.sub("", html)
+        if "<" in residual or ">" in residual:
+            raise ValueError("Text Box HTML contains unsupported markup")
+        plain = re.sub(r"<[^>]+>", "", html).replace("&nbsp;", " ").strip()
+        if not plain:
+            raise ValueError("Text Box content must not be empty")
+        return self
+
+
 class WdvCanonicalTrack(BaseModel):
     """One backend-governed WDV track with complete layout state."""
 
@@ -226,6 +269,38 @@ class WdvCanonicalTrack(BaseModel):
     scale_mode: Literal["shared", "per_curve", "dual", "normalized"] = "per_curve"
     lattice_override: bool = False
     depth_basis: Literal["MD", "TVD", "TVDSS"] | None = None
+    core_base_color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    core_brightness: FiniteNumber | None = Field(default=None, ge=0.55, le=1.45)
+    core_shading_mode: Literal["flat", "cylindrical"] | None = None
+    core_shading_strength: FiniteNumber | None = Field(default=None, ge=0.0, le=1.0)
+    core_description_overlay_enabled: bool | None = None
+    core_description_overlay_position: Literal["left", "right"] | None = None
+    core_description_overlay_width_pct: FiniteNumber | None = Field(default=None, ge=20.0, le=70.0)
+    core_description_overlay_font_size: int | None = Field(default=None, ge=8, le=20)
+    core_description_overlay_show_md: bool | None = None
+    completion_schematic_position: Literal["left", "center", "right"] | None = None
+    completion_schematic_width_px: int | None = Field(default=None, ge=20, le=100)
+    completion_symbol_scale: FiniteNumber | None = Field(default=None, ge=0.5, le=2.0)
+    completion_line_weight: FiniteNumber | None = Field(default=None, ge=0.5, le=6.0)
+    completion_show_labels: bool | None = None
+    completion_label_position: Literal["left", "right", "auto"] | None = None
+    completion_label_font_size: int | None = Field(default=None, ge=9, le=14)
+    completion_label_offset_px: int | None = Field(default=None, ge=0, le=60)
+    completion_label_vertical_offset_px: int | None = Field(default=None, ge=-60, le=60)
+    completion_label_max_width_px: int | None = Field(default=None, ge=60, le=260)
+    completion_label_collision_mode: Literal["auto", "off"] | None = None
+    completion_label_wrap: bool | None = None
+    depth_range_locator_enabled: bool | None = None
+    depth_range_locator_source_track_uid: CanonicalUuid7 | None = None
+    depth_range_locator_mode: Literal["content_extent", "viewport_extent", "auto"] | None = None
+    depth_range_locator_presentation: Literal["edge_arrows", "wall_bar", "data_bar"] | None = None
+    depth_range_locator_side: Literal["auto", "left", "right"] | None = None
+    macro_core_image_enabled: bool | None = None
+    macro_core_image_top_md: FiniteNumber | None = None
+    macro_core_image_base_md: FiniteNumber | None = None
+    macro_core_image_placement: Literal["left", "center", "right"] | None = None
+    macro_core_image_horizontal_offset_px: int | None = Field(default=None, ge=-60, le=60)
+    text_overlays: tuple[WdvTextOverlay, ...] = ()
     assignments: tuple[WdvCanonicalAssignment, ...] = ()
 
     @model_validator(mode="after")
@@ -251,6 +326,58 @@ class WdvCanonicalTrack(BaseModel):
 
         if self.track_type == "depth" and self.assignments:
             raise ValueError("Depth tracks cannot contain curve assignments")
+        has_core_appearance = any(value is not None for value in (
+            self.core_base_color,
+            self.core_brightness,
+            self.core_shading_mode,
+            self.core_shading_strength,
+            self.core_description_overlay_enabled,
+            self.core_description_overlay_position,
+            self.core_description_overlay_width_pct,
+            self.core_description_overlay_font_size,
+            self.core_description_overlay_show_md,
+        ))
+        if has_core_appearance and not (
+            self.track_type == "image" and self.renderer_type == "core_image"
+        ):
+            raise ValueError("Core appearance fields are valid only for core_image tracks")
+        has_macro_core_image = any(value is not None for value in (
+            self.macro_core_image_enabled,
+            self.macro_core_image_top_md,
+            self.macro_core_image_base_md,
+            self.macro_core_image_placement,
+            self.macro_core_image_horizontal_offset_px,
+        ))
+        if has_macro_core_image:
+            if self.macro_core_image_top_md is None or self.macro_core_image_base_md is None:
+                raise ValueError("Macro Core Image requires Top MD and Base MD")
+            if self.macro_core_image_base_md <= self.macro_core_image_top_md:
+                raise ValueError("Macro Core Image Base MD must be greater than Top MD")
+            if self.macro_core_image_placement is None:
+                raise ValueError("Macro Core Image requires placement")
+            if self.macro_core_image_horizontal_offset_px is None:
+                raise ValueError("Macro Core Image requires horizontal offset")
+        has_completion_appearance = any(value is not None for value in (
+            self.completion_schematic_position,
+            self.completion_schematic_width_px,
+            self.completion_symbol_scale,
+            self.completion_line_weight,
+            self.completion_show_labels,
+            self.completion_label_position,
+            self.completion_label_font_size,
+            self.completion_label_offset_px,
+            self.completion_label_vertical_offset_px,
+            self.completion_label_max_width_px,
+            self.completion_label_collision_mode,
+            self.completion_label_wrap,
+        ))
+        if has_completion_appearance and not (
+            self.track_type == "annotation"
+            and self.renderer_type == "completion_components"
+        ):
+            raise ValueError(
+                "Completion appearance fields are valid only for completion_components tracks"
+            )
         return self
 
 
@@ -296,6 +423,27 @@ class WdvCanonicalSession(BaseModel):
             raise ValueError(
                 "selected_track_uid must reference a track in the WDV session"
             )
+
+        track_by_uid = {item.track_uid: item for item in self.tracks}
+        for target_track in self.tracks:
+            if not target_track.depth_range_locator_enabled:
+                continue
+            source_uid = target_track.depth_range_locator_source_track_uid
+            if source_uid is None:
+                raise ValueError("Enabled Depth Range Locator requires a source track")
+            if source_uid == target_track.track_uid:
+                raise ValueError("Depth Range Locator source track cannot equal target track")
+            source_track = track_by_uid.get(source_uid)
+            if source_track is None:
+                raise ValueError("Depth Range Locator source track must exist in the WDV session")
+            if source_track.managed_well_uid != target_track.managed_well_uid:
+                raise ValueError("Depth Range Locator source and target must belong to the same managed well")
+            if target_track.depth_range_locator_mode is None:
+                raise ValueError("Enabled Depth Range Locator requires a range mode")
+            if target_track.depth_range_locator_presentation is None:
+                raise ValueError("Enabled Depth Range Locator requires a presentation")
+            if target_track.depth_range_locator_side is None:
+                raise ValueError("Enabled Depth Range Locator requires a side")
 
         assignment_by_uid = {
             assignment.assignment_uid: assignment

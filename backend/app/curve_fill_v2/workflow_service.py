@@ -22,7 +22,7 @@ from app.identity.wdv_contract_v2 import WdvCanonicalSession
 class HydrateCurveFillRulesCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     expected_revision: int = Field(ge=0)
-    max_samples: int = Field(default=100000, ge=2, le=100000)
+    max_samples: int = Field(default=12000, ge=2, le=100000)
 
 
 class CurveFillCommandResult(BaseModel):
@@ -144,7 +144,16 @@ class CanonicalCurveFillWorkflowService:
             )
         upsert, remove = [], []
         current = session
-        for rule in sorted(current.curve_fills, key=lambda item: item.order):
+        # Unified multi-well sessions contain Curve Fill rules owned by multiple
+        # wells.  A hydration request is explicitly scoped to managed_well_uid;
+        # resolving another well's rule through this projected session would use
+        # the wrong curve-sample owner and can mark otherwise valid rules INVALID.
+        # Only hydrate rules owned by the requested well.
+        owned_rules = (
+            rule for rule in current.curve_fills
+            if rule.managed_well_uid == managed_well_uid
+        )
+        for rule in sorted(owned_rules, key=lambda item: item.order):
             if not rule.enabled:
                 remove.append(rule.rule_uid)
                 continue

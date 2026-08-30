@@ -44,6 +44,11 @@ class CanonicalViewerPackageService:
             for product in group.items:
                 if not product.selectable:
                     continue
+                # Non-curve WDV datasets (for example Formation Tops overlays)
+                # are selectable inventory products but are not viewer curves.
+                # They must not enter canonical curve-package assembly.
+                if product.managed_curve_uid is None and product.display_layer_type:
+                    continue
                 curves.append(
                     self._curve_reference(
                         well_uid=well_uid,

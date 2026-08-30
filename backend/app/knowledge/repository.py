@@ -160,6 +160,7 @@ _CURVE_FAMILY_TO_KR_SUBGROUP: dict[str, str] = {
     "spontaneous_potential": "sp_electrochemical",
     "resistivity":         "resistivity",
     "density":             "density_neutron_porosity",
+    "density_auxiliary":   "density_neutron_porosity",
     "neutron_porosity":    "density_neutron_porosity",
     "photoelectric_factor": "density_neutron_porosity",
     "sonic":               "sonic_acoustic",

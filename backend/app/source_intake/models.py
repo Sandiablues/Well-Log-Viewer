@@ -142,6 +142,7 @@ class SourceIntakeCandidateRole(str, Enum):
     RASTER_IMAGE_CANDIDATE = "raster_image_candidate"
     SUPPORTING_DOCUMENT_CANDIDATE = "supporting_document_candidate"
     TABULAR_CANDIDATE = "tabular_candidate"
+    FORMATION_TOPS_CANDIDATE = "formation_tops_candidate"
     WELLBORE_GEOMETRY_CANDIDATE = "wellbore_geometry_candidate"
     OTHER_REVIEW_REQUIRED = "other_review_required"
 
@@ -297,6 +298,28 @@ class SourceIntakeParsedMetadata(BaseModel):
     error_count: int = 0
     warnings: list[str] = Field(default_factory=list)
     canonical_metadata: Optional[SourceIntakeCanonicalMetadata] = None
+
+
+class SourceIntakeFormationTop(BaseModel):
+    group: Optional[str] = None
+    marker_name: str
+    marker_type: str = "Formation top"
+    md_m_rt: float
+    tvd_m_rt: Optional[float] = None
+    tvdss_m_msl: Optional[float] = None
+    uncertainty_m: Optional[float] = None
+    pick_status: str = "Prognosed"
+    source_document: Optional[str] = None
+    source_page: Optional[int] = None
+
+
+class SourceIntakeFormationTopsPayload(BaseModel):
+    parser_id: str = "wlv_formation_tops_csv_parser_v1"
+    source_format: str = "CSV"
+    wellbore: str
+    row_count: int
+    tops: list[SourceIntakeFormationTop] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class SourceIntakeHealth(BaseModel):
@@ -720,6 +743,7 @@ class SourceFileCandidate(BaseModel):
     parser_status: SourceIntakeParseStatus = SourceIntakeParseStatus.NOT_PARSED
     parsed_metadata: Optional[SourceIntakeParsedMetadata] = None
     geometry_preview: Optional[SourceIntakeDeviationSurveyPreview] = None
+    formation_tops: Optional[SourceIntakeFormationTopsPayload] = None
     resolved_metadata: Optional[SourceIntakeResolvedMetadata] = None
     qaqc_status: SourceIntakeQaqcResult = Field(default_factory=SourceIntakeQaqcResult)
     parse_error: Optional[str] = None

@@ -17,6 +17,7 @@ from .inventory.api_inventory import router as inventory_router
 from .wbv.router import router as wbv_router
 from .wbv_publication.router import router as wbv_publication_router
 from .wbv_layout.router import router as wbv_layout_router
+from .wbv_saved_canvas.router import router as wbv_saved_canvas_router
 from .ingestion.api_ingestion import router as ingestion_router
 from .source_intake.router import router as source_intake_router
 from .wdv_templates.router import router as wdv_template_router
@@ -29,12 +30,16 @@ from .wells.canonical_viewer_package_router import router as canonical_viewer_pa
 from .wdv_workspace.router import router as canonical_wdv_workspace_router
 from .wdv_templates.canonical_apply_router import router as canonical_template_command_router
 from .knowledge.api_knowledge import router as knowledge_router
+from .knowledge.api_lithology import router as lithology_knowledge_router
 from .knowledge.api_managed_knowledge import router as managed_knowledge_router
 from .knowledge.api_managed_knowledge import resolve_router as resolve_knowledge_router
 from .knowledge.api_managed_instructions import router as managed_instruction_router
 from .wdv_shared_canvas.router import router as shared_canvas_router
 from .curve_fill_v2.router import router as curve_fill_v2_router
 from .wdv_quick_view.router import router as wdv_quick_view_router
+from .wme_ai.router import router as wme_ai_router
+from .document_extraction.router import router as document_extraction_router
+from .wme_exchange.router import router as wme_exchange_router
 
 app = FastAPI(
     title="MultiViewer Well Log Viewer Backend",
@@ -61,6 +66,7 @@ def health() -> dict[str, object]:
 
 app.include_router(system_router)
 app.include_router(knowledge_router)
+app.include_router(lithology_knowledge_router)
 app.include_router(managed_knowledge_router)
 app.include_router(resolve_knowledge_router)
 app.include_router(managed_instruction_router)
@@ -68,6 +74,7 @@ app.include_router(inventory_router)
 app.include_router(wbv_router)
 app.include_router(wbv_publication_router)
 app.include_router(wbv_layout_router)
+app.include_router(wbv_saved_canvas_router)
 app.include_router(ingestion_router)
 app.include_router(source_intake_router)
 app.include_router(wdv_session_router)
@@ -82,4 +89,11 @@ app.include_router(wdv_template_router)
 app.include_router(shared_canvas_router)
 app.include_router(curve_fill_v2_router)
 app.include_router(wdv_quick_view_router)
+app.include_router(wme_ai_router)
+app.include_router(document_extraction_router)
+app.include_router(wme_exchange_router)
 app.include_router(wlv_router)
+
+# TOOLBOX_AI_REVISION_BACKEND_AUTHORITY_V1
+from app.toolbox_ai_revision.api import router as toolbox_ai_revision_router
+app.include_router(toolbox_ai_revision_router)

@@ -30,10 +30,24 @@ export type WbvTrackPresentationOverride = {
 export type WbvCurvePresentationOverride = {
   assignment_uid: string;
   visible: boolean | null;
+  color: string | null;
   opacity: number | null;
   line_width: number | null;
   radial_exaggeration: number | null;
   label_visible: boolean | null;
+  label_content: 'mnemonic' | 'mnemonic_value' | 'scale' | 'mnemonic_scale' | null;
+  label_anchor: 'top' | 'base' | 'custom_md' | null;
+  label_custom_md: number | null;
+  label_size: number | null;
+  label_weight: number | null;
+  label_alignment: 'left' | 'center' | 'right' | null;
+  label_position: 'on_track' | 'left' | 'right' | 'center' | null;
+  label_horizontal_adjustment: number | null;
+  label_vertical_adjustment: number | null;
+  scale_color: string | null;
+  scale_opacity: number | null; // deprecated compatibility field; scale is always opaque
+  scale_line_width: number | null;
+  scale_size: number | null;
 };
 
 export type WbvPresentationOverrides = {
@@ -255,13 +269,14 @@ export async function updateWbvPresentationOverrides(
   );
 }
 
-export type WbvLayoutTrackType = 'curve' | 'formation_tops' | 'lithology' | 'casing_hole' | 'completions' | 'borehole_imagery';
+export type WbvLayoutTrackType = 'curve' | 'depth' | 'formation_tops' | 'lithology' | 'core' | 'casing_hole' | 'completions' | 'borehole_imagery';
 export type WbvTrackPosition = 'right' | 'left' | 'center';
 export type WbvLayoutTrack = {
   track_uid: string; display_name: string; track_type: WbvLayoutTrackType; display_order: number; visible: boolean;
   position: WbvTrackPosition; angular_position_deg: number; distance_from_wellbore: number; previous_track_gap: number;
   width: number; opacity: number; background_mode: 'transparent' | 'solid'; background_color: string;
   outline_visible: boolean; grid_mode: 'off' | 'linear' | 'logarithmic';
+  depth_type: 'MD' | 'TVD' | 'TVDSS'; depth_increment: number; label_increment: number; label_size: number; show_depth_units: boolean;
 };
 export type WbvTrackLayout = { contract_version: 'wbv_track_layout_v1'; managed_well_uid: string; revision: number; tracks: WbvLayoutTrack[] };
 export type WbvLayoutCommand = {
@@ -270,6 +285,7 @@ export type WbvLayoutCommand = {
   distance_from_wellbore?: number; previous_track_gap?: number; width?: number; opacity?: number;
   background_mode?: 'transparent' | 'solid'; background_color?: string;
   outline_visible?: boolean; grid_mode?: 'off' | 'linear' | 'logarithmic'; visible?: boolean;
+  depth_type?: 'MD' | 'TVD' | 'TVDSS'; depth_increment?: number; label_increment?: number; label_size?: number; show_depth_units?: boolean;
 };
 
 export async function getWbvTrackLayout(managedWellUid: string): Promise<WbvTrackLayout> {

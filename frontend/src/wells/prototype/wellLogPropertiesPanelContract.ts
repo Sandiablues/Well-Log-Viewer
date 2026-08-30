@@ -7,9 +7,11 @@ import type {
 import { curveById, orderedCurves, resolveTrackLattice } from './trackLayoutModel';
 import type { WdvIdentityMetadataContract, WdvMetadataSection, WdvMetadataValue } from '../contracts/wdvIdentityMetadataContract';
 import { metadataSection } from '../contracts/wdvIdentityMetadataContract';
-import type {
-  ManagedCurveSampleContractsByCurveId,
-  ManagedCurveSamplesPayload,
+import {
+  resolveManagedCurveContract,
+  resolveManagedCurveError,
+  type ManagedCurveSampleContractsByCurveId,
+  type ManagedCurveSamplesPayload,
 } from './managedCurveSamples';
 
 export type PropertiesPanelTabKey = 'design' | 'info';
@@ -89,16 +91,11 @@ function contractForAssignment(
   assignment: CurveAssignment,
   contracts: ManagedCurveSampleContractsByCurveId,
 ): ManagedCurveSamplesPayload | null {
-  const keys = [
-    assignment.curveId,
-    assignment.curveUid,
-  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
-
-  for (const key of keys) {
-    const contract = contracts[key];
-    if (contract) return contract;
-  }
-  return null;
+  return resolveManagedCurveContract(contracts, {
+    managedWellUid: assignment.managedWellUid ?? null,
+    curveUid: assignment.curveUid ?? null,
+    curveId: assignment.curveId,
+  });
 }
 
 function backendSampleStatus(contract: ManagedCurveSamplesPayload): string {
@@ -142,7 +139,7 @@ function selectedEntityFor(
     };
   }
 
-  if (track.trackType === 'raster' || track.trackType === 'marker' || track.trackType === 'interval') {
+  if (track.trackType === 'raster' || track.trackType === 'interval' || track.trackType === 'core') {
     return {
       type: 'reserved_track',
       id: track.trackId,
@@ -245,7 +242,11 @@ function curveMetadataSection(
 
   const curve = curveById(curveCatalog, assignment.curveId);
   const sampleContract = contractForAssignment(assignment, contracts);
-  const contractError = errors[assignment.curveUid ?? ''] ?? errors[assignment.curveId] ?? null;
+  const contractError = resolveManagedCurveError(errors, {
+    managedWellUid: assignment.managedWellUid ?? null,
+    curveUid: assignment.curveUid ?? null,
+    curveId: assignment.curveId,
+  });
 
   if (!sampleContract) {
     return {
@@ -320,7 +321,7 @@ function contractRows(
     label: item.label,
     value: contractValueText(item),
     unit: item.unit ?? undefined,
-    source,
+    source: item.source?.trim() || source,
   }));
 }
 

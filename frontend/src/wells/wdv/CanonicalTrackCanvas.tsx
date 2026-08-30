@@ -5,6 +5,7 @@ import type {
   CurveCatalogItemV21,
   CurveTrackV21,
   DepthTrackV21,
+  CoreTrackV21,
   WellLogTrackV21,
 } from '../prototype/trackLayoutModelV21';
 import {
@@ -174,6 +175,33 @@ function CurveTrackView({
   );
 }
 
+function CoreTrackView({
+  track,
+  onSelectTrack,
+}: {
+  track: CoreTrackV21;
+  onSelectTrack: CanonicalTrackCanvasProps['onSelectTrack'];
+}) {
+  return (
+    <div
+      className="wlv-canonical-track wlv-canonical-core-track"
+      style={{ width: track.widthPx }}
+    >
+      <button
+        type="button"
+        className="wlv-canonical-track-header"
+        onClick={() => onSelectTrack(track.trackUid)}
+      >
+        <strong>{track.title || 'Core'}</strong>
+        <span>Core Image</span>
+      </button>
+      <div className="wlv-canonical-empty-track">
+        Core imagery is rendered in the standard WDV track canvas.
+      </div>
+    </div>
+  );
+}
+
 export function CanonicalTrackCanvas(props: CanonicalTrackCanvasProps) {
   const visibleTracks = props.tracks.filter((track) => track.visible);
 
@@ -208,7 +236,15 @@ export function CanonicalTrackCanvas(props: CanonicalTrackCanvasProps) {
                     depthRange={props.depthRange}
                   />
                 )
-              : (
+              : track.trackType === 'core'
+                ? (
+                    <CoreTrackView
+                      key={track.trackUid}
+                      track={track}
+                      onSelectTrack={props.onSelectTrack}
+                    />
+                  )
+                : (
                   <CurveTrackView
                     key={track.trackUid}
                     track={track}

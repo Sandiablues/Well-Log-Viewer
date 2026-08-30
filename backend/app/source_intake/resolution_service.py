@@ -134,18 +134,35 @@ class SourceIntakeResolutionService:
         }
 
         for group in by_fingerprint.values():
+            registered_occurrences = [
+                item
+                for item in group
+                if item.resolution_state == SourceIntakeResolutionState.REGISTERED
+                or item.is_available_to_wmd
+                or str(item.registration_status or "").strip().lower() == "registered"
+            ]
             canonical = min(
-                group,
+                registered_occurrences or group,
                 key=lambda item: (
-                    0 if item.resolution_state == SourceIntakeResolutionState.REGISTERED else 1,
                     item.repository_id,
                     item.relative_path,
                     item.occurrence_id or "",
                 ),
             )
             canonical.canonical_occurrence_id = canonical.occurrence_id
+
+            if not registered_occurrences:
+                # Exact-content history is informational when no active managed
+                # registration owns the fingerprint. Re-ingestion after MWD
+                # removal must therefore return to its normal parse/QA state.
+                for candidate in group:
+                    candidate.canonical_occurrence_id = canonical.occurrence_id
+                    if candidate.resolution_state == SourceIntakeResolutionState.DUPLICATE:
+                        candidate.resolution_state = classify_initial_resolution(candidate)
+                continue
+
             if canonical.resolution_state == SourceIntakeResolutionState.DUPLICATE:
-                canonical.resolution_state = classify_initial_resolution(canonical)
+                canonical.resolution_state = SourceIntakeResolutionState.REGISTERED
 
             for candidate in group:
                 candidate.canonical_occurrence_id = canonical.occurrence_id

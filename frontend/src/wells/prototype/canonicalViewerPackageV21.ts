@@ -27,6 +27,7 @@ import type {
   CurveLatticeV21,
   CurveTrackV21,
   DepthTrackV21,
+  CoreTrackV21,
   WellLogTrackV21,
 } from './trackLayoutModelV21';
 import { validateTrackGraphV21 } from './trackLayoutModelV21';
@@ -393,6 +394,25 @@ function parseTrack(
       unit: 'ft',
     };
     return depthTrack;
+  }
+
+  if (trackType === 'image') {
+    if (!Array.isArray(record.assignments) || record.assignments.length !== 0) {
+      throw new WdvIdentityContractError(
+        'Core/image track assignments must be an empty array',
+      );
+    }
+    const rendererType = optionalString(record.renderer_type, 'renderer_type');
+    if (rendererType !== 'core_image') {
+      throw new WdvIdentityContractError(
+        `Unsupported canonical image renderer_type: ${rendererType ?? 'none'}`,
+      );
+    }
+    const coreTrack: CoreTrackV21 = {
+      ...common,
+      trackType: 'core',
+    };
+    return coreTrack;
   }
 
   if (trackType !== 'curve') {

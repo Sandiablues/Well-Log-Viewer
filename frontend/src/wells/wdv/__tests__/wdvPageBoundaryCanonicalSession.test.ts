@@ -19,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 import {
   looksLikeUuid,
   canonicalCommandRequestBody,
+  canonicalAssignmentUpdateCommandBody,
   canonicalRangeOverrideCommandBody,
   frontendTracksFromCanonicalSession,
   managedWellUidForCanvasSelection,
@@ -737,6 +738,52 @@ describe('WdvPageBoundary export regression', () => {
   });
 });
 
+describe('canonical assignment presentation ownership bridge', () => {
+  it('sends curve color through the backend canonical assignment command', () => {
+    const assignment = {
+      scaleMin: 0.2,
+      scaleMax: 2000,
+      rangeOverrideMode: 'governed',
+    } as CurveAssignment;
+
+    expect(
+      canonicalAssignmentUpdateCommandBody(assignment, {
+        color: '#00ff00',
+      }),
+    ).toEqual({
+      color: '#00ff00',
+    });
+  });
+
+  it('maps editable curve presentation fields to backend contract names', () => {
+    const assignment = {
+      scaleMin: 0,
+      scaleMax: 100,
+      rangeOverrideMode: 'governed',
+    } as CurveAssignment;
+
+    expect(
+      canonicalAssignmentUpdateCommandBody(assignment, {
+        lineVisible: false,
+        lineStyle: 'dash',
+        lineWidth: 2.5,
+        lineOpacity: 70,
+        fillSide: 'left',
+        fillColor: '#123456',
+        fillOpacity: 40,
+      }),
+    ).toEqual({
+      line_visible: false,
+      line_style: 'dash',
+      line_width: 2.5,
+      line_opacity: 70,
+      fill_side: 'left',
+      fill_color: '#123456',
+      fill_opacity: 40,
+    });
+  });
+});
+
 describe('canonical display ownership bridge', () => {
   it('sends reverse and scale-type changes to the backend canonical command', () => {
     const assignment = {
@@ -1007,17 +1054,152 @@ describe('Curve Fill workflow interaction preservation', () => {
 describe('WDV curve-property selection persistence', () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const source = readFileSync(resolve(here, '../WdvPageBoundary.tsx'), 'utf8');
+  const controllerSource = readFileSync(
+    resolve(here, '../useCanonicalSessionMutationController.ts'),
+    'utf8',
+  );
+  const trackAssignmentControllerSource = readFileSync(
+    resolve(here, '../useTrackAssignmentMutationController.ts'),
+    'utf8',
+  );
 
-  it('preserves the selected curve when an assignment property mutation returns a canonical session', () => {
-    expect(source).toContain('applyCanonicalSession(rawSession, { preserveInteraction: true });');
+  it('routes assignment property mutations through the serialized canonical mutation coordinator', () => {
+    const updateCurveAssignmentStart = source.indexOf(
+      'const updateCurveAssignment =',
+    );
+    const updateCurveAssignmentEnd = source.indexOf(
+      '\n  const addTrack =',
+      updateCurveAssignmentStart,
+    );
+
+    expect(updateCurveAssignmentStart).toBeGreaterThanOrEqual(0);
+    expect(updateCurveAssignmentEnd).toBeGreaterThan(
+      updateCurveAssignmentStart,
+    );
+
+    const updateCurveAssignmentBlock = source.slice(
+      updateCurveAssignmentStart,
+      updateCurveAssignmentEnd,
+    );
+
+    expect(updateCurveAssignmentBlock).toContain(
+      'runUpdateAssignment(',
+    );
+    expect(updateCurveAssignmentBlock).not.toContain(
+      'runSerializedWdvCanonicalMutation(',
+    );
+    expect(updateCurveAssignmentBlock).not.toContain(
+      'executeWdvCanonicalCommand(',
+    );
+
+    const updateAssignmentStart = trackAssignmentControllerSource.indexOf(
+      'const updateAssignment = useCallback(',
+    );
+    const updateAssignmentEnd = trackAssignmentControllerSource.indexOf(
+      '\n\n  const commitAssignmentLineStyle',
+      updateAssignmentStart,
+    );
+    expect(updateAssignmentStart).toBeGreaterThanOrEqual(0);
+    expect(updateAssignmentEnd).toBeGreaterThan(updateAssignmentStart);
+    expect(
+      trackAssignmentControllerSource.slice(
+        updateAssignmentStart,
+        updateAssignmentEnd,
+      ),
+    ).toContain("mutate('assignments/update'");
+
+    const mutateStart = trackAssignmentControllerSource.indexOf(
+      'const mutate = useCallback(',
+    );
+    const mutateEnd = trackAssignmentControllerSource.indexOf(
+      '\n\n  const commitTrackWidth',
+      mutateStart,
+    );
+    const mutateBlock = trackAssignmentControllerSource.slice(
+      mutateStart,
+      mutateEnd,
+    );
+    expect(mutateBlock).toContain(
+      'args.runSerializedCanonicalMutation(',
+    );
+    expect(mutateBlock).toContain(
+      '{ preserveInteraction: true }',
+    );
   });
 
-  it('preserves the selected curve when an assignment property mutation resolves a 409 refresh', () => {
-    expect(source).toContain('await refreshCanonicalSession({ preserveInteraction: true });');
+  it('preserves interaction when a serialized canonical mutation returns backend canonical state', () => {
+    const coordinatorStart = controllerSource.indexOf(
+      'const runSerializedCanonicalMutation = useCallback(',
+    );
+    const coordinatorEnd = controllerSource.indexOf(
+      '\n\n  return {',
+      coordinatorStart,
+    );
+
+    expect(coordinatorStart).toBeGreaterThanOrEqual(0);
+    expect(coordinatorEnd).toBeGreaterThan(coordinatorStart);
+
+    const coordinatorBlock = controllerSource.slice(
+      coordinatorStart,
+      coordinatorEnd,
+    );
+
+    expect(coordinatorBlock).toContain(
+      'applyCanonicalSession(rawSession, options);',
+    );
+  });
+
+  it('reconciles a 409 inside the serialized lane before allowing the queue to advance', () => {
+    const coordinatorStart = controllerSource.indexOf(
+      'const runSerializedCanonicalMutation = useCallback(',
+    );
+    const coordinatorEnd = controllerSource.indexOf(
+      '\n\n  return {',
+      coordinatorStart,
+    );
+
+    expect(coordinatorStart).toBeGreaterThanOrEqual(0);
+    expect(coordinatorEnd).toBeGreaterThan(coordinatorStart);
+
+    const coordinatorBlock = controllerSource.slice(
+      coordinatorStart,
+      coordinatorEnd,
+    );
+
+    expect(coordinatorBlock).toContain(
+      "error.message.startsWith('409 ')",
+    );
+    expect(coordinatorBlock).toContain(
+      'await refreshCanonicalSession(options);',
+    );
+    expect(coordinatorBlock).toContain(
+      'runSerializedCanonicalTask(async () => {',
+    );
+    const taskStart = controllerSource.indexOf(
+      'const runSerializedCanonicalTask = useCallback',
+    );
+    const taskEnd = controllerSource.indexOf(
+      '\n\n  const runSerializedCanonicalMutation',
+      taskStart,
+    );
+    const taskBlock = controllerSource.slice(taskStart, taskEnd);
+    expect(taskBlock).toContain(
+      'mutationTailRef.current.then(task, task)',
+    );
+    expect(taskBlock).toContain(
+      'mutationTailRef.current = result.then(',
+    );
+    expect(taskBlock).toContain(
+      '() => undefined',
+    );
   });
 
   it('does not globally force interaction preservation for unrelated canonical workflows', () => {
-    expect(source).toContain('options: Readonly<{ preserveInteraction?: boolean }> = {}');
-    expect(source).toContain('if (fresh) applyCanonicalSession(fresh, options);');
+    expect(controllerSource).toContain(
+      'options: CanonicalSessionApplicationOptions = {},',
+    );
+    expect(controllerSource).toContain(
+      'if (fresh) args.applyCanonicalSession(fresh, options);',
+    );
   });
 });

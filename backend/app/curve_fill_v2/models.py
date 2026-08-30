@@ -19,6 +19,11 @@ class RuleType(str, Enum):
     CROSSOVER = "crossover"
     BETWEEN_CURVES = "between_curves"
     TO_BOUNDARY = "to_boundary"
+    VALUE_BAND = "value_band"
+    CURVE_TO_VALUE = "curve_to_value"
+    THRESHOLD = "threshold"
+    CURVE_ENVELOPE = "curve_envelope"
+    SEPARATION = "separation"
 
 
 class Comparison(str, Enum):
@@ -39,6 +44,17 @@ class ScaleDirection(str, Enum):
 class Boundary(str, Enum):
     LEFT = "left"
     RIGHT = "right"
+
+
+class SeparationMode(str, Enum):
+    ABSOLUTE = "absolute"
+    A_RIGHT_OF_B = "a_right_of_b"
+    A_LEFT_OF_B = "a_left_of_b"
+
+
+class DepthExtent(str, Enum):
+    ENTIRE_TRACK = "entire_track"
+    SPECIFIED_INTERVAL = "specified_interval"
 
 
 class CurveSeries(BaseModel):
@@ -149,38 +165,86 @@ class CurveFillRule(BaseModel):
     rule_type: RuleType
     curve_a_uid: str = Field(min_length=1)
     curve_b_uid: str | None = None
+    curve_operand_uids: tuple[str, ...] = ()
     comparison: Comparison | None = None
     boundary: Boundary | None = None
+    reference_value: FiniteFloat | None = None
+    band_min_value: FiniteFloat | None = None
+    band_max_value: FiniteFloat | None = None
+    minimum_separation_px: FiniteFloat = Field(default=0.0, ge=0)
+    separation_mode: SeparationMode = SeparationMode.ABSOLUTE
     overlay_policy_uid: str | None = None
     overlay_policy_revision: str | None = None
     deadband: FiniteFloat = Field(default=0.0, ge=0)
     minimum_interval: FiniteFloat = Field(default=0.0, ge=0)
+    depth_extent: DepthExtent = DepthExtent.ENTIRE_TRACK
+    interval_from_md: FiniteFloat | None = None
+    interval_to_md: FiniteFloat | None = None
     style: FillStyle
 
     @model_validator(mode="after")
     def validate_rule(self) -> "CurveFillRule":
+        pair_types = {RuleType.CONDITIONAL, RuleType.CROSSOVER, RuleType.BETWEEN_CURVES, RuleType.SEPARATION}
+        scalar_types = {RuleType.CURVE_TO_VALUE, RuleType.THRESHOLD}
         if self.rule_type == RuleType.CONDITIONAL:
             if not self.curve_b_uid or self.comparison is None:
                 raise ValueError("conditional rule requires curve_b_uid and comparison")
-            if self.boundary is not None or self.overlay_policy_uid is not None:
-                raise ValueError("conditional rule cannot carry boundary or overlay policy")
         elif self.rule_type == RuleType.CROSSOVER:
             if not self.curve_b_uid:
                 raise ValueError("crossover rule requires curve_b_uid")
             if not self.overlay_policy_uid or not self.overlay_policy_revision:
                 raise ValueError("crossover rule requires versioned overlay policy")
-            if self.comparison is not None or self.boundary is not None:
-                raise ValueError("crossover polarity is policy-owned")
         elif self.rule_type == RuleType.BETWEEN_CURVES:
             if not self.curve_b_uid:
                 raise ValueError("between-curves rule requires curve_b_uid")
-            if self.comparison is not None or self.boundary is not None or self.overlay_policy_uid is not None:
-                raise ValueError("between-curves rule cannot carry comparison, boundary, or overlay policy")
-        else:
+        elif self.rule_type == RuleType.TO_BOUNDARY:
             if self.boundary is None:
                 raise ValueError("boundary rule requires boundary")
-            if self.curve_b_uid is not None or self.comparison is not None:
-                raise ValueError("boundary rule cannot carry curve B or comparison")
+        elif self.rule_type == RuleType.VALUE_BAND:
+            if self.band_min_value is None or self.band_max_value is None:
+                raise ValueError("value-band rule requires minimum and maximum values")
+            if self.band_min_value >= self.band_max_value:
+                raise ValueError("value-band minimum must be less than maximum")
+        elif self.rule_type == RuleType.CURVE_TO_VALUE:
+            if self.reference_value is None:
+                raise ValueError("curve-to-value rule requires reference_value")
+        elif self.rule_type == RuleType.THRESHOLD:
+            if self.reference_value is None or self.comparison is None:
+                raise ValueError("threshold rule requires reference_value and comparison")
+        elif self.rule_type == RuleType.CURVE_ENVELOPE:
+            if len(self.curve_operand_uids) < 2:
+                raise ValueError("curve-envelope rule requires at least two curve operands")
+            if len(set(self.curve_operand_uids)) != len(self.curve_operand_uids):
+                raise ValueError("curve-envelope operands must be unique")
+        elif self.rule_type == RuleType.SEPARATION:
+            if not self.curve_b_uid:
+                raise ValueError("separation rule requires curve_b_uid")
+
+        if self.rule_type != RuleType.CROSSOVER and (self.overlay_policy_uid is not None or self.overlay_policy_revision is not None):
+            raise ValueError("only crossover rules may carry overlay policy")
+        if self.rule_type not in {RuleType.CONDITIONAL, RuleType.THRESHOLD} and self.comparison is not None:
+            raise ValueError("comparison is not valid for this rule type")
+        if self.rule_type not in {RuleType.TO_BOUNDARY, RuleType.THRESHOLD} and self.boundary is not None:
+            raise ValueError("boundary is only valid for curve-to-boundary and threshold rules")
+        if self.rule_type not in pair_types and self.curve_b_uid is not None:
+            raise ValueError("Curve B is not valid for this rule type")
+        if self.rule_type != RuleType.CURVE_ENVELOPE and self.curve_operand_uids:
+            raise ValueError("curve operands are only valid for curve-envelope rules")
+        if self.rule_type not in scalar_types and self.reference_value is not None:
+            raise ValueError("reference_value is not valid for this rule type")
+        if self.rule_type != RuleType.VALUE_BAND and (self.band_min_value is not None or self.band_max_value is not None):
+            raise ValueError("band values are only valid for value-band rules")
+        if self.rule_type != RuleType.SEPARATION and self.minimum_separation_px != 0:
+            raise ValueError("minimum_separation_px is only valid for separation rules")
+
+        if self.depth_extent == DepthExtent.ENTIRE_TRACK:
+            if self.interval_from_md is not None or self.interval_to_md is not None:
+                raise ValueError("entire-track fill cannot carry interval depths")
+        else:
+            if self.interval_from_md is None or self.interval_to_md is None:
+                raise ValueError("specified interval requires From MD and To MD")
+            if self.interval_from_md >= self.interval_to_md:
+                raise ValueError("From MD must be less than To MD")
         return self
 
 
@@ -238,15 +302,24 @@ class CanonicalCurveFillRule(BaseModel):
     track_uid: str = Field(min_length=1)
     curve_a_assignment_uid: str = Field(min_length=1)
     curve_b_assignment_uid: str | None = None
+    curve_operand_assignment_uids: tuple[str, ...] = ()
     order: int = Field(ge=0)
     enabled: bool = True
     rule_type: RuleType
     comparison: Comparison | None = None
     boundary: Boundary | None = None
+    reference_value: FiniteFloat | None = None
+    band_min_value: FiniteFloat | None = None
+    band_max_value: FiniteFloat | None = None
+    minimum_separation_px: FiniteFloat = Field(default=0.0, ge=0)
+    separation_mode: SeparationMode = SeparationMode.ABSOLUTE
     overlay_policy_uid: str | None = None
     overlay_policy_revision: str | None = None
     deadband: FiniteFloat = Field(default=0.0, ge=0)
     minimum_interval: FiniteFloat = Field(default=0.0, ge=0)
+    depth_extent: DepthExtent = DepthExtent.ENTIRE_TRACK
+    interval_from_md: FiniteFloat | None = None
+    interval_to_md: FiniteFloat | None = None
     style: FillStyle
     state: CurveFillRuleState = CurveFillRuleState.STORED
     state_reason: str | None = None
@@ -254,37 +327,63 @@ class CanonicalCurveFillRule(BaseModel):
 
     @model_validator(mode="after")
     def validate_canonical_rule(self) -> "CanonicalCurveFillRule":
+        pair_types = {RuleType.CONDITIONAL, RuleType.CROSSOVER, RuleType.BETWEEN_CURVES, RuleType.SEPARATION}
+        scalar_types = {RuleType.CURVE_TO_VALUE, RuleType.THRESHOLD}
         if self.rule_type == RuleType.CONDITIONAL:
             if not self.curve_b_assignment_uid or self.comparison is None:
-                raise ValueError(
-                    "conditional rule requires curve_b_assignment_uid and comparison"
-                )
-            if self.boundary is not None or self.overlay_policy_uid is not None:
-                raise ValueError(
-                    "conditional rule cannot carry boundary or overlay policy"
-                )
+                raise ValueError("conditional rule requires curve_b_assignment_uid and comparison")
         elif self.rule_type == RuleType.CROSSOVER:
             if not self.curve_b_assignment_uid:
                 raise ValueError("crossover rule requires curve_b_assignment_uid")
             if not self.overlay_policy_uid or not self.overlay_policy_revision:
                 raise ValueError("crossover rule requires versioned overlay policy")
-            if self.comparison is not None or self.boundary is not None:
-                raise ValueError("crossover polarity is policy-owned")
         elif self.rule_type == RuleType.BETWEEN_CURVES:
             if not self.curve_b_assignment_uid:
                 raise ValueError("between-curves rule requires curve_b_assignment_uid")
-            if self.comparison is not None or self.boundary is not None or self.overlay_policy_uid is not None:
-                raise ValueError("between-curves rule cannot carry comparison, boundary, or overlay policy")
-        else:
+        elif self.rule_type == RuleType.TO_BOUNDARY:
             if self.boundary is None:
                 raise ValueError("boundary rule requires boundary")
-            if self.curve_b_assignment_uid is not None or self.comparison is not None:
-                raise ValueError(
-                    "boundary rule cannot carry Curve B or comparison"
-                )
+        elif self.rule_type == RuleType.VALUE_BAND:
+            if self.band_min_value is None or self.band_max_value is None:
+                raise ValueError("value-band rule requires minimum and maximum values")
+            if self.band_min_value >= self.band_max_value:
+                raise ValueError("value-band minimum must be less than maximum")
+        elif self.rule_type == RuleType.CURVE_TO_VALUE:
+            if self.reference_value is None:
+                raise ValueError("curve-to-value rule requires reference_value")
+        elif self.rule_type == RuleType.THRESHOLD:
+            if self.reference_value is None or self.comparison is None:
+                raise ValueError("threshold rule requires reference_value and comparison")
+        elif self.rule_type == RuleType.CURVE_ENVELOPE:
+            if len(self.curve_operand_assignment_uids) < 2:
+                raise ValueError("curve-envelope rule requires at least two curve operands")
+            if len(set(self.curve_operand_assignment_uids)) != len(self.curve_operand_assignment_uids):
+                raise ValueError("curve-envelope operands must be unique")
+        elif self.rule_type == RuleType.SEPARATION:
+            if not self.curve_b_assignment_uid:
+                raise ValueError("separation rule requires curve_b_assignment_uid")
 
+        if self.rule_type != RuleType.CROSSOVER and (self.overlay_policy_uid is not None or self.overlay_policy_revision is not None):
+            raise ValueError("only crossover rules may carry overlay policy")
+        if self.rule_type not in {RuleType.CONDITIONAL, RuleType.THRESHOLD} and self.comparison is not None:
+            raise ValueError("comparison is not valid for this rule type")
+        if self.rule_type not in {RuleType.TO_BOUNDARY, RuleType.THRESHOLD} and self.boundary is not None:
+            raise ValueError("boundary is only valid for curve-to-boundary and threshold rules")
+        if self.rule_type not in pair_types and self.curve_b_assignment_uid is not None:
+            raise ValueError("Curve B is not valid for this rule type")
+        if self.rule_type != RuleType.CURVE_ENVELOPE and self.curve_operand_assignment_uids:
+            raise ValueError("curve operands are only valid for curve-envelope rules")
+        if self.rule_type not in scalar_types and self.reference_value is not None:
+            raise ValueError("reference_value is not valid for this rule type")
+        if self.rule_type != RuleType.VALUE_BAND and (self.band_min_value is not None or self.band_max_value is not None):
+            raise ValueError("band values are only valid for value-band rules")
+        if self.rule_type != RuleType.SEPARATION and self.minimum_separation_px != 0:
+            raise ValueError("minimum_separation_px is only valid for separation rules")
         if self.curve_b_assignment_uid == self.curve_a_assignment_uid:
             raise ValueError("Curve A and Curve B assignments must differ")
+        if self.rule_type == RuleType.CURVE_ENVELOPE and self.curve_a_assignment_uid not in self.curve_operand_assignment_uids:
+            raise ValueError("curve-envelope operands must include Curve A")
+
         if self.enabled and self.state == CurveFillRuleState.DISABLED:
             raise ValueError("enabled rules cannot have disabled state")
         if not self.enabled and self.state != CurveFillRuleState.DISABLED:
@@ -297,4 +396,13 @@ class CanonicalCurveFillRule(BaseModel):
             raise ValueError("disabled or invalid rules require state_reason")
         if self.state in {CurveFillRuleState.STORED, CurveFillRuleState.PENDING_GEOMETRY, CurveFillRuleState.RESOLVED} and self.state_reason is not None:
             raise ValueError("normal rule states cannot carry state_reason")
+        if self.depth_extent == DepthExtent.ENTIRE_TRACK:
+            if self.interval_from_md is not None or self.interval_to_md is not None:
+                raise ValueError("entire-track fill cannot carry interval depths")
+        else:
+            if self.interval_from_md is None or self.interval_to_md is None:
+                raise ValueError("specified interval requires From MD and To MD")
+            if self.interval_from_md >= self.interval_to_md:
+                raise ValueError("From MD must be less than To MD")
         return self
+

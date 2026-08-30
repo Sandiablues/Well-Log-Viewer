@@ -1,5 +1,5 @@
-export type TrackType = 'depth' | 'curve' | 'lithology' | 'raster' | 'marker' | 'interval';
-export type ActiveTrackType = 'depth' | 'curve';
+export type TrackType = 'depth' | 'curve' | 'lithology' | 'raster' | 'interval' | 'core' | 'completion';
+export type ActiveTrackType = 'depth' | 'curve' | 'interval' | 'core' | 'completion';
 export type DepthBasis = 'MD' | 'TVD' | 'TVDSS';
 export type CurveLattice = 'linear' | 'logarithmic';
 export type LatticeSource = 'front_curve_default' | 'user_override' | 'template';
@@ -24,6 +24,74 @@ export type CurveScaleType = 'linear' | 'log';
 export type CurveRangeMode = 'auto' | 'fixed';
 export type CurvePositionAnchor = 'left' | 'center' | 'right';
 export type CurveDisplayPriority = 'back' | 'normal' | 'front';
+
+export type DepthRangeLocatorMode = 'content_extent' | 'viewport_extent' | 'auto';
+export type DepthRangeLocatorPresentation = 'edge_arrows' | 'wall_bar' | 'data_bar';
+export type DepthRangeLocatorSide = 'auto' | 'left' | 'right';
+
+export interface DepthRangeLocatorConfig {
+  enabled: boolean;
+  sourceTrackId: string;
+  mode: DepthRangeLocatorMode;
+  presentation: DepthRangeLocatorPresentation;
+  side: DepthRangeLocatorSide;
+}
+
+export type MacroCoreImagePlacement = 'left' | 'center' | 'right';
+
+export interface MacroCoreImageConfig {
+  enabled: boolean;
+  topMd: number;
+  baseMd: number;
+  placement: MacroCoreImagePlacement;
+  horizontalOffsetPx: number;
+}
+
+export const DEFAULT_MACRO_CORE_IMAGE_CONFIG: MacroCoreImageConfig = {
+  enabled: false,
+  topMd: 0,
+  baseMd: 0,
+  placement: 'center',
+  horizontalOffsetPx: 0,
+};
+
+export type TextOverlayHorizontalAnchor = 'left' | 'center' | 'right';
+export type TextOverlayBackground = 'none' | 'light';
+export type TextOverlayTextAlign = 'left' | 'center' | 'right';
+
+export interface TextOverlayConfig {
+  overlayUid: string;
+  contentHtml: string;
+  md: number;
+  horizontalAnchor: TextOverlayHorizontalAnchor;
+  horizontalOffset: number;
+  verticalOffset: number;
+  widthPercent: number;
+  fontSize: number;
+  color: string;
+  background: TextOverlayBackground;
+  textAlign: TextOverlayTextAlign;
+}
+
+export const DEFAULT_TEXT_OVERLAY_CONFIG: Omit<TextOverlayConfig, 'overlayUid' | 'md'> = {
+  contentHtml: '<div>Text</div>',
+  horizontalAnchor: 'center',
+  horizontalOffset: 0,
+  verticalOffset: 0,
+  widthPercent: 70,
+  fontSize: 11,
+  color: '#1f2937',
+  background: 'none',
+  textAlign: 'left',
+};
+
+export const DEFAULT_DEPTH_RANGE_LOCATOR_CONFIG: DepthRangeLocatorConfig = {
+  enabled: false,
+  sourceTrackId: '',
+  mode: 'auto',
+  presentation: 'edge_arrows',
+  side: 'auto',
+};
 
 export interface CurveCatalogItem {
   curveId: string;
@@ -64,6 +132,63 @@ export interface CurveScaleTick {
   label: string;
   normalizedPosition: number;
 }
+
+export type CorePresentationMode =
+  | 'core_left_description_right'
+  | 'description_left_core_right'
+  | 'core_centered';
+
+export interface CoreTrackAppearance {
+  baseColor: string;
+  brightness: number;
+  shadingMode: 'flat' | 'cylindrical';
+  shadingStrength: number;
+  descriptionPresentationMode: CorePresentationMode;
+  descriptionOverlayWidthPct: number;
+  descriptionOverlayFontSize: number;
+  descriptionOverlayShowMd: boolean;
+}
+
+export const DEFAULT_CORE_TRACK_APPEARANCE: CoreTrackAppearance = {
+  baseColor: '#d7d9dd',
+  brightness: 1,
+  shadingMode: 'flat',
+  shadingStrength: 0.38,
+  descriptionPresentationMode: 'core_centered',
+  descriptionOverlayWidthPct: 42,
+  descriptionOverlayFontSize: 10,
+  descriptionOverlayShowMd: true,
+};
+
+export interface CompletionTrackAppearance {
+  schematicPosition: 'left' | 'center' | 'right';
+  schematicWidthPx: number;
+  symbolScale: number;
+  lineWeight: number;
+  showLabels: boolean;
+  labelPosition: 'left' | 'right' | 'auto';
+  labelFontSize: number;
+  labelOffsetPx: number;
+  labelVerticalOffsetPx: number;
+  labelMaxWidthPx: number;
+  labelCollisionMode: 'auto' | 'off';
+  labelWrap: boolean;
+}
+
+export const DEFAULT_COMPLETION_TRACK_APPEARANCE: CompletionTrackAppearance = {
+  schematicPosition: 'center',
+  schematicWidthPx: 44,
+  symbolScale: 1,
+  lineWeight: 2,
+  showLabels: true,
+  labelPosition: 'right',
+  labelFontSize: 10,
+  labelOffsetPx: 12,
+  labelVerticalOffsetPx: 0,
+  labelMaxWidthPx: 140,
+  labelCollisionMode: 'auto',
+  labelWrap: false,
+};
 
 export interface CurveAssignment {
   assignmentId: string;
@@ -141,6 +266,9 @@ interface BaseTrack {
   title: string;
   widthPx: number;
   visible: boolean;
+  depthRangeLocator?: DepthRangeLocatorConfig;
+  macroCoreImage?: MacroCoreImageConfig;
+  textOverlays?: TextOverlayConfig[];
 }
 
 export interface DepthTrack extends BaseTrack {
@@ -165,8 +293,12 @@ export interface LithologyTrack extends BaseTrack {
 }
 
 export interface ReservedTrack extends BaseTrack {
-  trackType: 'raster' | 'marker' | 'interval';
+  trackType: 'raster' | 'interval' | 'core' | 'completion';
   reservedReason: string;
+  rendererType?: string | null;
+  trackRole?: string | null;
+  coreAppearance?: CoreTrackAppearance;
+  completionAppearance?: CompletionTrackAppearance;
 }
 
 export type WellLogTrack = DepthTrack | CurveTrack | LithologyTrack | ReservedTrack;
