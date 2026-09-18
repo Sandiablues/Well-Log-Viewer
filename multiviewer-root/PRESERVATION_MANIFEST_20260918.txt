@@ -1,0 +1,65 @@
+MULTIVIEWER CURRENT CONSOLIDATED SOURCE — CLEAN MIGRATION BUILD
+Created: 2026-09-18
+
+PURPOSE
+-------
+Authoritative clean current-state preservation for migration to a new ChatGPT Project.
+
+NAMING AUTHORITY
+----------------
+SDV = Seismic Data Viewer
+WDV = Well Data Viewer
+WLV = legacy internal/code identifier only where still embedded in existing source
+WBV = Wellbore Viewer module within the WDV codebase
+
+INCLUDED
+--------
+- Current WDV frontend source
+- Current WDV backend application source
+- Current WBV source/module
+- Shared MultiViewer presentation authority and current styles
+- Current SDV frontend source
+- Current SDV backend application source
+- Current 2DV and 3DV source
+- Current Source Intake / Managed Data source
+- Current scripts/configuration/docs needed to understand and continue development
+- Approved static WDV knowledge/reference assets used by the knowledge subsystem
+- Vendored third-party source where present, with large example/test datasets removed
+
+EXCLUDED
+--------
+- Runtime environments and browser profiles
+- WDV saved canvases/session runtime data
+- WDV managed inventories, uploads, diagnostics and generated knowledge state
+- SEG-Y/LAS/DLIS runtime/test payloads except approved static knowledge references
+- Historical rollback/apply-state/backup trees
+- Old dev-block and repair scripts
+- Generated application bundles and packaged distributions
+- Caches, logs, PID files, build output and virtual environments
+- Secrets/environment files such as .env.ai
+- Superseded duplicate SDV packaged backend tree
+
+VERIFICATION
+------------
+PASS  WDV frontend source
+PASS  WDV backend app
+PASS  WBV module
+PASS  WDV shared presentation authority
+PASS  SDV frontend source
+PASS  SDV backend app
+PASS  SDV 2D viewer
+PASS  SDV 3D viewer
+PASS  Source Intake / Managed Data
+
+FILES
+-----
+Kept files: 1464
+Uncompressed preserved size: 57131204 bytes
+
+MIGRATION RULE
+--------------
+This ZIP is the new preservation authority for current MultiViewer development.
+Do not migrate the historical patch chain into the new ChatGPT Project.
+Keep the original 20260918_105054 ZIP only as an offline safety copy until the
+new project has been verified, then it may be archived outside ChatGPT.
+

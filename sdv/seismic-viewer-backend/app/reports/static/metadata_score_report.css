@@ -1,0 +1,235 @@
+:root {
+  --report-font-scale: 0.90;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #172033;
+  background: #f5f7fb;
+}
+
+body {
+  margin: 0;
+  background: #f5f7fb;
+  font-size: calc(16px * var(--report-font-scale));
+}
+
+.report {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 32px;
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: stretch;
+  margin-bottom: 24px;
+  padding: 28px;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(20, 35, 60, 0.10);
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: calc(12px * var(--report-font-scale));
+  color: #64748b;
+  font-weight: 700;
+}
+
+h1 {
+  margin: 8px 0 8px;
+  font-size: calc(34px * var(--report-font-scale));
+}
+
+h2 {
+  margin: 0 0 16px;
+  font-size: calc(18px * var(--report-font-scale));
+}
+
+p {
+  margin: 0;
+}
+
+.score-box {
+  min-width: 190px;
+  padding: 18px;
+  border-radius: 16px;
+  background: #eef3fb;
+  text-align: center;
+}
+
+.score-label {
+  font-size: calc(12px * var(--report-font-scale));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #526176;
+  font-weight: 700;
+}
+
+.score-value {
+  font-size: calc(42px * var(--report-font-scale));
+  font-weight: 800;
+  margin-top: 8px;
+}
+
+.score-status,
+.category-status,
+.muted {
+  color: #64748b;
+}
+
+.grid.two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.panel {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 22px;
+  margin-bottom: 18px;
+  box-shadow: 0 8px 22px rgba(20, 35, 60, 0.07);
+}
+
+.big-number {
+  font-size: calc(36px * var(--report-font-scale));
+  font-weight: 800;
+}
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
+}
+
+.category-card {
+  border: 1px solid #e3e8f0;
+  border-radius: 14px;
+  padding: 16px;
+  background: #fbfcfe;
+}
+
+.category-title {
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.category-score {
+  font-size: calc(26px * var(--report-font-scale));
+  font-weight: 800;
+  margin-top: 8px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  width: 220px;
+  text-align: left;
+  color: #475569;
+  font-weight: 700;
+  vertical-align: top;
+}
+
+td,
+th {
+  padding: 9px 8px;
+  border-bottom: 1px solid #e8edf5;
+}
+
+ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+li {
+  margin: 6px 0;
+}
+
+pre {
+  white-space: pre-wrap;
+  background: #0f172a;
+  color: #dbeafe;
+  padding: 18px;
+  border-radius: 12px;
+  overflow: auto;
+  max-height: 420px;
+}
+
+@media (max-width: 760px) {
+  .hero,
+  .grid.two {
+    display: block;
+  }
+
+  .score-box {
+    margin-top: 18px;
+  }
+}
+
+/* Keep long paths and JSON-like values inside report cards. */
+.grid.two > .panel {
+  min-width: 0;
+}
+
+.panel {
+  overflow: hidden;
+}
+
+table {
+  table-layout: fixed;
+}
+
+td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+th {
+  overflow-wrap: anywhere;
+}
+
+/* E5G: force long report values to stay inside cards. */
+.report,
+.hero,
+.panel,
+.grid.two,
+.grid.two > .panel,
+table,
+tbody,
+tr,
+td,
+th {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.grid.two {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.panel {
+  overflow: hidden;
+}
+
+table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+th {
+  width: 150px;
+  white-space: normal;
+}
+
+td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 0;
+}

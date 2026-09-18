@@ -1,0 +1,8 @@
+/* MultiViewer Presentation Governance — canonical import order */
+@import "./foundations.css";
+@import "./theme.css";
+@import "./semantics.css";
+@import "./components.css";
+@import "./compatibility.css";
+@import "./migration-stage1-neutral-controls.css";
+@import "./migration-stage2-panels-collapsible-headers.css";

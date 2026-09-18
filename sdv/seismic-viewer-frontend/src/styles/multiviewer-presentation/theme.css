@@ -1,0 +1,1134 @@
+:root,
+[data-mv-theme="dark"] {
+  color-scheme: dark;
+
+  /*
+   * MultiViewer canonical dark theme.
+   * Existing accepted dark appearance remains the default authority.
+   */
+  --mv-bg-app: #0d1116;
+  --mv-bg-canvas: #0d1116;
+
+  --mv-surface-1: #101820;
+  --mv-surface-2: #111a22;
+  --mv-surface-3: #121b23;
+  --mv-surface-row: #101820;
+  --mv-surface-hover: #15212a;
+  --mv-surface-selected: #182632;
+  --mv-control-bg: #091118;
+
+  --mv-text-primary: #e3e8ec;
+  --mv-text-secondary: #cbd4da;
+  --mv-text-muted: #8f9ca8;
+  --mv-text-disabled: #718194;
+
+  --mv-border-subtle: #2b3741;
+  --mv-border-normal: #354452;
+  --mv-border-strong: #566273;
+  --mv-control-border: #354452;
+
+  --mv-overlay-scrim: rgba(0,0,0,.60);
+  --mv-shadow: rgba(0,0,0,.42);
+
+  /*
+   * Semantic neutral chrome roles.
+   * These roles intentionally alias the accepted dark family so current dark
+   * rendering remains unchanged when consumers migrate to role-based tokens.
+   */
+  --mv-chrome-app-bg: var(--mv-bg-app);
+  --mv-chrome-canvas-bg: var(--mv-bg-canvas);
+  --mv-chrome-panel-bg: var(--mv-surface-1);
+  --mv-chrome-panel-header-bg: var(--mv-surface-2);
+  --mv-chrome-raised-bg: var(--mv-surface-3);
+  --mv-chrome-row-bg: var(--mv-surface-row);
+  --mv-chrome-hover-bg: var(--mv-surface-hover);
+  --mv-chrome-selected-bg: var(--mv-surface-selected);
+  --mv-chrome-control-bg: var(--mv-control-bg);
+
+  --mv-chrome-text: var(--mv-text-primary);
+  --mv-chrome-text-secondary: var(--mv-text-secondary);
+  --mv-chrome-text-muted: var(--mv-text-muted);
+  --mv-chrome-text-disabled: var(--mv-text-disabled);
+
+  --mv-chrome-divider: var(--mv-border-subtle);
+  --mv-chrome-border: var(--mv-border-normal);
+  --mv-chrome-border-strong: var(--mv-border-strong);
+  --mv-chrome-control-border: var(--mv-control-border);
+
+  --mv-chrome-menu-bg: #101820;
+  --mv-chrome-menu-border: #354452;
+  --mv-chrome-popover-bg: #111827;
+  --mv-chrome-popover-border: #566274;
+  --mv-chrome-modal-bg: #101820;
+  --mv-chrome-modal-header-bg: #111a22;
+  --mv-chrome-table-header-bg: #111a22;
+  --mv-chrome-table-row-bg: #101820;
+  --mv-chrome-code-bg: #091118;
+
+  --mv-chrome-focus: #38bdf8;
+  --mv-chrome-focus-ring: rgba(56,189,248,.28);
+  --mv-chrome-shadow: var(--mv-shadow);
+  --mv-chrome-scrim: var(--mv-overlay-scrim);
+}
+
+/* ==========================================================================
+   MULTIVIEWER LIGHT THEME CANDIDATE B — TECHNICAL CONTRAST CHROME STRENGTHENING V1.0.0
+   Candidate palette only. Dark theme, scientific rendering, semantic/status
+   colors, geometry, typography and interaction remain under existing owners.
+   ========================================================================== */
+
+[data-mv-theme="light"] {
+  color-scheme: light;
+
+  /*
+   * MultiViewer canonical light theme.
+   * Only neutral application chrome changes. Scientific/semantic colors remain
+   * under semantics.css and viewer-local scientific authorities.
+   */
+  --mv-bg-app: #dce3e9;
+  --mv-bg-canvas: #f5f7f9;
+
+  --mv-surface-1: #f7f9fa;
+  --mv-surface-2: #e8edf1;
+  --mv-surface-3: #dce4ea;
+  --mv-surface-row: #eef2f5;
+  --mv-surface-hover: #e0e7ec;
+  --mv-surface-selected: #d7e7f6;
+  --mv-control-bg: #f9fbfc;
+
+  --mv-text-primary: #17212b;
+  --mv-text-secondary: #34414c;
+  --mv-text-muted: #4f5d68;
+  --mv-text-disabled: #73818c;
+
+  --mv-border-subtle: #b3bec7;
+  --mv-border-normal: #8b99a5;
+  --mv-border-strong: #697987;
+  --mv-control-border: #84939f;
+
+  --mv-overlay-scrim: rgba(23,33,43,.24);
+  --mv-shadow: rgba(23,33,43,.20);
+
+  --mv-chrome-app-bg: var(--mv-bg-app);
+  --mv-chrome-canvas-bg: var(--mv-bg-canvas);
+  --mv-chrome-panel-bg: var(--mv-surface-1);
+  --mv-chrome-panel-header-bg: var(--mv-surface-2);
+  --mv-chrome-raised-bg: var(--mv-surface-3);
+  --mv-chrome-row-bg: var(--mv-surface-row);
+  --mv-chrome-hover-bg: var(--mv-surface-hover);
+  --mv-chrome-selected-bg: var(--mv-surface-selected);
+  --mv-chrome-control-bg: var(--mv-control-bg);
+
+  --mv-chrome-text: var(--mv-text-primary);
+  --mv-chrome-text-secondary: var(--mv-text-secondary);
+  --mv-chrome-text-muted: var(--mv-text-muted);
+  --mv-chrome-text-disabled: var(--mv-text-disabled);
+
+  --mv-chrome-divider: var(--mv-border-subtle);
+  --mv-chrome-border: var(--mv-border-normal);
+  --mv-chrome-border-strong: var(--mv-border-strong);
+  --mv-chrome-control-border: var(--mv-control-border);
+
+  --mv-chrome-menu-bg: #e8edf1;
+  --mv-chrome-menu-border: #9daab5;
+  --mv-chrome-popover-bg: #f7f9fa;
+  --mv-chrome-popover-border: #94a3af;
+  --mv-chrome-modal-bg: #f7f9fa;
+  --mv-chrome-modal-header-bg: #e8edf1;
+  --mv-chrome-table-header-bg: #e8edf1;
+  --mv-chrome-table-row-bg: #eef2f5;
+  --mv-chrome-code-bg: #dce3e9;
+
+  --mv-chrome-focus: #0f6cbd;
+  --mv-chrome-focus-ring: rgba(15,108,189,.18);
+  --mv-chrome-shadow: var(--mv-shadow);
+  --mv-chrome-scrim: var(--mv-overlay-scrim);
+}
+
+/* ==========================================================================
+   MULTIVIEWER GLOBAL THEME TOGGLE V1.0.0
+   One theme control shared by WLV/WBV/WDV and SDV. Presentation only.
+   ========================================================================== */
+.mv-theme-toggle {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 2147483600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid var(--mv-chrome-control-border);
+  border-radius: 999px;
+  background: var(--mv-chrome-panel-bg);
+  color: var(--mv-chrome-text);
+  box-shadow: 0 5px 16px var(--mv-chrome-shadow);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-semibold);
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.mv-theme-toggle:hover {
+  background: var(--mv-chrome-hover-bg);
+  border-color: var(--mv-chrome-border-strong);
+}
+
+.mv-theme-toggle:focus-visible {
+  outline: 2px solid var(--mv-chrome-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px var(--mv-chrome-focus-ring);
+}
+
+.mv-theme-toggle__icon {
+  width: 14px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.mv-theme-toggle__label {
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   MULTIVIEWER ROLE-BASED LIGHT THEME WIRING V1.0.0
+   Light-only presentation overrides by semantic UI role.
+   Scientific rendering surfaces and semantic/status colors are excluded.
+   ========================================================================== */
+
+html[data-mv-theme="light"] body {
+  background: var(--mv-bg-app);
+  color: var(--mv-text-primary);
+}
+
+/* WLV global shell / navigation */
+html[data-mv-theme="light"] .wlv-demo-shell,
+html[data-mv-theme="light"] .wlv-demo-main {
+  background: var(--mv-bg-app);
+  color: var(--mv-text-primary);
+}
+html[data-mv-theme="light"] .wlv-demo-left-rail {
+  background: var(--mv-surface-1);
+  border-right-color: var(--mv-border-subtle);
+  box-shadow: inset -1px 0 0 rgba(15,23,42,.025);
+}
+html[data-mv-theme="light"] .wlv-demo-rail-brand {
+  border-bottom-color: var(--mv-border-subtle);
+}
+html[data-mv-theme="light"] .wlv-demo-nav-item {
+  color: var(--mv-text-muted);
+}
+html[data-mv-theme="light"] .wlv-demo-nav-item:hover {
+  background: var(--mv-surface-hover);
+  color: var(--mv-text-primary);
+}
+html[data-mv-theme="light"] .wlv-demo-nav-item.active {
+  background: var(--mv-surface-selected);
+}
+html[data-mv-theme="light"] .wlv-demo-nav-item:not(.active) .wlv-demo-nav-icon {
+  color: var(--mv-text-muted);
+}
+html[data-mv-theme="light"] .wlv-demo-nav-item:hover:not(.active) .wlv-demo-nav-icon {
+  color: var(--mv-text-secondary);
+}
+html[data-mv-theme="light"] .wlv-app-header {
+  background: var(--mv-surface-1);
+  color: var(--mv-text-primary);
+  border-bottom-color: var(--mv-border-subtle);
+}
+html[data-mv-theme="light"] .wlv-app-title strong {
+  color: var(--mv-text-primary);
+}
+
+/* WDV chrome only */
+html[data-mv-theme="light"] .wlv-track-toolbar {
+  background: var(--mv-surface-2);
+  border-bottom-color: var(--mv-border-normal);
+  box-shadow: 0 1px 2px var(--mv-shadow);
+  color: var(--mv-text-primary);
+}
+html[data-mv-theme="light"] .wlv-toolbar-group > span,
+html[data-mv-theme="light"] .wlv-toolbar-zone-header {
+  color: var(--mv-text-secondary) !important;
+}
+html[data-mv-theme="light"] .wlv-toolbar-zone-header:hover,
+html[data-mv-theme="light"] .wlv-toolbar-zone-header:focus-visible {
+  color: var(--mv-text-primary) !important;
+}
+html[data-mv-theme="light"] .wlv-toolbar-group button:not(.active),
+html[data-mv-theme="light"] .wlv-toolbar-group select {
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  border-color: var(--mv-control-border);
+}
+html[data-mv-theme="light"] .wlv-curve-inventory-shell,
+html[data-mv-theme="light"] .wlv-curve-inventory,
+html[data-mv-theme="light"] .wlv-right-panel {
+  background: var(--mv-surface-1);
+  color: var(--mv-text-primary);
+  border-color: var(--mv-border-normal);
+}
+html[data-mv-theme="light"] .wlv-curve-inventory .wlv-panel-heading,
+html[data-mv-theme="light"] .wlv-right-panel .wlv-panel-heading {
+  background: var(--mv-surface-2);
+  color: var(--mv-text-primary);
+  border-bottom-color: var(--mv-border-subtle);
+}
+html[data-mv-theme="light"] .wlv-inventory-control-stack,
+html[data-mv-theme="light"] .wlv-inventory-control-section,
+html[data-mv-theme="light"] .wlv-inventory-section-body,
+html[data-mv-theme="light"] .wlv-curve-inventory-body {
+  background: var(--mv-surface-1);
+  color: var(--mv-text-primary);
+}
+html[data-mv-theme="light"] .wlv-search-row input,
+html[data-mv-theme="light"] .wlv-search-row button,
+html[data-mv-theme="light"] .wlv-right-panel input,
+html[data-mv-theme="light"] .wlv-right-panel select,
+html[data-mv-theme="light"] .wlv-right-panel button:not(.active) {
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  border-color: var(--mv-control-border);
+}
+html[data-mv-theme="light"] .wlv-right-panel label,
+html[data-mv-theme="light"] .well-header dt {
+  color: var(--mv-text-secondary);
+}
+/* Explicit WDV scientific exclusion: no .wlv-track-canvas / curve / lithology /
+   completion / tie rendering background or color rules appear in this block. */
+
+/* Managed Data existing role-variable families */
+html[data-mv-theme="light"] .wlv-managed-inventory-page {
+  --mdp-page-bg: var(--mv-bg-app) !important;
+  --mdp-panel-bg: var(--mv-surface-1) !important;
+  --mdp-panel-soft: var(--mv-surface-2) !important;
+  --mdp-row-bg: var(--mv-surface-row) !important;
+  --mdp-row-hover: var(--mv-surface-hover) !important;
+  --mdp-row-selected: var(--mv-surface-selected) !important;
+  --mdp-toolbar-bg: var(--mv-surface-2) !important;
+  --mdp-border: var(--mv-border-subtle) !important;
+  --mdp-border-strong: var(--mv-border-normal) !important;
+  --mdp-blue-border: var(--mv-border-strong) !important;
+  --mdp-text-primary: var(--mv-text-primary) !important;
+  --mdp-text-secondary: var(--mv-text-secondary) !important;
+  --mdp-text-muted: var(--mv-text-muted) !important;
+
+  --wmdp-blue-page: var(--mv-bg-app);
+  --wmdp-blue-panel: var(--mv-surface-1);
+  --wmdp-blue-panel-header: var(--mv-surface-2);
+  --wmdp-blue-header-row: var(--mv-surface-2);
+  --wmdp-blue-row: var(--mv-surface-row);
+  --wmdp-blue-row-alt: var(--mv-surface-1);
+  --wmdp-blue-row-hover: var(--mv-surface-hover);
+  --wmdp-blue-row-selected: var(--mv-surface-selected);
+  --wmdp-blue-expanded: var(--mv-surface-2);
+  --wmdp-blue-expanded-card: var(--mv-surface-1);
+  --wmdp-blue-border: var(--mv-border-subtle);
+  --wmdp-blue-border-soft: var(--mv-border-subtle);
+  --wmdp-blue-border-strong: var(--mv-border-normal);
+  --wmdp-blue-control: var(--mv-control-bg);
+  --wmdp-blue-control-border: var(--mv-control-border);
+  --wmdp-blue-text: var(--mv-text-primary);
+  --wmdp-blue-text-soft: var(--mv-text-secondary);
+  --wmdp-blue-text-muted: var(--mv-text-muted);
+  --wmdp-blue-header-text: var(--mv-text-secondary);
+
+  background: var(--mv-bg-app) !important;
+  color: var(--mv-text-primary) !important;
+}
+
+/* Source Intake existing role-variable family */
+html[data-mv-theme="light"] .wlv-source-intake {
+  --wlv-si-bg: var(--mv-bg-app);
+  --wlv-si-surface: var(--mv-surface-1);
+  --wlv-si-surface-2: var(--mv-surface-2);
+  --wlv-si-border: var(--mv-border-normal);
+  --wlv-si-border-soft: var(--mv-border-subtle);
+  --wlv-si-text: var(--mv-text-primary);
+  --wlv-si-muted: var(--mv-text-muted);
+  --wlv-si-soft: var(--mv-text-secondary);
+}
+html[data-mv-theme="light"] .wlv-source-intake__header {
+  background: linear-gradient(180deg, var(--mv-surface-1) 0%, var(--mv-surface-2) 100%);
+  border-bottom-color: var(--mv-border-subtle);
+}
+html[data-mv-theme="light"] .wlv-source-intake input,
+html[data-mv-theme="light"] .wlv-source-intake select,
+html[data-mv-theme="light"] .wlv-source-intake textarea {
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  border-color: var(--mv-control-border);
+}
+
+/* Toolbox */
+html[data-mv-theme="light"] .wlv-toolbox-page {
+  background: var(--mv-bg-app);
+  color: var(--mv-text-primary);
+}
+html[data-mv-theme="light"] .wlv-toolbox-card {
+  background: var(--mv-surface-1);
+  color: var(--mv-text-primary);
+  border-color: var(--mv-border-normal);
+}
+
+/* Knowledge Repository neutral shell */
+html[data-mv-theme="light"] .wlv-kr-workbench {
+  background: var(--mv-bg-app);
+  color: var(--mv-text-primary);
+}
+html[data-mv-theme="light"] .wlv-kr-header,
+html[data-mv-theme="light"] .wlv-kr-count-card,
+html[data-mv-theme="light"] .wlv-kr-controls,
+html[data-mv-theme="light"] .wlv-kr-instruction-list,
+html[data-mv-theme="light"] .wlv-kr-detail-panel,
+html[data-mv-theme="light"] .wlv-kr-decision-workbench,
+html[data-mv-theme="light"] .wlv-kr-template-panel,
+html[data-mv-theme="light"] .wlv-kr-rule-box,
+html[data-mv-theme="light"] .wlv-kr-evidence-card,
+html[data-mv-theme="light"] .wlv-kr-template-group,
+html[data-mv-theme="light"] .wlv-kr-modal-card {
+  background: var(--mv-surface-1);
+  color: var(--mv-text-primary);
+  border-color: var(--mv-border-subtle);
+  box-shadow: none;
+}
+html[data-mv-theme="light"] .wlv-kr-table th {
+  background: var(--mv-surface-2);
+  color: var(--mv-text-secondary);
+}
+html[data-mv-theme="light"] .wlv-kr-table th,
+html[data-mv-theme="light"] .wlv-kr-table td,
+html[data-mv-theme="light"] .wlv-kr-section-heading,
+html[data-mv-theme="light"] .wlv-kr-detail-heading,
+html[data-mv-theme="light"] .wlv-kr-modal-header,
+html[data-mv-theme="light"] .wlv-kr-modal-actions {
+  border-color: var(--mv-border-subtle);
+}
+html[data-mv-theme="light"] .wlv-kr-header h1,
+html[data-mv-theme="light"] .wlv-kr-section-heading h2,
+html[data-mv-theme="light"] .wlv-kr-detail-panel h2,
+html[data-mv-theme="light"] .wlv-kr-modal-header h2,
+html[data-mv-theme="light"] .wlv-kr-template-group strong {
+  color: var(--mv-text-primary);
+}
+html[data-mv-theme="light"] .wlv-kr-header p,
+html[data-mv-theme="light"] .wlv-kr-count-card strong,
+html[data-mv-theme="light"] .wlv-kr-controls label,
+html[data-mv-theme="light"] .wlv-kr-section-heading span,
+html[data-mv-theme="light"] .wlv-kr-detail-heading span,
+html[data-mv-theme="light"] .wlv-kr-table td span,
+html[data-mv-theme="light"] .wlv-kr-detail-dl dt,
+html[data-mv-theme="light"] .wlv-kr-rule-box h3,
+html[data-mv-theme="light"] .wlv-kr-evidence-section h3,
+html[data-mv-theme="light"] .wlv-kr-evidence-card span,
+html[data-mv-theme="light"] .wlv-kr-template-group span,
+html[data-mv-theme="light"] .wlv-kr-form-grid label {
+  color: var(--mv-text-muted);
+}
+html[data-mv-theme="light"] .wlv-kr-count-card span,
+html[data-mv-theme="light"] .wlv-kr-detail-dl dd,
+html[data-mv-theme="light"] .wlv-kr-rule-box p,
+html[data-mv-theme="light"] .wlv-kr-muted,
+html[data-mv-theme="light"] .wlv-kr-evidence-card p,
+html[data-mv-theme="light"] .wlv-kr-template-group ul {
+  color: var(--mv-text-secondary);
+}
+html[data-mv-theme="light"] .wlv-kr-controls input,
+html[data-mv-theme="light"] .wlv-kr-controls select,
+html[data-mv-theme="light"] .wlv-kr-form-grid input,
+html[data-mv-theme="light"] .wlv-kr-form-grid select,
+html[data-mv-theme="light"] .wlv-kr-form-grid textarea {
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  border-color: var(--mv-control-border);
+}
+/* KR semantic approved/review/error/danger states are intentionally excluded. */
+
+/* WBV chrome only */
+html[data-mv-theme="light"] .wlv-wbv-page {
+  background: var(--mv-bg-app);
+  color: var(--mv-text-primary);
+}
+html[data-mv-theme="light"] .wlv-wbv-header,
+html[data-mv-theme="light"] .wlv-wbv-panel {
+  background: var(--mv-surface-1);
+  color: var(--mv-text-primary);
+  border-color: var(--mv-border-subtle);
+}
+html[data-mv-theme="light"] .wlv-wbv-panel-heading,
+html[data-mv-theme="light"] .wlv-wbv-left-section,
+html[data-mv-theme="light"] .wlv-wbv-information-section,
+html[data-mv-theme="light"] .wlv-wbv-trajectory-list {
+  border-color: var(--mv-border-subtle);
+}
+html[data-mv-theme="light"] .wlv-wbv-control-button:not(.is-primary):not(.is-danger),
+html[data-mv-theme="light"] .wlv-wbv-icon-button,
+html[data-mv-theme="light"] .wlv-wbv-manage-layers-button,
+html[data-mv-theme="light"] .wlv-wbv-view-controls button,
+html[data-mv-theme="light"] .wlv-wbv-panel select,
+html[data-mv-theme="light"] .wlv-wbv-panel input[type="text"],
+html[data-mv-theme="light"] .wlv-wbv-panel input[type="number"] {
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  border-color: var(--mv-control-border);
+}
+html[data-mv-theme="light"] .wlv-wbv-panel--right .wlv-wbv-interval-actions .wlv-wbv-control-button--compact {
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  border-color: var(--mv-control-border);
+}
+html[data-mv-theme="light"] .wlv-wbv-panel--right .wlv-wbv-interval-actions .wlv-wbv-control-button--compact:hover:not(:disabled) {
+  background: var(--mv-surface-hover);
+  color: var(--mv-text-primary);
+  border-color: var(--mv-border-strong);
+}
+/* Explicit WBV science exclusion: no Three.js scene / wellbore / scientific
+   overlay background or color rules appear in this block. */
+
+/* SDV shell/chrome only */
+html[data-mv-theme="light"] .mv-app,
+html[data-mv-theme="light"] .app-container {
+  --sv-bg-page: var(--mv-bg-app);
+  --sv-bg-panel: var(--mv-surface-1);
+  --sv-bg-panel-soft: var(--mv-surface-2);
+  --sv-bg-row: var(--mv-surface-row);
+  --sv-bg-row-hover: var(--mv-surface-hover);
+  --sv-border-subtle: var(--mv-border-subtle);
+  --sv-border-strong: var(--mv-border-normal);
+  --sv-text-primary: var(--mv-text-primary);
+  --sv-text-secondary: var(--mv-text-secondary);
+  --sv-text-muted: var(--mv-text-muted);
+  background: var(--mv-bg-app);
+  color: var(--mv-text-primary);
+}
+html[data-mv-theme="light"] .sidebar {
+  background: var(--mv-surface-1) !important;
+  border-right-color: var(--mv-border-subtle) !important;
+}
+html[data-mv-theme="light"] .sidebar button {
+  color: var(--mv-text-muted) !important;
+}
+html[data-mv-theme="light"] .sidebar button:hover {
+  background: var(--mv-surface-hover) !important;
+  color: var(--mv-text-primary) !important;
+}
+html[data-mv-theme="light"] .sidebar button.active {
+  background: var(--mv-surface-selected) !important;
+}
+/* Explicit SDV science exclusion: .viewer-area / seismic canvas / Three.js /
+   colormap rendering receive no light background or color rule. */
+
+/* ==========================================================================
+   MULTIVIEWER LIGHT PALETTE REBALANCE V1.0.0
+   Canonical light mode uses layered off-whites / cool greys.
+   Flat #fff/#ffffff application-chrome surfaces are prohibited.
+   ========================================================================== */
+
+/* ==========================================================================
+   MULTIVIEWER MULTI-GREY CONTRAST PALETTE V1.0.0
+   Stronger tonal separation for light mode:
+   app < headers < panels < controls/raised surfaces, with stronger borders.
+   Scientific rendering surfaces remain excluded by role wiring.
+   ========================================================================== */
+
+/* ==========================================================================
+   MULTIVIEWER DARKER MULTI-GREY DEPTH CONTRAST V1.0.0
+   Darker grey separation for light mode: stronger hierarchy between app field,
+   bars, panels, lifted surfaces, controls, and tables. Scientific rendering
+   surfaces remain excluded by role wiring.
+   ========================================================================== */
+
+/* ==========================================================================
+   MULTIVIEWER LIGHT THEME DEPTH & ELEVATION ROLES V1.0.0
+   Explicit dimensional hierarchy for light-mode application chrome.
+   Scientific rendering surfaces remain excluded.
+   ========================================================================== */
+
+[data-mv-theme="light"] {
+  --mv-depth-page: #dce3e9;
+  --mv-depth-panel: #f7f9fa;
+  --mv-depth-panel-header: #dce4ea;
+  --mv-depth-raised: #f2f5f7;
+  --mv-depth-control: #f2f5f7;
+  --mv-depth-inset: #e9eef2;
+  --mv-depth-border: #697987;
+  --mv-depth-border-soft: #98a6b1;
+  --mv-depth-shadow-1: 0 1px 2px rgba(23,33,43,.16), 0 3px 8px rgba(23,33,43,.08);
+  --mv-depth-shadow-2: 0 2px 5px rgba(23,33,43,.18), 0 8px 20px rgba(23,33,43,.10);
+  --mv-depth-inset-shadow: inset 0 1px 2px rgba(23,33,43,.10);
+  --mv-depth-highlight: inset 0 1px 0 rgba(255,255,255,.70);
+}
+
+/* Global application planes */
+html[data-mv-theme="light"] .wlv-demo-shell,
+html[data-mv-theme="light"] .wlv-demo-main,
+html[data-mv-theme="light"] .wlv-wbv-page,
+html[data-mv-theme="light"] .mv-app,
+html[data-mv-theme="light"] .app-container {
+  background: var(--mv-depth-page);
+}
+
+html[data-mv-theme="light"] .wlv-demo-left-rail,
+html[data-mv-theme="light"] .sidebar {
+  background: #dce4ea !important;
+  border-right: 1px solid var(--mv-depth-border) !important;
+  box-shadow: 2px 0 7px rgba(23,33,43,.10);
+}
+
+html[data-mv-theme="light"] .wlv-app-header,
+html[data-mv-theme="light"] .wlv-wbv-header {
+  background: var(--mv-depth-panel-header);
+  border: 1px solid var(--mv-depth-border-soft);
+  box-shadow: var(--mv-depth-shadow-1), var(--mv-depth-highlight);
+}
+
+/* WDV toolbar: separate bar, groups, and controls into distinct planes */
+html[data-mv-theme="light"] .wlv-track-toolbar {
+  background: #dce4ea;
+  border-top: 1px solid var(--mv-depth-border-soft);
+  border-bottom: 1px solid var(--mv-depth-border);
+  box-shadow: 0 2px 7px rgba(23,33,43,.11);
+}
+
+html[data-mv-theme="light"] .wlv-toolbar-group,
+html[data-mv-theme="light"] .wlv-toolbar-zone,
+html[data-mv-theme="light"] .wlv-toolbar-group-add-track,
+html[data-mv-theme="light"] .wlv-toolbar-group-track-layout,
+html[data-mv-theme="light"] .wlv-toolbar-group-presets,
+html[data-mv-theme="light"] .wlv-toolbar-group-depth-unit,
+html[data-mv-theme="light"] .wlv-toolbar-group-view {
+  background: #f2f5f7;
+  border-color: var(--mv-depth-border);
+  box-shadow: var(--mv-depth-highlight), 0 1px 2px rgba(23,33,43,.08);
+}
+
+html[data-mv-theme="light"] .wlv-toolbar-group button:not(.active),
+html[data-mv-theme="light"] .wlv-toolbar-group select,
+html[data-mv-theme="light"] .wlv-search-row input,
+html[data-mv-theme="light"] .wlv-search-row button,
+html[data-mv-theme="light"] .wlv-right-panel input,
+html[data-mv-theme="light"] .wlv-right-panel select,
+html[data-mv-theme="light"] .wlv-right-panel button:not(.active) {
+  background: var(--mv-depth-control);
+  border-color: var(--mv-depth-border);
+  box-shadow: var(--mv-depth-inset-shadow);
+}
+
+/* WDV inventory and Properties: panel body < header < inset content */
+html[data-mv-theme="light"] .wlv-curve-inventory-shell,
+html[data-mv-theme="light"] .wlv-curve-inventory,
+html[data-mv-theme="light"] .wlv-right-panel,
+html[data-mv-theme="light"] .wlv-properties-panel-v2 {
+  background: var(--mv-depth-panel);
+  border-color: var(--mv-depth-border);
+  box-shadow: var(--mv-depth-shadow-2);
+}
+
+html[data-mv-theme="light"] .wlv-curve-inventory .wlv-panel-heading,
+html[data-mv-theme="light"] .wlv-right-panel .wlv-panel-heading,
+html[data-mv-theme="light"] .wlv-properties-panel-v2 .wlv-properties-contract-section h3,
+html[data-mv-theme="light"] .wlv-properties-panel-v2 .wlv-property-section h3 {
+  background: var(--mv-depth-panel-header);
+  border-bottom: 1px solid var(--mv-depth-border);
+  box-shadow: var(--mv-depth-highlight);
+}
+
+html[data-mv-theme="light"] .wlv-inventory-section-toggle,
+html[data-mv-theme="light"] .wlv-curve-inventory-collapse-toggle,
+html[data-mv-theme="light"] .wlv-right-properties-collapse-toggle {
+  background: #dfe6eb !important;
+  border-color: var(--mv-depth-border) !important;
+  box-shadow: var(--mv-depth-highlight), 0 1px 2px rgba(23,33,43,.09);
+}
+
+html[data-mv-theme="light"] .wlv-inventory-control-stack,
+html[data-mv-theme="light"] .wlv-inventory-control-section,
+html[data-mv-theme="light"] .wlv-inventory-section-body,
+html[data-mv-theme="light"] .wlv-curve-inventory-body,
+html[data-mv-theme="light"] .wlv-properties-panel-v2 .wlv-properties-tab-body,
+html[data-mv-theme="light"] .wlv-properties-panel-v2 .wlv-properties-selected-entity {
+  background: var(--mv-depth-inset);
+  box-shadow: var(--mv-depth-inset-shadow);
+}
+
+/* WBV: strong panel framing around the preserved dark scientific viewport */
+html[data-mv-theme="light"] .wlv-wbv-panel {
+  background: var(--mv-depth-panel);
+  border: 1px solid var(--mv-depth-border);
+  box-shadow: var(--mv-depth-shadow-2), var(--mv-depth-highlight);
+}
+
+html[data-mv-theme="light"] .wlv-wbv-panel-heading,
+html[data-mv-theme="light"] .wlv-wbv-section-heading-row,
+html[data-mv-theme="light"] .wlv-wbv-manager-panel-title {
+  background: var(--mv-depth-panel-header);
+  border-color: var(--mv-depth-border);
+  box-shadow: var(--mv-depth-highlight);
+}
+
+html[data-mv-theme="light"] .wlv-wbv-control-button:not(.is-primary):not(.is-danger),
+html[data-mv-theme="light"] .wlv-wbv-icon-button,
+html[data-mv-theme="light"] .wlv-wbv-manage-layers-button,
+html[data-mv-theme="light"] .wlv-wbv-view-controls button,
+html[data-mv-theme="light"] .wlv-wbv-panel select,
+html[data-mv-theme="light"] .wlv-wbv-panel input[type="text"],
+html[data-mv-theme="light"] .wlv-wbv-panel input[type="number"] {
+  background: var(--mv-depth-control);
+  border-color: var(--mv-depth-border);
+  box-shadow: var(--mv-depth-inset-shadow);
+}
+
+html[data-mv-theme="light"] .wlv-wbv-selected-point-row,
+html[data-mv-theme="light"] .wlv-wbv-property-card,
+html[data-mv-theme="light"] .wlv-wbv-save-canvas-field,
+html[data-mv-theme="light"] .wlv-wbv-multiwell-select__trigger,
+html[data-mv-theme="light"] .wlv-wbv-multiwell-select__menu {
+  background: var(--mv-depth-raised);
+  border: 1px solid var(--mv-depth-border-soft);
+  box-shadow: var(--mv-depth-shadow-1);
+}
+
+/* Generic cards/tables already wired to shared roles */
+html[data-mv-theme="light"] .wlv-toolbox-card,
+html[data-mv-theme="light"] .wlv-kr-header,
+html[data-mv-theme="light"] .wlv-kr-count-card,
+html[data-mv-theme="light"] .wlv-kr-controls,
+html[data-mv-theme="light"] .wlv-kr-instruction-list,
+html[data-mv-theme="light"] .wlv-kr-detail-panel,
+html[data-mv-theme="light"] .wlv-managed-inventory-list,
+html[data-mv-theme="light"] .wlv-managed-inventory-detail {
+  border-color: var(--mv-depth-border-soft);
+  box-shadow: var(--mv-depth-shadow-1);
+}
+
+html[data-mv-theme="light"] .wlv-kr-table th {
+  background: var(--mv-depth-panel-header);
+  border-color: var(--mv-depth-border);
+  box-shadow: var(--mv-depth-highlight);
+}
+
+/* Explicit exclusions: no rules target WDV scientific/log canvas, WBV Three.js
+   scene, SDV seismic/Three.js canvases, colormaps, semantic state colors, or
+   viewer geometry/interaction. */
+
+/* ==========================================================================
+   WDV LIGHT INVENTORY PANEL COMPLETE REPAIR V1.0.0
+   WDV-only Light-mode repair.
+   Fixes header legibility, curve-row surface balance, lithology row alignment/
+   spacing, and formation-top row surface balance. Scientific canvas, dark
+   theme, semantic colors, typography sizing and interaction remain unchanged.
+   ========================================================================== */
+
+/* IMPORTANT: mv-ui-scope is on the root html element. Do not use a descendant
+   :where(.mv-ui-scope) here; that was the reason the earlier text hotfix did
+   not reach the rendered header elements. */
+
+/* Panel title and accordion/menu headers */
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory .wlv-panel-heading,
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory .wlv-panel-heading h2 {
+  color: #33414d !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory .wlv-panel-heading {
+  background: #d7e0e7 !important;
+  border-bottom-color: #81909c !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-inventory-section-toggle {
+  background: #dce4ea !important;
+  color: #33414d !important;
+  border: 0 !important;
+  border-bottom: 1px solid #9ba8b3 !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.58) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-inventory-section-toggle:hover {
+  background: #d2dce4 !important;
+  color: #17212b !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-inventory-section-toggle > span:first-child {
+  color: #33414d !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-inventory-section-toggle-meta,
+html[data-mv-theme="light"].mv-ui-scope .wlv-inventory-section-toggle-meta b {
+  color: #667580 !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-inventory-control-section {
+  border-bottom-color: #a7b2bc !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-inventory-section-body,
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body {
+  background: #edf2f5 !important;
+}
+
+/* Curve Inventory: remove dark slabs in Light mode */
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-search-row input,
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-search-row button {
+  background: #f7f9fa !important;
+  color: #26343f !important;
+  border-color: #8d9ba7 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-inventory-tabs {
+  background: #e3e9ee !important;
+  border: 1px solid #9eabb5 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-inventory-tabs button {
+  background: transparent !important;
+  color: #394854 !important;
+  border-color: transparent !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-inventory-tabs button.active {
+  color: #126f46 !important;
+  border-bottom-color: #18a866 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-curve-group-title {
+  color: #65727d !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-curve-row:not(.wlv-curve-duplicate-summary) {
+  background: #f7f9fa !important;
+  color: #25323d !important;
+  border-color: #a7b3bd !important;
+  box-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-curve-row:not(.wlv-curve-duplicate-summary):hover {
+  background: #eef3f6 !important;
+  border-color: #8796a2 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-curve-row.assigned,
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-curve-row.inventory-selected {
+  background: #dceaf5 !important;
+  color: #18344a !important;
+  border-color: #5e8eb3 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-curve-row.checked-in-track {
+  box-shadow: inset 3px 0 0 #18a866 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-curve-row strong,
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-curve-row span,
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-curve-row em {
+  color: inherit !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body .wlv-checkbox:not(.checked) {
+  background: #f7f9fa !important;
+  color: #53616d !important;
+  border-color: #6f7f8b !important;
+}
+
+/* Lithology: compact, centered three-column rows */
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-inventory-body {
+  background: #edf2f5 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-dataset {
+  background: #f3f6f8 !important;
+  border-color: #b1bdc6 !important;
+  padding: 8px 10px !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-dataset-heading {
+  align-items: center !important;
+  margin-bottom: 5px !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-dataset-heading strong {
+  color: #1f2b35 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-dataset-heading span,
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-interval-option small {
+  color: #748391 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-select-all {
+  grid-template-columns: 22px minmax(0,1fr) !important;
+  column-gap: 8px !important;
+  align-items: center !important;
+  margin: 2px 0 4px !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-interval-list {
+  gap: 1px !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-interval-option {
+  grid-template-columns: 22px 34px minmax(0,1fr) !important;
+  column-gap: 8px !important;
+  row-gap: 0 !important;
+  align-items: center !important;
+  min-height: 40px !important;
+  padding: 3px 0 !important;
+  margin: 0 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-interval-option > input[type="checkbox"],
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-select-all > input[type="checkbox"] {
+  width: 16px !important;
+  height: 16px !important;
+  margin: 0 !important;
+  justify-self: center !important;
+  align-self: center !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-inventory-swatch {
+  width: 28px !important;
+  height: 20px !important;
+  justify-self: center !important;
+  align-self: center !important;
+  border-color: #9daab5 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-interval-option > span:last-child {
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-self: center !important;
+  gap: 1px !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-interval-option > span:last-child > strong {
+  color: #1f2b35 !important;
+  line-height: 1.2 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-lithology-interval-option > span:last-child > small {
+  line-height: 1.15 !important;
+  margin: 0 !important;
+}
+
+/* Formation Tops: remove dark-grey row blocks */
+html[data-mv-theme="light"].mv-ui-scope .wlv-formation-tops-inventory-body {
+  background: #edf2f5 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-formation-tops-dataset-heading strong,
+html[data-mv-theme="light"].mv-ui-scope .wlv-formation-top-select-all {
+  color: #1f2b35 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-formation-tops-dataset-heading span,
+html[data-mv-theme="light"].mv-ui-scope .wlv-formation-top-depth {
+  color: #71808d !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-formation-top-list {
+  gap: 2px !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-formation-top-row {
+  background: #f5f7f9 !important;
+  color: #25323d !important;
+  border-color: #a8b4be !important;
+  box-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-formation-top-row:hover {
+  background: #eaf0f4 !important;
+  border-color: #83939f !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-formation-top-name {
+  color: #25323d !important;
+}
+
+/* END WDV LIGHT INVENTORY PANEL COMPLETE REPAIR */
+
+/* ==========================================================================
+   WDV LIGHT INVENTORY DARK SWATCH LIGHTENING V1.0.0
+   Micro-refinement only:
+   - Well Selection swatch: slightly lighter dark neutral.
+   - Advisory swatch: slightly lighter dark neutral.
+   No geometry, typography sizing, scientific rendering, semantic colors,
+   interaction, or other inventory surfaces are changed.
+   ========================================================================== */
+
+html[data-mv-theme="light"].mv-ui-scope #wlv-loaded-well-select {
+  background: #71808c !important;
+  color: #ffffff !important;
+  border-color: #8f9ca7 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope #wlv-loaded-well-select:focus {
+  background: #7c8a95 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-drop-help {
+  background: #2a2f34 !important;
+  color: #d3d8dd !important;
+  border-color: #69737c !important;
+}
+
+/* END WDV LIGHT INVENTORY DARK SWATCH LIGHTENING */
+
+/* WDV EXACT WELL-SELECTION AUTHORITY FIX V1.0.0
+   The ID selector above is the computed cascade winner over the local class rule. */
+
+/* MultiViewer accepted application-chrome role tokens.
+   These aliases centralize presentation ownership without changing the accepted dark rendering. */
+:root,
+[data-mv-theme="dark"] {
+  --mv-role-app-shell-bg: var(--mv-bg-app);
+  --mv-role-header-control-bg: var(--mv-surface-2);
+  --mv-role-section-header-bg: var(--mv-surface-2);
+  --mv-role-panel-body-bg: var(--mv-surface-1);
+  --mv-role-text-primary: var(--mv-text-primary);
+  --mv-role-text-secondary: var(--mv-text-muted);
+  --mv-role-border-normal: var(--mv-border-normal);
+  --mv-role-border-highlight: var(--mv-border-strong);
+  --mv-role-divider-soft: var(--mv-border-subtle);
+  --mv-role-focus-accent: var(--mv-chrome-focus);
+}
+
+/* ==========================================================================
+   MULTIVIEWER ACCEPTED WDV/WBV LIGHT CHROME ROLE TOKENS V1.0.0
+   Tokenization only: values are the exact currently accepted authority-phase
+   literals. No selector, geometry, typography, specificity, or behavior change.
+   ========================================================================== */
+[data-mv-theme="light"] {
+  --mv-role-app-shell-bg: #dce3e9;
+  --mv-role-header-control-bg: #f0f3f6;
+  --mv-role-section-header-bg: #dce4ea;
+  --mv-role-panel-body-bg: #edf2f5;
+  --mv-role-text-primary: #33414d;
+  --mv-role-text-secondary: #667580;
+  --mv-role-border-normal: #9ba8b3;
+  --mv-role-border-highlight: #a7b2bc;
+  --mv-role-divider-soft: #d3dce3;
+  --mv-role-focus-accent: #2d9cff;
+}
+
+
+/* ==========================================================================
+   MULTIVIEWER DATA-TABLE THEME ROLE CORRECTION V1.0.0
+   Dark retains the accepted existing table palette.
+   Light follows the accepted WLV Managed Data surface hierarchy:
+   header=surface-2, row=surface-row, alternate=surface-1,
+   selected=surface-selected, border=normal, separator=subtle.
+   ========================================================================== */
+
+:root,
+[data-mv-theme="dark"] {
+  --mv-role-data-table-header-bg: #1d2228;
+  --mv-role-data-table-row-bg: #171a1f;
+  --mv-role-data-table-row-alt-bg: #171a1f;
+  --mv-role-data-table-row-selected-bg: #202631;
+  --mv-role-data-table-border: #2b333d;
+  --mv-role-data-table-separator: #252c35;
+}
+
+[data-mv-theme="light"] {
+  --mv-role-data-table-header-bg: var(--mv-surface-2);
+  --mv-role-data-table-row-bg: var(--mv-surface-row);
+  --mv-role-data-table-row-alt-bg: var(--mv-surface-1);
+  --mv-role-data-table-row-selected-bg: var(--mv-surface-selected);
+  --mv-role-data-table-border: var(--mv-border-normal);
+  --mv-role-data-table-separator: var(--mv-border-subtle);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER SHARED-CHROME ROLE TOKENS — PHASE 2 V1.0.0
+   Ownership migration only. Exact values moved from the generic master
+   component contract; no rendered value, selector, geometry, typography,
+   specificity, behavior, or scientific semantics are changed.
+   ========================================================================== */
+:root,
+[data-mv-theme="dark"],
+[data-mv-theme="light"] {
+  --mv-role-modal-shadow: 0 18px 52px rgba(0, 0, 0, 0.36);
+
+  --mv-role-panel-title-text: #f1f2f3;
+  --mv-role-meta-text: #8f9aa5;
+  --mv-role-compact-property-label-text: #b7bec6;
+  --mv-role-micro-label-text: #93a3af;
+  --mv-role-micro-value-text: #dce7ef;
+  --mv-role-micro-heading-primary-text: #f1f2f3;
+
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER VIEWER PRESENTATION TOKENS V1.0.0
+   Canonical shared viewer chrome authority for WDV / WBV / SDV 2D / SDV 3D.
+   Viewer-specific geometry and scientific rendering remain local.
+   ========================================================================== */
+:root,
+[data-mv-theme="dark"] {
+  --mv-viewer-panel-body-bg: var(--mv-role-panel-body-bg);
+  --mv-viewer-section-header-bg: var(--mv-role-section-header-bg);
+  --mv-viewer-control-bg: var(--mv-control-bg);
+  --mv-viewer-text-primary: var(--mv-text-primary);
+  --mv-viewer-text-secondary: var(--mv-text-muted);
+  --mv-viewer-border-normal: var(--mv-border-normal);
+  --mv-viewer-border-highlight: var(--mv-border-strong);
+  --mv-viewer-divider-soft: var(--mv-border-subtle);
+  --mv-viewer-focus-accent: var(--mv-chrome-focus);
+
+  --mv-viewer-panel-heading-font-size: 0.86rem;
+  --mv-viewer-panel-heading-font-weight: 700;
+  --mv-viewer-panel-heading-line-height: 1.22;
+
+  --mv-viewer-section-heading-font-size: 0.68rem;
+  --mv-viewer-section-heading-font-weight: 700;
+  --mv-viewer-section-heading-line-height: 1.18;
+
+  --mv-viewer-body-font-size: var(--mv-font-size-sm);
+  --mv-viewer-body-font-weight: 400;
+  --mv-viewer-body-line-height: 1.2;
+
+  --mv-viewer-button-font-size: var(--mv-font-size-sm);
+  --mv-viewer-button-font-weight: var(--mv-font-weight-medium);
+  --mv-viewer-button-height: var(--mv-control-height-compact);
+  --mv-viewer-button-padding-y: 0;
+  --mv-viewer-button-padding-x: var(--mv-space-3);
+  --mv-viewer-button-radius: var(--mv-control-radius);
+  --mv-viewer-control-gap: var(--mv-space-2);
+
+  --mv-viewer-checkbox-size: 0.86rem;
+  --mv-viewer-checkbox-gap: 0.42rem;
+
+  --mv-viewer-property-font-size: var(--mv-font-size-sm);
+  --mv-viewer-property-line-height: var(--mv-line-height-ui);
+  --mv-viewer-property-row-min-height: 1.73rem;
+}
+
+html[data-mv-theme="light"] {
+  --mv-viewer-panel-body-bg: var(--mv-role-panel-body-bg);
+  --mv-viewer-section-header-bg: var(--mv-role-section-header-bg);
+  --mv-viewer-control-bg: var(--mv-role-header-control-bg);
+  --mv-viewer-text-primary: var(--mv-role-text-primary);
+  --mv-viewer-text-secondary: var(--mv-role-text-secondary);
+  --mv-viewer-border-normal: var(--mv-role-border-normal);
+  --mv-viewer-border-highlight: var(--mv-role-border-highlight);
+  --mv-viewer-divider-soft: var(--mv-role-divider-soft);
+  --mv-viewer-focus-accent: var(--mv-role-focus-accent);
+
+  --mv-viewer-panel-heading-font-size: 13px;
+  --mv-viewer-panel-heading-font-weight: 600;
+  --mv-viewer-panel-heading-line-height: 1.2;
+
+  --mv-viewer-section-heading-font-size: 13px;
+  --mv-viewer-section-heading-font-weight: 600;
+  --mv-viewer-section-heading-line-height: 1.2;
+}
+

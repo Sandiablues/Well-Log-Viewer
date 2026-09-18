@@ -1,0 +1,14 @@
+/*
+ * SDV SCIENTIFIC COLORATION PROTECTION
+ *
+ * All ordinary SDV presentation ownership has moved to the centralized
+ * MultiViewer presentation authority.
+ *
+ * This local file intentionally retains only the scientific viewport
+ * background coloration. Do not change this value through application-chrome
+ * standardization.
+ */
+
+.viewer-area {
+  background: #111;
+}

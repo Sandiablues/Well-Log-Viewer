@@ -1,0 +1,14 @@
+/* ==========================================================================
+   SDV 3D / WBV PARITY — DEPRECATED LOCAL PRESENTATION AUTHORITY
+   Reconciled into the central MultiViewer presentation authority on 2026-09-16.
+
+   Generic viewer presentation is now owned by:
+     - multiviewer-presentation/theme.css
+     - multiviewer-presentation/components.css
+
+   3DV-specific geometry/layout is owned by:
+     - multiviewer-presentation/sdv-application-chrome.css
+
+   This file is intentionally not imported by App.tsx.
+   Do not add generic presentation rules here.
+   ========================================================================== */

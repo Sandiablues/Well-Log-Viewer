@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+segyio
+zarr
+numpy
+python-multipart
+pydantic
+pywebview

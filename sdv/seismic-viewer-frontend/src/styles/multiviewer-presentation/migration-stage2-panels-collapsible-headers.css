@@ -1,0 +1,82 @@
+/* ==========================================================================
+   MULTIVIEWER MASTER STYLE MIGRATION — STAGE 2
+   PANELS & COLLAPSIBLE HEADERS V1.0.0
+
+   Geometry and typography only.
+   No palette, semantic color, scientific canvas, or rendering changes.
+   ========================================================================== */
+
+/* Shared application-chrome panel shells. */
+:where(.mv-ui-scope) :is(
+  .collapsible-pane,
+  .panel,
+  .panel-shell,
+  .info-panel,
+  .information-panel,
+  .properties-panel,
+  .toolbox-panel,
+  .data-panel,
+  .settings-panel
+):not(.mv-panel-geometry-exempt) {
+  box-sizing: border-box;
+  border-radius: var(--mv-panel-radius);
+}
+
+/* Shared section/header geometry. */
+:where(.mv-ui-scope) :is(
+  .collapsible-pane-header,
+  .panel-header,
+  .panel__header,
+  .info-panel-header,
+  .information-panel-header,
+  .properties-panel-header,
+  .toolbox-panel-header,
+  .data-panel-header,
+  .settings-panel-header
+):not(.mv-panel-geometry-exempt) {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  min-height: var(--mv-control-height);
+  padding-block: var(--mv-space-3);
+  padding-inline: var(--mv-space-5);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-ui);
+  font-weight: var(--mv-font-weight-semibold);
+  line-height: var(--mv-line-height-ui);
+}
+
+/* Shared panel bodies where a dedicated body class already exists. */
+:where(.mv-ui-scope) :is(
+  .panel-body,
+  .panel__body,
+  .info-panel-body,
+  .information-panel-body,
+  .properties-panel-body,
+  .toolbox-panel-body,
+  .data-panel-body,
+  .settings-panel-body
+):not(.mv-panel-geometry-exempt) {
+  box-sizing: border-box;
+  padding: var(--mv-space-5);
+}
+
+/* Collapsible header controls remain compact and aligned. */
+:where(.mv-ui-scope) :is(
+  .collapsible-pane-header,
+  .panel-header,
+  .panel__header
+) > button:not(.mv-control-geometry-exempt) {
+  flex: 0 0 auto;
+}
+
+/* Explicit opt-out hook for specialized scientific/viewer panels. */
+:where(.mv-ui-scope) .mv-panel-geometry-exempt {
+  /* marker class only */
+}
+
+/*
+  Scientific rendering exclusions:
+  no styles are applied to canvas, svg, WebGL hosts, seismic raster hosts,
+  or generic viewer roots purely by tag/type.
+*/
