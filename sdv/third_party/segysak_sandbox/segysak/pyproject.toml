@@ -1,0 +1,177 @@
+[project]
+name = "segysak"
+dynamic = ["version"]
+authors = [
+    {name= "SEGY-SAK Developers", email= "segysak@gamil.com"}
+]
+description = "SEG-Y Seismic Data Inspection and Manipulation Tools using Xarray"
+readme = {file = "README.md", content-type = "text/markdown"}
+dependencies = [
+    "numpy>=1.20",
+    "pandas",
+    "matplotlib",
+    "segyio",
+    "xarray",
+    "dask",
+    "distributed",
+    "tqdm",
+    "scipy!=1.10.0",  # version introduced bug with interp
+    "click",
+    "h5netcdf",
+    "addict",
+    "more-itertools>=8.0",
+    "typing-extensions",
+    "loguru"
+]
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering"
+]
+
+[project.urls]
+Repository = "https://github.com/trhallam/segysak"
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pylint",
+    "hypothesis",
+    "affine",
+]
+docs = [
+    "jupytext",
+    "pyvista",
+    "jupyterlab",
+    "ipywidgets",
+    "wellpathpy",
+    "pyshp",
+    "mkdocs",
+    "mkdocstrings",
+    "mkdocstrings-python",
+    "mkdocs-material",
+    "mkdocs-material",
+    "mkdocs-simple-plugin",
+    "mkdocs-jupyter",
+    "mkdocs-include-markdown-plugin",
+    "mkautodoc",
+    "mike",
+    "cffconvert",
+    # "pyzgy", re-enable when working merge
+]
+
+# testing config
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests"
+]
+
+[tool.hatch.envs.hatch-test]
+features = [
+    "test"
+]
+
+[[tool.hatch.envs.hatch-test.matrix]]
+python = ["3.12", "3.11", "3.10", "3.9"]
+
+# docs config
+
+[tool.hatch.envs.docs]
+features = [
+    "docs"
+]
+
+[tool.hatch.envs.docs.env-vars]
+CLI_SNIPPETS = "docs/.snippets/cli"
+CFF_SNIPPETS = "docs/.snippets/cff"
+DOC_EXAMPLES = "docs/examples"
+JUPYTER_PLATFORM_DIRS = "1"
+
+[tool.hatch.envs.docs.scripts]
+clean = [
+  "if [ -d docs/examples ]; then rm -rf $DOC_EXAMPLES; fi",
+  "if [ -d docs/.snippets/cli ]; then rm -rf docs/.snippets/cli; fi",
+  "if [ -d docs/.snippets/cff ]; then rm -rf docs/.snippets/cff; fi",
+]
+build-examples = [
+    "jupytext --to ipynb --execute examples/*.py",
+    "mkdir -p $DOC_EXAMPLES",
+    "mv examples/*.ipynb $DOC_EXAMPLES/.",
+]
+cli-snippets = [
+    "echo $CLI_SNIPPETS",
+    "mkdir -p $CLI_SNIPPETS",
+    "segysak > $CLI_SNIPPETS/segysak.txt",
+    "segysak ebcidc --help > $CLI_SNIPPETS/ebcidc.txt",
+    "segysak scan --help > $CLI_SNIPPETS/scan.txt",
+    "segysak scrape --help > $CLI_SNIPPETS/scrape.txt",
+    "segysak sgy --help > $CLI_SNIPPETS/sgy.txt",
+    "segysak pyzgy --help > $CLI_SNIPPETS/pyzgy.txt",
+    "segysak netcdf --help > $CLI_SNIPPETS/netcdf.txt",
+    "segysak crop --help > $CLI_SNIPPETS/crop.txt",
+    "segysak print --help > $CLI_SNIPPETS/print.txt",
+]
+cff-snippets = [
+    "echo $CFF_SNIPPETS",
+    "mkdir -p $CFF_SNIPPETS",
+    "cffconvert -i CITATION.cff -f apalike -o $CFF_SNIPPETS/apalike.txt",
+    "cffconvert -i CITATION.cff -f bibtex -o $CFF_SNIPPETS/bibtex.txt",
+]
+
+serve = [
+    """if [ ! -d $DOC_EXAMPLES ]; then
+        jupytext --to ipynb examples/*.py;
+        mkdir -p $DOC_EXAMPLES;
+        mv examples/*.ipynb $DOC_EXAMPLES/.;
+    fi""",
+    "cli-snippets",
+    "cff-snippets",
+    "mkdocs serve",
+]
+build = "mkdocs build -v"
+deploy = [
+    "clean",
+    "build-examples",
+    "cli-snippets",
+    "cff-snippets",
+    "mike deploy --update-aliases $(hatch version) dev"
+]
+
+# extras
+
+[project.scripts]
+segysak = "segysak._cli:cli"
+
+[project.entry-points."xarray.backends"]
+sgy_engine = "segysak.segy._xarray:SgyBackendEntrypoint"
+
+# build config
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "segysak/_version.py"
+
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
+
+[tool.hatch.build.targets.sdist]
+only-include = ["segysak", "tests"]
+
+[tool.hatch.build.target.wheel]
+packages = ["segysak"]
+
+[tool.hatch.build.targets.wheel]
+only-packages = true

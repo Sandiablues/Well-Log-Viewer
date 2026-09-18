@@ -1,0 +1,94 @@
+name: Publish docs via GitHub Pages
+
+on: 
+  push:
+    branches: [main]
+    tags-ignore:
+      - v*
+  pull_request:
+    branches: [main]
+  release:
+    types: [released]
+
+jobs:
+  mkdocs:
+    name: build mkdocs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Update clone config
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages --depth=1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      # required to use caching because it depends on requirements.txt
+      - name: Setup Hatch
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install hatch
+
+      - name: Set ENV Vars default
+        run: |
+          echo "MIKE_ALIAS=dev" >> $GITHUB_ENV
+          echo "MKDOCS_VERSION=$(hatch version | grep -Po '.+dev')" >> $GITHUB_ENV
+          echo "BADGE_MSG=fail" >> $GITHUB_ENV
+          echo "BADGE_COLOUR=red" >> $GITHUB_ENV
+
+      - name: Set ENV Vars release
+        if: ${{ github.ref_type == 'tag' }}
+        run: |
+          echo $GITHUB_REF_NAME  
+          echo "MKDOCS_VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+          echo "MIKE_ALIAS=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+          
+          echo $MKDOCS_VERSION $MIKE_ALIAS
+
+      - name: Set latest
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          echo "MIKE_ALIAS=${MIKE_ALIAS} latest" >> $GITHUB_ENV
+          
+      - name: Set stable
+        if: ${{ github.ref_type == 'tag' && github.event_name == 'release' }}
+        run: |
+          echo "MIKE_ALIAS=${MIKE_ALIAS} stable" >> $GITHUB_ENV
+          echo $MKDOCS_VERSION $MIKE_ALIAS
+
+      - name: Build docs examples
+        id: build
+        run: |
+          hatch run docs:build-examples
+          hatch run docs:cli-snippets
+          hatch run docs:cff-snippets
+          # hatch run docs:mike deploy --update-aliases --push $MKDOCS_VERSION $MIKE_ALIAS
+          hatch run docs:mike deploy --update-aliases $MKDOCS_VERSION $MIKE_ALIAS
+          echo "BADGE_MSG=pass" >> $GITHUB_ENV
+          echo "BADGE_COLOUR=green" >> $GITHUB_ENV
+
+      # - name: Checkout gh-pages
+      #   if: always()
+      #   uses: actions/checkout@v4
+      #   with:
+      #     fetch-depth: 0
+      #     ref: gh-pages
+
+      - name: Write Badges
+        if: always()
+        run: |
+          git checkout gh-pages
+          if [ ! -d $MKDOCS_VERSION ]; then mkdir $MKDOCS_VERSION; fi
+          echo '{"schemaVersion":1,"label":"Docs","message":"${{ env.BADGE_MSG }}","color":"${{ env.BADGE_COLOUR }}","namedLogo":"materialformkdocs","logoColor":"white"}' | tee ./$MKDOCS_VERSION/badge-mkdocs.json
+          git add ./$MKDOCS_VERSION/badge-mkdocs.json
+          git commit -m "github-actions update badge $MKDOCS_VERSION"
+          git push origin gh-pages
