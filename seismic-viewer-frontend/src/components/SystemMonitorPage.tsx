@@ -112,8 +112,8 @@ function badge(value?: string): React.CSSProperties {
 function kv(label: string, value: React.ReactNode) {
   return (
     <div style={kvRow}>
-      <div style={kvLabel}>{label}</div>
-      <div style={kvValue}>{value || '—'}</div>
+      <div className="mv-system-monitor__kv-label">{label}</div>
+      <div className="mv-system-monitor__kv-value">{value || '—'}</div>
     </div>
   )
 }
@@ -175,23 +175,23 @@ export default function SystemMonitorPage() {
   }, [payload])
 
   return (
-    <div style={page}>
-      <header style={header}>
+    <div className="mv-system-monitor" style={page}>
+      <header className="mv-system-monitor__header" style={header}>
         <div>
-          <div style={heading}>System Monitor</div>
-          <div style={subheading}>Live backend, conversion jobs, repositories, and warnings · refreshes every 5 seconds</div>
+          <div className="mv-type-page-title">System Monitor</div>
+          <div className="mv-type-meta">Live backend, conversion jobs, repositories, and warnings · refreshes every 5 seconds</div>
         </div>
 
         <div style={{ display: 'flex', gap: 5 }}>
-          <button onClick={refresh} style={button}>Refresh</button>
-          <button onClick={() => navigator.clipboard.writeText(JSON.stringify(payload || { error }, null, 2))} style={button}>Copy</button>
-          <button onClick={() => window.close()} style={button}>Close</button>
+          <button onClick={refresh} className="mv-button mv-button--compact mv-button--secondary" style={button}>Refresh</button>
+          <button onClick={() => navigator.clipboard.writeText(JSON.stringify(payload || { error }, null, 2))} className="mv-button mv-button--compact mv-button--secondary" style={button}>Copy</button>
+          <button onClick={() => window.close()} className="mv-button mv-button--compact mv-button--secondary" style={button}>Close</button>
         </div>
       </header>
 
       <section style={topGrid}>
-        <div style={card}>
-          <div style={title}>Backend</div>
+        <div className="mv-system-monitor__card" style={card}>
+          <div className="mv-system-monitor__title">Backend</div>
           {kv('Status', <span style={badge(error ? 'error' : payload?.backend?.status)}>{error ? 'error' : payload?.backend?.status || 'unknown'}</span>)}
           {kv('Refresh', lastRefresh)}
           {kv('Timestamp', payload?.backend?.timestamp)}
@@ -200,16 +200,16 @@ export default function SystemMonitorPage() {
           {error && kv('Error', <span style={{ color: '#b91c1c' }}>{error}</span>)}
         </div>
 
-        <div style={card}>
-          <div style={title}>Repositories</div>
-          {(payload?.repositories || []).length === 0 && <div style={muted}>No repositories loaded.</div>}
+        <div className="mv-system-monitor__card" style={card}>
+          <div className="mv-system-monitor__title">Repositories</div>
+          {(payload?.repositories || []).length === 0 && <div className="mv-system-monitor__muted">No repositories loaded.</div>}
           {(payload?.repositories || []).map((repo) => (
-            <div key={repo.repository_id || repo.name} style={miniCard}>
+            <div key={repo.repository_id || repo.name} className="mv-system-monitor__mini-card" style={miniCard}>
               <div style={compactHeader}>
                 <strong>{repo.name || repo.repository_id || 'Repository'}</strong>
                 <span style={badge(repo.status)}>{repo.status || 'unknown'}</span>
               </div>
-              <div style={repoCounts}>
+              <div className="mv-system-monitor__counts" style={repoCounts}>
                 <span>Pkg {repo.package_count ?? '—'}</span>
                 <span>Lines {repo.line_count ?? '—'}</span>
                 <span>SEG-Y {repo.segy_file_count ?? '—'}</span>
@@ -220,18 +220,18 @@ export default function SystemMonitorPage() {
         </div>
       </section>
 
-      <section style={card}>
-        <div style={title}>Conversions</div>
-        {jobs.length === 0 && <div style={muted}>No conversion jobs found.</div>}
+      <section className="mv-system-monitor__card" style={card}>
+        <div className="mv-system-monitor__title">Conversions</div>
+        {jobs.length === 0 && <div className="mv-system-monitor__muted">No conversion jobs found.</div>}
 
         {jobs.slice(0, 18).map((job) => {
           const delta = job.job_id ? deltas[job.job_id] : undefined
           const active = isActive(job)
 
           return (
-            <div key={job.job_id || job.filename} style={{ ...jobCard, borderColor: active ? '#16a34a' : '#d1d5db' }}>
+            <div className="mv-system-monitor__job-card" key={job.job_id || job.filename} style={{ ...jobCard, borderColor: active ? '#16a34a' : '#d1d5db' }}>
               <div style={compactHeader}>
-                <div style={jobName}>{job.filename || 'Unnamed job'}</div>
+                <div className="mv-system-monitor__job-name">{job.filename || 'Unnamed job'}</div>
                 <span style={badge(job.health || job.status)}>{job.health || job.status || 'unknown'}</span>
               </div>
 
@@ -247,7 +247,7 @@ export default function SystemMonitorPage() {
               {job.error && <div style={errorText}>{job.error}</div>}
 
               <details style={{ marginTop: 3 }}>
-                <summary style={summary}>Paths</summary>
+                <summary className="mv-system-monitor__summary">Paths</summary>
                 {kv('Input', job.input_path)}
                 {kv('Output', job.output_path)}
                 {kv('Tmp', job.temp_output_path)}
@@ -257,17 +257,17 @@ export default function SystemMonitorPage() {
         })}
       </section>
 
-      <section style={card}>
-        <div style={title}>Warnings</div>
-        {(payload?.warnings || []).length === 0 && <div style={muted}>No warnings reported.</div>}
+      <section className="mv-system-monitor__card" style={card}>
+        <div className="mv-system-monitor__title">Warnings</div>
+        {(payload?.warnings || []).length === 0 && <div className="mv-system-monitor__muted">No warnings reported.</div>}
         {(payload?.warnings || []).slice(0, 80).map((warning, index) => (
-          <div key={`${warning.type}-${warning.volume_id}-${index}`} style={miniCard}>
+          <div key={`${warning.type}-${warning.volume_id}-${index}`} className="mv-system-monitor__mini-card" style={miniCard}>
             <div style={compactHeader}>
               <strong>{warning.type || 'warning'}</strong>
               <span style={badge(warning.level)}>{warning.level || 'warning'}</span>
             </div>
             <div style={{ fontSize: 9, marginTop: 2 }}>{warning.message || '—'}</div>
-            <div style={smallPath}>{warning.filename || warning.volume_id || warning.sidecar || ''}</div>
+            <div className="mv-system-monitor__path">{warning.filename || warning.volume_id || warning.sidecar || ''}</div>
           </div>
         ))}
       </section>
@@ -277,11 +277,7 @@ export default function SystemMonitorPage() {
 
 const page: React.CSSProperties = {
   minHeight: '100vh',
-  background: '#ffffff',
-  color: '#111827',
   padding: 8,
-  fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif',
-  fontSize: 10,
   boxSizing: 'border-box',
 }
 
@@ -291,18 +287,7 @@ const header: React.CSSProperties = {
   gap: 6,
   alignItems: 'center',
   marginBottom: 6,
-  borderBottom: '1px solid #e5e7eb',
   paddingBottom: 6,
-}
-
-const heading: React.CSSProperties = {
-  fontSize: 14,
-  fontWeight: 800,
-}
-
-const subheading: React.CSSProperties = {
-  fontSize: 9,
-  color: '#6b7280',
 }
 
 const topGrid: React.CSSProperties = {
@@ -313,25 +298,16 @@ const topGrid: React.CSSProperties = {
 }
 
 const card: React.CSSProperties = {
-  border: '1px solid #d1d5db',
-  background: '#ffffff',
-  borderRadius: 6,
   padding: 6,
   marginBottom: 6,
 }
 
 const miniCard: React.CSSProperties = {
-  border: '1px solid #e5e7eb',
-  background: '#f9fafb',
-  borderRadius: 5,
   padding: 5,
   marginTop: 4,
 }
 
 const jobCard: React.CSSProperties = {
-  border: '1px solid #d1d5db',
-  background: '#f9fafb',
-  borderRadius: 5,
   padding: 5,
   marginTop: 4,
 }
@@ -344,8 +320,6 @@ const compactHeader: React.CSSProperties = {
 }
 
 const jobName: React.CSSProperties = {
-  fontWeight: 800,
-  fontSize: 10,
   wordBreak: 'break-word',
 }
 
@@ -364,13 +338,9 @@ const kvRow: React.CSSProperties = {
 }
 
 const kvLabel: React.CSSProperties = {
-  color: '#6b7280',
-  fontSize: 9,
 }
 
 const kvValue: React.CSSProperties = {
-  color: '#111827',
-  fontSize: 9,
   wordBreak: 'break-word',
 }
 
@@ -379,36 +349,22 @@ const repoCounts: React.CSSProperties = {
   gap: 6,
   flexWrap: 'wrap',
   marginTop: 2,
-  color: '#374151',
-  fontSize: 9,
 }
 
 const title: React.CSSProperties = {
-  fontSize: 10,
-  fontWeight: 800,
   marginBottom: 4,
 }
 
 const muted: React.CSSProperties = {
-  color: '#6b7280',
-  fontSize: 9,
 }
 
 const button: React.CSSProperties = {
-  background: '#f3f4f6',
-  color: '#111827',
-  border: '1px solid #d1d5db',
-  borderRadius: 5,
   padding: '3px 6px',
-  fontSize: 9,
-  fontWeight: 700,
   cursor: 'pointer',
 }
 
 const summary: React.CSSProperties = {
-  color: '#2563eb',
   cursor: 'pointer',
-  fontSize: 9,
 }
 
 const errorText: React.CSSProperties = {
@@ -418,8 +374,6 @@ const errorText: React.CSSProperties = {
 }
 
 const smallPath: React.CSSProperties = {
-  fontSize: 8,
-  color: '#6b7280',
   marginTop: 2,
   wordBreak: 'break-word',
 }

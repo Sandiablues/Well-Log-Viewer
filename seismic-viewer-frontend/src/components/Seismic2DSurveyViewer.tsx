@@ -5,6 +5,7 @@ import { Seismic2DViewer } from './Seismic2DViewer';
 interface Seismic2DSurveyViewerProps {
   surveyId: string;
   surveyName?: string;
+  canvasBackground?: string;
 }
 
 function formatValue(value: any): string {
@@ -22,7 +23,7 @@ function InfoRow({ label, value }: { label: string; value: any }) {
         gap: '8px',
         fontSize: '12px',
         padding: '5px 0',
-        borderBottom: '1px solid #303030',
+        borderBottom: '1px solid var(--mv-border-subtle)',
       }}
     >
       <div style={{ opacity: 0.65 }}>{label}</div>
@@ -31,7 +32,7 @@ function InfoRow({ label, value }: { label: string; value: any }) {
   );
 }
 
-export function Seismic2DSurveyViewer({ surveyId, surveyName }: Seismic2DSurveyViewerProps) {
+export function Seismic2DSurveyViewer({ surveyId, surveyName, canvasBackground = '#000' }: Seismic2DSurveyViewerProps) {
   const [lines, setLines] = useState<any[]>([]);
   const [selectedLineId, setSelectedLineId] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -108,8 +109,8 @@ export function Seismic2DSurveyViewer({ surveyId, surveyName }: Seismic2DSurveyV
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        background: '#1f1f1f',
-        color: 'white',
+        background: 'var(--mv-bg-app)',
+        color: 'var(--mv-text-primary)',
         minHeight: 0,
       }}
     >
@@ -119,7 +120,7 @@ export function Seismic2DSurveyViewer({ surveyId, surveyName }: Seismic2DSurveyV
           alignItems: 'center',
           gap: '10px',
           padding: '10px 14px',
-          borderBottom: '1px solid #333',
+          borderBottom: '1px solid var(--mv-border-subtle)',
           flexWrap: 'wrap',
         }}
       >
@@ -131,14 +132,14 @@ export function Seismic2DSurveyViewer({ surveyId, surveyName }: Seismic2DSurveyV
 
         <button
           onClick={selectPreviousLine}
-          style={{ background: '#333', color: 'white', border: '1px solid #555', borderRadius: '4px', padding: '5px 8px' }}
+          style={{ background: 'var(--mv-control-bg)', color: 'var(--mv-text-primary)', border: '1px solid var(--mv-control-border)', borderRadius: '4px', padding: '5px 8px' }}
         >
           Previous
         </button>
 
         <button
           onClick={selectNextLine}
-          style={{ background: '#333', color: 'white', border: '1px solid #555', borderRadius: '4px', padding: '5px 8px' }}
+          style={{ background: 'var(--mv-control-bg)', color: 'var(--mv-text-primary)', border: '1px solid var(--mv-control-border)', borderRadius: '4px', padding: '5px 8px' }}
         >
           Next
         </button>
@@ -149,9 +150,9 @@ export function Seismic2DSurveyViewer({ surveyId, surveyName }: Seismic2DSurveyV
           value={selectedLineId}
           onChange={(e) => setSelectedLineId(e.target.value)}
           style={{
-            background: '#2b2b2b',
-            color: 'white',
-            border: '1px solid #555',
+            background: 'var(--mv-control-bg)',
+            color: 'var(--mv-text-primary)',
+            border: '1px solid var(--mv-control-border)',
             padding: '6px 8px',
             borderRadius: '6px',
             minWidth: '320px',
@@ -209,6 +210,7 @@ export function Seismic2DSurveyViewer({ surveyId, surveyName }: Seismic2DSurveyV
               surveyName={surveyName || '2D Survey'}
               controlledShowLineInfo={showLineInfo}
               showLineInfoControl={false}
+              canvasBackground={canvasBackground}
               key={`survey-line-${selectedLine.line_id}`}
             />
           ) : (
@@ -221,8 +223,8 @@ export function Seismic2DSurveyViewer({ surveyId, surveyName }: Seismic2DSurveyV
             style={{
               width: '300px',
               minWidth: '300px',
-              borderLeft: '1px solid #333',
-              background: '#1b1b1b',
+              borderLeft: '1px solid var(--mv-border-subtle)',
+              background: 'var(--mv-surface-1)',
               padding: '12px',
               overflowY: 'auto',
               boxSizing: 'border-box',
@@ -260,7 +262,7 @@ export function Seismic2DSurveyViewer({ surveyId, surveyName }: Seismic2DSurveyV
                 Line List
               </div>
 
-              <div style={{ maxHeight: '420px', overflowY: 'auto', borderTop: '1px solid #303030' }}>
+              <div style={{ maxHeight: '420px', overflowY: 'auto', borderTop: '1px solid var(--mv-border-subtle)' }}>
                 {lines.map((line, index) => (
                   <button
                     key={line.line_id}
@@ -268,10 +270,10 @@ export function Seismic2DSurveyViewer({ surveyId, surveyName }: Seismic2DSurveyV
                     style={{
                       width: '100%',
                       textAlign: 'left',
-                      background: line.line_id === selectedLineId ? '#26384d' : 'transparent',
-                      color: 'white',
+                      background: line.line_id === selectedLineId ? 'var(--mv-surface-selected)' : 'transparent',
+                      color: 'var(--mv-text-primary)',
                       border: 'none',
-                      borderBottom: '1px solid #303030',
+                      borderBottom: '1px solid var(--mv-border-subtle)',
                       padding: '7px 4px',
                       cursor: 'pointer',
                       fontSize: '12px',

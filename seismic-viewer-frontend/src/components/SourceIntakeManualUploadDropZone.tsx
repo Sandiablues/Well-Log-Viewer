@@ -14,7 +14,7 @@ type UploadEntry = {
   name: string;
   sizeBytes: number;
   extension: string;
-  role: "segy" | "document" | "unsupported";
+  role: "segy" | "unsupported";
   error?: string;
 };
 
@@ -23,13 +23,7 @@ type SourceIntakeManualUploadDropZoneProps = {
   onPackageStaged?: (result: ManualUploadPackageResult) => void;
 };
 
-const ACCEPTED_EXTENSIONS = new Set([
-  ".sgy", ".segy", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".png", ".jpg", ".jpeg", ".tif", ".tiff",
-]);
-
-const DOCUMENT_EXTENSIONS = new Set([
-  ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".png", ".jpg", ".jpeg", ".tif", ".tiff",
-]);
+const ACCEPTED_EXTENSIONS = new Set([".sgy", ".segy"]);
 
 function extensionFor(name: string): string {
   const index = name.lastIndexOf(".");
@@ -38,7 +32,6 @@ function extensionFor(name: string): string {
 
 function roleForExtension(extension: string): UploadEntry["role"] {
   if (extension === ".sgy" || extension === ".segy") return "segy";
-  if (DOCUMENT_EXTENSIONS.has(extension)) return "document";
   return "unsupported";
 }
 
@@ -93,7 +86,6 @@ export default function SourceIntakeManualUploadDropZone({ mode, onPackageStaged
 
   const validEntries = useMemo(() => entries.filter((entry) => !entry.error), [entries]);
   const segyCount = validEntries.filter((entry) => entry.role === "segy").length;
-  const documentCount = validEntries.filter((entry) => entry.role === "document").length;
   const unsupportedCount = entries.filter((entry) => entry.role === "unsupported" || entry.error).length;
   const canUpload = !isUploading && segyCount > 0 && validEntries.length > 0;
 
@@ -152,12 +144,12 @@ export default function SourceIntakeManualUploadDropZone({ mode, onPackageStaged
   };
 
   return (
-    <div style={{ border: "1px solid #334155", borderRadius: 10, background: "#0f172a", color: "#e5e7eb", padding: 12, marginBottom: 14 }}>
+    <div className="ssi-manual-upload">
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 10 }}>
         <div>
           <div style={{ fontSize: 16, fontWeight: 850, color: "#f8fafc" }}>Manual Upload / Drop Zone</div>
           <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4, lineHeight: 1.4 }}>
-            Upload one or more SEG-Y files with supporting documents. Files are staged for Source Intake review; no index or Zarr conversion starts during upload.
+            Upload one or more SEG-Y files. Files are staged for Source Intake review; no index or Zarr conversion starts during upload.
           </div>
         </div>
         <div style={{ fontSize: 12, color: "#94a3b8", whiteSpace: "nowrap" }}>{mode.toUpperCase()} mode</div>
@@ -166,10 +158,10 @@ export default function SourceIntakeManualUploadDropZone({ mode, onPackageStaged
       <div style={{ display: "grid", gridTemplateColumns: "140px minmax(0, 1fr)", gap: "8px 10px", alignItems: "center", marginBottom: 10 }}>
         <label style={{ fontSize: 12, color: "#94a3b8" }}>Package name</label>
         <input
+          className="mv-input"
           value={packageName}
           onChange={(event) => setPackageName(event.target.value)}
           disabled={isUploading}
-          style={{ background: "#020617", color: "#e5e7eb", border: "1px solid #475569", borderRadius: 7, padding: "7px 9px" }}
         />
       </div>
 
@@ -209,7 +201,7 @@ export default function SourceIntakeManualUploadDropZone({ mode, onPackageStaged
           ref={inputRef}
           type="file"
           multiple
-          accept=".sgy,.segy,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.png,.jpg,.jpeg,.tif,.tiff"
+          accept=".sgy,.segy"
           disabled={isUploading}
           onChange={(event) => {
             if (event.currentTarget.files) addFiles(event.currentTarget.files);
@@ -218,7 +210,7 @@ export default function SourceIntakeManualUploadDropZone({ mode, onPackageStaged
           style={{ display: "none" }}
         />
         <Upload size={22} />
-        <div style={{ fontWeight: 850, marginTop: 8 }}>Drop SEG-Y and supporting documents here</div>
+        <div style={{ fontWeight: 850, marginTop: 8 }}>Drop SEG-Y files here</div>
         <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>or click to browse. SEG-Y files are staged only; conversion remains manual.</div>
       </div>
 
@@ -236,7 +228,7 @@ export default function SourceIntakeManualUploadDropZone({ mode, onPackageStaged
                 <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.name}</div>
                 {entry.error && <div style={{ color: "#fca5a5", marginTop: 2 }}>{entry.error}</div>}
               </div>
-              <div style={{ color: entry.role === "segy" ? "#93c5fd" : entry.role === "document" ? "#c4b5fd" : "#fca5a5", fontWeight: 750 }}>{entry.role}</div>
+              <div style={{ color: entry.role === "segy" ? "#93c5fd" : "#fca5a5", fontWeight: 750 }}>{entry.role}</div>
               <div style={{ color: "#94a3b8" }}>{formatSize(entry.sizeBytes)}</div>
               <button type="button" onClick={() => setEntries((current) => current.filter((item) => item.id !== entry.id))} disabled={isUploading} style={buttonStyle(!isUploading)} aria-label={`Remove ${entry.name}`}>
                 <X size={14} />
@@ -254,7 +246,7 @@ export default function SourceIntakeManualUploadDropZone({ mode, onPackageStaged
           Clear Queue
         </button>
         <div style={{ fontSize: 12, color: "#94a3b8" }}>
-          SEG-Y: {segyCount} · Documents: {documentCount} · Rejected: {unsupportedCount}
+          SEG-Y: {segyCount} · Rejected: {unsupportedCount}
         </div>
       </div>
 
@@ -267,20 +259,6 @@ export default function SourceIntakeManualUploadDropZone({ mode, onPackageStaged
           <div>Package: {result.package_id || "—"}</div>
           <div>Repository: {result.repository_id || "—"}</div>
           <div>SEG-Y candidates: {result.segy_candidates?.length ?? 0}</div>
-          <div>Supporting documents staged for assignment: {result.supporting_documents?.length ?? 0}</div>
-          {(result.supporting_documents?.length ?? 0) > 0 && (
-            <div style={{ marginTop: 8, border: "1px solid #334155", borderRadius: 7, padding: 8 }}>
-              <div style={{ color: "#cbd5e1", fontWeight: 800, marginBottom: 5 }}>Documents available to assign</div>
-              {(result.supporting_documents || []).map((doc: Record<string, any>) => (
-                <div key={String(doc.document_id || doc.filename)} style={{ color: "#e2e8f0", marginTop: 3 }}>
-                  {String(doc.filename || doc.document_id || "Document")} <span style={{ color: "#94a3b8" }}>({String(doc.document_type || "document")})</span>
-                </div>
-              ))}
-              <div style={{ color: "#94a3b8", marginTop: 6 }}>
-                Select a staged SEG-Y row above and use Assign Documents, or click Assign in the Supporting Docs column.
-              </div>
-            </div>
-          )}
           <div>Conversion started: {String(Boolean(result.conversion_started))}</div>
           <div>Index started: {String(Boolean(result.index_started))}</div>
         </div>

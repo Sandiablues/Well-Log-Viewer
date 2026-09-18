@@ -1,0 +1,21 @@
+:root {
+  --mv-state-active: #4f84c4;
+  --mv-state-selected: #4f84c4;
+  --mv-state-success: #3ca765;
+  --mv-state-warning: #b69a45;
+  --mv-state-danger: #d34d4d;
+  --mv-state-lock: #d29922;
+  --mv-state-confirmed: #56d364;
+  --mv-state-marker: #f87171;
+}
+
+/* MultiViewer accepted light semantic-action role tokens.
+   Exact values migrated from the audited WDV/WBV authority phases. */
+[data-mv-theme="light"] {
+  --mv-semantic-positive-text: #118546;
+  --mv-semantic-positive-border: #16984a;
+  --mv-semantic-positive-on-color: #ffffff;
+  --mv-semantic-positive-strong-text: #066d3a;
+  --mv-semantic-positive-strong-border: #0f8d47;
+  --mv-semantic-positive-soft-bg: rgba(22, 163, 74, 0.12);
+}

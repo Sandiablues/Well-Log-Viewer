@@ -1,0 +1,3 @@
+Survey Name,Data Type,Volume Name,Sample Interval MS,SEG-Y File
+Iota Survey A,3d_volume,Vol_IA,4.0,/var/folders/ft/zqjswlk90lx78pjl_z7hzbhc0000gn/T/sblt8_test_8pugxfqh/good.sgy
+Iota Survey B,3d_volume,Vol_IB,4.0,/var/folders/ft/zqjswlk90lx78pjl_z7hzbhc0000gn/T/sblt8_test_8pugxfqh/good_b.sgy

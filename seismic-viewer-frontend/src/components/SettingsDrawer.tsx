@@ -185,6 +185,7 @@ export function SettingsDrawer({
 
   return (
     <aside
+      className="mv-drawer"
       style={{
         position: 'fixed',
         left: 82,
@@ -192,18 +193,13 @@ export function SettingsDrawer({
         bottom: 0,
         width: 420,
         zIndex: 100,
-        background: '#181818',
-        color: 'white',
-        borderRight: '1px solid #333',
-        boxShadow: '6px 0 20px rgba(0,0,0,0.35)',
         display: 'flex',
         flexDirection: 'column',
       }}
     >
       <div
+        className="mv-drawer__header"
         style={{
-          padding: '14px 16px',
-          borderBottom: '1px solid #333',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -211,32 +207,24 @@ export function SettingsDrawer({
         }}
       >
         <div>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>Settings / System</div>
-          <div style={{ fontSize: 12, opacity: 0.65 }}>Consolidated viewer status panel</div>
+          <div className="mv-type-panel-title">Settings / System</div>
+          <div className="mv-type-meta">Consolidated viewer status panel</div>
         </div>
 
         <button
+          className="mv-button mv-button--compact mv-button--secondary"
           onClick={onClose}
-          style={{
-            background: '#333',
-            color: 'white',
-            border: '1px solid #555',
-            borderRadius: 4,
-            padding: '5px 9px',
-            cursor: 'pointer',
-          }}
         >
           Close
         </button>
       </div>
 
       <div
+        className="mv-drawer__tabs"
         style={{
           display: 'flex',
           gap: 6,
           flexWrap: 'wrap',
-          padding: '10px 12px',
-          borderBottom: '1px solid #333',
         }}
       >
         {([
@@ -248,26 +236,19 @@ export function SettingsDrawer({
         ] as const).map(([key, label]) => (
           <button
             key={key}
+            className={`mv-button mv-button--compact mv-button--secondary ${settingsTab === key ? 'mv-is-selected' : ''}`}
+            aria-selected={settingsTab === key}
             onClick={() => setSettingsTab(key)}
-            style={{
-              background: settingsTab === key ? '#4a4a4a' : '#2b2b2b',
-              color: 'white',
-              border: settingsTab === key ? '1px solid #aaa' : '1px solid #555',
-              borderRadius: 4,
-              padding: '5px 8px',
-              cursor: 'pointer',
-              fontSize: 12,
-            }}
           >
             {label}
           </button>
         ))}
       </div>
 
-      <div style={{ padding: 16, overflowY: 'auto', fontSize: 13, lineHeight: 1.45 }}>
+      <div className="mv-drawer__body" style={{ overflowY: 'auto' }}>
         {settingsTab === 'frontend' && (
           <>
-            <h3 style={{ marginTop: 0 }}>Frontend</h3>
+            <h3 className="mv-type-section-heading" style={{ marginTop: 0 }}>Frontend</h3>
             <div>Viewer mode: <strong>{viewMode}</strong></div>
             <div>Selected dataset: <strong>{selectedVolume?.display_name || selectedVolume?.filename || 'None'}</strong></div>
             <div>Selected type: <strong>{selectedVolume?.dataset_type || '—'}</strong></div>
@@ -305,7 +286,7 @@ export function SettingsDrawer({
 
         {settingsTab === 'backend' && (
           <>
-            <h3 style={{ marginTop: 0 }}>Backend</h3>
+            <h3 className="mv-type-section-heading" style={{ marginTop: 0 }}>Backend</h3>
 
             <div
               style={{
@@ -423,7 +404,7 @@ export function SettingsDrawer({
 
         {settingsTab === 'cache' && (
           <>
-            <h3 style={{ marginTop: 0 }}>Cache</h3>
+            <h3 className="mv-type-section-heading" style={{ marginTop: 0 }}>Cache</h3>
 
             <div
               style={{
@@ -480,7 +461,7 @@ export function SettingsDrawer({
 
         {settingsTab === 'jobs' && (
           <>
-            <h3 style={{ marginTop: 0 }}>Jobs</h3>
+            <h3 className="mv-type-section-heading" style={{ marginTop: 0 }}>Jobs</h3>
 
             <div>Upload/conversion active: <strong>{isUploading ? 'Yes' : 'No'}</strong></div>
             <div>Current upload message: <strong>{uploadMessage || '—'}</strong></div>
@@ -648,7 +629,7 @@ export function SettingsDrawer({
 
         {settingsTab === 'settings' && (
           <>
-            <h3 style={{ marginTop: 0 }}>Settings</h3>
+            <h3 className="mv-type-section-heading" style={{ marginTop: 0 }}>Settings</h3>
             <div
               style={{
                 marginTop: 12,

@@ -93,6 +93,9 @@ interface Seismic2DViewerProps {
   defaultShowLineInfo?: boolean;
   controlledShowLineInfo?: boolean;
   showLineInfoControl?: boolean;
+  emptyState?: boolean;
+  emptyStateMessage?: string;
+  canvasBackground?: string;
 }
 
 type ProcessingMode = 'raw' | 'demean' | 'trace_rms' | 'agc';
@@ -228,30 +231,48 @@ function formatLineInfoValue(value: any): string {
 
 function LineInfoRow({ label, value }: { label: string; value: any }) {
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '92px 1fr',
-        gap: '8px',
-        fontSize: '12px',
-        padding: '5px 0',
-        borderBottom: '1px solid #303030',
-      }}
-    >
-      <div style={{ opacity: 0.65 }}>{label}</div>
-      <div style={{ wordBreak: 'break-word' }}>{formatLineInfoValue(value)}</div>
-    </div>
+    <>
+      <div className="mv-sdv3d-metadata-label">{label}</div>
+      <div className="mv-type-property-value">{formatLineInfoValue(value)}</div>
+    </>
   );
 }
 
 
-export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim, lineInfo, surveyName, defaultShowLineInfo = true, controlledShowLineInfo, showLineInfoControl = true }) => {
+type Seismic2DOptionPanelOpenState = {
+  display: boolean;
+  amplitude: boolean;
+  wiggle: boolean;
+  gridAxis: boolean;
+  zoom: boolean;
+};
+
+const seismic2DOptionPanelOpenState: Seismic2DOptionPanelOpenState = {
+  display: true,
+  amplitude: true,
+  wiggle: false,
+  gridAxis: false,
+  zoom: false,
+};
+
+export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({
+  zarrPath,
+  dim,
+  lineInfo,
+  surveyName,
+  defaultShowLineInfo = true,
+  controlledShowLineInfo,
+  showLineInfoControl = true,
+  canvasBackground = '#000',
+  emptyState = false,
+  emptyStateMessage = 'No data loaded',
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const renderRequestSeqRef = useRef(0);
 
   const [index, setIndex] = useState(0);
-  const [metadata, setMetadata] = useState<any>(null);
+  const [metadata, setMetadata] = useState<any>(emptyState ? { shape: [0, 0] } : null);
   const [gain, setGain] = useState(1.0);
   const [clipPercentile, setClipPercentile] = useState(99.0);
   const [processingMode, setProcessingMode] = useState<ProcessingMode>('demean');
@@ -272,16 +293,17 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
   const [showTimelines, setShowTimelines] = useState(false);
   const [showAxisLabels, setShowAxisLabels] = useState(true);
   const [menuCollapsed, setMenuCollapsed] = useState(false);
-  const [displayControlsOpen, setDisplayControlsOpen] = useState(true);
-  const [amplitudeControlsOpen, setAmplitudeControlsOpen] = useState(true);
-  const [wiggleControlsOpen, setWiggleControlsOpen] = useState(false);
-  const [gridAxisControlsOpen, setGridAxisControlsOpen] = useState(false);
-  const [zoomControlsOpen, setZoomControlsOpen] = useState(false);
+  const [displayControlsOpen, setDisplayControlsOpen] = useState(() => seismic2DOptionPanelOpenState.display);
+  const [amplitudeControlsOpen, setAmplitudeControlsOpen] = useState(() => seismic2DOptionPanelOpenState.amplitude);
+  const [wiggleControlsOpen, setWiggleControlsOpen] = useState(() => seismic2DOptionPanelOpenState.wiggle);
+  const [gridAxisControlsOpen, setGridAxisControlsOpen] = useState(() => seismic2DOptionPanelOpenState.gridAxis);
+  const [zoomControlsOpen, setZoomControlsOpen] = useState(() => seismic2DOptionPanelOpenState.zoom);
   const [timelineIntervalMs, setTimelineIntervalMs] = useState(250);
   const [sectionInfo, setSectionInfo] = useState<any>(null);
   const [cursorInfo, setCursorInfo] = useState<any>(null);
   const [showLineInfoDrawer, setShowLineInfoDrawer] = useState(defaultShowLineInfo);
   const effectiveShowLineInfoDrawer = controlledShowLineInfo ?? showLineInfoDrawer;
+  const [lineInfoCollapsed, setLineInfoCollapsed] = useState(false);
   const [zoomDrag, setZoomDrag] = useState<any>(null);
   const [panDrag, setPanDrag] = useState<PanDrag2D | null>(null);
   const [sourceWindow, setSourceWindow] = useState<SourceWindow2D | null>(null);
@@ -291,17 +313,39 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
   const [frequencyFilter, setFrequencyFilter] = useState<'none' | 'bandpass'>('none');
 
   useEffect(() => {
+    seismic2DOptionPanelOpenState.display = displayControlsOpen;
+    seismic2DOptionPanelOpenState.amplitude = amplitudeControlsOpen;
+    seismic2DOptionPanelOpenState.wiggle = wiggleControlsOpen;
+    seismic2DOptionPanelOpenState.gridAxis = gridAxisControlsOpen;
+    seismic2DOptionPanelOpenState.zoom = zoomControlsOpen;
+  }, [
+    displayControlsOpen,
+    amplitudeControlsOpen,
+    wiggleControlsOpen,
+    gridAxisControlsOpen,
+    zoomControlsOpen,
+  ]);
+
+  useEffect(() => {
     setSourceWindow(null);
     setPanDrag(null);
     setZoomDrag(null);
     setBoxZoomEnabled(false);
     setRenderError(null);
+
+    if (emptyState || !zarrPath) {
+      setMetadata({ shape: [0, 0] });
+      setSectionInfo(null);
+      setCursorInfo(null);
+      return;
+    }
+
     getZarrMetadata(zarrPath).then(setMetadata);
-  }, [zarrPath]);
+  }, [zarrPath, emptyState]);
 
   useEffect(() => {
     async function renderSection() {
-      if (!canvasRef.current || !metadata) return;
+      if (emptyState || !canvasRef.current || !metadata) return;
 
       const renderRequestId = ++renderRequestSeqRef.current;
 
@@ -585,36 +629,48 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
           norms: Float32Array,
           fillPositive: boolean
         ) => {
-          const wantSign = fillPositive ? 1 : -1;
-          let inLobe = false;
-          let lobeStart = 0;
-
           const hasWantedSign = (v: number) =>
             fillPositive ? v > 0 : v < 0;
 
-          for (let sample = 0; sample < sampleCount; sample++) {
-            const active = hasWantedSign(norms[sample]);
+          const interpolateZeroCrossing = (sampleA: number, sampleB: number) => {
+            const a = norms[sampleA];
+            const b = norms[sampleB];
+            const denom = Math.abs(a) + Math.abs(b);
 
-            if (active && !inLobe) {
-              inLobe = true;
+            if (!Number.isFinite(denom) || denom <= 1e-12) return sampleA;
+
+            return sampleA + Math.abs(a) / denom;
+          };
+
+          let lobeStart: number | null = null;
+          let lobeStartY = 0;
+
+          for (let sample = 0; sample <= sampleCount; sample++) {
+            const active = sample < sampleCount && hasWantedSign(norms[sample]);
+
+            if (active && lobeStart === null) {
               lobeStart = sample;
+              lobeStartY =
+                sample > 0 && !hasWantedSign(norms[sample - 1])
+                  ? interpolateZeroCrossing(sample - 1, sample)
+                  : sample;
             }
 
-            const endOfLobe =
-              inLobe &&
-              (!active || sample === sampleCount - 1);
+            if (!active && lobeStart !== null) {
+              const lobeEnd = sample - 1;
+              const lobeEndY =
+                sample < sampleCount && lobeEnd >= 0
+                  ? interpolateZeroCrossing(lobeEnd, sample)
+                  : lobeEnd;
 
-            if (endOfLobe) {
-              const lobeEnd = active && sample === sampleCount - 1 ? sample : sample - 1;
-
-              if (lobeEnd > lobeStart) {
+              if (lobeEnd >= lobeStart) {
                 ctx.beginPath();
 
-                // Down the baseline.
-                ctx.moveTo(baseline, lobeStart);
-                ctx.lineTo(baseline, lobeEnd);
+                // Baseline side of the variable-area lobe.
+                ctx.moveTo(baseline, lobeStartY);
+                ctx.lineTo(baseline, lobeEndY);
 
-                // Back up along the wiggle curve.
+                // Wiggle-curve side of the lobe, including single-sample lobes.
                 for (let s = lobeEnd; s >= lobeStart; s--) {
                   ctx.lineTo(wiggleX(baseline, norms[s]), s);
                 }
@@ -623,7 +679,7 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
                 ctx.fill();
               }
 
-              inLobe = false;
+              lobeStart = null;
             }
           }
         };
@@ -1214,8 +1270,8 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
     width: '270px',
     minWidth: '270px',
     padding: '12px',
-    borderRight: '1px solid #333',
-    background: '#1b1b1b',
+    borderRight: '1px solid #27343e',
+    background: '#0d1116',
     overflowY: 'auto',
     boxSizing: 'border-box',
   };
@@ -1223,7 +1279,7 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
   const sectionStyle: React.CSSProperties = {
     marginBottom: '16px',
     paddingBottom: '12px',
-    borderBottom: '1px solid #303030',
+    borderBottom: '1px solid #27343e',
   };
 
   const sectionTitleStyle: React.CSSProperties = {
@@ -1244,18 +1300,18 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
   };
 
   const selectStyle: React.CSSProperties = {
-    background: '#2b2b2b',
-    color: 'white',
-    border: '1px solid #555',
+    background: '#091118',
+    color: '#e3e8ec',
+    border: '1px solid #354452',
     borderRadius: '4px',
     padding: '4px 6px',
     width: '100%',
   };
 
   const buttonStyle: React.CSSProperties = {
-    background: '#333',
-    color: 'white',
-    border: '1px solid #555',
+    background: '#091118',
+    color: '#e3e8ec',
+    border: '1px solid #354452',
     borderRadius: '4px',
     padding: '6px 8px',
     cursor: 'pointer',
@@ -1280,68 +1336,45 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
     <div
       style={{
         display: 'flex',
+        position: 'relative',
         height: '100%',
-        background: '#222',
-        color: 'white',
+        background: '#0d1116',
+        color: '#e3e8ec',
         boxSizing: 'border-box',
         minHeight: 0,
       }}
     >
       <aside
+        className="mv-viewer-controls-panel mv-viewer-controls-panel--info-parity mv-sdv2d-wbv-controls-panel"
         style={{
           ...panelStyle,
-          width: menuCollapsed ? 36 : panelStyle.width,
-          minWidth: menuCollapsed ? 36 : panelStyle.minWidth,
-          padding: menuCollapsed ? '8px 4px' : panelStyle.padding,
-          overflow: menuCollapsed ? 'hidden' : panelStyle.overflow,
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          zIndex: 5,
+          transform: menuCollapsed ? 'translateX(calc(-100% - 10px))' : 'translateX(0)',
+          transition: 'transform 180ms ease',
+          pointerEvents: menuCollapsed ? 'none' : 'auto',
+          width: panelStyle.width,
+          minWidth: panelStyle.minWidth,
+          height: '100%',
+          padding: panelStyle.padding,
+          overflow: panelStyle.overflow,
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: menuCollapsed ? 'center' : 'space-between',
-            gap: 10,
-            marginBottom: menuCollapsed ? 0 : 14,
-          }}
+        
+        <button
+          className="mv-viewer-compact-button"
+          onClick={() => setMenuCollapsed((value) => !value)}
+          title={menuCollapsed ? 'Expand 2D View Controls' : 'Collapse 2D View Controls'}
+          aria-label={menuCollapsed ? 'Expand 2D View Controls' : 'Collapse 2D View Controls'}
         >
-          {!menuCollapsed && (
-            <div
-              style={{
-                fontSize: 18,
-                fontWeight: 700,
-                letterSpacing: 0.2,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              2D View Controls
-            </div>
-          )}
+          {menuCollapsed ? '▶' : '◀'}
+        </button>
 
-          <button
-            type="button"
-            onClick={() => setMenuCollapsed((value) => !value)}
-            title={menuCollapsed ? 'Expand 2D controls' : 'Collapse 2D controls'}
-            style={{
-              width: 30,
-              height: 30,
-              minWidth: 30,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: '#3a3a3a',
-              color: '#fff',
-              border: '1px solid #777',
-              borderRadius: 0,
-              cursor: 'pointer',
-              fontSize: 16,
-              lineHeight: 1,
-              padding: 0,
-            }}
-          >
-            {menuCollapsed ? '▶' : '◀'}
-          </button>
-        </div>
+        <h3 className="mv-viewer-controls-title" style={{ margin: 0 }}>
+          2D View Controls
+        </h3>
 
         {!menuCollapsed && (
           <Seismic2DControlsPanel
@@ -1411,61 +1444,19 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
         style={{
           position: 'relative',
           flex: 1,
+          marginLeft: menuCollapsed ? 0 : panelStyle.width,
+          marginRight: lineInfoCollapsed ? 0 : 330,
           minWidth: 0,
           minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
-          background: '#202020',
         }}
       >
-        {showLineInfoControl && (
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              alignItems: 'center',
-              padding: '8px 12px',
-              borderBottom: '1px solid #333',
-              background: '#202020',
-            }}
-          >
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 18,
-                padding: '8px 14px',
-                border: '1px solid #3f3f3f',
-                borderRadius: 10,
-                background: 'rgba(24, 24, 24, 0.95)',
-              }}
-            >
-              <label
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 7,
-                  fontSize: 13,
-                  color: '#f0f0f0',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={showLineInfoDrawer}
-                  onChange={(e) => setShowLineInfoDrawer(e.target.checked)}
-                />
-                Line info
-              </label>
-            </div>
-          </div>
-        )}
 
 
 
-        {metadata.shape?.length !== 2 && (
-          <div style={{ padding: '8px 12px', borderBottom: '1px solid #333' }}>
+        {!emptyState && metadata.shape?.length !== 2 && (
+          <div className="mv-sdv-2d-slice-index-row" style={{ padding: '8px 12px' }}>
             <label>Slice Index: </label>
             <input
               type="range"
@@ -1487,20 +1478,61 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
                 boxSizing: 'border-box',
             flex: 1,
             overflow: 'auto',
-            background: '#000',
+            background: canvasBackground,
             minHeight: 0,
             padding: '12px',
             boxSizing: 'border-box',
+            border: '1px solid rgb(155, 168, 179)',
+            borderRadius: 0,
+            boxShadow: 'rgb(167, 178, 188) 0 0 0 1px inset',
           }}
         >
           <div
             style={{
               position: 'relative',
-              width: fitToWidth ? `${100 * xScale}%` : `${(canvasRef.current?.width || 100) * xScale}px`,
-              height: `${(canvasRef.current?.height || 100) * yScale}px`,
+              width: emptyState ? '100%' : (fitToWidth ? `${100 * xScale}%` : `${(canvasRef.current?.width || 100) * xScale}px`),
+              height: emptyState ? '100%' : `${(canvasRef.current?.height || 100) * yScale}px`,
+              minHeight: emptyState ? '240px' : undefined,
               margin: '0 auto',
             }}
           >
+            {emptyState && (
+              <div
+                className="mv-sdv2d-empty-canvas-state"
+                role="status"
+                aria-live="polite"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  zIndex: 2,
+                  pointerEvents: 'none',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '10px 16px',
+                    border: '1px solid var(--mv-border-strong)',
+                    borderRadius: 6,
+                    background: 'color-mix(in srgb, var(--mv-surface-1) 92%, transparent)',
+                    color: 'var(--mv-text-primary)',
+                    fontFamily: 'var(--mv-font-ui)',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    lineHeight: 1.2,
+                    textAlign: 'center',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  {emptyStateMessage}
+                </div>
+              </div>
+            )}
             <canvas
               ref={canvasRef}
               onMouseDown={handleCanvasMouseDown}
@@ -1516,13 +1548,13 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
                 imageRendering: 'auto',
                 width: '100%',
                 height: '100%',
-                display: 'block',
-                background: '#fff',
+                display: emptyState ? 'none' : 'block',
+                background: canvasBackground,
                 cursor: boxZoomEnabled ? 'crosshair' : sourceWindow ? (panDrag?.active ? 'grabbing' : 'grab') : 'default',
               }}
             />
 
-            {showAxisLabels && (() => {
+            {!emptyState && showAxisLabels && (() => {
               const axisInfo = get2DAxisDisplayInfo(lineInfo);
 
               const leftGutter = 78;
@@ -1628,7 +1660,7 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
               );
             })()}
 
-            {boxZoomEnabled && zoomDrag?.active && (
+            {!emptyState && boxZoomEnabled && zoomDrag?.active && (
               <div
                 style={{
                   position: 'absolute',
@@ -1647,55 +1679,66 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
         </div>
       </section>
 
-      {effectiveShowLineInfoDrawer && (
-        <aside
-          style={{
-            width: '300px',
-            minWidth: '300px',
-            borderLeft: '1px solid #333',
-            background: '#1b1b1b',
-            overflowY: 'auto',
-            boxSizing: 'border-box',
-
-          }}
+      <aside
+        className="mv-viewer-info-stack mv-sdv2d-wbv-info-panel"
+        style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          zIndex: 5,
+          transform: lineInfoCollapsed ? 'translateX(calc(100% + 10px))' : 'translateX(0)',
+          transition: 'transform 180ms ease',
+          pointerEvents: lineInfoCollapsed ? 'none' : 'auto',
+          width: '330px',
+          minWidth: '330px',
+          height: '100%',
+          overflowY: 'auto',
+          boxSizing: 'border-box',
+        }}
+      >
+        
+        <button
+          className="mv-viewer-compact-button mv-viewer-info-collapse-button"
+          onClick={() => setLineInfoCollapsed((value) => !value)}
+          title={lineInfoCollapsed ? 'Expand Line Info' : 'Collapse Line Info'}
+          aria-label={lineInfoCollapsed ? 'Expand Line Info' : 'Collapse Line Info'}
         >
+          {lineInfoCollapsed ? '◀' : '▶'}
+        </button>
+
+        <h3
+          className="mv-viewer-controls-title mv-viewer-info-primary-heading"
+          style={{ margin: 0 }}
+        >
+          Line Info
+        </h3>
+
+        {!lineInfoCollapsed && (
           <div
             style={{
-              position: 'sticky',
-              top: 0,
-              zIndex: 2,
-              background: '#1b1b1b',
-              borderBottom: '1px solid #333',
-              padding: '10px 12px',
+              overflowY: 'auto',
+              height: 'calc(100vh - 92px)',
+              maxHeight: 'calc(100vh - 92px)',
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '8px',
+              flexDirection: 'column',
+              gap: 8,
+              overscrollBehavior: 'contain',
+              scrollbarGutter: 'stable',
             }}
           >
-            <strong style={{ fontSize: '13px' }}>Line Info</strong>
-          </div>
-
-          <div style={{ padding: '12px' }}>
-          <div style={{ marginBottom: '14px' }}>
-            <div
-              style={{
-                fontSize: '12px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                opacity: 0.6,
-                marginBottom: '6px',
-              }}
-            >
-              Line Info
-            </div>
-
+          <aside
+            className="mv-viewer-info-card"
+            style={{
+              boxSizing: 'border-box',
+            }}
+          >
+            <div className="mv-type-property-grid mv-sdv3d-metadata-grid" style={{ display: 'grid' }}>
             <LineInfoRow label="Survey" value={surveyName} />
             <LineInfoRow label="Line" value={lineInfo?.line_name || lineInfo?.display_name || lineInfo?.filename || lineInfo?.id} />
             <LineInfoRow label="Rel Path" value={lineInfo?.source_relative_path || lineInfo?.metadata?.source_relative_path} />
-            <LineInfoRow label="Shape" value={lineInfo?.shape || metadata?.shape} />
-            <LineInfoRow label="Traces" value={lineInfo?.trace_count || lineInfo?.shape?.[0] || metadata?.shape?.[0]} />
-            <LineInfoRow label="Samples" value={lineInfo?.sample_count || lineInfo?.shape?.[1] || metadata?.shape?.[1]} />
+            <LineInfoRow label="Shape" value={emptyState ? undefined : (lineInfo?.shape || metadata?.shape)} />
+            <LineInfoRow label="Traces" value={emptyState ? undefined : (lineInfo?.trace_count || lineInfo?.shape?.[0] || metadata?.shape?.[0])} />
+            <LineInfoRow label="Samples" value={emptyState ? undefined : (lineInfo?.sample_count || lineInfo?.shape?.[1] || metadata?.shape?.[1])} />
             <LineInfoRow
               label="Sample Rate"
               value={
@@ -1713,20 +1756,20 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
               }
             />
             <LineInfoRow label="Axis" value={lineInfo?.axis_order || metadata?.zarr?.axis_order || ['trace', 'sample']} />
-          </div>
+            </div>
+          </aside>
 
-          <div style={{ marginBottom: '14px' }}>
-            <div
-              style={{
-                fontSize: '12px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-                opacity: 0.6,
-                marginBottom: '6px',
-              }}
-            >
+          <aside
+            className="mv-viewer-info-card"
+            style={{
+              boxSizing: 'border-box',
+            }}
+          >
+            <div className="mv-type-section-heading" style={{ marginBottom: 8 }}>
               Display Info
             </div>
+
+            <div className="mv-type-property-grid mv-sdv3d-metadata-grid" style={{ display: 'grid' }}>
 
             <LineInfoRow label="Preset" value={formatDisplayPresetLabel(displayPreset)} />
             <LineInfoRow label="Display" value={formatDisplayModeLabel(displayMode)} />
@@ -1751,13 +1794,81 @@ export const Seismic2DViewer: React.FC<Seismic2DViewerProps> = ({ zarrPath, dim,
             <LineInfoRow label="Clip Abs" value={sectionInfo?.clipAbs ? Number(sectionInfo.clipAbs).toFixed(1) : null} />
             <LineInfoRow label="Preview" value={sectionInfo?.previewShape} />
             <LineInfoRow label="Stride" value={sectionInfo?.traceStride ? `${sectionInfo.traceStride} × ${sectionInfo.sampleStride}` : null} />
-          </div>
+            </div>
+          </aside>
 
-          <div style={{ fontSize: '12px', opacity: 0.65, lineHeight: 1.4 }}>
+          <div className="mv-type-helper">
             Full SEG-Y headers and supporting-document links remain in the main Info tab.
           </div>
           </div>
-        </aside>)}
+        )}
+      </aside>
+
+      {lineInfoCollapsed && (
+        <button
+          onClick={() => setLineInfoCollapsed(false)}
+          style={{
+            position: 'absolute',
+            top: 18,
+            right: 0,
+            zIndex: 10,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            minHeight: 136,
+            padding: '10px 6px',
+            background: 'var(--mv-surface-1)',
+            color: 'var(--mv-text-primary)',
+            border: '1px solid var(--mv-border-strong)',
+            borderRight: 'none',
+            borderRadius: '8px 0 0 8px',
+            cursor: 'pointer',
+            boxSizing: 'border-box',
+          }}
+          title="Expand information panel"
+          aria-label="Expand information panel"
+        >
+          <span style={{ fontSize: 16, lineHeight: 1 }}>◀</span>
+          <span
+            style={{
+              writingMode: 'vertical-rl',
+              transform: 'rotate(180deg)',
+              letterSpacing: 1,
+              lineHeight: 1,
+            }}
+          >
+            Info
+          </span>
+        </button>
+      )}
+
+      {menuCollapsed && (
+        <button
+          onClick={() => setMenuCollapsed(false)}
+          style={{
+            position: 'absolute',
+            top: 18,
+            left: 0,
+            zIndex: 10,
+            writingMode: 'vertical-rl',
+            transform: 'rotate(180deg)',
+            background: 'var(--mv-surface-1)',
+            color: 'var(--mv-text-primary)',
+            border: '1px solid var(--mv-border-strong)',
+            borderLeft: 'none',
+            borderRadius: '0 8px 8px 0',
+            padding: '10px 6px',
+            cursor: 'pointer',
+            letterSpacing: 1,
+          }}
+          title="Expand controls"
+          aria-label="Expand controls"
+        >
+          Controls ▶
+        </button>
+      )}
     </div>
   );
 };

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SourceIntakeWorkbenchPayload, SourceIntakeWorkbenchRow } from "../services/registryService";
 import SourceIntakeGeometryQaqcLegacyReport from "./SourceIntakeGeometryQaqcLegacyReport";
-import SourceIntakeDocumentAssignmentDialog from "./SourceIntakeDocumentAssignmentDialog";
 import {
   sourceIntakeCandidateId,
   sourceIntakeRowKey,
@@ -20,28 +19,17 @@ type SourceIntakeWorkbenchPanelProps = {
 type StatusFilter = "all" | "ready" | "building" | "failed";
 
 const panelStyle = {
-  border: "1px solid #334155",
-  borderRadius: 10,
-  background: "#0b1220",
   overflow: "hidden",
 } as const;
 
 const buttonStyle = (enabled: boolean, accent = false) => ({
-  border: `1px solid ${enabled ? (accent ? "#38bdf8" : "#475569") : "#334155"}`,
-  color: enabled ? (accent ? "#7dd3fc" : "#cbd5e1") : "#64748b",
-  background: "transparent",
-  borderRadius: 8,
   padding: "7px 12px",
   cursor: enabled ? "pointer" : "not-allowed",
   opacity: enabled ? 1 : 0.62,
-  fontSize: 13,
-  fontWeight: 700,
   whiteSpace: "nowrap",
 } as const);
 
 const cellStyle = {
-  padding: "14px 12px",
-  borderTop: "1px solid #1f2937",
   verticalAlign: "middle",
 } as const;
 
@@ -97,44 +85,6 @@ function progressPercent(row: SourceIntakeWorkbenchRow): number | null {
   return Math.max(0, Math.min(100, value));
 }
 
-function documentCount(row: SourceIntakeWorkbenchRow): number {
-  const raw = (row as any).supporting_document_count ?? row.document_count ?? 0;
-  const value = Number(raw || 0);
-  return Number.isFinite(value) ? value : 0;
-}
-
-// MANUAL_UPLOAD_STAGING_4A_DOCUMENT_ASSIGNMENT
-// Assigned supporting-document count and available assignment options are
-// different backend-owned facts. Do not silently count package documents as
-// assigned to a SEG-Y candidate. Surface them as assignable documents instead.
-function discoveredDocumentCount(row: SourceIntakeWorkbenchRow): number {
-  const summary = asRecord((row as any).document_assignment_summary);
-  const raw =
-    (row as any).discovered_document_count
-    ?? (row as any).available_document_count
-    ?? summary.discovered_document_count
-    ?? summary.repository_document_count
-    ?? documentCount(row);
-  const value = Number(raw || 0);
-  return Number.isFinite(value) ? value : 0;
-}
-
-function unassignedDocumentCount(row: SourceIntakeWorkbenchRow): number {
-  const assigned = documentCount(row);
-  const discovered = discoveredDocumentCount(row);
-  return Math.max(0, discovered - assigned);
-}
-
-function documentAssignmentHint(row: SourceIntakeWorkbenchRow): string {
-  const assigned = documentCount(row);
-  const discovered = discoveredDocumentCount(row);
-  const unassigned = Math.max(0, discovered - assigned);
-  if (discovered === 0) return "No documents available";
-  if (unassigned > 0) return `${unassigned} available to assign`;
-  if (assigned === 1) return "1 assigned document";
-  return `${assigned} assigned documents`;
-}
-
 function rowSearchText(row: SourceIntakeWorkbenchRow): string {
   return [
     row.filename,
@@ -183,16 +133,11 @@ export default function SourceIntakeWorkbenchV2Panel({ repositoryId, mode = "3d"
   const [actionRunning, setActionRunning] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [geometryQaqcReport, setGeometryQaqcReport] = useState<any | null>(null);
-  const [documentAssignmentReview, setDocumentAssignmentReview] = useState<any | null>(null);
-  const [documentAssignmentRow, setDocumentAssignmentRow] = useState<SourceIntakeWorkbenchRow | null>(null);
-  const [documentAssignmentLoading, setDocumentAssignmentLoading] = useState(false);
 
   useEffect(() => {
     setSelectedKeys(new Set());
     setLocalError(null);
     setGeometryQaqcReport(null);
-    setDocumentAssignmentReview(null);
-    setDocumentAssignmentRow(null);
   }, [session.scopeKey]);
 
   useEffect(() => {
@@ -204,7 +149,7 @@ export default function SourceIntakeWorkbenchV2Panel({ repositoryId, mode = "3d"
     if (!stagedPayload) return;
     setLocalError(null);
     setSelectedKeys(new Set());
-    session.acceptPayload(stagedPayload, "Repository staged into Selection and Conversion.");
+    session.acceptPayload(stagedPayload, "Repository staged into Candidates.");
   }, [stagedPayload, session.acceptPayload]);
 
   const rows = session.rows;
@@ -307,62 +252,6 @@ export default function SourceIntakeWorkbenchV2Panel({ repositoryId, mode = "3d"
   };
 
 
-  const openDocumentAssignmentForRow = async (row: SourceIntakeWorkbenchRow) => {
-    if (actionRunning || documentAssignmentLoading) return;
-    const candidateId = sourceIntakeCandidateId(row);
-    if (!candidateId) {
-      setLocalError("Selected row does not have a source-intake candidate id.");
-      return;
-    }
-    setDocumentAssignmentLoading(true);
-    setLocalError(null);
-    session.setStatus("Loading document assignment review…");
-    try {
-      const review = await getJson(`/api/source-intake/candidates/${encodeURIComponent(candidateId)}/document-assignment-review`);
-      setDocumentAssignmentRow(row);
-      setDocumentAssignmentReview(review);
-      session.setStatus("Document assignment review loaded.");
-    } catch (err) {
-      setLocalError(err instanceof Error ? err.message : String(err));
-      session.setStatus("Document assignment review could not be loaded.");
-    } finally {
-      setDocumentAssignmentLoading(false);
-    }
-  };
-
-  const openDocumentAssignment = async () => {
-    if (selectedRows.length !== 1 || actionRunning || documentAssignmentLoading) return;
-    await openDocumentAssignmentForRow(selectedRows[0]);
-  };
-
-  const submitDocumentAssignment = async (action: string, documentIds: string[]) => {
-    if (!documentAssignmentRow || actionRunning) return;
-    const candidateId = sourceIntakeCandidateId(documentAssignmentRow);
-    if (!candidateId) throw new Error("Document assignment row is missing candidate id.");
-    setActionRunning(true);
-    setLocalError(null);
-    session.setStatus("Submitting document assignment…");
-    try {
-      const result = await postJson(`/api/source-intake/candidates/${encodeURIComponent(candidateId)}/document-assignments`, {
-        mode: activeMode,
-        action,
-        document_ids: documentIds,
-      });
-      const nextReview = result?.review;
-      if (nextReview) {
-        setDocumentAssignmentReview(nextReview);
-      }
-      session.setStatus("Document assignment saved.");
-      await session.load({ silent: true });
-    } catch (err) {
-      setLocalError(err instanceof Error ? err.message : String(err));
-      session.setStatus("Document assignment failed.");
-      throw err;
-    } finally {
-      setActionRunning(false);
-    }
-  };
-
   const toggleAll = () => {
     if (allSelected) {
       setSelectedKeys(new Set());
@@ -387,62 +276,45 @@ export default function SourceIntakeWorkbenchV2Panel({ repositoryId, mode = "3d"
   const indexRows = rowsForAction("build_index");
 
   return (
-    <section className="source-intake-workbench-panel" style={panelStyle}>
-      <div style={{ padding: 16, borderBottom: "1px solid #334155", display: "grid", gap: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-          <div>
-            <h3 style={{ margin: 0, color: "#f8fafc" }}>Selection and Conversion</h3>
-            <p style={{ margin: "6px 0 0", color: "#94a3b8" }}>
-              Backend-owned Workbench V2 session. Rows render only when mode and repository context match.
-            </p>
+    <section className="source-intake-workbench-panel mv-workbench ssi-candidates" style={panelStyle}>
+      <div className="mv-workbench__header ssi-candidates__header">
+        <div className="ssi-candidates__toolbar">
+          <h3 className="mv-type-section-heading" style={{ margin: 0 }}>Candidates</h3>
+          <div className="ssi-candidate-filterbar">
+            <label className="mv-type-property-label">Status</label>
+            <select className="mv-select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}>
+              <option value="all">All</option>
+              <option value="ready">Viewer Ready</option>
+              <option value="building">Building / Rebuilding</option>
+              <option value="failed">Failed</option>
+            </select>
+            <label className="mv-type-property-label">Search</label>
+            <input className="mv-input ssi-candidate-search" type="search" value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder="Line, file, survey, path" />
+            <span className="mv-type-meta">{filteredRows.length} / {rows.length}</span>
+            <button className="mv-button mv-button--compact" type="button" onClick={handleRefresh} disabled={session.loading || actionRunning} style={buttonStyle(!session.loading && !actionRunning, true)}>Refresh</button>
+            <button className="mv-button mv-button--compact" type="button" onClick={handleClearSelected} disabled={!selectedCount || session.loading || actionRunning} style={buttonStyle(Boolean(selectedCount) && !session.loading && !actionRunning)}>Clear</button>
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" onClick={handleRefresh} disabled={session.loading || actionRunning} style={buttonStyle(!session.loading && !actionRunning, true)}>Refresh</button>
-            <button type="button" onClick={handleClearSelected} disabled={!selectedCount || session.loading || actionRunning} style={buttonStyle(Boolean(selectedCount) && !session.loading && !actionRunning)}>Clear</button>
-          </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", color: "#cbd5e1" }}>
-          <span>{selectedCount} selected / {filteredRows.length} shown</span>
-          <button type="button" disabled={true} style={buttonStyle(false)}>Approve selected</button>
-          <button type="button" disabled={true} style={buttonStyle(false)}>Exclude selected</button>
-          <button type="button" disabled={!buildRows.length || actionRunning} style={buttonStyle(Boolean(buildRows.length) && !actionRunning)} onClick={() => void runSelectedAction(buildAction, buildLabel)}>{buildLabel}</button>
-          {activeMode === "3d" && <button type="button" disabled={!geometryRows.length || geometryRows.length !== 1 || actionRunning} style={buttonStyle(geometryRows.length === 1 && !actionRunning)} onClick={() => void runSelectedAction("geometry_qaqc", "Geometry QAQC")}>Run Geometry QAQC</button>}
-          <button type="button" disabled={selectedRows.length !== 1 || actionRunning || documentAssignmentLoading} style={buttonStyle(selectedRows.length === 1 && !actionRunning && !documentAssignmentLoading)} onClick={() => void openDocumentAssignment()}>Assign Documents</button>
-          {activeMode === "3d" && <button type="button" disabled={!indexRows.length || actionRunning} style={buttonStyle(Boolean(indexRows.length) && !actionRunning)} onClick={() => void runSelectedAction("build_index", "Build Index")}>Build Index</button>}
-          {activeMode === "3d" && <button type="button" disabled={!oneIndexedPreviewRow || actionRunning} style={buttonStyle(oneIndexedPreviewRow && !actionRunning)} onClick={() => void handleViewIndexedPreview()}>View Indexed Preview</button>}
-          <button type="button" disabled={!selectedCount} style={buttonStyle(Boolean(selectedCount))} onClick={() => setSelectedKeys(new Set())}>Clear selection</button>
-        </div>
+        {selectedCount > 0 && <div className="ssi-selection-actions">
+          <span className="mv-type-meta">{selectedCount} selected / {filteredRows.length} shown</span>
+          <button className="mv-button mv-button--compact" type="button" disabled={!buildRows.length || actionRunning} style={buttonStyle(Boolean(buildRows.length) && !actionRunning)} onClick={() => void runSelectedAction(buildAction, buildLabel)}>{buildLabel}</button>
+          {activeMode === "3d" && <button className="mv-button mv-button--compact" type="button" disabled={!geometryRows.length || geometryRows.length !== 1 || actionRunning} style={buttonStyle(geometryRows.length === 1 && !actionRunning)} onClick={() => void runSelectedAction("geometry_qaqc", "Geometry QAQC")}>Run Geometry QAQC</button>}
+          {activeMode === "3d" && <button className="mv-button mv-button--compact" type="button" disabled={!indexRows.length || actionRunning} style={buttonStyle(Boolean(indexRows.length) && !actionRunning)} onClick={() => void runSelectedAction("build_index", "Build Index")}>Build Index</button>}
+          {activeMode === "3d" && <button className="mv-button mv-button--compact" type="button" disabled={!oneIndexedPreviewRow || actionRunning} style={buttonStyle(oneIndexedPreviewRow && !actionRunning)} onClick={() => void handleViewIndexedPreview()}>View Indexed Preview</button>}
+          <button className="mv-button mv-button--compact" type="button" style={buttonStyle(true)} onClick={() => setSelectedKeys(new Set())}>Clear selection</button>
+        </div>}
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <label style={{ color: "#cbd5e1" }}>Status</label>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)} style={{ background: "#0f172a", color: "#e2e8f0", border: "1px solid #475569", borderRadius: 8, padding: "8px 10px" }}>
-            <option value="all">All</option>
-            <option value="ready">Viewer Ready</option>
-            <option value="building">Building / Rebuilding</option>
-            <option value="failed">Failed</option>
-          </select>
-          <label style={{ color: "#cbd5e1" }}>Search</label>
-          <input type="search" value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder="Type 2+ chars: line, file, survey, path, document" style={{ minWidth: 320, background: "#0f172a", color: "#e2e8f0", border: "1px solid #475569", borderRadius: 8, padding: "9px 10px" }} />
-          <span style={{ color: "#94a3b8" }}>Showing {filteredRows.length} of {rows.length} rows</span>
-        </div>
+        {session.loading && <div className="mv-type-meta">Loading candidates…</div>}
 
-        <div style={{ border: "1px solid #334155", borderRadius: 8, padding: "10px 12px", color: "#cbd5e1" }}>
-          {session.loading ? "Loading backend-owned workbench payload…" : session.status || "Select rows to enable valid toolbar actions."}
-        </div>
-
-        <div style={{ color: "#94a3b8", display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <span>Rows: {rowCount}</span>
-          <span>Total: {Number(summary.total ?? rows.length)}</span>
-          <span>Ready: {Number(summary.ready ?? 0)}</span>
-          <span>Review Required: {Number(summary.review_required ?? 0)}</span>
-          <span>Building: {Number(summary.building ?? 0)}</span>
-          <span>Complete: {Number(summary.complete ?? 0)}</span>
-          <span>Managed: {Number(summary.managed ?? 0)}</span>
-          <span>Failed: {Number(summary.failed ?? 0)}</span>
-          <span>Blocked: {Number(summary.blocked ?? 0)}</span>
-          <span>Two D: {Number(summary.two_d ?? 0)}</span>
-          <span>Three D: {Number(summary.three_d ?? 0)}</span>
+        <div className="ssi-summary-grid" aria-label="Source Intake summary">
+          <div className="ssi-summary-tile"><strong>{rowCount}</strong><span>Rows</span></div>
+          <div className="ssi-summary-tile"><strong>{Number(summary.ready ?? 0)}</strong><span>Ready</span></div>
+          <div className="ssi-summary-tile"><strong>{Number(summary.review_required ?? 0)}</strong><span>Review</span></div>
+          <div className="ssi-summary-tile"><strong>{Number(summary.building ?? 0)}</strong><span>Building</span></div>
+          <div className="ssi-summary-tile"><strong>{Number(summary.managed ?? 0)}</strong><span>Managed</span></div>
+          <div className="ssi-summary-tile"><strong>{Number(summary.failed ?? 0)}</strong><span>Failed</span></div>
+          <div className="ssi-summary-tile"><strong>{Number(summary.blocked ?? 0)}</strong><span>Blocked</span></div>
         </div>
 
         {error && <div style={{ border: "1px solid #ef4444", borderRadius: 8, padding: "10px 12px", color: "#fecaca" }}>{error}</div>}
@@ -453,26 +325,12 @@ export default function SourceIntakeWorkbenchV2Panel({ repositoryId, mode = "3d"
             onClose={() => setGeometryQaqcReport(null)}
           />
         )}
-
-        {documentAssignmentReview && documentAssignmentRow && (
-          <SourceIntakeDocumentAssignmentDialog
-            review={documentAssignmentReview}
-            row={documentAssignmentRow}
-            mode={activeMode}
-            submitting={actionRunning}
-            onSubmit={submitDocumentAssignment}
-            onClose={() => {
-              setDocumentAssignmentReview(null);
-              setDocumentAssignmentRow(null);
-            }}
-          />
-        )}
       </div>
 
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", color: "#cbd5e1", fontSize: 13 }}>
+      <div className="ssi-candidate-table-wrap">
+        <table className="mv-table ssi-candidate-table" style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr style={{ background: "#111827", color: "#cbd5e1" }}>
+            <tr>
               <th style={{ ...cellStyle, textAlign: "left" }}><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
               <th style={{ ...cellStyle, textAlign: "left" }}>Status</th>
               <th style={{ ...cellStyle, textAlign: "left" }}>Type</th>
@@ -480,7 +338,6 @@ export default function SourceIntakeWorkbenchV2Panel({ repositoryId, mode = "3d"
               <th style={{ ...cellStyle, textAlign: "left" }}>Survey</th>
               <th style={{ ...cellStyle, textAlign: "left" }}>Line / Volume</th>
               <th style={{ ...cellStyle, textAlign: "left" }}>QAQC</th>
-              <th style={{ ...cellStyle, textAlign: "left" }}>Supporting Docs</th>
               <th style={{ ...cellStyle, textAlign: "left" }}>Conversion</th>
               <th style={{ ...cellStyle, textAlign: "left" }}>Managed Output</th>
             </tr>
@@ -488,7 +345,7 @@ export default function SourceIntakeWorkbenchV2Panel({ repositoryId, mode = "3d"
           <tbody>
             {filteredRows.length === 0 && (
               <tr>
-                <td colSpan={10} style={{ ...cellStyle, color: "#94a3b8" }}>
+                <td colSpan={9} style={{ ...cellStyle, color: "#94a3b8" }}>
                   {session.loading ? "Loading rows…" : "No rows for the active mode/repository context."}
                 </td>
               </tr>
@@ -500,17 +357,13 @@ export default function SourceIntakeWorkbenchV2Panel({ repositoryId, mode = "3d"
               const prog = progress(row);
               const pres = presentation(row);
               const percent = progressPercent(row);
-              const docs = documentCount(row);
-              const availableDocs = discoveredDocumentCount(row);
-              const unassignedDocs = unassignedDocumentCount(row);
               const dimension = rowDimension(row);
               return (
                 <tr key={key}>
                   <td style={cellStyle}><input type="checkbox" checked={checked} onChange={() => toggleRow(key)} /></td>
-                  <td style={{ ...cellStyle, minWidth: 220 }}>
-                    <div style={{ color: "#e2e8f0", marginBottom: 6 }}>{valueOrDash(pres.status_label || life.label)}</div>
-                    <div style={{ color: life.failed ? "#fecaca" : "#bbf7d0", fontWeight: 700 }}>{valueOrDash(prog.label || life.label)}</div>
-                    {percent !== null && (
+                  <td style={{ ...cellStyle, minWidth: 170 }}>
+                    <div className={life.failed ? "ssi-status-label is-failed" : "ssi-status-label"}>{valueOrDash(pres.status_label || prog.label || life.label)}</div>
+                    {percent !== null && percent < 100 && (
                       <div className="si-progress-row" aria-label={`Progress ${Math.round(percent)} percent`}>
                         <div className="si-progress-track">
                           <div
@@ -521,30 +374,12 @@ export default function SourceIntakeWorkbenchV2Panel({ repositoryId, mode = "3d"
                         <span className="si-progress-percent">{Math.round(percent)}%</span>
                       </div>
                     )}
-                    <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 12 }}>{valueOrDash(prog.detail || life.reason)}</div>
                   </td>
                   <td style={cellStyle}>{dimension === "2d" ? "2d\nLine" : dimension === "3d" ? "3d\nVolume" : "Review"}</td>
                   <td style={{ ...cellStyle, minWidth: 340 }}><div style={{ color: "#f8fafc", fontWeight: 700 }}>{valueOrDash(row.display_name || row.filename)}</div><div style={{ color: "#64748b", marginTop: 4 }}>{valueOrDash(row.relative_path || row.filename)}</div></td>
                   <td style={cellStyle}>{valueOrDash(row.survey_name)}</td>
                   <td style={cellStyle}>{valueOrDash(row.line_name || row.volume_name || row.line_id)}</td>
-                  <td style={{ ...cellStyle, minWidth: 180 }}><div>{valueOrDash(pres.geometry_qaqc_label)}</div><div style={{ color: "#94a3b8", marginTop: 4 }}>{valueOrDash(asRecord((row as any).geometry_qaqc).message || asRecord((row as any).geometry_qaqc).summary)}</div></td>
-                  <td style={cellStyle}>
-                    <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 44, textAlign: "center", border: "1px solid #64748b", borderRadius: 8, padding: "5px 8px", color: "#f8fafc", fontWeight: 700 }}>{docs}</div>
-                    <div style={{ color: "#94a3b8", marginTop: 4 }}>{docs === 1 ? "Assigned document" : "Assigned documents"}</div>
-                    {availableDocs > 0 && (
-                      <div style={{ color: unassignedDocs > 0 ? "#fbbf24" : "#94a3b8", marginTop: 4, fontSize: 12 }}>{documentAssignmentHint(row)}</div>
-                    )}
-                    {availableDocs > 0 && (
-                      <button
-                        type="button"
-                        disabled={actionRunning || documentAssignmentLoading}
-                        style={{ ...buttonStyle(!actionRunning && !documentAssignmentLoading, unassignedDocs > 0), marginTop: 6, padding: "5px 8px", fontSize: 12 }}
-                        onClick={() => void openDocumentAssignmentForRow(row)}
-                      >
-                        Assign
-                      </button>
-                    )}
-                  </td>
+                  <td style={{ ...cellStyle, minWidth: 150 }}>{valueOrDash(pres.geometry_qaqc_label)}</td>
                   <td style={cellStyle}>{valueOrDash((row as any).conversion_state || "—")}</td>
                   <td style={cellStyle}>{valueOrDash(pres.managed_output_label || (row as any).managed_state)}</td>
                 </tr>

@@ -1,16 +1,190 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
+import './styles/multiviewer-presentation/sdv-application-chrome.css'
 import { Seismic3DViewer } from './components/Seismic3DViewer'
 import { Seismic2DViewer } from './components/Seismic2DViewer'
 import { Seismic2DSurveyViewer } from './components/Seismic2DSurveyViewer'
 import { DataManager } from './components/DataManager'
 import { VolumeInfoPanel } from './components/VolumeInfoPanel'
+import { SeismicDataInfoSelector } from './components/SeismicDataInfoSelector'
 import { SettingsDrawer } from './components/SettingsDrawer'
 import { ToolboxPanel } from './components/ToolboxPanel'
-import { LayoutGrid, Box, Image as ImageIcon, Settings, Database, ChevronLeft, ChevronRight, Wrench, Upload } from 'lucide-react'
+import { Database, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getBackendSliceCacheInfo, getVolumes } from './services/zarrService'; import type { Volume } from './services/zarrService'
 import axios from 'axios'
 import { getDatasetShape, is3DVolume, is2DLine, is2DSurvey, is2DDataset, isDisplayableDataset } from './utils/datasetTypes'
+
+
+type SdvRailIconKey = 'log-viewer' | 'data' | 'sources' | 'wellbore-3d' | 'info' | 'toolbox' | 'settings';
+
+
+const SDV_CANVAS_BACKDROP_STORAGE_KEY = "multiviewer:sdv:3d-canvas-backdrop:v1";
+
+type SdvCanvasShadeId = "dark" | "charcoal" | "slate" | "mid" | "soft" | "light";
+
+type SdvCanvasShadeOption = {
+  id: SdvCanvasShadeId;
+  label: string;
+  background: string;
+  swatch: string;
+};
+
+const SDV_CANVAS_SHADE_OPTIONS: readonly SdvCanvasShadeOption[] = [
+  {
+    id: "dark",
+    label: "Dark",
+    background: "radial-gradient(circle at 50% 44%, rgba(53,91,108,.18), rgba(0,0,0,0) 50%), linear-gradient(180deg,#04070a,#010203)",
+    swatch: "linear-gradient(180deg,#11171c,#010203)",
+  },
+  { id: "charcoal", label: "Charcoal Teal", background: "#2B3539", swatch: "#2B3539" },
+  { id: "slate", label: "Slate Mineral", background: "#526066", swatch: "#526066" },
+  { id: "mid", label: "Mineral Gray", background: "#8C989D", swatch: "#8C989D" },
+  { id: "soft", label: "Mist Gray", background: "#C0C7CA", swatch: "#C0C7CA" },
+  { id: "light", label: "Light", background: "#E7EBEE", swatch: "#E7EBEE" },
+] as const;
+
+function isSdvCanvasShadeId(value: string | null): value is SdvCanvasShadeId {
+  return SDV_CANVAS_SHADE_OPTIONS.some((option) => option.id === value);
+}
+
+function getSdvCanvasShadeOption(id: SdvCanvasShadeId): SdvCanvasShadeOption {
+  return SDV_CANVAS_SHADE_OPTIONS.find((option) => option.id === id) ?? SDV_CANVAS_SHADE_OPTIONS[0];
+}
+
+function readSdvCanvasBackdrop(): SdvCanvasShadeId {
+  try {
+    const stored = window.localStorage.getItem(SDV_CANVAS_BACKDROP_STORAGE_KEY)
+      ?? window.sessionStorage.getItem(SDV_CANVAS_BACKDROP_STORAGE_KEY);
+    if (isSdvCanvasShadeId(stored)) {
+      window.localStorage.setItem(SDV_CANVAS_BACKDROP_STORAGE_KEY, stored);
+      return stored;
+    }
+    if (stored !== null) {
+      window.localStorage.removeItem(SDV_CANVAS_BACKDROP_STORAGE_KEY);
+      window.sessionStorage.removeItem(SDV_CANVAS_BACKDROP_STORAGE_KEY);
+    }
+  } catch {
+  }
+  return "dark";
+}
+
+function writeSdvCanvasBackdrop(backdrop: SdvCanvasShadeId): void {
+  try {
+    window.localStorage.setItem(SDV_CANVAS_BACKDROP_STORAGE_KEY, backdrop);
+  } catch {
+  }
+}
+
+function SdvRailIcon({ icon }: { icon: SdvRailIconKey }) {
+  const commonProps = {
+    width: 22,
+    height: 22,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    focusable: false,
+  };
+
+  if (icon === 'log-viewer') {
+    return (
+      <svg {...commonProps} aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="2"/>
+        <circle cx="8.5" cy="9" r="1.5"/>
+        <path d="M21 15l-5-5L5 21"/>
+      </svg>
+    );
+  }
+
+  if (icon === 'data') {
+    return (
+      <svg {...commonProps} aria-hidden="true">
+        <ellipse cx="12" cy="5" rx="9" ry="3"/>
+        <path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/>
+        <path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/>
+      </svg>
+    );
+  }
+
+  if (icon === 'sources') {
+    return (
+      <svg {...commonProps} aria-hidden="true">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+    );
+  }
+
+  if (icon === 'wellbore-3d') {
+    return (
+      <svg {...commonProps} aria-hidden="true">
+        <path d="M12 3 20 7.5v9L12 21 4 16.5v-9L12 3z"/>
+        <path d="M12 12 20 7.5"/>
+        <path d="M12 12 4 7.5"/>
+        <path d="M12 12v9"/>
+        <path d="M8.4 16.1c1.2-1.3 1.7-2.8 1.6-4.6-.1-1.7.7-2.9 2.1-3.6 1.5-.7 2.9-.3 3.7.8"/>
+        <circle cx="8.4" cy="16.1" r="0.85"/>
+        <circle cx="15.8" cy="8.7" r="0.85"/>
+      </svg>
+    );
+  }
+
+  if (icon === 'info') {
+    return (
+      <svg {...commonProps} aria-hidden="true">
+        <rect x="4" y="4" width="6" height="6" rx="1.2"/>
+        <rect x="14" y="4" width="6" height="6" rx="1.2"/>
+        <rect x="4" y="14" width="6" height="6" rx="1.2"/>
+        <rect x="14" y="14" width="6" height="6" rx="1.2"/>
+      </svg>
+    );
+  }
+
+  if (icon === 'toolbox') {
+    return (
+      <svg {...commonProps} aria-hidden="true">
+        <path d="M14.7 6.3a4 4 0 0 0-5.66 5.66L3.4 17.6a2 2 0 1 0 2.83 2.83l5.64-5.64a4 4 0 0 0 5.66-5.66l-2.83 2.83-2.83-2.83 2.83-2.83z"/>
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...commonProps} aria-hidden="true">
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+  );
+}
+
+const SDV_2D_RUNTIME_SELECTION_STORAGE_KEY = "multiviewer:sdv:2d-runtime-selection:v1";
+
+function readInitial2DRuntimeSelection(): string | null {
+  try {
+    const navEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+    if (navEntry?.type === "reload") {
+      window.sessionStorage.removeItem(SDV_2D_RUNTIME_SELECTION_STORAGE_KEY);
+      return null;
+    }
+    return window.sessionStorage.getItem(SDV_2D_RUNTIME_SELECTION_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function write2DRuntimeSelection(volumeId: string | null): void {
+  try {
+    if (volumeId) {
+      window.sessionStorage.setItem(SDV_2D_RUNTIME_SELECTION_STORAGE_KEY, volumeId);
+    } else {
+      window.sessionStorage.removeItem(SDV_2D_RUNTIME_SELECTION_STORAGE_KEY);
+    }
+  } catch {
+    // Best-effort cross-page bridge only; React state remains authoritative while SDV is mounted.
+  }
+}
 
 function App() {
   const getInitialDataContext = (): '3d' | '2d' => {
@@ -22,16 +196,21 @@ function App() {
     }
   };
 
-  const [viewMode, setViewMode] = useState<'3d' | '2d' | 'sources' | 'data' | 'info' | 'toolbox'>('data');
+  const [viewMode, setViewMode] = useState<'3d' | '2d' | 'sources' | 'data' | 'info' | 'toolbox'>('3d');
   const [lastDataManagerTab, setLastDataManagerTab] = useState<'3d' | '2d'>(getInitialDataContext);
   const [volumes, setVolumes] = useState<Volume[]>([]);
   const [selectedVolume, setSelectedVolume] = useState<Volume | null>(null);
+  const [infoSelectedVolume, setInfoSelectedVolume] = useState<Volume | null>(null);
   const [selectedLoadMode, setSelectedLoadMode] = useState<'preview' | 'optimized_cache'>('preview');
-  const [lastSelected2DVolumeId, setLastSelected2DVolumeId] = useState<string | null>(null);
+  const [lastSelected2DVolumeId, setLastSelected2DVolumeId] = useState<string | null>(readInitial2DRuntimeSelection);
   const [lastSelected3DVolumeId, setLastSelected3DVolumeId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState<string>('');
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [sdvCanvasBackdrop, setSdvCanvasBackdrop] = useState<SdvCanvasShadeId>(readSdvCanvasBackdrop);
+  const [sdvCanvasShadePreview, setSdvCanvasShadePreview] = useState<SdvCanvasShadeId>(readSdvCanvasBackdrop);
+  const [sdvCanvasShadeMenuOpen, setSdvCanvasShadeMenuOpen] = useState(false);
+  const sdvCanvasShadeMenuRef = useRef<HTMLDivElement | null>(null);
   const [settingsTab, setSettingsTab] = useState<'frontend' | 'backend' | 'cache' | 'jobs' | 'settings'>('frontend');
   const [diagnosticsTab, setDiagnosticsTab] = useState<'diagnostics' | 'backend' | 'frontend' | 'cache' | 'jobs' | 'settings'>('diagnostics');
   const [backendCacheInfo, setBackendCacheInfo] = useState<any>(null);
@@ -52,6 +231,36 @@ function App() {
       unknown: 0,
     },
   });
+
+  const sdvCanvasShadeOption = getSdvCanvasShadeOption(sdvCanvasShadePreview);
+
+  useEffect(() => {
+    if (!sdvCanvasShadeMenuOpen) return undefined;
+
+    const cancelPreview = () => {
+      setSdvCanvasShadePreview(sdvCanvasBackdrop);
+      setSdvCanvasShadeMenuOpen(false);
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && sdvCanvasShadeMenuRef.current?.contains(target)) return;
+      cancelPreview();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      cancelPreview();
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [sdvCanvasBackdrop, sdvCanvasShadeMenuOpen]);
 
   const setDataContext = (mode: '3d' | '2d') => {
     setLastDataManagerTab(mode);
@@ -369,6 +578,7 @@ function App() {
 
     if (viewerMode === '2d') {
       setLastSelected2DVolumeId(volume.id);
+      write2DRuntimeSelection(volume.id);
       setDataContext('2d');
       return;
     }
@@ -548,6 +758,11 @@ function App() {
     const rememberedVolume = rememberedId
       ? candidates.find((volume) => volume.id === rememberedId)
       : null;
+
+    if (mode === '2d' && rememberedId && !rememberedVolume) {
+      setLastSelected2DVolumeId(null);
+      write2DRuntimeSelection(null);
+    }
 
     setDataContext(mode);
     setViewMode(mode);
@@ -731,6 +946,10 @@ function App() {
           }}
           onViewIndexedPreview={openIndexedPreviewVolume}
           onOpenSourcesPage={() => setViewMode('sources')}
+          onOpenSeismicDataInformation={(volume) => {
+            setInfoSelectedVolume(volume);
+            setViewMode('info');
+          }}
         />
       );
     }
@@ -740,10 +959,39 @@ function App() {
     }
 
     if (viewMode === 'info') {
-      return <VolumeInfoPanel volume={selectedVolume} />;
+      return <VolumeInfoPanel volume={infoSelectedVolume} />;
     }
 
     if (!activeSelectedVolume) {
+      if (viewMode === '3d') {
+        return (
+          <Seismic3DViewer
+            zarrPath=""
+            volume={null}
+            canvasBackground={sdvCanvasShadeOption.background}
+            canvasShadeId={sdvCanvasShadePreview}
+            emptyState={true}
+            emptyStateMessage="No volume loaded."
+            key="3d-empty"
+          />
+        );
+      }
+
+      if (viewMode === '2d') {
+        return (
+          <Seismic2DViewer
+            zarrPath=""
+            dim={0}
+            lineInfo={null}
+            defaultShowLineInfo={true}
+            canvasBackground={sdvCanvasShadeOption.background}
+            emptyState={true}
+            emptyStateMessage="No data loaded"
+            key="2d-empty"
+          />
+        );
+      }
+
       return (
         <div className="no-data">
           {isUploading ? (uploadMessage || 'Processing SEG-Y...') : 'No volumes found. Please upload a SEG-Y file.'}
@@ -756,6 +1004,8 @@ function App() {
         <Seismic3DViewer
           zarrPath={activeZarrPath || activeSelectedVolume.zarr_url}
           volume={activeSelectedVolume}
+          canvasBackground={sdvCanvasShadeOption.background}
+          canvasShadeId={sdvCanvasShadePreview}
           key={`3d-${activeSelectedVolume.id}`}
         />
       );
@@ -768,6 +1018,7 @@ function App() {
           dim={0}
           lineInfo={activeSelectedVolume}
           defaultShowLineInfo={true}
+          canvasBackground={sdvCanvasShadeOption.background}
           key={`2d-${activeSelectedVolume.id}`}
         />
       );
@@ -778,6 +1029,7 @@ function App() {
         <Seismic2DSurveyViewer
           surveyId={activeSelectedVolume.id}
           surveyName={activeSelectedVolume.display_name || activeSelectedVolume.filename}
+          canvasBackground={sdvCanvasShadeOption.background}
           key={`survey-${activeSelectedVolume.id}`}
         />
       );
@@ -796,74 +1048,99 @@ function App() {
 
 
   return (
-    <div className="app-container">
-      <nav className="sidebar">
-        <div className="logo">Seismic Viewer</div>
-        <button 
-          className={viewMode === '3d' ? 'active' : ''} 
-          onClick={() => switchViewerMode('3d')}
-          title="3D View"
-        >
-          <Box size={24} />
-          <span>3D View</span>
-        </button>
-        <button 
-          className={viewMode === '2d' ? 'active' : ''} 
-          onClick={() => switchViewerMode('2d')}
-          title="2D View"
-        >
-          <ImageIcon size={24} />
-          <span>2D View</span>
-        </button>
+    <div className="app-container mv-ui-scope mv-app">
+      <nav className="sdv-wlv-left-rail wlv-demo-left-rail" aria-label="Seismic Viewer navigation">
+        <div className="wlv-demo-rail-brand">
+          <span>Seismic</span>
+          <strong>Viewer</strong>
+        </div>
+
+        <div className="wlv-demo-nav-top">
+          <button
+            type="button"
+            className={`wlv-demo-nav-item ${viewMode === '3d' ? 'active' : ''}`}
+            aria-current={viewMode === '3d' ? 'page' : undefined}
+            onClick={() => switchViewerMode('3d')}
+            title="3D View"
+          >
+            <span className="wlv-demo-nav-icon" aria-hidden="true"><SdvRailIcon icon="wellbore-3d" /></span>
+            <span className="wlv-demo-nav-label">3D View</span>
+          </button>
+
+          <button
+            type="button"
+            className={`wlv-demo-nav-item ${viewMode === '2d' ? 'active' : ''}`}
+            aria-current={viewMode === '2d' ? 'page' : undefined}
+            onClick={() => switchViewerMode('2d')}
+            title="2D View"
+          >
+            <span className="wlv-demo-nav-icon" aria-hidden="true"><SdvRailIcon icon="log-viewer" /></span>
+            <span className="wlv-demo-nav-label">2D View</span>
+          </button>
+
+          <button
+            type="button"
+            className={`wlv-demo-nav-item ${viewMode === 'info' ? 'active' : ''}`}
+            aria-current={viewMode === 'info' ? 'page' : undefined}
+            onClick={() => {
+              if (viewMode === '2d' || viewMode === '3d') {
+                setInfoSelectedVolume(activeSelectedVolume || selectedVolume);
+              }
+              setViewMode('info');
+            }}
+            title="Seismic Data Information"
+          >
+            <span className="wlv-demo-nav-icon" aria-hidden="true"><SdvRailIcon icon="info" /></span>
+            <span className="wlv-demo-nav-label">Info</span>
+          </button>
 
 
-        <button 
-          className={viewMode === 'data' ? 'active' : ''} 
-          onClick={openDataManager}
-          title="Data"
-        >
-          <Database size={24} />
-          <span>Data</span>
-        </button>
+          <button
+            type="button"
+            className={`wlv-demo-nav-item ${viewMode === 'data' ? 'active' : ''}`}
+            aria-current={viewMode === 'data' ? 'page' : undefined}
+            onClick={openDataManager}
+            title="Data"
+          >
+            <span className="wlv-demo-nav-icon" aria-hidden="true"><SdvRailIcon icon="data" /></span>
+            <span className="wlv-demo-nav-label">Data</span>
+          </button>
+        </div>
 
-        <button 
-          className={viewMode === 'info' ? 'active' : ''} 
-          onClick={() => setViewMode('info')}
-          title="Selected Volume Info"
-        >
-          <LayoutGrid size={24} />
-          <span>Info</span>
-        </button>
-        
-        <div className="spacer"></div>
-        
+        <div className="wlv-demo-nav-bottom">
+          <button
+            type="button"
+            className={`wlv-demo-nav-item ${viewMode === 'sources' ? 'active' : ''}`}
+            aria-current={viewMode === 'sources' ? 'page' : undefined}
+            onClick={() => setViewMode('sources')}
+            title="Sources"
+          >
+            <span className="wlv-demo-nav-icon" aria-hidden="true"><SdvRailIcon icon="sources" /></span>
+            <span className="wlv-demo-nav-label">Sources</span>
+          </button>
 
-        <button
-          className={viewMode === 'sources' ? 'active' : ''}
-          onClick={() => setViewMode('sources')}
-          title="Sources"
-        >
-          <Upload size={24} />
-          <span>Sources</span>
-        </button>
+          <button
+            type="button"
+            className={`wlv-demo-nav-item ${viewMode === 'toolbox' ? 'active' : ''}`}
+            aria-current={viewMode === 'toolbox' ? 'page' : undefined}
+            onClick={() => setViewMode('toolbox')}
+            title="Toolbox"
+          >
+            <span className="wlv-demo-nav-icon" aria-hidden="true"><SdvRailIcon icon="toolbox" /></span>
+            <span className="wlv-demo-nav-label">Toolbox</span>
+          </button>
 
-        <button
-          className={viewMode === 'toolbox' ? 'active' : ''}
-          onClick={() => setViewMode('toolbox')}
-          title="Toolbox"
-        >
-          <Wrench size={24} />
-          <span>Toolbox</span>
-        </button>
-
-        <button
-          className={diagnosticsOpen ? 'active' : ''}
-          title="Settings"
-          onClick={() => setDiagnosticsOpen(true)}
-        >
-          <Settings size={24} />
-          <span>Settings</span>
-        </button>
+          <button
+            type="button"
+            className={`wlv-demo-nav-item ${diagnosticsOpen ? 'active' : ''}`}
+            aria-current={diagnosticsOpen ? 'page' : undefined}
+            title="Settings"
+            onClick={() => setDiagnosticsOpen(true)}
+          >
+            <span className="wlv-demo-nav-icon" aria-hidden="true"><SdvRailIcon icon="settings" /></span>
+            <span className="wlv-demo-nav-label">Settings</span>
+          </button>
+        </div>
       </nav>
 
       <SettingsDrawer
@@ -876,57 +1153,138 @@ function App() {
         uploadMessage={uploadMessage}
       />
 
-      <main className="content">
+      <main className={`content${viewMode === '3d' ? ' mv-sdv3d-wbv-page' : ''}`} data-view={viewMode}>
+        {viewMode !== 'data' && viewMode !== 'sources' && (
         <header className="top-bar">
           <div className="title">
-            {viewMode === '3d' ? '3D Cube Visualization' : viewMode === '2d' ? '2D Section Viewer' : viewMode === 'sources' ? 'Sources' : viewMode === 'data' ? 'Data' : viewMode === 'toolbox' ? 'Toolbox' : 'Volume Information'}
+            {viewMode === '3d' ? '3D Viewer' : viewMode === '2d' ? '2D Viewer' : viewMode === 'sources' ? 'Source Intake' : viewMode === 'toolbox' ? 'Toolbox' : 'Seismic Data Information'}
           </div>
           
-          {viewMode !== 'sources' && viewMode !== 'data' && viewMode !== 'toolbox' && (
+          {viewMode !== 'sources' && viewMode !== 'toolbox' && (
           <div className="controls">
             <Database size={16} />
-            <button
-              type="button"
-              className="dataset-nav-button"
-              onClick={selectPreviousViewerDataset}
-              disabled={!canSelectPreviousDataset}
-              title="Previous loaded dataset"
-              aria-label="Previous loaded dataset"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <button
-              type="button"
-              className="dataset-nav-button"
-              onClick={selectNextViewerDataset}
-              disabled={!canSelectNextDataset}
-              title="Next loaded dataset"
-              aria-label="Next loaded dataset"
-            >
-              <ChevronRight size={16} />
-            </button>
-            <select
-              value={activeSelectedVolume?.id || ''}
-              onChange={(e) => {
-                const vol = viewerCatalogVolumes.find(v => v.id === e.target.value);
+            {viewMode === 'info' ? (
+              <SeismicDataInfoSelector
+                selectedVolume={infoSelectedVolume}
+                onSelect={setInfoSelectedVolume}
+              />
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="dataset-nav-button"
+                  onClick={selectPreviousViewerDataset}
+                  disabled={!canSelectPreviousDataset}
+                  title="Previous loaded dataset"
+                  aria-label="Previous loaded dataset"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="dataset-nav-button"
+                  onClick={selectNextViewerDataset}
+                  disabled={!canSelectNextDataset}
+                  title="Next loaded dataset"
+                  aria-label="Next loaded dataset"
+                >
+                  <ChevronRight size={16} />
+                </button>
+                <select
+                  value={activeSelectedVolume?.id || ''}
+                  onChange={(e) => {
+                    const vol = viewerCatalogVolumes.find(v => v.id === e.target.value);
 
-                if (vol) {
-                  setSelectedVolume(vol);
-                  rememberSelectedVolumeForMode(vol);
-                  setViewMode(getViewerModeOrDefault(vol));
-                }
-              }}
-              className="volume-select"
-            >
-              <option value="" disabled>Select Data</option>
-              {viewerCatalogVolumes.map((v) => (
-                <option key={v.id} value={v.id}>{v.display_name || v.filename}</option>
-              ))}
-            </select>
+                    if (vol) {
+                      setSelectedVolume(vol);
+                      rememberSelectedVolumeForMode(vol);
+                      setViewMode(getViewerModeOrDefault(vol));
+                    }
+                  }}
+                  className="volume-select"
+                >
+                  <option value="" disabled>Select Data</option>
+                  {viewerCatalogVolumes.map((v) => (
+                    <option key={v.id} value={v.id}>{v.display_name || v.filename}</option>
+                  ))}
+                </select>
+              </>
+            )}
+            {viewMode === '3d' || viewMode === '2d' ? (
+              <div className="sdv-canvas-shade-control" ref={sdvCanvasShadeMenuRef}>
+                <button
+                  type="button"
+                  className="wlv-backdrop-toggle sdv-canvas-backdrop-toggle"
+                  aria-label="Choose 3DV canvas shade"
+                  aria-haspopup="dialog"
+                  aria-expanded={sdvCanvasShadeMenuOpen}
+                  title="Canvas shade"
+                  onClick={() => {
+                    setSdvCanvasShadePreview(sdvCanvasBackdrop);
+                    setSdvCanvasShadeMenuOpen((current) => !current);
+                  }}
+                >
+                  ◐
+                </button>
+                {sdvCanvasShadeMenuOpen ? (
+                  <div className="sdv-canvas-shade-popover" role="dialog" aria-label="Canvas shade">
+                    <div className="sdv-canvas-shade-popover__title">Canvas Shade</div>
+                    <div className="sdv-canvas-shade-swatches" role="radiogroup" aria-label="Canvas shades">
+                      {SDV_CANVAS_SHADE_OPTIONS.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          className={`sdv-canvas-shade-swatch ${sdvCanvasShadePreview === option.id ? 'is-selected' : ''}`}
+                          role="radio"
+                          aria-checked={sdvCanvasShadePreview === option.id}
+                          aria-label={option.label}
+                          title={option.label}
+                          onClick={() => setSdvCanvasShadePreview(option.id)}
+                        >
+                          <span
+                            className="sdv-canvas-shade-swatch__sample"
+                            aria-hidden="true"
+                            style={{ background: option.swatch }}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                    <div className="sdv-canvas-shade-popover__range" aria-hidden="true">
+                      <span>Dark</span>
+                      <span>Light</span>
+                    </div>
+                    <div className="sdv-canvas-shade-popover__actions">
+                      <button
+                        type="button"
+                        className="sdv-canvas-shade-cancel"
+                        onClick={() => {
+                          setSdvCanvasShadePreview(sdvCanvasBackdrop);
+                          setSdvCanvasShadeMenuOpen(false);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="sdv-canvas-shade-apply"
+                        onClick={() => {
+                          setSdvCanvasBackdrop(sdvCanvasShadePreview);
+                          writeSdvCanvasBackdrop(sdvCanvasShadePreview);
+                          setSdvCanvasShadeMenuOpen(false);
+                        }}
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           )}
 
         </header>
+        )}
 
         {isUploading && (
           <div className="upload-status-bar">

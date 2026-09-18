@@ -72,17 +72,12 @@ type Props = {
 };
 
 const sectionStyle: React.CSSProperties = {
-  borderTop: '1px solid #444',
+  borderTop: '1px solid #27343e',
   paddingTop: 12,
   marginTop: 12,
 };
 
-const sectionTitleStyle: React.CSSProperties = {
-  fontSize: 12,
-  fontWeight: 700,
-  textTransform: 'uppercase',
-  color: '#cbd5e1',
-};
+const sectionTitleStyle: React.CSSProperties = {};
 
 const rowStyle: React.CSSProperties = {
   display: 'grid',
@@ -90,29 +85,21 @@ const rowStyle: React.CSSProperties = {
   gap: 8,
   alignItems: 'center',
   marginBottom: 8,
-  fontSize: 12,
 };
 
 const selectStyle: React.CSSProperties = {
   width: '100%',
-  background: '#111',
-  color: 'white',
-  border: '1px solid #555',
   padding: '4px 6px',
-  fontSize: 12,
 };
 
 const checkboxRowStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 8,
-  fontSize: 12,
   marginBottom: 8,
 };
 
 const valueStyle: React.CSSProperties = {
-  color: '#9ca3af',
-  fontSize: 11,
   marginTop: 2,
 };
 
@@ -124,7 +111,7 @@ const sectionButtonStyle: React.CSSProperties = {
   justifyContent: 'space-between',
   background: 'transparent',
   border: 'none',
-  color: '#cbd5e1',
+  color: '#cbd4da',
   cursor: 'pointer',
   padding: '0 0 8px 0',
   textAlign: 'left',
@@ -132,7 +119,7 @@ const sectionButtonStyle: React.CSSProperties = {
 
 function SectionButton({ open, label, onClick }: { open: boolean; label: string; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} style={sectionButtonStyle}>
+    <button type="button" onClick={onClick} className="mv-viewer-section-toggle mv-sdv2d-control-subheading" style={sectionButtonStyle}>
       <span>{open ? '▾' : '▸'} {label}</span>
     </button>
   );
@@ -141,21 +128,21 @@ function SectionButton({ open, label, onClick }: { open: boolean; label: string;
 export default function Seismic2DControlsPanel(props: Props) {
   return (
     <>
-      <div style={sectionStyle}>
+      <div className="mv-sdv2d-control-section" style={sectionStyle}>
         <SectionButton open={props.displayControlsOpen} label="Display" onClick={() => props.setDisplayControlsOpen((value) => !value)} />
         {props.displayControlsOpen && (
           <>
-            <div style={rowStyle}>
+            <div className="mv-viewer-control-row" style={rowStyle}>
               <label>Mode</label>
-              <select value={props.displayMode} onChange={(e) => props.setDisplayMode(e.target.value as DisplayMode)} style={selectStyle}>
+              <select value={props.displayMode} onChange={(e) => props.setDisplayMode(e.target.value as DisplayMode)} className="mv-viewer-control-select" style={selectStyle}>
                 <option value="raster">Raster</option>
                 <option value="wiggle">Wiggle</option>
                 <option value="raster_wiggle">Raster + Wiggle</option>
               </select>
             </div>
-            <div style={rowStyle}>
+            <div className="mv-viewer-control-row" style={rowStyle}>
               <label>Raster map</label>
-              <select value={props.rasterColorMap} onChange={(e) => props.setRasterColorMap(e.target.value as RasterColorMap)} style={selectStyle}>
+              <select value={props.rasterColorMap} onChange={(e) => props.setRasterColorMap(e.target.value as RasterColorMap)} className="mv-viewer-control-select" style={selectStyle}>
                 <option value="gray_balanced">Gray balanced</option>
                 <option value="gray_high_contrast">Gray high contrast</option>
                 <option value="reverse_gray">Reverse gray</option>
@@ -166,9 +153,9 @@ export default function Seismic2DControlsPanel(props: Props) {
                 <option value="blue_white_brown">Blue-white-brown</option>
               </select>
             </div>
-            <div style={rowStyle}>
+            <div className="mv-viewer-control-row" style={rowStyle}>
               <label>Preset</label>
-              <select value={props.displayPreset} onChange={(e) => props.applyDisplayPreset(e.target.value as DisplayPresetId)} style={selectStyle}>
+              <select value={props.displayPreset} onChange={(e) => props.applyDisplayPreset(e.target.value as DisplayPresetId)} className="mv-viewer-control-select" style={selectStyle}>
                 <option value="standard_interpretation">Standard interpretation</option>
                 <option value="high_contrast_dip">High-contrast dip</option>
                 <option value="polarity_qc">Polarity QC</option>
@@ -177,11 +164,11 @@ export default function Seismic2DControlsPanel(props: Props) {
                 <option value="soft_regional">Soft regional</option>
               </select>
             </div>
-            <label style={checkboxRowStyle}>
+            <label className="mv-viewer-checkbox-row" style={checkboxRowStyle}>
               <input type="checkbox" checked={props.fitToWidth} onChange={(e) => props.setFitToWidth(e.target.checked)} />
               Fit width
             </label>
-            <label style={checkboxRowStyle}>
+            <label className="mv-viewer-checkbox-row" style={checkboxRowStyle}>
               <input type="checkbox" checked={props.reverseDirection} onChange={(e) => props.setReverseDirection(e.target.checked)} />
               Reverse direction
             </label>
@@ -189,13 +176,13 @@ export default function Seismic2DControlsPanel(props: Props) {
         )}
       </div>
 
-      <div style={sectionStyle}>
+      <div className="mv-sdv2d-control-section" style={sectionStyle}>
         <SectionButton open={props.amplitudeControlsOpen} label="Amplitude" onClick={() => props.setAmplitudeControlsOpen((value) => !value)} />
         {props.amplitudeControlsOpen && (
           <>
-            <div style={rowStyle}>
+            <div className="mv-viewer-control-row" style={rowStyle}>
               <label>Process</label>
-              <select value={props.processingMode} onChange={(e) => props.setProcessingMode(e.target.value as ProcessingMode)} style={selectStyle}>
+              <select value={props.processingMode} onChange={(e) => props.setProcessingMode(e.target.value as ProcessingMode)} className="mv-viewer-control-select" style={selectStyle}>
                 <option value="raw">Raw</option>
                 <option value="demean">Demean</option>
                 <option value="trace_rms">Trace RMS</option>
@@ -203,31 +190,31 @@ export default function Seismic2DControlsPanel(props: Props) {
               </select>
             </div>
             {props.processingMode === 'agc' && (
-              <div style={rowStyle}>
+              <div className="mv-viewer-control-row" style={rowStyle}>
                 <label>AGC window</label>
-                <select value={props.agcWindowSec} onChange={(e) => props.setAgcWindowSec(parseFloat(e.target.value))} style={selectStyle}>
+                <select value={props.agcWindowSec} onChange={(e) => props.setAgcWindowSec(parseFloat(e.target.value))} className="mv-viewer-control-select" style={selectStyle}>
                   <option value={0.2}>0.2 sec</option>
                   <option value={0.5}>0.5 sec</option>
                   <option value={1.0}>1.0 sec</option>
                 </select>
               </div>
             )}
-            <div style={rowStyle}>
+            <div className="mv-viewer-control-row" style={rowStyle}>
               <label>Filter</label>
-              <select value={props.frequencyFilter} onChange={(e) => props.setFrequencyFilter(e.target.value as FrequencyFilter)} style={selectStyle}>
+              <select value={props.frequencyFilter} onChange={(e) => props.setFrequencyFilter(e.target.value as FrequencyFilter)} className="mv-viewer-control-select" style={selectStyle}>
                 <option value="none">None</option>
                 <option value="bandpass">Bandpass</option>
               </select>
             </div>
             {props.frequencyFilter === 'bandpass' && (
-              <div style={rowStyle}>
+              <div className="mv-viewer-control-row" style={rowStyle}>
                 <label>Bandpass</label>
-                <div style={valueStyle}>8 / 12 / 80 / 100 Hz</div>
+                <div className="mv-viewer-control-value" style={valueStyle}>8 / 12 / 80 / 100 Hz</div>
               </div>
             )}
-            <div style={rowStyle}>
+            <div className="mv-viewer-control-row" style={rowStyle}>
               <label>Clip</label>
-              <select value={props.clipPercentile} onChange={(e) => props.setClipPercentile(parseFloat(e.target.value))} style={selectStyle}>
+              <select value={props.clipPercentile} onChange={(e) => props.setClipPercentile(parseFloat(e.target.value))} className="mv-viewer-control-select" style={selectStyle}>
                 <option value={95}>P95</option>
                 <option value={98}>P98</option>
                 <option value={99}>P99</option>
@@ -235,14 +222,14 @@ export default function Seismic2DControlsPanel(props: Props) {
                 <option value={99.9}>P99.9</option>
               </select>
             </div>
-            <div style={rowStyle}>
+            <div className="mv-viewer-control-row" style={rowStyle}>
               <label>Gain</label>
               <div>
                 <input type="range" min={0.1} max={10} step={0.1} value={props.gain} onChange={(e) => props.setGain(parseFloat(e.target.value))} style={{ width: '100%' }} />
-                <div style={valueStyle}>{props.gain.toFixed(1)}×</div>
+                <div className="mv-viewer-control-value" style={valueStyle}>{props.gain.toFixed(1)}×</div>
               </div>
             </div>
-            <label style={checkboxRowStyle}>
+            <label className="mv-viewer-checkbox-row" style={checkboxRowStyle}>
               <input type="checkbox" checked={props.reversePolarity} onChange={(e) => props.setReversePolarity(e.target.checked)} />
               Reverse polarity
             </label>
@@ -250,43 +237,43 @@ export default function Seismic2DControlsPanel(props: Props) {
         )}
       </div>
 
-      <div style={sectionStyle}>
+      <div className="mv-sdv2d-control-section" style={sectionStyle}>
         <SectionButton open={props.wiggleControlsOpen} label="Wiggle" onClick={() => props.setWiggleControlsOpen((value) => !value)} />
         {props.wiggleControlsOpen && (
           <>
-            <div style={rowStyle}>
+            <div className="mv-viewer-control-row" style={rowStyle}>
               <label>Style</label>
-              <select value={props.wiggleStyle} onChange={(e) => props.setWiggleStyle(e.target.value as WiggleStyle)} style={selectStyle}>
+              <select value={props.wiggleStyle} onChange={(e) => props.setWiggleStyle(e.target.value as WiggleStyle)} className="mv-viewer-control-select" style={selectStyle}>
                 <option value="line">Line only</option>
                 <option value="variable_area">Variable area</option>
               </select>
             </div>
-            <div style={rowStyle}>
+            <div className="mv-viewer-control-row" style={rowStyle}>
               <label>Fill</label>
-              <select value={props.wiggleFill} onChange={(e) => props.setWiggleFill(e.target.value as WiggleFill)} style={selectStyle}>
+              <select value={props.wiggleFill} onChange={(e) => props.setWiggleFill(e.target.value as WiggleFill)} className="mv-viewer-control-select" style={selectStyle}>
                 <option value="none">None</option>
                 <option value="positive">Positive</option>
                 <option value="negative">Negative</option>
                 <option value="both">Both</option>
               </select>
             </div>
-            <div style={rowStyle}>
+            <div className="mv-viewer-control-row" style={rowStyle}>
               <label>Scale</label>
               <div>
                 <input type="range" min={0.2} max={5} step={0.1} value={props.wiggleScale} onChange={(e) => props.setWiggleScale(parseFloat(e.target.value))} style={{ width: '100%' }} />
-                <div style={valueStyle}>{props.wiggleScale.toFixed(1)}×</div>
+                <div className="mv-viewer-control-value" style={valueStyle}>{props.wiggleScale.toFixed(1)}×</div>
               </div>
             </div>
-            <div style={rowStyle}>
+            <div className="mv-viewer-control-row" style={rowStyle}>
               <label>Trace spacing</label>
               <div>
                 <input type="range" min={0.5} max={3} step={0.1} value={props.wiggleTraceSpacing} onChange={(e) => props.setWiggleTraceSpacing(parseFloat(e.target.value))} style={{ width: '100%' }} />
-                <div style={valueStyle}>{props.wiggleTraceSpacing.toFixed(1)}×</div>
+                <div className="mv-viewer-control-value" style={valueStyle}>{props.wiggleTraceSpacing.toFixed(1)}×</div>
               </div>
             </div>
-            <div style={rowStyle}>
+            <div className="mv-viewer-control-row" style={rowStyle}>
               <label>Trace step</label>
-              <select value={props.traceDecimation} onChange={(e) => props.setTraceDecimation(e.target.value)} style={selectStyle}>
+              <select value={props.traceDecimation} onChange={(e) => props.setTraceDecimation(e.target.value)} className="mv-viewer-control-select" style={selectStyle}>
                 <option value="auto">Auto</option>
                 <option value="1">1</option>
                 <option value="2">2</option>
@@ -297,9 +284,9 @@ export default function Seismic2DControlsPanel(props: Props) {
                 <option value="64">64</option>
               </select>
             </div>
-            <div style={rowStyle}>
+            <div className="mv-viewer-control-row" style={rowStyle}>
               <label>Zero line</label>
-              <select value={props.showWiggleZeroLine ? 'on' : 'off'} onChange={(e) => props.setShowWiggleZeroLine(e.target.value === 'on')} style={selectStyle}>
+              <select value={props.showWiggleZeroLine ? 'on' : 'off'} onChange={(e) => props.setShowWiggleZeroLine(e.target.value === 'on')} className="mv-viewer-control-select" style={selectStyle}>
                 <option value="on">On</option>
                 <option value="off">Off</option>
               </select>
@@ -308,18 +295,18 @@ export default function Seismic2DControlsPanel(props: Props) {
         )}
       </div>
 
-      <div style={sectionStyle}>
+      <div className="mv-sdv2d-control-section" style={sectionStyle}>
         <SectionButton open={props.gridAxisControlsOpen} label="Grid / Axis" onClick={() => props.setGridAxisControlsOpen((value) => !value)} />
         {props.gridAxisControlsOpen && (
           <>
-            <label style={checkboxRowStyle}>
+            <label className="mv-viewer-checkbox-row" style={checkboxRowStyle}>
               <input type="checkbox" checked={props.showTimelines} onChange={(e) => props.setShowTimelines(e.target.checked)} />
               Time grid
             </label>
             {props.showTimelines && (
-              <div style={rowStyle}>
+              <div className="mv-viewer-control-row" style={rowStyle}>
                 <label>Interval</label>
-                <select value={props.timelineIntervalMs} onChange={(e) => props.setTimelineIntervalMs(parseInt(e.target.value, 10))} style={selectStyle}>
+                <select value={props.timelineIntervalMs} onChange={(e) => props.setTimelineIntervalMs(parseInt(e.target.value, 10))} className="mv-viewer-control-select" style={selectStyle}>
                   <option value={100}>100 ms</option>
                   <option value={250}>250 ms</option>
                   <option value={500}>500 ms</option>
@@ -327,7 +314,7 @@ export default function Seismic2DControlsPanel(props: Props) {
                 </select>
               </div>
             )}
-            <label style={checkboxRowStyle}>
+            <label className="mv-viewer-checkbox-row" style={checkboxRowStyle}>
               <input type="checkbox" checked={props.showAxisLabels} onChange={(e) => props.setShowAxisLabels(e.target.checked)} />
               Axis labels
             </label>
@@ -335,7 +322,7 @@ export default function Seismic2DControlsPanel(props: Props) {
         )}
       </div>
 
-      <div style={sectionStyle}>
+      <div className="mv-sdv2d-control-section" style={sectionStyle}>
         <SectionButton open={props.zoomControlsOpen} label="Zoom" onClick={() => props.setZoomControlsOpen((value) => !value)} />
         {props.zoomControlsOpen && (
           <>
@@ -385,7 +372,7 @@ export default function Seismic2DControlsPanel(props: Props) {
               </button>
               <div
                 style={{
-                  color: '#cfcfcf',
+                  color: '#33414d',
                   fontSize: 12,
                   fontVariantNumeric: 'tabular-nums',
                   textAlign: 'right',
@@ -396,7 +383,7 @@ export default function Seismic2DControlsPanel(props: Props) {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <label style={{ ...checkboxRowStyle, margin: 0, flex: 1 }}>
+              <label className="mv-viewer-checkbox-row" style={{ ...checkboxRowStyle, margin: 0, flex: 1 }}>
                 <input type="checkbox" checked={props.boxZoomEnabled} onChange={(e) => props.setBoxZoomEnabled(e.target.checked)} />
                 Box zoom
               </label>

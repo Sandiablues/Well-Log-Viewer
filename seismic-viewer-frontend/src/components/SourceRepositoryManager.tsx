@@ -79,7 +79,6 @@ function getBrowserEntryTypeLabel(entry: FolderBrowserEntry): string {
 const modalBackdropStyle: React.CSSProperties = {
   position: "fixed",
   inset: 0,
-  background: "rgba(0,0,0,.55)",
   zIndex: 9998,
 };
 
@@ -93,11 +92,6 @@ const modalStyle: React.CSSProperties = {
   maxHeight: "86vh",
   display: "grid",
   gridTemplateRows: "auto auto 1fr auto",
-  background: "#111827",
-  border: "1px solid #374151",
-  borderRadius: 12,
-  boxShadow: "0 24px 70px rgba(0,0,0,.45)",
-  color: "#e5e7eb",
   overflow: "hidden",
 };
 
@@ -126,23 +120,23 @@ const sourceStructureOptions2D: SourceStructureOption[] = [
   },
   {
     value: "single_line_with_docs",
-    label: "Single 2D line folder with supporting documents",
+    label: "Single 2D line folder",
     description: "One line plus reports, observer logs, maps, navigation, or other supporting files.",
   },
   {
     value: "single_line_multi_version",
     label: "Single 2D line with multiple processing versions",
-    description: "Several SEG-Y files representing versions of the same line, plus possible documents.",
+    description: "Several SEG-Y files representing versions of the same line.",
   },
   {
     value: "survey_with_line_folders",
     label: "2D survey with multiple line folders",
-    description: "A survey folder containing line-level folders, each with SEG-Y and possible documents.",
+    description: "A survey folder containing line-level folders with SEG-Y data.",
   },
   {
     value: "survey_flat_lines",
-    label: "2D survey with flat SEG-Y lines and documents",
-    description: "A survey folder containing many SEG-Y lines directly, plus possible supporting documents.",
+    label: "2D survey with flat SEG-Y lines",
+    description: "A survey folder containing many SEG-Y lines directly.",
   },
 ];
 
@@ -154,13 +148,13 @@ const sourceStructureOptions3D: SourceStructureOption[] = [
   },
   {
     value: "single_3d_volume_with_docs",
-    label: "3D volume folder with supporting documents",
-    description: "One 3D SEG-Y volume plus reports, notes, navigation, velocity, or delivery documents.",
+    label: "3D volume folder",
+    description: "One 3D SEG-Y volume in a delivery folder.",
   },
   {
     value: "multi_version_3d_delivery",
-    label: "Multi-version 3D delivery folder with supporting documents",
-    description: "A delivery folder containing multiple processed 3D SEG-Y versions plus package-level documents.",
+    label: "Multi-version 3D delivery folder",
+    description: "A delivery folder containing multiple processed 3D SEG-Y versions.",
   },
 ];
 
@@ -201,54 +195,23 @@ function formatDate(value?: string | null): string {
 }
 
 const panelStyle: React.CSSProperties = {
-  border: "1px solid #333",
-  borderRadius: 10,
-  background: "#1f1f1f",
   padding: 14,
   marginBottom: 16,
-  color: "#e5e7eb",
 };
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  padding: "7px 9px",
-  borderRadius: 6,
-  border: "1px solid #555",
-  background: "#2b2b2b",
-  color: "#f8fafc",
-  fontSize: 13,
 };
 
 const buttonStyle: React.CSSProperties = {
-  border: "1px solid #60a5fa",
-  borderRadius: 6,
-  background: "transparent",
-  color: "#60a5fa",
-  padding: "6px 10px",
-  fontSize: 12,
-  fontWeight: 700,
   cursor: "pointer",
 };
 
 const secondaryButtonStyle: React.CSSProperties = {
-  border: "1px solid #64748b",
-  borderRadius: 6,
-  background: "transparent",
-  color: "#cbd5e1",
-  padding: "6px 10px",
-  fontSize: 12,
-  fontWeight: 700,
   cursor: "pointer",
 };
 
 const dangerButtonStyle: React.CSSProperties = {
-  border: "1px solid #f87171",
-  borderRadius: 6,
-  background: "transparent",
-  color: "#f87171",
-  padding: "6px 10px",
-  fontSize: 12,
-  fontWeight: 700,
   cursor: "pointer",
 };
 
@@ -541,7 +504,7 @@ export default function SourceRepositoryManager({
         ? Number(summary.segy_file_count || summary.candidate_count || summary.line_group_count || 0)
         : Number(summary.line_group_count || summary.line_count || 0);
       setMessage(
-        `Scan complete (${includeSubfolders ? "root + subfolders" : "root only"}): ${summary.package_count || 0} packages, ${primaryCount} ${primaryLabel}, ${summary.segy_file_count || 0} SEG-Y files, ${summary.document_count || 0} documents.`
+        `Scan complete (${includeSubfolders ? "root + subfolders" : "root only"}): ${summary.package_count || 0} packages, ${primaryCount} ${primaryLabel}, ${summary.segy_file_count || 0} SEG-Y files.`
       );
 
       await reload();
@@ -581,7 +544,7 @@ export default function SourceRepositoryManager({
       const removed = result?.removed || {};
       setMessage(
         `Repository deleted. Removed ${removed.packages || 0} packages, ${removed.lines || 0} lines, ` +
-          `${removed.segy_files || 0} SEG-Y records, and ${removed.documents || 0} documents. ` +
+          `${removed.segy_files || 0} SEG-Y records. ` +
           "Converted Managed Data was not deleted."
       );
 
@@ -664,10 +627,10 @@ export default function SourceRepositoryManager({
   const filteredRepositories = repositories;
 
   return (
-    <section className="source-intake-repository-manager" style={panelStyle}>
+    <section className="source-intake-repository-manager mv-repository-panel" style={panelStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: 18 }}>
+          <h3 className="mv-type-panel-title" style={{ margin: 0 }}>
             Source Repository Selection
           </h3>
           <div style={{ marginTop: 4, fontSize: 12, color: "#a1a1aa" }}>
@@ -687,7 +650,7 @@ export default function SourceRepositoryManager({
           >
             {loading ? "Refreshing..." : "Refresh"}
           </button>
-          <button type="button" style={buttonStyle} onClick={() => setShowAddForm(!showAddForm)}>
+          <button type="button" className="mv-button mv-button--compact mv-button--accent" style={buttonStyle} onClick={() => setShowAddForm(!showAddForm)}>
             {showAddForm ? "Close" : "+ Add Source Repository"}
           </button>
         </div>
@@ -707,12 +670,12 @@ export default function SourceRepositoryManager({
 
       {folderBrowserOpen && (
         <>
-          <div style={modalBackdropStyle} onClick={() => setFolderBrowserOpen(false)} />
-          <div style={modalStyle}>
+          <div className="mv-modal-backdrop" style={modalBackdropStyle} onClick={() => setFolderBrowserOpen(false)} />
+          <div className="mv-modal" style={modalStyle}>
             <div style={{ padding: 14, borderBottom: "1px solid #374151", display: "flex", justifyContent: "space-between", gap: 12 }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: 17 }}>Choose Source Intake Folder</h3>
-                <div style={{ marginTop: 4, fontSize: 12, color: "#94a3b8" }}>
+                <h3 className="mv-type-panel-title" style={{ margin: 0 }}>Choose Source Intake Folder</h3>
+                <div className="mv-type-meta" style={{ marginTop: 4 }}>
                   Browse local folders and select the parent folder for Source Intake scanning.
                 </div>
               </div>
@@ -732,7 +695,7 @@ export default function SourceRepositoryManager({
             <div style={{ padding: 10, borderBottom: "1px solid #374151", background: "#0f172a", display: "grid", gridTemplateColumns: "auto 1fr auto auto", gap: 8, alignItems: "center" }}>
               <button
                 type="button"
-                style={secondaryButtonStyle}
+                className="mv-button mv-button--compact mv-button--secondary" style={secondaryButtonStyle}
                 onClick={() => folderBrowseParentPath && loadFolderBrowser(folderBrowseParentPath)}
                 disabled={!folderBrowseParentPath || folderBrowseLoading}
               >
@@ -748,7 +711,7 @@ export default function SourceRepositoryManager({
                     goToFolderBrowsePath();
                   }
                 }}
-                style={inputStyle}
+                className="mv-input" style={inputStyle}
               />
 
               <button
@@ -763,7 +726,7 @@ export default function SourceRepositoryManager({
                 Go
               </button>
 
-              <button type="button" style={buttonStyle} onClick={selectCurrentBrowseFolder} disabled={!folderBrowsePath}>
+              <button type="button" className="mv-button mv-button--compact mv-button--accent" style={buttonStyle} onClick={selectCurrentBrowseFolder} disabled={!folderBrowsePath}>
                 Select Current Folder
               </button>
             </div>
@@ -828,7 +791,6 @@ export default function SourceRepositoryManager({
                     ["all", "All"],
                     ["folders", "Folders"],
                     ["segy", "SEG-Y"],
-                    ["documents", "Documents"],
                     ["other", "Other files"],
                   ].map(([key, label]) => (
                     <button
@@ -938,10 +900,10 @@ export default function SourceRepositoryManager({
               </div>
 
               <div style={{ display: "flex", gap: 8 }}>
-                <button type="button" style={secondaryButtonStyle} onClick={() => setFolderBrowserOpen(false)}>
+                <button type="button" className="mv-button mv-button--compact mv-button--secondary" style={secondaryButtonStyle} onClick={() => setFolderBrowserOpen(false)}>
                   Cancel
                 </button>
-                <button type="button" style={buttonStyle} onClick={selectCurrentBrowseFolder} disabled={!folderBrowsePath}>
+                <button type="button" className="mv-button mv-button--compact mv-button--accent" style={buttonStyle} onClick={selectCurrentBrowseFolder} disabled={!folderBrowsePath}>
                   Select Current Folder
                 </button>
               </div>
@@ -951,18 +913,18 @@ export default function SourceRepositoryManager({
       )}
 
       {showAddForm && (
-        <div style={{ border: "1px solid #3f3f46", borderRadius: 8, background: "#18181b", padding: 12, marginBottom: 12, display: "grid", gap: 10 }}>
+        <div className="mv-repository-form" style={{ padding: 12, marginBottom: 12, display: "grid", gap: 10 }}>
           <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: "8px 10px", alignItems: "center" }}>
-            <label style={{ fontSize: 13, color: "#cbd5e1" }}>Repository name</label>
-            <input value={name} onChange={(event) => setName(event.target.value)} style={inputStyle} />
+            <label className="mv-type-property-label">Repository name</label>
+            <input value={name} onChange={(event) => setName(event.target.value)} className="mv-input" style={inputStyle} />
 
-            <label style={{ fontSize: 13, color: "#cbd5e1" }}>Root folder path</label>
+            <label className="mv-type-property-label">Root folder path</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
               <input
                 value={rootPath}
                 onChange={(event) => setRootPath(event.target.value)}
                 placeholder="/path/to/source/folder"
-                style={inputStyle}
+                className="mv-input" style={inputStyle}
               />
               <button
                 type="button"
@@ -990,14 +952,14 @@ export default function SourceRepositoryManager({
                   setSourceStructureType("survey_with_line_folders");
                 }
               }}
-              style={inputStyle}
+              className="mv-select" style={inputStyle}
             >
               <option value="2d">2D SEG-Y intake</option>
               <option value="3d">3D SEG-Y intake</option>
             </select>
 
-            <label style={{ fontSize: 13, color: "#cbd5e1" }}>Source structure</label>
-            <select value={sourceStructureType} onChange={(event) => setSourceStructureType(event.target.value as SourceStructureType)} style={inputStyle}>
+            <label className="mv-type-property-label">Source structure</label>
+            <select className="mv-select" value={sourceStructureType} onChange={(event) => setSourceStructureType(event.target.value as SourceStructureType)} className="mv-input" style={inputStyle}>
               {activeSourceStructureOptions.map((item) => (
                 <option key={item.value} value={item.value}>
                   {item.label}
@@ -1011,7 +973,7 @@ export default function SourceRepositoryManager({
           </div>
 
           <div>
-            <button type="button" style={buttonStyle} onClick={addRepository} disabled={loading}>
+            <button type="button" className="mv-button mv-button--compact mv-button--accent" style={buttonStyle} onClick={addRepository} disabled={loading}>
               Register Repository
             </button>
           </div>
@@ -1030,7 +992,6 @@ export default function SourceRepositoryManager({
             const primaryLabel = String(scanSummary.primary_label || (is3DRepository(repo) ? "volumes" : "lines"));
             const primaryCount = Number(scanSummary.primary_count ?? (is3DRepository(repo) ? (repo.candidate_count ?? segyCountByRepo.get(repo.repository_id) ?? 0) : (repo.line_count ?? lineCountByRepo.get(repo.repository_id) ?? 0)));
             const segyCount = Number(scanSummary.segy_file_count ?? repo.candidate_count ?? segyCountByRepo.get(repo.repository_id) ?? 0);
-            const documentCount = Number(scanSummary.document_count ?? 0);
             const convertedCount = Number(scanSummary.converted_count ?? repo.submitted_count ?? convertedCountByRepo.get(repo.repository_id) ?? 0);
 
             return (
@@ -1046,7 +1007,6 @@ export default function SourceRepositoryManager({
                     <span>Packages: {packageCount}</span>
                     <span>{primaryLabel.charAt(0).toUpperCase() + primaryLabel.slice(1)}: {primaryCount}</span>
                     <span>SEG-Y files: {segyCount}</span>
-                    <span>Documents: {documentCount}</span>
                     <span>Converted: {convertedCount}</span>
                   </div>
 
@@ -1062,7 +1022,7 @@ export default function SourceRepositoryManager({
                 <div style={{ display: "grid", gap: 8 }}>
                   <button
                     type="button"
-                    style={buttonStyle}
+                    className="mv-button mv-button--compact mv-button--accent" style={buttonStyle}
                     onClick={() => scanRepository(repo.repository_id)}
                     disabled={busyRepoId === repo.repository_id}
                   >
@@ -1081,7 +1041,7 @@ export default function SourceRepositoryManager({
 
                   <button
                     type="button"
-                    style={dangerButtonStyle}
+                    className="mv-button mv-button--compact mv-button--danger" style={dangerButtonStyle}
                     onClick={() => deleteRepository(repo.repository_id, repo.name)}
                     disabled={busyRepoId === repo.repository_id}
                   >

@@ -228,7 +228,7 @@ export function computeWiggleRenderStyle(
 
   return {
     positiveFillStyle: overlayOnImage ? 'rgba(0,0,0,0.24)' : 'rgba(0,0,0,0.52)',
-    negativeFillStyle: overlayOnImage ? 'rgba(60,60,60,0.16)' : 'rgba(60,60,60,0.34)',
+    negativeFillStyle: overlayOnImage ? 'rgba(0,0,0,0.24)' : 'rgba(0,0,0,0.52)',
     traceStrokeStyle: overlayOnImage ? 'rgba(0,0,0,0.88)' : '#000000',
     traceLineWidth: overlayOnImage
       ? clampNumber(safeBaseLineWidth * 0.9, 0.45, 0.9)

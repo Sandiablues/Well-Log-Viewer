@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, useThree } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, PerspectiveCamera, Grid, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { clearBackendSliceCache, fetchSlice, getBackendSliceCacheInfo, getZarrMetadata } from '../services/zarrService';
@@ -13,6 +13,44 @@ import {
   getActive3DSliceIndex,
   type Active3DSliceWindowRequest,
 } from '../rendering3d/activeSliceRequestModel';
+
+
+type SceneOpacityGridProps = React.ComponentProps<typeof Grid> & {
+  overlayOpacity: number;
+};
+
+const SceneOpacityGrid: React.FC<SceneOpacityGridProps> = ({ overlayOpacity, ...props }) => {
+  const gridRef = useRef<THREE.Mesh>(null);
+
+  useEffect(() => {
+    const material = gridRef.current?.material as THREE.ShaderMaterial | undefined;
+    if (!material) return;
+
+    const uniformName = 'uSceneOverlayOpacity';
+
+    if (!material.uniforms[uniformName]) {
+      material.uniforms[uniformName] = { value: overlayOpacity };
+
+      if (!material.fragmentShader.includes(`uniform float ${uniformName};`)) {
+        material.fragmentShader = material.fragmentShader.replace(
+          'uniform float fadeStrength;',
+          `uniform float fadeStrength;\nuniform float ${uniformName};`,
+        );
+
+        material.fragmentShader = material.fragmentShader.replace(
+          'gl_FragColor.a = mix(0.75 * gl_FragColor.a, gl_FragColor.a, g2);',
+          `gl_FragColor.a = mix(0.75 * gl_FragColor.a, gl_FragColor.a, g2) * ${uniformName};`,
+        );
+
+        material.needsUpdate = true;
+      }
+    }
+
+    material.uniforms[uniformName].value = overlayOpacity;
+  }, [overlayOpacity]);
+
+  return <Grid ref={gridRef} {...props} />;
+};
 
 interface WorldSize {
   x: number; // inline
@@ -64,11 +102,7 @@ function setSliceCacheLimit(nextLimit: number) {
 
 
 const indexInputStyle: React.CSSProperties = {
-  width: 72,
-  background: '#111',
-  color: 'white',
-  border: '1px solid #666',
-  padding: '2px 6px',
+  width: 60,
   textAlign: 'right',
 };
 
@@ -527,13 +561,21 @@ const SlicePlane: React.FC<SlicePlaneProps> = ({
 
 interface VolumeBoundsProps {
   worldSize: WorldSize;
+  color: string;
+  adaptive: boolean;
+  opacityOverride?: number | null;
 }
 
-const VolumeBounds: React.FC<VolumeBoundsProps> = ({ worldSize }) => {
+const VolumeBounds: React.FC<VolumeBoundsProps> = ({ worldSize, color, adaptive, opacityOverride = null }) => {
   return (
     <mesh>
       <boxGeometry args={[worldSize.x, worldSize.y, worldSize.z]} />
-      <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.35} />
+      <meshBasicMaterial
+        color={color}
+        wireframe
+        transparent
+        opacity={opacityOverride ?? (adaptive ? 0.72 : 0.35)}
+      />
     </mesh>
   );
 };
@@ -617,18 +659,26 @@ function AxisTextLabel({
   rotation,
   children,
   title = false,
+  color,
+  adaptive,
+  sizeScale = 1,
+  opacityScale = 1,
 }: {
   position: [number, number, number];
   rotation: [number, number, number];
   children: React.ReactNode;
   title?: boolean;
+  color: string;
+  adaptive: boolean;
+  sizeScale?: number;
+  opacityScale?: number;
 }) {
   return (
     <Text
       position={position}
       rotation={rotation}
-      fontSize={title ? 0.115 : 0.095}
-      color="#f5f7fb"
+      fontSize={(title ? 0.115 : 0.095) * sizeScale}
+      color={adaptive ? color : '#f5f7fb'}
       anchorX="center"
       anchorY="middle"
       depthOffset={0}
@@ -637,9 +687,9 @@ function AxisTextLabel({
       {children}
       <meshBasicMaterial
         attach="material"
-        color="#f5f7fb"
+        color={adaptive ? color : '#f5f7fb'}
         transparent
-        opacity={title ? 0.82 : 0.68}
+        opacity={(adaptive ? 1 : (title ? 0.82 : 0.68)) * opacityScale}
         depthTest={true}
         depthWrite={false}
       />
@@ -653,12 +703,20 @@ function AxisRulerLabels({
   inlineCount,
   crosslineCount,
   timeCount,
+  color,
+  adaptive,
+  sizeScale = 1,
+  opacityScale = 1,
 }: {
   worldSize: WorldSize;
   volume?: any;
   inlineCount: number;
   crosslineCount: number;
   timeCount: number;
+  color: string;
+  adaptive: boolean;
+  sizeScale?: number;
+  opacityScale?: number;
 }) {
   // Bounding-box rulers should match the displayed cube extents.
   // Inline/crossline use rendered array index ranges. Header-derived survey
@@ -719,6 +777,10 @@ function AxisRulerLabels({
       {/* Inline endpoint values, directly outside the front-bottom inline edge */}
       {inlineTicks.map((tick) => (
         <AxisTextLabel
+          color={color}
+          adaptive={adaptive}
+          sizeScale={sizeScale}
+          opacityScale={opacityScale}
           key={`inline-${tick.fraction}`}
           rotation={inlineRotation}
           position={[
@@ -733,6 +795,10 @@ function AxisRulerLabels({
 
       {inlineTicks.length > 0 && (
         <AxisTextLabel
+          color={color}
+          adaptive={adaptive}
+          sizeScale={sizeScale}
+          opacityScale={opacityScale}
           title
           rotation={inlineRotation}
           position={[0, yBottom - titleOffset, zFront - edgeOffset]}
@@ -744,6 +810,10 @@ function AxisRulerLabels({
       {/* Crossline endpoint values, directly outside the right-bottom crossline edge */}
       {crosslineTicks.map((tick) => (
         <AxisTextLabel
+          color={color}
+          adaptive={adaptive}
+          sizeScale={sizeScale}
+          opacityScale={opacityScale}
           key={`crossline-${tick.fraction}`}
           rotation={crosslineRotation}
           position={[
@@ -758,6 +828,10 @@ function AxisRulerLabels({
 
       {crosslineTicks.length > 0 && (
         <AxisTextLabel
+          color={color}
+          adaptive={adaptive}
+          sizeScale={sizeScale}
+          opacityScale={opacityScale}
           title
           rotation={crosslineRotation}
           position={[xRight + edgeOffset, yBottom - titleOffset, 0]}
@@ -769,6 +843,10 @@ function AxisRulerLabels({
       {/* Vertical endpoint values, directly outside one rear-left vertical edge */}
       {verticalTicks.map((tick) => (
         <AxisTextLabel
+          color={color}
+          adaptive={adaptive}
+          sizeScale={sizeScale}
+          opacityScale={opacityScale}
           key={`vertical-${tick.fraction}`}
           rotation={verticalRotation}
           position={[
@@ -783,6 +861,10 @@ function AxisRulerLabels({
 
       {verticalTicks.length > 0 && (
         <AxisTextLabel
+          color={color}
+          adaptive={adaptive}
+          sizeScale={sizeScale}
+          opacityScale={opacityScale}
           title
           rotation={verticalRotation}
           position={[xLeft - titleOffset, 0, zBack + edgeOffset]}
@@ -794,13 +876,284 @@ function AxisRulerLabels({
   );
 }
 
+type SdvCanvasShadeId = 'dark' | 'charcoal' | 'slate' | 'mid' | 'soft' | 'light';
+
+type SceneOverlayAppearance = {
+  grid: {
+    color: string | null;
+    opacity: number;
+  };
+  bounds: {
+    color: string | null;
+    opacity: number | null;
+  };
+  axes: {
+    scale: number;
+  };
+  labels: {
+    color: string | null;
+    sizeScale: number;
+    opacityScale: number;
+  };
+  compass: {
+    sizeScale: number;
+    opacity: number;
+  };
+};
+
+const DEFAULT_SCENE_OVERLAY_APPEARANCE: SceneOverlayAppearance = {
+  grid: { color: null, opacity: 1 },
+  bounds: { color: null, opacity: null },
+  axes: { scale: 1 },
+  labels: { color: null, sizeScale: 1, opacityScale: 1 },
+  compass: { sizeScale: 1, opacity: 1 },
+};
+
 interface Seismic3DViewerProps {
   zarrPath: string;
   volume?: any;
+  canvasBackground?: string;
+  canvasShadeId?: SdvCanvasShadeId;
+  emptyState?: boolean;
+  emptyStateMessage?: string;
 }
 
-export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volume }) => {
-  const [metadata, setMetadata] = useState<any>(null);
+type SdvCanvasEnvironmentPalette = {
+  boundingBoxColor: string | null;
+  gridColor: string | null;
+  groundPlaneColor: string | null;
+  rigColor: string;
+  neutralTextColor: string;
+  axisTextColor: string;
+};
+
+/* Copied from the live WBV WellboreTrajectoryRenderer shade resolver. */
+function resolveSdvCanvasEnvironmentPalette(
+  shadeId: SdvCanvasShadeId,
+): SdvCanvasEnvironmentPalette {
+  switch (shadeId) {
+    case 'charcoal':
+      return {
+        boundingBoxColor: '#70828B',
+        gridColor: '#667983',
+        groundPlaneColor: '#303A3F',
+        rigColor: '#D8E5E9',
+        neutralTextColor: '#E8EFF2',
+        axisTextColor: '#B9D5DE',
+      };
+    case 'slate':
+      return {
+        boundingBoxColor: '#9AA8AD',
+        gridColor: '#88989E',
+        groundPlaneColor: '#59666B',
+        rigColor: '#ECF3F5',
+        neutralTextColor: '#F2F6F7',
+        axisTextColor: '#D5E4E8',
+      };
+    case 'mid':
+      return {
+        boundingBoxColor: '#46565D',
+        gridColor: '#52636A',
+        groundPlaneColor: '#768388',
+        rigColor: '#303F45',
+        neutralTextColor: '#1B282E',
+        axisTextColor: '#29434D',
+      };
+    case 'soft':
+      return {
+        boundingBoxColor: '#6E7B80',
+        gridColor: '#7B888D',
+        groundPlaneColor: '#B2BABD',
+        rigColor: '#46575D',
+        neutralTextColor: '#2A373C',
+        axisTextColor: '#3F5962',
+      };
+    case 'light':
+      return {
+        boundingBoxColor: '#606C73',
+        gridColor: '#7F8B92',
+        groundPlaneColor: '#CBD3D8',
+        rigColor: '#8A979E',
+        neutralTextColor: '#404548',
+        axisTextColor: '#414A50',
+      };
+    case 'dark':
+    default:
+      return {
+        boundingBoxColor: null,
+        gridColor: null,
+        groundPlaneColor: null,
+        rigColor: '#E6FCFF',
+        neutralTextColor: '#F4FEFF',
+        axisTextColor: '#80DCFF',
+      };
+  }
+}
+
+function isLightCanvasShade(shadeId: SdvCanvasShadeId): boolean {
+  return shadeId === 'soft' || shadeId === 'light';
+}
+
+type SdvCompassPalette = {
+  surface: string;
+  border: string;
+  text: string;
+  north: string;
+};
+
+/* Exact WBV compass shade values copied from WBV_CANVAS_SHADE_OPTIONS. */
+function resolveSdvCompassPalette(shadeId: SdvCanvasShadeId): SdvCompassPalette {
+  switch (shadeId) {
+    case 'charcoal':
+      return {
+        surface: 'rgba(27, 38, 43, 0.90)',
+        border: 'rgba(151, 186, 197, 0.48)',
+        text: '#dce7ea',
+        north: '#a9d6df',
+      };
+    case 'slate':
+      return {
+        surface: 'rgba(58, 70, 75, 0.90)',
+        border: 'rgba(191, 211, 216, 0.50)',
+        text: '#f0f5f6',
+        north: '#c9e3e8',
+      };
+    case 'mid':
+      return {
+        surface: 'rgba(76, 88, 94, 0.94)',
+        border: 'rgba(66, 88, 97, 0.78)',
+        text: '#F2F7F8',
+        north: '#C6E6EC',
+      };
+    case 'soft':
+      return {
+        surface: 'rgba(99, 113, 120, 0.92)',
+        border: 'rgba(80, 105, 114, 0.72)',
+        text: '#F6FAFB',
+        north: '#D1E9EE',
+      };
+    case 'light':
+      return {
+        surface: 'rgba(111, 126, 133, 0.94)',
+        border: 'rgba(74, 101, 111, 0.74)',
+        text: '#F2F8FA',
+        north: '#D7F0F4',
+      };
+    case 'dark':
+    default:
+      return {
+        surface: 'rgba(4, 11, 15, 0.80)',
+        border: 'rgba(84, 203, 229, 0.42)',
+        text: '#cdebf0',
+        north: '#8ff2ff',
+      };
+  }
+}
+
+function SdvCompassCameraSync({
+  compassRoseRef,
+  compassAngleRef,
+}: {
+  compassRoseRef: React.RefObject<HTMLDivElement | null>;
+  compassAngleRef: React.MutableRefObject<number | null>;
+}) {
+  const cameraDirectionRef = useRef(new THREE.Vector3());
+
+  useFrame(({ camera }, delta) => {
+    const compassRose = compassRoseRef.current;
+    if (!compassRose) return;
+
+    const cameraDirection = cameraDirectionRef.current;
+    camera.getWorldDirection(cameraDirection);
+    const horizontalMagnitude = Math.hypot(cameraDirection.x, cameraDirection.z);
+
+    if (horizontalMagnitude > 0.04) {
+      const viewHeadingDeg = Math.atan2(cameraDirection.x, cameraDirection.z) * 180 / Math.PI;
+      const rawRoseAngleDeg = -viewHeadingDeg;
+      const previousAngle = compassAngleRef.current;
+      let continuousAngle = rawRoseAngleDeg;
+
+      if (previousAngle !== null) {
+        while (continuousAngle - previousAngle > 180) continuousAngle -= 360;
+        while (continuousAngle - previousAngle < -180) continuousAngle += 360;
+
+        const deltaMs = Math.max(delta * 1000, 1);
+        const smoothing = 1 - Math.exp(-deltaMs / 90);
+        continuousAngle = previousAngle + (continuousAngle - previousAngle) * smoothing;
+      }
+
+      compassAngleRef.current = continuousAngle;
+      compassRose.style.transform = `rotate(${continuousAngle.toFixed(3)}deg)`;
+      compassRose.dataset.edgeOn = 'false';
+    } else {
+      compassRose.dataset.edgeOn = 'true';
+    }
+  });
+
+  return null;
+}
+
+function resolveAdaptiveAxisLineColors(
+  shadeId: SdvCanvasShadeId,
+): { x: string; y: string; z: string } {
+  if (shadeId === 'light') {
+    return {
+      x: '#8F1F24',
+      y: '#246B3A',
+      z: '#1E4F9A',
+    };
+  }
+
+  return {
+    x: '#B23A3A',
+    y: '#2F7D4A',
+    z: '#2F63B5',
+  };
+}
+
+function ShadeAwareAxesHelper({
+  size,
+  shadeId,
+}: {
+  size: number;
+  shadeId: SdvCanvasShadeId;
+}) {
+  const helper = useMemo(() => {
+    const next = new THREE.AxesHelper(size);
+    const colors = resolveAdaptiveAxisLineColors(shadeId);
+    next.setColors(
+      new THREE.Color(colors.x),
+      new THREE.Color(colors.y),
+      new THREE.Color(colors.z),
+    );
+    return next;
+  }, [size, shadeId]);
+
+  useEffect(() => {
+    return () => {
+      helper.geometry.dispose();
+      if (Array.isArray(helper.material)) {
+        helper.material.forEach((material) => material.dispose());
+      } else {
+        helper.material.dispose();
+      }
+    };
+  }, [helper]);
+
+  return <primitive object={helper} />;
+}
+
+export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({
+  zarrPath,
+  volume,
+  canvasBackground = '#111',
+  canvasShadeId = 'dark',
+  emptyState = false,
+  emptyStateMessage = 'No volume loaded.',
+}) => {
+  const [metadata, setMetadata] = useState<any>(() => (
+    emptyState ? { shape: [100, 100, 100] } : null
+  ));
   const [indices, setIndices] = useState({ inline: 0, crossline: 0, time: 0 });
   const [colorMap, setColorMap] = useState<ColorMapName>('seismicTrace');
   const [textureScale, setTextureScale] = useState(2);
@@ -812,8 +1165,10 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
   const [showBounds, setShowBounds] = useState(true);
   const [showAxes, setShowAxes] = useState(true);
   const [showAxisLabels, setShowAxisLabels] = useState(true);
+  const [showCompass, setShowCompass] = useState(true);
   const [paneDragging, setPaneDragging] = useState(false);
   const [menuCollapsed, setMenuCollapsed] = useState(false);
+  const [infoCollapsed, setInfoCollapsed] = useState(false);
   const [activeControlTab, setActiveControlTab] = useState<'view' | 'planes' | 'volume' | 'amplitude' | 'performance'>('view');
   const [fastPreviewWhileMoving, setFastPreviewWhileMoving] = useState(true);
   const [livePreviewWhileDragging, setLivePreviewWhileDragging] = useState(false);
@@ -826,7 +1181,43 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
   const [committedTimeIndex, setCommittedTimeIndex] = useState(0);
   const [sceneOffsetX, setSceneOffsetX] = useState(0);
   const [sceneOffsetY, setSceneOffsetY] = useState(0);
+  const [navigationZoomPercent, setNavigationZoomPercent] = useState(100);
+  const [navigationOrientation, setNavigationOrientation] = useState<'front' | 'right' | 'left' | 'back' | 'top' | null>(null);
+  const [horizontalRotationLocked, setHorizontalRotationLocked] = useState(false);
+  const [verticalRotationLocked, setVerticalRotationLocked] = useState(false);
+  const horizontalRotationHoldRef = useRef<{ delay: number | null; repeat: number | null; held: boolean }>({ delay: null, repeat: null, held: false });
+  const verticalRotationHoldRef = useRef<{ delay: number | null; repeat: number | null; held: boolean }>({ delay: null, repeat: null, held: false });
   const [savedSceneView, setSavedSceneView] = useState<SavedSceneView | null>(null);
+  const [sceneOverlaysInfoOpen, setSceneOverlaysInfoOpen] = useState(false);
+  const [sceneInfoOpen, setSceneInfoOpen] = useState(false);
+  const [sceneOverlaysModalOpen, setSceneOverlaysModalOpen] = useState(false);
+  const [selectedSceneOverlayLayer, setSelectedSceneOverlayLayer] = useState<'grid' | 'bounds' | 'axes' | 'labels' | 'compass'>('grid');
+  const [sceneOverlayDraftVisibility, setSceneOverlayDraftVisibility] = useState({
+    grid: true,
+    bounds: true,
+    axes: true,
+    labels: true,
+    compass: true,
+  });
+  const [sceneOverlayAppearance, setSceneOverlayAppearance] = useState<SceneOverlayAppearance>(
+    () => structuredClone(DEFAULT_SCENE_OVERLAY_APPEARANCE),
+  );
+  const [sceneOverlayDraftAppearance, setSceneOverlayDraftAppearance] = useState<SceneOverlayAppearance>(
+    () => structuredClone(DEFAULT_SCENE_OVERLAY_APPEARANCE),
+  );
+  const sceneOverlaysModalRef = useRef<HTMLElement | null>(null);
+  const sceneOverlaysModalDragRef = useRef<{
+    pointerId: number;
+    startPointerX: number;
+    startPointerY: number;
+    startOffsetX: number;
+    startOffsetY: number;
+    startRectLeft: number;
+    startRectTop: number;
+    modalWidth: number;
+    modalHeight: number;
+  } | null>(null);
+  const [sceneOverlaysModalOffset, setSceneOverlaysModalOffset] = useState({ x: 0, y: 0 });
   const scenePanRef = useRef<null | {
     pointerId: number;
     startX: number;
@@ -835,8 +1226,11 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
     startOffsetY: number;
   }>(null);
   const controlsRef = useRef<any>(null);
+  const compassRoseRef = useRef<HTMLDivElement | null>(null);
+  const compassAngleRef = useRef<number | null>(null);
+  const compassPalette = resolveSdvCompassPalette(canvasShadeId);
   const [visiblePlanes, setVisiblePlanes] = useState<Record<SliceAxis, boolean>>({
-    inline: true,
+    inline: !emptyState,
     crossline: false,
     time: false,
   });
@@ -871,6 +1265,112 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
     time: 0,
   });
 
+  const openSceneOverlaysModal = useCallback(() => {
+    setSceneOverlayDraftVisibility({
+      grid: showGrid,
+      bounds: showBounds,
+      axes: showAxes,
+      labels: showAxisLabels,
+      compass: showCompass,
+    });
+    setSceneOverlayDraftAppearance(structuredClone(sceneOverlayAppearance));
+    setSceneOverlaysModalOpen(true);
+  }, [showGrid, showBounds, showAxes, showAxisLabels, showCompass, sceneOverlayAppearance]);
+
+  const cancelSceneOverlaysModal = useCallback(() => {
+    setSceneOverlaysModalOpen(false);
+  }, []);
+
+  const applySceneOverlaysModal = useCallback(() => {
+    setShowGrid(sceneOverlayDraftVisibility.grid);
+    setShowBounds(sceneOverlayDraftVisibility.bounds);
+    setShowAxes(sceneOverlayDraftVisibility.axes);
+    setShowAxisLabels(sceneOverlayDraftVisibility.labels);
+    setShowCompass(sceneOverlayDraftVisibility.compass);
+    setSceneOverlayAppearance(structuredClone(sceneOverlayDraftAppearance));
+    setSceneOverlaysModalOpen(false);
+  }, [sceneOverlayDraftVisibility, sceneOverlayDraftAppearance]);
+
+  const resetSelectedSceneOverlayLayer = useCallback(() => {
+    setSceneOverlayDraftVisibility((current) => ({
+      ...current,
+      [selectedSceneOverlayLayer]: true,
+    }));
+    setSceneOverlayDraftAppearance((current) => ({
+      ...current,
+      [selectedSceneOverlayLayer]: structuredClone(DEFAULT_SCENE_OVERLAY_APPEARANCE[selectedSceneOverlayLayer]),
+    }));
+  }, [selectedSceneOverlayLayer]);
+
+  const beginSceneOverlaysModalDrag = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('button, input, select, textarea, [role="button"]')) return;
+
+    const modal = sceneOverlaysModalRef.current;
+    if (!modal) return;
+
+    const rect = modal.getBoundingClientRect();
+    sceneOverlaysModalDragRef.current = {
+      pointerId: event.pointerId,
+      startPointerX: event.clientX,
+      startPointerY: event.clientY,
+      startOffsetX: sceneOverlaysModalOffset.x,
+      startOffsetY: sceneOverlaysModalOffset.y,
+      startRectLeft: rect.left,
+      startRectTop: rect.top,
+      modalWidth: rect.width,
+      modalHeight: rect.height,
+    };
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }, [sceneOverlaysModalOffset]);
+
+  const moveSceneOverlaysModalDrag = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    const drag = sceneOverlaysModalDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    if ((event.buttons & 1) !== 1) {
+      sceneOverlaysModalDragRef.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      return;
+    }
+
+    const deltaX = event.clientX - drag.startPointerX;
+    const deltaY = event.clientY - drag.startPointerY;
+
+    const unclampedX = drag.startOffsetX + deltaX;
+    const unclampedY = drag.startOffsetY + deltaY;
+
+    const minOffsetX = drag.startOffsetX - drag.startRectLeft;
+    const minOffsetY = drag.startOffsetY - drag.startRectTop;
+    const maxOffsetX = drag.startOffsetX + (window.innerWidth - (drag.startRectLeft + drag.modalWidth));
+    const maxOffsetY = drag.startOffsetY + (window.innerHeight - (drag.startRectTop + drag.modalHeight));
+
+    setSceneOverlaysModalOffset({
+      x: Math.min(maxOffsetX, Math.max(minOffsetX, unclampedX)),
+      y: Math.min(maxOffsetY, Math.max(minOffsetY, unclampedY)),
+    });
+    event.preventDefault();
+  }, []);
+
+  const endSceneOverlaysModalDrag = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    const drag = sceneOverlaysModalDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    sceneOverlaysModalDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
+
+  const loseSceneOverlaysModalPointerCapture = useCallback(() => {
+    sceneOverlaysModalDragRef.current = null;
+  }, []);
+
   const resetCubeControls = useCallback(() => {
     // Reset cube display controls only.
     // Preserve Volume Stack workflow state:
@@ -887,6 +1387,36 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
     setVolumeDensity(1.5);
     setVolumeThreshold(0);
   }, []);
+
+  const canvasEnvironmentPalette = resolveSdvCanvasEnvironmentPalette(canvasShadeId);
+  const canvasShadeAdaptive = isLightCanvasShade(canvasShadeId);
+  const canvasBoundingBoxColor = canvasShadeAdaptive
+    ? (canvasEnvironmentPalette.boundingBoxColor ?? '#587080')
+    : '#ffffff';
+  const canvasGridColor = canvasEnvironmentPalette.gridColor ?? '#526878';
+  const activeSceneOverlayAppearance = sceneOverlaysModalOpen
+    ? sceneOverlayDraftAppearance
+    : sceneOverlayAppearance;
+  const activeSceneOverlayVisibility = sceneOverlaysModalOpen
+    ? sceneOverlayDraftVisibility
+    : {
+        grid: showGrid,
+        bounds: showBounds,
+        axes: showAxes,
+        labels: showAxisLabels,
+        compass: showCompass,
+      };
+
+  const sceneOverlayGridColor = activeSceneOverlayAppearance.grid.color;
+  const sceneOverlayGridOpacity = activeSceneOverlayAppearance.grid.opacity;
+  const sceneOverlayBoundingBoxColor = activeSceneOverlayAppearance.bounds.color ?? canvasBoundingBoxColor;
+  const sceneOverlayBoundingBoxOpacity = activeSceneOverlayAppearance.bounds.opacity;
+  const sceneOverlayAxisScale = activeSceneOverlayAppearance.axes.scale;
+  const sceneOverlayLabelColor = activeSceneOverlayAppearance.labels.color ?? canvasEnvironmentPalette.axisTextColor;
+  const sceneOverlayLabelSizeScale = activeSceneOverlayAppearance.labels.sizeScale;
+  const sceneOverlayLabelOpacityScale = activeSceneOverlayAppearance.labels.opacityScale;
+  const sceneOverlayCompassSizeScale = activeSceneOverlayAppearance.compass.sizeScale;
+  const sceneOverlayCompassOpacity = activeSceneOverlayAppearance.compass.opacity;
 
   const [inlineCount, crosslineCount, timeCount] = metadata?.shape ?? [1, 1, 1];
 
@@ -1116,6 +1646,16 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
     // Avoid retaining old-volume slices after switching datasets.
     sliceCache.clear();
 
+    if (emptyState) {
+      const emptyShape = [100, 100, 100];
+      setMetadata({ shape: emptyShape });
+      setIndices({ inline: 49, crossline: 49, time: 49 });
+      setCommittedTimeIndex(49);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     async function loadMetadata() {
       const nextMetadata = await getZarrMetadata(zarrPath);
       if (cancelled) return;
@@ -1139,11 +1679,61 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
     return () => {
       cancelled = true;
     };
-  }, [zarrPath]);
+  }, [zarrPath, emptyState]);
 
   useEffect(() => {
     refreshBackendCacheInfo();
   }, [refreshBackendCacheInfo]);
+
+  useEffect(() => {
+    return () => {
+      clearHorizontalRotationHold();
+      clearVerticalRotationHold();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sceneOverlaysModalOpen) return undefined;
+
+    const handleSceneOverlaysModalKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        cancelSceneOverlaysModal();
+      }
+    };
+
+    window.addEventListener('keydown', handleSceneOverlaysModalKeyDown);
+    return () => window.removeEventListener('keydown', handleSceneOverlaysModalKeyDown);
+  }, [sceneOverlaysModalOpen, cancelSceneOverlaysModal]);
+
+  useEffect(() => {
+    if (!sceneOverlaysModalOpen) return undefined;
+
+    const keepSceneOverlaysModalInViewport = () => {
+      const modal = sceneOverlaysModalRef.current;
+      if (!modal) return;
+
+      const rect = modal.getBoundingClientRect();
+      let correctionX = 0;
+      let correctionY = 0;
+
+      if (rect.left < 0) correctionX = -rect.left;
+      else if (rect.right > window.innerWidth) correctionX = window.innerWidth - rect.right;
+
+      if (rect.top < 0) correctionY = -rect.top;
+      else if (rect.bottom > window.innerHeight) correctionY = window.innerHeight - rect.bottom;
+
+      if (correctionX !== 0 || correctionY !== 0) {
+        setSceneOverlaysModalOffset((current) => ({
+          x: current.x + correctionX,
+          y: current.y + correctionY,
+        }));
+      }
+    };
+
+    window.addEventListener('resize', keepSceneOverlaysModalInViewport);
+    return () => window.removeEventListener('resize', keepSceneOverlaysModalInViewport);
+  }, [sceneOverlaysModalOpen]);
 
   useEffect(() => {
     if (activeControlTab !== 'performance') return;
@@ -1332,6 +1922,181 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
     controls.update?.();
   }
 
+  function getNavigationBaseDistance(): number {
+    return Math.max(0.001, cameraDistance * Math.sqrt((1 * 1) + (0.8 * 0.8) + (1 * 1)));
+  }
+
+  function syncNavigationZoomPercent() {
+    const controls = controlsRef.current as any;
+    const camera = controls?.object;
+    if (!controls || !camera) return;
+
+    const currentDistance = Math.max(0.001, camera.position.distanceTo(controls.target));
+    const nextPercent = THREE.MathUtils.clamp(
+      Math.round((getNavigationBaseDistance() / currentDistance) * 100),
+      25,
+      800,
+    );
+    setNavigationZoomPercent(nextPercent);
+  }
+
+  function setNavigationZoomPercentValue(nextPercent: number) {
+    const controls = controlsRef.current as any;
+    const camera = controls?.object;
+    if (!controls || !camera) return;
+
+    const clampedPercent = THREE.MathUtils.clamp(Math.round(nextPercent), 25, 800);
+    const target = controls.target.clone();
+    const direction = new THREE.Vector3().subVectors(camera.position, target);
+    if (direction.lengthSq() <= Number.EPSILON) direction.set(1, 0.8, 1);
+
+    const nextDistance = getNavigationBaseDistance() / (clampedPercent / 100);
+    direction.normalize().multiplyScalar(nextDistance);
+    camera.position.copy(target).add(direction);
+    camera.updateProjectionMatrix?.();
+    controls.update?.();
+    setNavigationZoomPercent(clampedPercent);
+  }
+
+  function stepNavigationZoom(direction: 'in' | 'out') {
+    const factor = direction === 'in' ? 1.25 : 0.8;
+    setNavigationZoomPercentValue(navigationZoomPercent * factor);
+  }
+
+  function applyNavigationOrientation(
+    orientation: 'front' | 'right' | 'left' | 'back' | 'top',
+  ) {
+    const controls = controlsRef.current as any;
+    const camera = controls?.object;
+    if (!controls || !camera) return;
+
+    const target = controls.target.clone();
+    const currentDistance = Math.max(0.001, camera.position.distanceTo(target));
+
+    if (orientation === 'top') {
+      camera.up.set(0, 0, -1);
+      camera.position.copy(target).add(new THREE.Vector3(0, currentDistance, 0));
+    } else {
+      camera.up.set(0, 1, 0);
+      const direction = orientation === 'front'
+        ? new THREE.Vector3(0, 0, 1)
+        : orientation === 'right'
+          ? new THREE.Vector3(1, 0, 0)
+          : orientation === 'left'
+            ? new THREE.Vector3(-1, 0, 0)
+            : new THREE.Vector3(0, 0, -1);
+      camera.position.copy(target).add(direction.multiplyScalar(currentDistance));
+    }
+
+    camera.lookAt(target);
+    camera.updateProjectionMatrix?.();
+    controls.update?.();
+    setNavigationOrientation(orientation);
+    syncNavigationZoomPercent();
+  }
+
+  function rotateNavigationCamera(axis: 'horizontal' | 'vertical', degrees: number) {
+    const controls = controlsRef.current as any;
+    const camera = controls?.object;
+    if (!controls || !camera) return;
+
+    const target = controls.target.clone();
+    const offset = new THREE.Vector3().subVectors(camera.position, target);
+    if (offset.lengthSq() <= Number.EPSILON) return;
+
+    camera.up.set(0, 1, 0);
+    const spherical = new THREE.Spherical().setFromVector3(offset);
+    const radians = THREE.MathUtils.degToRad(degrees);
+
+    if (axis === 'horizontal') {
+      spherical.theta += radians;
+    } else {
+      spherical.phi = THREE.MathUtils.clamp(
+        spherical.phi + radians,
+        THREE.MathUtils.degToRad(2),
+        Math.PI - THREE.MathUtils.degToRad(2),
+      );
+    }
+
+    offset.setFromSpherical(spherical);
+    camera.position.copy(target).add(offset);
+    camera.lookAt(target);
+    camera.updateProjectionMatrix?.();
+    controls.update?.();
+    setNavigationOrientation(null);
+    syncNavigationZoomPercent();
+  }
+
+  function clearHorizontalRotationHold() {
+    const hold = horizontalRotationHoldRef.current;
+    if (hold.delay !== null) window.clearTimeout(hold.delay);
+    if (hold.repeat !== null) window.clearInterval(hold.repeat);
+    hold.delay = null;
+    hold.repeat = null;
+    hold.held = false;
+  }
+
+  function beginHorizontalRotationHold(
+    direction: 'negative' | 'positive',
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) {
+    if (!horizontalRotationLocked) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    clearHorizontalRotationHold();
+    const hold = horizontalRotationHoldRef.current;
+    hold.held = false;
+    hold.delay = window.setTimeout(() => {
+      hold.held = true;
+      rotateNavigationCamera('horizontal', direction === 'negative' ? -1 : 1);
+      hold.repeat = window.setInterval(() => {
+        rotateNavigationCamera('horizontal', direction === 'negative' ? -1 : 1);
+      }, 24);
+    }, 280);
+  }
+
+  function endHorizontalRotationHold(direction: 'negative' | 'positive') {
+    const wasHeld = horizontalRotationHoldRef.current.held;
+    clearHorizontalRotationHold();
+    if (!wasHeld && horizontalRotationLocked) {
+      rotateNavigationCamera('horizontal', direction === 'negative' ? -1 : 1);
+    }
+  }
+
+  function clearVerticalRotationHold() {
+    const hold = verticalRotationHoldRef.current;
+    if (hold.delay !== null) window.clearTimeout(hold.delay);
+    if (hold.repeat !== null) window.clearInterval(hold.repeat);
+    hold.delay = null;
+    hold.repeat = null;
+    hold.held = false;
+  }
+
+  function beginVerticalRotationHold(
+    direction: 'negative' | 'positive',
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) {
+    if (!verticalRotationLocked) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    clearVerticalRotationHold();
+    const hold = verticalRotationHoldRef.current;
+    hold.held = false;
+    hold.delay = window.setTimeout(() => {
+      hold.held = true;
+      rotateNavigationCamera('vertical', direction === 'negative' ? -1 : 1);
+      hold.repeat = window.setInterval(() => {
+        rotateNavigationCamera('vertical', direction === 'negative' ? -1 : 1);
+      }, 24);
+    }, 280);
+  }
+
+  function endVerticalRotationHold(direction: 'negative' | 'positive') {
+    const wasHeld = verticalRotationHoldRef.current.held;
+    clearVerticalRotationHold();
+    if (!wasHeld && verticalRotationLocked) {
+      rotateNavigationCamera('vertical', direction === 'negative' ? -1 : 1);
+    }
+  }
+
   function captureCurrentSceneView(): SavedSceneView | null {
     const controls = controlsRef.current as any;
     const camera = controls?.object;
@@ -1391,6 +2156,8 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
     setVolumeBackgroundMode('off');
     setVolumeCacheStatus(null);
     applyCameraView({ x: 1, y: 0.8, z: 1 }, 1);
+    setNavigationZoomPercent(100);
+    setNavigationOrientation(null);
   }
 
   function setTimeDirectionCameraView() {
@@ -1433,10 +2200,11 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
 
   return (
     <div
+      className={`mv-sdv3d-viewer mv-sdv3d-wbv-parity${menuCollapsed ? ' mv-sdv3d-controls-collapsed' : ''}${infoCollapsed ? ' mv-sdv3d-info-collapsed' : ''}`}
       style={{
         width: '100%',
         height: '100%',
-        background: '#111',
+        background: canvasBackground,
         position: 'relative',
         overflow: 'hidden',
         overscrollBehavior: 'none',
@@ -1449,17 +2217,34 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
       onPointerCancelCapture={handleScenePointerUp}
       onWheelCapture={handleViewerWheel}
     >
-      <Canvas dpr={[1, 2]} gl={{ antialias: true }}>
+      <Canvas dpr={[1, 2]} gl={{ antialias: true }} style={{ background: canvasBackground }}>
         <PerspectiveCamera makeDefault position={[cameraDistance, cameraDistance * 0.8, cameraDistance]} fov={50} />
-        <OrbitControls ref={controlsRef} makeDefault enabled={!paneDragging} />
+        <OrbitControls
+          ref={controlsRef}
+          makeDefault
+          enabled={!paneDragging}
+          onChange={syncNavigationZoomPercent}
+          onStart={() => setNavigationOrientation(null)}
+        />
+        <SdvCompassCameraSync
+          compassRoseRef={compassRoseRef}
+          compassAngleRef={compassAngleRef}
+        />
         <ambientLight intensity={0.5} />
         <pointLight position={[10, 10, 10]} />
 
         <group position={[sceneOffsetX, sceneOffsetY, 0]}>
-        {showBounds && <VolumeBounds worldSize={worldSize} />}
+        {activeSceneOverlayVisibility.bounds && (
+          <VolumeBounds
+            worldSize={worldSize}
+            color={sceneOverlayBoundingBoxColor}
+            adaptive={canvasShadeAdaptive}
+            opacityOverride={sceneOverlayBoundingBoxOpacity}
+          />
+        )}
 
         {/* Inline Slice: fixed X, spans crossline(Z) by time(Y). */}
-        {visiblePlanes.inline && (
+        {!emptyState && visiblePlanes.inline && (
           <SlicePlane
             zarrPath={zarrPath}
             dim={0}
@@ -1487,7 +2272,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
         )}
 
         {/* Crossline Slice: fixed Z, spans inline(X) by time(Y). */}
-        {visiblePlanes.crossline && (
+        {!emptyState && visiblePlanes.crossline && (
           <SlicePlane
             zarrPath={zarrPath}
             dim={1}
@@ -1514,7 +2299,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
         )}
 
         {/* Time/depth Slice: fixed Y, spans inline(X) by crossline(Z). */}
-        {visiblePlanes.time && (
+        {!emptyState && visiblePlanes.time && (
           <SlicePlane
             zarrPath={zarrPath}
             dim={2}
@@ -1540,7 +2325,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
             dragAxisVector={[0, 1, 0]}
           />
         )}
-{volumeStackEnabled && (
+{!emptyState && volumeStackEnabled && (
           <VolumePagedRenderer
             zarrPath={zarrPath}
             dim={volumeRenderDim}
@@ -1575,24 +2360,108 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
           />
         )}
 
-        {showGrid && (
-          <Grid args={[Math.max(10, maxWorld * 1.5), Math.max(10, Math.round(maxWorld * 1.5))]} fadeDistance={25} />
+        {activeSceneOverlayVisibility.grid && (
+          canvasShadeAdaptive || sceneOverlayGridColor ? (
+            <SceneOpacityGrid
+              overlayOpacity={sceneOverlayGridOpacity}
+              args={[Math.max(10, maxWorld * 1.5), Math.max(10, Math.round(maxWorld * 1.5))]}
+              fadeDistance={25}
+              cellColor={sceneOverlayGridColor ?? canvasGridColor}
+              sectionColor={sceneOverlayGridColor ?? canvasGridColor}
+            />
+          ) : (
+            <SceneOpacityGrid
+              overlayOpacity={sceneOverlayGridOpacity}
+              args={[Math.max(10, maxWorld * 1.5), Math.max(10, Math.round(maxWorld * 1.5))]}
+              fadeDistance={25}
+            />
+          )
         )}
-        {showAxes && <axesHelper args={[Math.max(3, maxWorld * 0.6)]} />}
+        {activeSceneOverlayVisibility.axes && (
+          canvasShadeAdaptive ? (
+            <ShadeAwareAxesHelper
+              size={Math.max(3, maxWorld * 0.6) * sceneOverlayAxisScale}
+              shadeId={canvasShadeId}
+            />
+          ) : (
+            <axesHelper args={[Math.max(3, maxWorld * 0.6) * sceneOverlayAxisScale]} />
+          )
+        )}
 
-        {showBounds && showAxisLabels && (
+        {activeSceneOverlayVisibility.bounds && activeSceneOverlayVisibility.labels && (
           <AxisRulerLabels
             worldSize={worldSize}
             volume={volume}
             inlineCount={inlineCount}
             crosslineCount={crosslineCount}
             timeCount={timeCount}
+            color={sceneOverlayLabelColor}
+            adaptive={canvasShadeAdaptive}
+            sizeScale={sceneOverlayLabelSizeScale}
+            opacityScale={sceneOverlayLabelOpacityScale}
           />
         )}
         </group>
       </Canvas>
+      {activeSceneOverlayVisibility.compass && (
+        <div
+          className="mv-sdv3d-wbv-compass-dial"
+          aria-label="Viewer orientation compass"
+          style={{
+            '--wbv-compass-surface': compassPalette.surface,
+            '--wbv-compass-border': compassPalette.border,
+            '--wbv-compass-text': compassPalette.text,
+            '--wbv-compass-north': compassPalette.north,
+            transform: `scale(${sceneOverlayCompassSizeScale})`,
+            transformOrigin: 'top left',
+            opacity: sceneOverlayCompassOpacity,
+          } as React.CSSProperties}
+        >
+          <div className="mv-sdv3d-wbv-compass-dial__bezel" aria-hidden="true">
+            <span className="mv-sdv3d-wbv-compass-dial__viewer-eye">
+              <svg viewBox="0 0 24 16" focusable="false" aria-hidden="true">
+                <path d="M1.5 8C4.3 3.7 7.8 1.5 12 1.5S19.7 3.7 22.5 8C19.7 12.3 16.2 14.5 12 14.5S4.3 12.3 1.5 8Z" />
+                <circle cx="12" cy="8" r="3.15" />
+                <circle className="mv-sdv3d-wbv-compass-dial__viewer-eye-highlight" cx="13" cy="7" r="0.75" />
+              </svg>
+            </span>
+            <div ref={compassRoseRef} className="mv-sdv3d-wbv-compass-dial__rose">
+              <span className="mv-sdv3d-wbv-compass-dial__cardinal is-north">N</span>
+              <span className="mv-sdv3d-wbv-compass-dial__cardinal is-east">E</span>
+              <span className="mv-sdv3d-wbv-compass-dial__cardinal is-south">S</span>
+              <span className="mv-sdv3d-wbv-compass-dial__cardinal is-west">W</span>
+              <span className="mv-sdv3d-wbv-compass-dial__center" />
+            </div>
+          </div>
+        </div>
+      )}
       
 
+
+      {emptyState && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 20,
+            padding: '10px 16px',
+            borderRadius: 6,
+            border: '1px solid var(--mv-border-strong)',
+            background: 'color-mix(in srgb, var(--mv-surface-1) 92%, transparent)',
+            color: 'var(--mv-text-primary)',
+            fontFamily: 'var(--mv-font-ui)',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            pointerEvents: 'none',
+          }}
+        >
+          {emptyStateMessage}
+        </div>
+      )}
 
       {volumeCacheStatus?.loading && (
         <div
@@ -1602,8 +2471,8 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
             top: 18,
             transform: 'translateX(-50%)',
             background: 'rgba(0, 0, 0, 0.82)',
-            color: 'white',
-            border: '1px solid #666',
+            color: 'var(--mv-text-primary)',
+            border: '1px solid var(--mv-border-strong)',
             borderRadius: 8,
             padding: '9px 14px',
             fontSize: 13,
@@ -1623,33 +2492,61 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
         onPointerMove={(e) => e.stopPropagation()}
         onPointerUp={(e) => e.stopPropagation()}
         onWheel={(e) => e.stopPropagation()}
+        className="mv-viewer-info-stack mv-sdv3d-wbv-info-panel"
         style={{
           position: 'absolute',
-          top: 10,
-          right: 10,
-          width: 320,
+          top: 0,
+          right: 0,
+          width: 300,
           maxHeight: 'calc(100% - 20px)',
           zIndex: 12,
-          color: 'white',
+          color: 'var(--mv-text-primary)',
           pointerEvents: 'auto',
           display: 'flex',
           flexDirection: 'column',
           gap: 8,
           fontVariantNumeric: 'tabular-nums',
           contain: 'layout paint',
+          transform: infoCollapsed ? 'translateX(calc(100% + 10px))' : 'translateX(0)',
+          transition: 'transform 180ms ease',
+          pointerEvents: infoCollapsed ? 'none' : 'auto',
         }}
       >
-        <div
+        <button
+          className="mv-viewer-compact-button mv-viewer-info-collapse-button"
+          onClick={() => setInfoCollapsed(true)}
           style={{
-            background: 'rgba(27,27,27,0.88)',
-            border: '1px solid #333',
-            borderRadius: 8,
-            padding: '9px 11px',
+            position: 'absolute',
+            top: 8,
+            left: 8,
+            background: 'var(--mv-surface-3)',
+            color: 'var(--mv-text-primary)',
+            border: '1px solid var(--mv-border-strong)',
+            padding: '2px 7px',
+            cursor: 'pointer',
+          }}
+          title="Collapse information panel"
+          aria-label="Collapse information panel"
+        >
+          ▶
+        </button>
+
+        <h3
+          className="mv-viewer-controls-title mv-viewer-info-primary-heading"
+          style={{ margin: 0, width: '100%', padding: '0 34px', textAlign: 'center', boxSizing: 'border-box' }}
+        >
+          Volume Info
+        </h3>
+
+        <div
+          className="mv-viewer-info-togglebar"
+          style={{
+            background: 'transparent',
+            border: 0,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'flex-end',
+            justifyContent: 'flex-start',
             gap: 14,
-            fontSize: 13,
           }}
         >
           <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1684,41 +2581,56 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
               scrollbarGutter: 'stable',
             }}
           >
+            {emptyState ? (
+              <aside
+                className="mv-viewer-info-card"
+                style={{
+                  boxSizing: 'border-box',
+                  padding: '12px',
+                }}
+              >
+                <div
+                  style={{
+                    color: 'var(--mv-text-primary)',
+                    fontFamily: 'var(--mv-font-ui)',
+                    fontSize: '0.76rem',
+                    fontWeight: 400,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {emptyStateMessage}
+                </div>
+              </aside>
+            ) : (
+              <>
             {showVolumeInfo && (
               <aside
+                className="mv-viewer-info-card"
                 style={{
-                  background: 'rgba(27,27,27,0.90)',
-                  border: '1px solid #333',
-                  borderRadius: 8,
-                  padding: 12,
                   boxSizing: 'border-box',
                 }}
               >
-                <div style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.65, marginBottom: 8 }}>
-                  Volume Info
-                </div>
+                <div className="mv-type-property-grid mv-sdv3d-metadata-grid" style={{ display: 'grid' }}>
+                  <div className="mv-sdv3d-metadata-label">Dataset</div>
+                  <div className="mv-type-property-value" style={{ wordBreak: 'break-word' }}>{zarrPath}</div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '105px minmax(0, 1fr)', gap: '6px 8px', fontSize: 12, lineHeight: 1.35 }}>
-                  <div style={{ opacity: 0.65 }}>Dataset</div>
-                  <div style={{ wordBreak: 'break-word' }}>{zarrPath}</div>
+                  <div className="mv-sdv3d-metadata-label">Shape</div>
+                  <div className="mv-type-property-value">{inlineCount} × {crosslineCount} × {timeCount}</div>
 
-                  <div style={{ opacity: 0.65 }}>Shape</div>
-                  <div>{inlineCount} × {crosslineCount} × {timeCount}</div>
+                  <div className="mv-sdv3d-metadata-label">Inline range</div>
+                  <div className="mv-type-property-value">0 – {Math.max(0, inlineCount - 1)}</div>
 
-                  <div style={{ opacity: 0.65 }}>Inline range</div>
-                  <div>0 – {Math.max(0, inlineCount - 1)}</div>
+                  <div className="mv-sdv3d-metadata-label">Crossline range</div>
+                  <div className="mv-type-property-value">0 – {Math.max(0, crosslineCount - 1)}</div>
 
-                  <div style={{ opacity: 0.65 }}>Crossline range</div>
-                  <div>0 – {Math.max(0, crosslineCount - 1)}</div>
+                  <div className="mv-sdv3d-metadata-label">Time range</div>
+                  <div className="mv-type-property-value">0 – {Math.max(0, timeCount - 1)}</div>
 
-                  <div style={{ opacity: 0.65 }}>Time range</div>
-                  <div>0 – {Math.max(0, timeCount - 1)}</div>
+                  <div className="mv-sdv3d-metadata-label">World box</div>
+                  <div className="mv-type-property-value">X {worldSize.x.toFixed(2)} · Y {worldSize.y.toFixed(2)} · Z {worldSize.z.toFixed(2)}</div>
 
-                  <div style={{ opacity: 0.65 }}>World box</div>
-                  <div>X {worldSize.x.toFixed(2)} · Y {worldSize.y.toFixed(2)} · Z {worldSize.z.toFixed(2)}</div>
-
-                  <div style={{ opacity: 0.65 }}>Visible planes</div>
-                  <div>
+                  <div className="mv-sdv3d-metadata-label">Visible planes</div>
+                  <div className="mv-type-property-value">
                     {[
                       visiblePlanes.inline ? 'Inline' : null,
                       visiblePlanes.crossline ? 'Crossline' : null,
@@ -1726,11 +2638,11 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                     ].filter(Boolean).join(', ') || 'None'}
                   </div>
 
-                  <div style={{ opacity: 0.65 }}>Frontend cache</div>
-                  <div>{sliceCache.size} / {cacheSize} slices</div>
+                  <div className="mv-sdv3d-metadata-label">Frontend cache</div>
+                  <div className="mv-type-property-value">{sliceCache.size} / {cacheSize} slices</div>
 
-                  <div style={{ opacity: 0.65 }}>Backend cache</div>
-                  <div>
+                  <div className="mv-sdv3d-metadata-label">Backend cache</div>
+                  <div className="mv-type-property-value">
                     {backendCacheInfo
                       ? `${backendCacheInfo.entries} entries · ${(backendCacheInfo.bytes / 1048576).toFixed(1)} MB`
                       : 'not available'}
@@ -1741,24 +2653,21 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
 
             {showSliceInfo && (
               <aside
+                className="mv-viewer-info-card"
                 style={{
-                  background: 'rgba(27,27,27,0.90)',
-                  border: '1px solid #333',
-                  borderRadius: 8,
-                  padding: 12,
                   boxSizing: 'border-box',
                 }}
               >
-                <div style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.06em', opacity: 0.65, marginBottom: 8 }}>
+                <div className="mv-type-section-heading" style={{ marginBottom: 8 }}>
                   Slice Info
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '105px minmax(0, 1fr)', gap: '6px 8px', fontSize: 12, lineHeight: 1.35 }}>
-                  <div style={{ opacity: 0.65 }}>Mode</div>
-                  <div>{volumeStackEnabled ? 'Volume stack' : 'Slice planes'}</div>
+                <div className="mv-type-property-grid mv-sdv3d-metadata-grid" style={{ display: 'grid' }}>
+                  <div className="mv-sdv3d-metadata-label">Mode</div>
+                  <div className="mv-type-property-value">{volumeStackEnabled ? 'Volume stack' : 'Slice planes'}</div>
 
-                  <div style={{ opacity: 0.65 }}>Active axis</div>
-                  <div>
+                  <div className="mv-sdv3d-metadata-label">Active axis</div>
+                  <div className="mv-type-property-value">
                     {volumeStackEnabled
                       ? volumeRenderDim === 0
                         ? 'Inline'
@@ -1768,143 +2677,144 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                       : 'Planes'}
                   </div>
 
-                  <div style={{ opacity: 0.65 }}>Inline</div>
-                  <div>
+                  <div className="mv-sdv3d-metadata-label">Inline</div>
+                  <div className="mv-type-property-value">
                     {volumeStackEnabled && volumeRenderDim === 0
                       ? `${volumeCenterIndex} / ${Math.max(0, inlineCount - 1)}`
                       : `${indices.inline} / ${Math.max(0, inlineCount - 1)}`}
                   </div>
 
-                  <div style={{ opacity: 0.65 }}>Crossline</div>
-                  <div>
+                  <div className="mv-sdv3d-metadata-label">Crossline</div>
+                  <div className="mv-type-property-value">
                     {volumeStackEnabled && volumeRenderDim === 1
                       ? `${volumeCenterIndex} / ${Math.max(0, crosslineCount - 1)}`
                       : `${indices.crossline} / ${Math.max(0, crosslineCount - 1)}`}
                   </div>
 
-                  <div style={{ opacity: 0.65 }}>Time/depth</div>
-                  <div>
+                  <div className="mv-sdv3d-metadata-label">Time/depth</div>
+                  <div className="mv-type-property-value">
                     {volumeStackEnabled && volumeRenderDim === 2
                       ? `${volumeCenterIndex} / ${Math.max(0, timeCount - 1)}`
                       : `${indices.time} / ${Math.max(0, timeCount - 1)}`}
                   </div>
 
-                  <div style={{ opacity: 0.65 }}>Rendered time</div>
-                  <div>{renderedTimeIndex}</div>
+                  <div className="mv-sdv3d-metadata-label">Rendered time</div>
+                  <div className="mv-type-property-value">{renderedTimeIndex}</div>
 
-                  <div style={{ opacity: 0.65 }}>Color map</div>
-                  <div>{colorMap}</div>
+                  <div className="mv-sdv3d-metadata-label">Color map</div>
+                  <div className="mv-type-property-value">{colorMap}</div>
 
-                  <div style={{ opacity: 0.65 }}>Wave mode</div>
-                  <div>{waveDisplayMode}</div>
+                  <div className="mv-sdv3d-metadata-label">Wave mode</div>
+                  <div className="mv-type-property-value">{waveDisplayMode}</div>
 
-                  <div style={{ opacity: 0.65 }}>Gain</div>
-                  <div>{amplitudeGain.toFixed(2)}×</div>
+                  <div className="mv-sdv3d-metadata-label">Gain</div>
+                  <div className="mv-type-property-value">{amplitudeGain.toFixed(2)}×</div>
 
-                  <div style={{ opacity: 0.65 }}>Clip</div>
-                  <div>{clipPercentile.toFixed(1)}%</div>
+                  <div className="mv-sdv3d-metadata-label">Clip</div>
+                  <div className="mv-type-property-value">{clipPercentile.toFixed(1)}%</div>
 
-                  <div style={{ opacity: 0.65 }}>Slice detail</div>
-                  <div>{textureScale === 1 ? 'Native' : `${textureScale.toFixed(2)}×`} selected · {effectiveTextureScale === 1 ? 'Native' : `${effectiveTextureScale.toFixed(2)}×`} active · {activeTextureDetailMode}</div>
+                  <div className="mv-sdv3d-metadata-label">Slice detail</div>
+                  <div className="mv-type-property-value">{textureScale === 1 ? 'Native' : `${textureScale.toFixed(2)}×`} selected · {effectiveTextureScale === 1 ? 'Native' : `${effectiveTextureScale.toFixed(2)}×`} active · {activeTextureDetailMode}</div>
 
                   {activeTextureStats && (
                     <>
-                      <div style={{ opacity: 0.65 }}>Texture size</div>
-                      <div>{activeTextureStats.textureWidth} × {activeTextureStats.textureHeight} px</div>
+                      <div className="mv-sdv3d-metadata-label">Texture size</div>
+                      <div className="mv-type-property-value">{activeTextureStats.textureWidth} × {activeTextureStats.textureHeight} px</div>
 
-                      <div style={{ opacity: 0.65 }}>Source slice</div>
-                      <div>{activeTextureStats.sourceWidth} × {activeTextureStats.sourceHeight} samples</div>
+                      <div className="mv-sdv3d-metadata-label">Source slice</div>
+                      <div className="mv-type-property-value">{activeTextureStats.sourceWidth} × {activeTextureStats.sourceHeight} samples</div>
 
-                      <div style={{ opacity: 0.65 }}>Texture render</div>
-                      <div>{activeTextureStats.renderMs.toFixed(0)} ms · {(activeTextureStats.texturePixels / 1000000).toFixed(2)} MP</div>
+                      <div className="mv-sdv3d-metadata-label">Texture render</div>
+                      <div className="mv-type-property-value">{activeTextureStats.renderMs.toFixed(0)} ms · {(activeTextureStats.texturePixels / 1000000).toFixed(2)} MP</div>
                     </>
                   )}
 
-                  <div style={{ opacity: 0.65 }}>Active window</div>
-                  <div>{activeDiagnosticAxis} @ {activeDiagnosticSliceIndex} · whole-slice baseline</div>
+                  <div className="mv-sdv3d-metadata-label">Active window</div>
+                  <div className="mv-type-property-value">{activeDiagnosticAxis} @ {activeDiagnosticSliceIndex} · whole-slice baseline</div>
 
-                  <div style={{ opacity: 0.65 }}>Source axes</div>
-                  <div>fixed {activeDiagnosticAxisMapping.fixedAxis} · x {activeDiagnosticAxisMapping.sourceXAxis} · y {activeDiagnosticAxisMapping.sourceYAxis}</div>
+                  <div className="mv-sdv3d-metadata-label">Source axes</div>
+                  <div className="mv-type-property-value">fixed {activeDiagnosticAxisMapping.fixedAxis} · x {activeDiagnosticAxisMapping.sourceXAxis} · y {activeDiagnosticAxisMapping.sourceYAxis}</div>
 
-                  <div style={{ opacity: 0.65 }}>Source bounds</div>
-                  <div>{formatActive3DSourceBounds(activeDiagnosticSourceBounds)}</div>
+                  <div className="mv-sdv3d-metadata-label">Source bounds</div>
+                  <div className="mv-type-property-value">{formatActive3DSourceBounds(activeDiagnosticSourceBounds)}</div>
 
-                  <div style={{ opacity: 0.65 }}>Future request</div>
-                  <div>{activeDiagnosticRequest.outputShape.width} × {activeDiagnosticRequest.outputShape.height} · {activeDiagnosticRequest.quality}</div>
+                  <div className="mv-sdv3d-metadata-label">Future request</div>
+                  <div className="mv-type-property-value">{activeDiagnosticRequest.outputShape.width} × {activeDiagnosticRequest.outputShape.height} · {activeDiagnosticRequest.quality}</div>
 
-                  <div style={{ opacity: 0.65 }}>Future cache key</div>
-                  <div title={activeDiagnosticCacheKey}>{activeDiagnosticCacheKey.slice(0, 48)}…</div>
+                  <div className="mv-sdv3d-metadata-label">Future cache key</div>
+                  <div className="mv-type-property-value" title={activeDiagnosticCacheKey}>{activeDiagnosticCacheKey.slice(0, 48)}…</div>
 
-                  <div style={{ opacity: 0.65 }}>Vertical exag.</div>
-                  <div>{verticalExaggeration.toFixed(1)}×</div>
+                  <div className="mv-sdv3d-metadata-label">Vertical exag.</div>
+                  <div className="mv-type-property-value">{verticalExaggeration.toFixed(1)}×</div>
 
-                  <div style={{ opacity: 0.65 }}>Loading</div>
-                  <div>
+                  <div className="mv-sdv3d-metadata-label">Loading</div>
+                  <div className="mv-type-property-value">
                     Inline {loadingPlanes.inline ? 'loading' : 'idle'} · Crossline {loadingPlanes.crossline ? 'loading' : 'idle'} · Time {loadingPlanes.time ? 'loading' : 'idle'}
                   </div>
 
-                  <div style={{ opacity: 0.65 }}>Volume stack</div>
-                  <div>{volumeStackEnabled ? `On · center ${volumeCenterIndex}` : 'Off'}</div>
+                  <div className="mv-sdv3d-metadata-label">Volume stack</div>
+                  <div className="mv-type-property-value">{volumeStackEnabled ? `On · center ${volumeCenterIndex}` : 'Off'}</div>
 
                   {volumeStackEnabled && (
                     <>
-                      <div style={{ opacity: 0.65 }}>Stack dir.</div>
-                      <div>{volumeRenderDim === 0 ? 'Inline' : volumeRenderDim === 1 ? 'Crossline' : 'Time/depth'}</div>
+                      <div className="mv-sdv3d-metadata-label">Stack dir.</div>
+                      <div className="mv-type-property-value">{volumeRenderDim === 0 ? 'Inline' : volumeRenderDim === 1 ? 'Crossline' : 'Time/depth'}</div>
 
-                      <div style={{ opacity: 0.65 }}>Stack center</div>
-                      <div>{volumeCenterIndex}</div>
+                      <div className="mv-sdv3d-metadata-label">Stack center</div>
+                      <div className="mv-type-property-value">{volumeCenterIndex}</div>
 
-                      <div style={{ opacity: 0.65 }}>Window / step</div>
-                      <div>{volumeWindowSize} / {volumeStep}</div>
+                      <div className="mv-sdv3d-metadata-label">Window / step</div>
+                      <div className="mv-type-property-value">{volumeWindowSize} / {volumeStep}</div>
 
-                      <div style={{ opacity: 0.65 }}>Quality</div>
-                      <div>{volumeQuality}</div>
+                      <div className="mv-sdv3d-metadata-label">Quality</div>
+                      <div className="mv-type-property-value">{volumeQuality}</div>
 
-                      <div style={{ opacity: 0.65 }}>Opacity</div>
-                      <div>{volumeOpacity.toFixed(2)}</div>
+                      <div className="mv-sdv3d-metadata-label">Opacity</div>
+                      <div className="mv-type-property-value">{volumeOpacity.toFixed(2)}</div>
 
-                      <div style={{ opacity: 0.65 }}>Density</div>
-                      <div>{volumeDensity.toFixed(2)}×</div>
+                      <div className="mv-sdv3d-metadata-label">Density</div>
+                      <div className="mv-type-property-value">{volumeDensity.toFixed(2)}×</div>
 
-                      <div style={{ opacity: 0.65 }}>Threshold</div>
-                      <div>{volumeThreshold.toFixed(3)}</div>
+                      <div className="mv-sdv3d-metadata-label">Threshold</div>
+                      <div className="mv-type-property-value">{volumeThreshold.toFixed(3)}</div>
                     </>
                   )}
                 </div>
               </aside>
+            )}
+              </>
             )}
           </div>
         )}
       </div>
 
       <div
+        className="mv-viewer-controls-panel mv-viewer-controls-panel--info-parity mv-sdv3d-wbv-controls-panel"
         style={{
           position: 'absolute',
-          top: 10,
-          left: 10,
-          width: 360,
-          fontSize: '90%',
-          color: 'white',
-          background: 'rgba(0,0,0,0.7)',
-          padding: 15,
-          borderRadius: 8,
+          top: 0,
+          left: 0,
+          width: 300,
+          padding: 12,
+          boxSizing: 'border-box',
           display: 'flex',
           flexDirection: 'column',
-          gap: 10,
+          gap: 8,
           transform: menuCollapsed ? 'translateX(calc(-100% - 10px))' : 'translateX(0)',
           transition: 'transform 180ms ease',
           pointerEvents: menuCollapsed ? 'none' : 'auto',
         }}
       >
         <button
+          className="mv-viewer-compact-button"
           onClick={() => setMenuCollapsed(true)}
           style={{
             position: 'absolute',
             top: 8,
             right: 8,
-            background: '#333',
-            color: 'white',
-            border: '1px solid #555',
+            background: 'var(--mv-surface-3)',
+            color: 'var(--mv-text-primary)',
+            border: '1px solid var(--mv-border-strong)',
             padding: '2px 7px',
             cursor: 'pointer',
           }}
@@ -1912,18 +2822,23 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
         >
           ◀
         </button>
-        <h3 style={{ margin: 0, paddingRight: 34 }}>3D View Controls</h3>
-        <div style={{ fontSize: 12, opacity: 0.8 }}>
+        <h3
+          className="mv-viewer-controls-title"
+          style={{ margin: 0, width: '100%', padding: '0 34px', textAlign: 'center', boxSizing: 'border-box' }}
+        >
+          3D View Controls
+        </h3>
+        <div className="mv-viewer-controls-meta">
           X=Inline · Y=Time/Depth · Z=Crossline
         </div>
-        <div style={{ fontSize: 12, opacity: 0.8 }}>
+        <div className="mv-viewer-controls-meta">
           Data shape: {inlineCount} × {crosslineCount} × {timeCount}
         </div>
-        <div style={{ fontSize: 12, opacity: 0.8 }}>
+        <div className="mv-viewer-controls-meta">
           World box: X {worldSize.x.toFixed(2)} · Y {worldSize.y.toFixed(2)} · Z {worldSize.z.toFixed(2)}
         </div>
 
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', borderTop: '1px solid #444', paddingTop: 8 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', borderTop: '1px solid var(--mv-border-normal)', paddingTop: 8 }}>
           {([
             ['view', 'View'],
             ['planes', 'Planes'],
@@ -1934,45 +2849,265 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
             <button
               key={key}
               onClick={() => setActiveControlTab(key)}
+              className={`mv-viewer-tab${activeControlTab === key ? ' mv-viewer-tab--active' : ''}`}
               style={{
-                background: activeControlTab === key ? '#4a4a4a' : '#2b2b2b',
-                color: 'white',
-                border: activeControlTab === key ? '1px solid #aaa' : '1px solid #555',
-                padding: '4px 8px',
                 cursor: 'pointer',
-                borderRadius: 4,
-                fontWeight: activeControlTab === key ? 600 : 400,
               }}
             >
               {label}
             </button>
           ))}
+          <button
+            type="button"
+            className="mv-viewer-tab"
+            style={{ cursor: 'pointer', gridColumn: 3, gridRow: 2 }}
+            onClick={() => setSceneOverlaysInfoOpen((open) => !open)}
+            aria-label="Scene Overlays information"
+            aria-expanded={sceneOverlaysInfoOpen}
+            title="Scene Overlays information"
+          >
+            <span className="mv-sdv-info-badge" aria-hidden="true">i</span>
+          </button>
         </div>
 
         {activeControlTab === 'view' && (
           <>
-            <div style={{ borderTop: '1px solid #444', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ fontSize: 12, opacity: 0.85 }}>Scene overlays</div>
+            <div className="mv-sdv-info-section mv-sdv-scene-overlays-section" style={{ borderTop: '1px solid var(--mv-border-normal)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: '0.52rem' }}>
+              <div className="mv-sdv-control-subheading mv-sdv-info-heading">
+                <span>Scene Overlays</span>
+                <button
+                  type="button"
+                  className="mv-sdv3d-scene-overlays-gear"
+                  aria-label="Scene Overlays settings"
+                  aria-haspopup="dialog"
+                  title="Scene Overlays settings"
+                  onClick={openSceneOverlaysModal}
+                  style={{
+                    marginLeft: 'auto',
+                    marginRight: 'calc(100% - (264px + 0.56rem))',
+                    width: '16px',
+                    height: '16px',
+                    minWidth: '16px',
+                    padding: 0,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: 0,
+                    background: 'transparent',
+                    color: 'var(--mv-role-text-secondary)',
+                    fontFamily: 'var(--mv-font-ui)',
+                    fontSize: '16px',
+                    lineHeight: 1,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    width="16"
+                    height="16"
+                    style={{ display: 'block', flex: '0 0 16px' }}
+                  >
+                    <path
+                      fill="currentColor"
+                      d="M19.14 12.94c.04-.31.06-.63.06-.94s-.02-.63-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.62l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96a7.12 7.12 0 0 0-1.62-.94L14.4 2.8a.48.48 0 0 0-.48-.4h-3.84a.48.48 0 0 0-.48.4l-.36 2.54c-.59.24-1.13.55-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.72 8.86a.49.49 0 0 0 .12.62l2.03 1.58c-.05.31-.07.65-.07.94 0 .31.02.63.07.94l-2.03 1.58a.49.49 0 0 0-.12.62l1.92 3.32c.12.22.38.31.59.22l2.39-.96c.49.39 1.03.71 1.62.94l.36 2.54c.04.24.24.4.48.4h3.84c.24 0 .44-.16.48-.4l.36-2.54c.59-.24 1.13-.55 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.62l-2.02-1.58ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"
+                    />
+                  </svg>
+                </button>
+              </div>
+              {sceneOverlaysInfoOpen && (
+                <div className="mv-sdv-info-popover" role="note">
+                  Shift + left-drag directly on a pane to move it through the volume. Orbit is disabled while dragging.
+                </div>
+              )}
               <label><input type="checkbox" checked={showGrid} onChange={() => setShowGrid((v) => !v)} /> Horizontal grid</label>
               <label><input type="checkbox" checked={showBounds} onChange={() => setShowBounds((v) => !v)} /> Bounding box</label>
               <label><input type="checkbox" checked={showAxes} onChange={() => setShowAxes((v) => !v)} /> X/Y/Z axis lines</label>
               <label><input type="checkbox" checked={showAxisLabels} onChange={() => setShowAxisLabels((v) => !v)} /> Axis labels</label>
+              <label><input type="checkbox" checked={showCompass} onChange={() => setShowCompass((v) => !v)} /> Compass</label>
             </div>
-            <div style={{ fontSize: 12, opacity: 0.7 }}>
-              Shift + left-drag directly on a pane to move it through the volume. Orbit is disabled while dragging.
-            </div>
-            <div style={{ borderTop: '1px solid #444', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ fontSize: 12, opacity: 0.85 }}>Scene</div>
-              <div style={{ fontSize: 12, opacity: 0.7 }}>
-                Mouse wheel zooms the camera. Orbit/pan controls should not change active slices or volume paging.
-                Set Scene stores the current camera, orbit target, zoom level, and scene offset.
+            <div
+              className="mv-sdv-info-section mv-sdv3d-navigation-section"
+              style={{ borderTop: '1px solid var(--mv-border-normal)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}
+            >
+              <div className="mv-sdv-control-subheading mv-sdv-info-heading">
+                <span>View</span>
               </div>
+
+              <div className="mv-sdv3d-navigation-controls">
+                <div className="mv-sdv3d-navigation-block">
+                  <h4>Orientation</h4>
+                  <div className="mv-sdv3d-navigation-orientation-grid">
+                    {([
+                      ['front', 'F', 'Front view'],
+                      ['right', 'R', 'Right view'],
+                      ['left', 'L', 'Left view'],
+                      ['back', 'BK', 'Back view'],
+                      ['top', 'T', 'Top view'],
+                    ] as const).map(([orientation, label, title]) => (
+                      <button
+                        key={orientation}
+                        type="button"
+                        className={navigationOrientation === orientation ? 'is-active' : ''}
+                        aria-pressed={navigationOrientation === orientation}
+                        title={title}
+                        onClick={() => applyNavigationOrientation(orientation)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mv-sdv3d-navigation-block">
+                  <h4>Zoom</h4>
+                  <div className="mv-sdv3d-navigation-three-column">
+                    <button
+                      type="button"
+                      aria-label="Zoom out"
+                      disabled={navigationZoomPercent <= 25}
+                      onClick={() => stepNavigationZoom('out')}
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      className="mv-sdv3d-navigation-value"
+                      title="Reset zoom to 100%"
+                      onClick={() => setNavigationZoomPercentValue(100)}
+                    >
+                      {navigationZoomPercent}%
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Zoom in"
+                      disabled={navigationZoomPercent >= 800}
+                      onClick={() => stepNavigationZoom('in')}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mv-sdv3d-navigation-block mv-sdv3d-navigation-rotation-block">
+                  <h4>Rotation</h4>
+                  <div className="mv-sdv3d-navigation-three-column">
+                    <button
+                      type="button"
+                      aria-label="Rotate horizontally negative"
+                      disabled={!horizontalRotationLocked}
+                      onPointerDown={(event) => beginHorizontalRotationHold('negative', event)}
+                      onPointerUp={() => endHorizontalRotationHold('negative')}
+                      onPointerCancel={clearHorizontalRotationHold}
+                      onPointerLeave={() => {
+                        if (horizontalRotationHoldRef.current.held) clearHorizontalRotationHold();
+                      }}
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      className={`mv-sdv3d-navigation-axis-label${horizontalRotationLocked ? ' is-active' : ''}`}
+                      aria-pressed={horizontalRotationLocked}
+                      onClick={() => {
+                        clearHorizontalRotationHold();
+                        clearVerticalRotationHold();
+                        setHorizontalRotationLocked((current) => {
+                          const next = !current;
+                          if (next) setVerticalRotationLocked(false);
+                          return next;
+                        });
+                      }}
+                    >
+                      Horizontal
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Rotate horizontally positive"
+                      disabled={!horizontalRotationLocked}
+                      onPointerDown={(event) => beginHorizontalRotationHold('positive', event)}
+                      onPointerUp={() => endHorizontalRotationHold('positive')}
+                      onPointerCancel={clearHorizontalRotationHold}
+                      onPointerLeave={() => {
+                        if (horizontalRotationHoldRef.current.held) clearHorizontalRotationHold();
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="mv-sdv3d-navigation-three-column">
+                    <button
+                      type="button"
+                      aria-label="Rotate vertically negative"
+                      disabled={!verticalRotationLocked}
+                      onPointerDown={(event) => beginVerticalRotationHold('negative', event)}
+                      onPointerUp={() => endVerticalRotationHold('negative')}
+                      onPointerCancel={clearVerticalRotationHold}
+                      onPointerLeave={() => {
+                        if (verticalRotationHoldRef.current.held) clearVerticalRotationHold();
+                      }}
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      className={`mv-sdv3d-navigation-axis-label${verticalRotationLocked ? ' is-active' : ''}`}
+                      aria-pressed={verticalRotationLocked}
+                      onClick={() => {
+                        clearHorizontalRotationHold();
+                        clearVerticalRotationHold();
+                        setVerticalRotationLocked((current) => {
+                          const next = !current;
+                          if (next) setHorizontalRotationLocked(false);
+                          return next;
+                        });
+                      }}
+                    >
+                      Vertical
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Rotate vertically positive"
+                      disabled={!verticalRotationLocked}
+                      onPointerDown={(event) => beginVerticalRotationHold('positive', event)}
+                      onPointerUp={() => endVerticalRotationHold('positive')}
+                      onPointerCancel={clearVerticalRotationHold}
+                      onPointerLeave={() => {
+                        if (verticalRotationHoldRef.current.held) clearVerticalRotationHold();
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="mv-sdv-info-section mv-sdv-scene-section" style={{ paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div className="mv-sdv-control-subheading mv-sdv-info-heading">
+                <span>Scene</span>
+                <button
+                  type="button"
+                  className="mv-sdv-info-badge"
+                  onClick={() => setSceneInfoOpen((open) => !open)}
+                  aria-label="Scene information"
+                  aria-expanded={sceneInfoOpen}
+                >
+                  i
+                </button>
+              </div>
+              {sceneInfoOpen && (
+                <div className="mv-sdv-info-popover" role="note">
+                  Mouse wheel zooms the camera. Orbit/pan controls should not change active slices or volume paging.
+                  Set Scene stores the current camera, orbit target, zoom level, and scene offset.
+                </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                 <button
                   type="button"
                   onClick={setSceneView}
                   title="Store the current 3D scene view without changing data or slice state"
-                  style={{ background: 'transparent', color: 'white', border: '1px solid #555', padding: '5px 8px', cursor: 'pointer' }}
+                  className="mv-sdv-scene-button"
+                  style={{ padding: '5px 8px', cursor: 'pointer' }}
                 >
                   Set Scene
                 </button>
@@ -1981,26 +3116,26 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                   onClick={returnSceneView}
                   disabled={!savedSceneView}
                   title="Return to the previously stored 3D scene view"
+                  className="mv-sdv-scene-button"
                   style={{
-                    background: 'transparent',
-                    color: savedSceneView ? 'white' : '#777',
-                    border: '1px solid #555',
+                    color: savedSceneView ? 'var(--mv-text-primary)' : 'var(--mv-text-disabled)',
                     padding: '5px 8px',
                     cursor: savedSceneView ? 'pointer' : 'not-allowed',
                   }}
                 >
-                  Return Scene
+                  Return
                 </button>
                 <button
                   type="button"
                   onClick={resetSceneView}
                   title="Reset the 3D scene camera and clear the stored scene view"
-                  style={{ background: 'transparent', color: 'white', border: '1px solid #555', padding: '5px 8px', cursor: 'pointer' }}
+                  className="mv-sdv-scene-button"
+                  style={{ padding: '5px 8px', cursor: 'pointer' }}
                 >
                   Reset Scene
                 </button>
               </div>
-              <div style={{ fontSize: 12, opacity: 0.65 }}>
+              <div className="mv-viewer-helper">
                 Saved scene: {savedSceneView ? 'set' : 'not set'} · Offset: X {sceneOffsetX.toFixed(1)} · Y {sceneOffsetY.toFixed(1)}
               </div>
             </div>
@@ -2009,15 +3144,16 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
 
         {activeControlTab === 'planes' && (
           <>
-            <div style={{ borderTop: '1px solid #444', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ fontSize: 12, opacity: 0.85 }}>Visible planes</div>
+            <div className="mv-sdv3d-visible-planes-section" style={{ borderTop: '1px solid var(--mv-border-normal)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div className="mv-sdv-control-subheading">Visible planes</div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <label><input type="checkbox" checked={visiblePlanes.inline} onChange={() => togglePlane('inline')} /> Inline / X {loadingPlanes.inline ? '— loading…' : ''}</label>
                 <button
+                  className="mv-viewer-compact-button"
                   onClick={() => reloadPlane('inline')}
                   title="Refresh inline/X pane"
                   aria-label="Refresh inline/X pane"
-                  style={{ background: '#333', color: 'white', border: '1px solid #555', padding: '1px 6px', cursor: 'pointer' }}
+                  style={{ cursor: 'pointer' }}
                 >
                   ↻
                 </button>
@@ -2025,10 +3161,11 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <label><input type="checkbox" checked={visiblePlanes.crossline} onChange={() => togglePlane('crossline')} /> Crossline / Z {loadingPlanes.crossline ? '— loading…' : ''}</label>
                 <button
+                  className="mv-viewer-compact-button"
                   onClick={() => reloadPlane('crossline')}
                   title="Refresh crossline/Z pane"
                   aria-label="Refresh crossline/Z pane"
-                  style={{ background: '#333', color: 'white', border: '1px solid #555', padding: '1px 6px', cursor: 'pointer' }}
+                  style={{ cursor: 'pointer' }}
                 >
                   ↻
                 </button>
@@ -2036,27 +3173,29 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                 <label><input type="checkbox" checked={visiblePlanes.time} onChange={() => togglePlane('time')} /> Time/depth / Y {loadingPlanes.time ? '— loading…' : ''}</label>
                 <button
+                  className="mv-viewer-compact-button"
                   onClick={() => reloadPlane('time')}
                   title="Refresh time/depth/Y pane"
                   aria-label="Refresh time/depth/Y pane"
-                  style={{ background: '#333', color: 'white', border: '1px solid #555', padding: '1px 6px', cursor: 'pointer' }}
+                  style={{ cursor: 'pointer' }}
                 >
                   ↻
                 </button>
               </div>
             </div>
-            <div style={{ borderTop: '1px solid #444', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: 12, opacity: 0.85 }}>Slice movement</div>
+            <div className="mv-sdv3d-slice-movement" style={{ borderTop: '1px solid var(--mv-border-normal)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="mv-sdv-control-subheading">Slice movement</div>
+              <div className="mv-sdv3d-slice-center-row">
                 <button
+                  className="mv-viewer-compact-button mv-sdv3d-slice-view-button mv-sdv3d-slice-center-button"
                   onClick={centerSlices}
-                  style={{ background: '#333', color: 'white', border: '1px solid #555', padding: '2px 6px', cursor: 'pointer' }}
+                  style={{ cursor: 'pointer' }}
                 >
                   Center
                 </button>
               </div>
 
-              <div>
+              <div className="mv-sdv3d-slice-axis-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>Inline</span>
                   <input
@@ -2066,19 +3205,19 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                     value={indices.inline}
                     onChange={e => setIndices({ ...indices, inline: clampIndex(parseInt(e.target.value || '0', 10), inlineCount - 1) })}
                     onKeyDown={e => e.stopPropagation()}
-                    style={indexInputStyle}
+                    className="mv-viewer-index-input" style={indexInputStyle}
                   />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button onClick={() => stepInline(-10)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>-10</button>
-                  <button onClick={() => stepInline(-1)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>-1</button>
-                  <input style={{ flex: 1 }} type="range" min={0} max={inlineCount - 1} value={indices.inline} onChange={e => setIndices({ ...indices, inline: parseInt(e.target.value, 10) })} />
-                  <button onClick={() => stepInline(1)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>+1</button>
-                  <button onClick={() => stepInline(10)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>+10</button>
+                <div className="mv-sdv3d-slice-step-row" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button className="mv-viewer-compact-button mv-sdv3d-slice-view-button" onClick={() => stepInline(-10)} style={{ cursor: 'pointer' }}>-10</button>
+                  <button className="mv-viewer-compact-button mv-sdv3d-slice-view-button" onClick={() => stepInline(-1)} style={{ cursor: 'pointer' }}>-1</button>
+                  <input className="mv-sdv3d-slice-slider" style={{ flex: 1 }} type="range" min={0} max={inlineCount - 1} value={indices.inline} onChange={e => setIndices({ ...indices, inline: parseInt(e.target.value, 10) })} />
+                  <button className="mv-viewer-compact-button mv-sdv3d-slice-view-button" onClick={() => stepInline(1)} style={{ cursor: 'pointer' }}>+1</button>
+                  <button className="mv-viewer-compact-button mv-sdv3d-slice-view-button" onClick={() => stepInline(10)} style={{ cursor: 'pointer' }}>+10</button>
                 </div>
               </div>
 
-              <div>
+              <div className="mv-sdv3d-slice-axis-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>Crossline</span>
                   <input
@@ -2088,19 +3227,19 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                     value={indices.crossline}
                     onChange={e => setIndices({ ...indices, crossline: clampIndex(parseInt(e.target.value || '0', 10), crosslineCount - 1) })}
                     onKeyDown={e => e.stopPropagation()}
-                    style={indexInputStyle}
+                    className="mv-viewer-index-input" style={indexInputStyle}
                   />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button onClick={() => stepCrossline(-10)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>-10</button>
-                  <button onClick={() => stepCrossline(-1)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>-1</button>
-                  <input style={{ flex: 1 }} type="range" min={0} max={crosslineCount - 1} value={indices.crossline} onChange={e => setIndices({ ...indices, crossline: parseInt(e.target.value, 10) })} />
-                  <button onClick={() => stepCrossline(1)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>+1</button>
-                  <button onClick={() => stepCrossline(10)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>+10</button>
+                <div className="mv-sdv3d-slice-step-row" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button className="mv-viewer-compact-button mv-sdv3d-slice-view-button" onClick={() => stepCrossline(-10)} style={{ cursor: 'pointer' }}>-10</button>
+                  <button className="mv-viewer-compact-button mv-sdv3d-slice-view-button" onClick={() => stepCrossline(-1)} style={{ cursor: 'pointer' }}>-1</button>
+                  <input className="mv-sdv3d-slice-slider" style={{ flex: 1 }} type="range" min={0} max={crosslineCount - 1} value={indices.crossline} onChange={e => setIndices({ ...indices, crossline: parseInt(e.target.value, 10) })} />
+                  <button className="mv-viewer-compact-button mv-sdv3d-slice-view-button" onClick={() => stepCrossline(1)} style={{ cursor: 'pointer' }}>+1</button>
+                  <button className="mv-viewer-compact-button mv-sdv3d-slice-view-button" onClick={() => stepCrossline(10)} style={{ cursor: 'pointer' }}>+10</button>
                 </div>
               </div>
 
-              <div>
+              <div className="mv-sdv3d-slice-axis-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>Time/depth</span>
                   <input
@@ -2114,13 +3253,14 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                       setCommittedTimeIndex(nextTime);
                     }}
                     onKeyDown={e => e.stopPropagation()}
-                    style={indexInputStyle}
+                    className="mv-viewer-index-input" style={indexInputStyle}
                   />
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <button onClick={() => stepTime(-10)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>-10</button>
-                  <button onClick={() => stepTime(-1)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>-1</button>
+                <div className="mv-sdv3d-slice-step-row" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button className="mv-viewer-compact-button mv-sdv3d-slice-view-button" onClick={() => stepTime(-10)} style={{ cursor: 'pointer' }}>-10</button>
+                  <button className="mv-viewer-compact-button mv-sdv3d-slice-view-button" onClick={() => stepTime(-1)} style={{ cursor: 'pointer' }}>-1</button>
                   <input
+                    className="mv-sdv3d-slice-slider"
                     style={{ flex: 1 }}
                     type="range"
                     min={0}
@@ -2130,8 +3270,8 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                     onMouseUp={() => setCommittedTimeIndex(indices.time)}
                     onTouchEnd={() => setCommittedTimeIndex(indices.time)}
                   />
-                  <button onClick={() => stepTime(1)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>+1</button>
-                  <button onClick={() => stepTime(10)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>+10</button>
+                  <button className="mv-viewer-compact-button mv-sdv3d-slice-view-button" onClick={() => stepTime(1)} style={{ cursor: 'pointer' }}>+1</button>
+                  <button className="mv-viewer-compact-button mv-sdv3d-slice-view-button" onClick={() => stepTime(10)} style={{ cursor: 'pointer' }}>+10</button>
                 </div>
               </div>
             </div>
@@ -2139,11 +3279,11 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
         )}
 
         {activeControlTab === 'amplitude' && (
-          <div style={{ borderTop: '1px solid #444', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ fontSize: 12, opacity: 0.85 }}>Amplitude / display</div>
+          <div className="mv-sdv3d-amplitude-display-section" style={{ borderTop: '1px solid var(--mv-border-normal)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div className="mv-sdv-control-subheading">Amplitude / Display</div>
             <div>
               <label>Color Map: </label>
-              <select value={colorMap} onChange={e => setColorMap(e.target.value as ColorMapName)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>
+              <select value={colorMap} onChange={e => setColorMap(e.target.value as ColorMapName)} style={{ cursor: 'pointer' }}>
                 <option value="seismicTrace">Seismic RWB</option>
                 <option value="seismicTraceReverse">Seismic BWR</option>
                 <option value="grayscale">Grayscale</option>
@@ -2155,7 +3295,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
             </div>
             <div>
               <label>Wave Display: </label>
-              <select value={waveDisplayMode} onChange={e => setWaveDisplayMode(e.target.value as WaveDisplayMode)} style={{ background: '#333', color: 'white', border: '1px solid #555' }}>
+              <select value={waveDisplayMode} onChange={e => setWaveDisplayMode(e.target.value as WaveDisplayMode)} style={{ cursor: 'pointer' }}>
                 <option value="full">Full wave</option>
                 <option value="peaks">Peaks only</option>
                 <option value="troughs">Troughs only</option>
@@ -2165,7 +3305,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
               Peaks show positive amplitudes only; troughs show negative amplitudes only. Suppressed polarity is rendered as zero/white.
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 72px', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr) 48px', alignItems: 'center', gap: 8 }}>
                 <label>Amplitude Gain</label>
                 <input style={{ width: '100%' }} type="range" min={0.25} max={5} step={0.05} value={amplitudeGain} onChange={e => setAmplitudeGain(parseFloat(e.target.value))} />
                 <span style={{ textAlign: 'right' }}>{amplitudeGain.toFixed(2)}×</span>
@@ -2174,7 +3314,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                 Global multiplier applied equally to all panes after clipping.
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 72px', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr) 48px', alignItems: 'center', gap: 8 }}>
                 <label>Clip Percentile</label>
                 <input style={{ width: '100%' }} type="range" min={90} max={99.9} step={0.1} value={clipPercentile} onChange={e => setClipPercentile(parseFloat(e.target.value))} />
                 <span style={{ textAlign: 'right' }}>{clipPercentile.toFixed(1)}%</span>
@@ -2188,12 +3328,12 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                   setAmplitudeGain(1.0);
                   setClipPercentile(98.5);
                 }}
-                style={{ background: '#333', color: 'white', border: '1px solid #555', padding: '3px 8px', cursor: 'pointer' }}
+                style={{ background: 'var(--mv-surface-3)', color: 'var(--mv-text-primary)', border: '1px solid var(--mv-border-strong)', padding: '3px 8px', cursor: 'pointer' }}
               >
                 Reset gain/clip
               </button>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 72px', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr) 48px', alignItems: 'center', gap: 8 }}>
                 <label>Slice detail</label>
                 <input style={{ width: '100%' }} type="range" min={1} max={4} step={0.25} value={textureScale} onChange={e => setTextureScale(parseFloat(e.target.value))} />
                 <span style={{ textAlign: 'right' }}>{textureScale === 1 ? 'Native' : `${textureScale.toFixed(2)}×`}</span>
@@ -2203,12 +3343,12 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
               </div>
               <button
                 onClick={() => setTextureScale(2)}
-                style={{ background: '#333', color: 'white', border: '1px solid #555', padding: '3px 8px', cursor: 'pointer' }}
+                style={{ background: 'var(--mv-surface-3)', color: 'var(--mv-text-primary)', border: '1px solid var(--mv-border-strong)', padding: '3px 8px', cursor: 'pointer' }}
               >
                 Reset slice detail
               </button>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 72px', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr) 48px', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                 <label>Vertical Exag.</label>
                 <input style={{ width: '100%' }} type="range" min={0.5} max={4} step={0.1} value={verticalExaggeration} onChange={e => setVerticalExaggeration(parseFloat(e.target.value))} />
                 <span style={{ textAlign: 'right' }}>{verticalExaggeration.toFixed(1)}×</span>
@@ -2219,8 +3359,8 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
 
         {activeControlTab === 'volume' && (
           <>
-            <div style={{ borderTop: '1px solid #444', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ fontSize: 12, opacity: 0.85 }}>Volume stack</div>
+            <div className="mv-sdv3d-volume-stack-section" style={{ borderTop: '1px solid var(--mv-border-normal)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="mv-sdv-control-subheading">Volume stack</div>
 
               <label>
                 <input
@@ -2252,7 +3392,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                 /> Enable volume stack
               </label>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr)', alignItems: 'center', gap: 8 }}>
                 <label>Background</label>
                 <select
                   value={volumeBackgroundMode}
@@ -2272,7 +3412,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                       );
                     }
                   }}
-                  style={{ background: '#222', color: 'white', border: '1px solid #555', padding: '4px 6px' }}
+                  style={{ background: 'var(--mv-control-bg)', color: 'var(--mv-text-primary)', border: '1px solid var(--mv-border-strong)', padding: '4px 6px' }}
                 >
                   <option value="off">Off</option>
                   <option value="whole">Whole cube</option>
@@ -2283,7 +3423,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                 {volumeBackgroundMode === 'thickness' && (
                   <div
                     data-role="local-thickness-under-background"
-                    style={{ display: 'grid', gridTemplateColumns: '150px 1fr 72px', alignItems: 'center', gap: 8 }}
+                    style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr) 48px', alignItems: 'center', gap: 8 }}
                   >
                     <label>Local Thickness</label>
                     <input
@@ -2311,7 +3451,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                 Use the Volume scroll slider for controlled browsing. Optional mouse-wheel volume scrolling works only while this Volume tab is active; hold Shift for faster slice paging. Hold Option/Alt + wheel for camera zoom while volume-wheel scrolling is enabled.
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr)', alignItems: 'center', gap: 8 }}>
                 <label>Direction</label>
                 <select
                   value={volumeRenderDim}
@@ -2325,7 +3465,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                       window.requestAnimationFrame(setTimeDirectionCameraView);
                     }
 }}
-                  style={{ background: '#222', color: 'white', border: '1px solid #555', padding: '4px 6px' }}
+                  style={{ background: 'var(--mv-control-bg)', color: 'var(--mv-text-primary)', border: '1px solid var(--mv-border-strong)', padding: '4px 6px' }}
                 >
                   <option value={0}>Inline</option>
                   <option value={1}>Crossline</option>
@@ -2354,7 +3494,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                         }}
                         style={{
                           background: directionLoadStatus?.loading ? '#8a6d1d' : '#2f6fed',
-                          color: 'white',
+                          color: 'var(--mv-text-primary)',
                           border: 'none',
                           borderRadius: 6,
                           padding: '6px 10px',
@@ -2371,9 +3511,9 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                       <button
                         onClick={() => setDirectionUnloadRequest((value) => value + 1)}
                         style={{
-                          background: '#333',
-                          color: 'white',
-                          border: '1px solid #666',
+                          background: 'var(--mv-surface-3)',
+                          color: 'var(--mv-text-primary)',
+                          border: '1px solid var(--mv-border-strong)',
                           borderRadius: 6,
                           padding: '6px 10px',
                           cursor: 'pointer',
@@ -2384,7 +3524,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                     </div>
 
                     {directionLoadStatus?.loading && directionLoadStatus?.total > 0 && (
-                      <div style={{ marginTop: 8, height: 6, background: '#333', borderRadius: 999, overflow: 'hidden' }}>
+                      <div style={{ marginTop: 8, height: 6, background: 'var(--mv-surface-3)', borderRadius: 999, overflow: 'hidden' }}>
                         <div
                           style={{
                             width: `${Math.max(0, Math.min(100, (directionLoadStatus.loaded / directionLoadStatus.total) * 100))}%`,
@@ -2398,7 +3538,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                 )}
 
 
-              <div data-role="load-direction-step-control" style={{ display: 'grid', gridTemplateColumns: '150px 1fr 72px', alignItems: 'center', gap: 8 }}>
+              <div data-role="load-direction-step-control" style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr) 48px', alignItems: 'center', gap: 8 }}>
                 <label>Page Step</label>
                 <input
                   style={{ width: '100%' }}
@@ -2444,7 +3584,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
 
 
 
-              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr)', alignItems: 'center', gap: 8 }}>
                 <label>Extent</label>
                 <select
                   value={volumeExtentMode}
@@ -2462,14 +3602,14 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                       );
                     }
                   }}
-                  style={{ background: '#222', color: 'white', border: '1px solid #555', padding: '4px 6px' }}
+                  style={{ background: 'var(--mv-control-bg)', color: 'var(--mv-text-primary)', border: '1px solid var(--mv-border-strong)', padding: '4px 6px' }}
                 >
                   <option value="full">Full cube</option>
                   <option value="local">Local window</option>
                 </select>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr)', alignItems: 'center', gap: 8 }}>
                 <label>Quality</label>
                 <select
                   value={volumeQuality}
@@ -2495,7 +3635,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                       setVolumeThreshold(0.000);
                     }
                   }}
-                  style={{ background: '#222', color: 'white', border: '1px solid #555', padding: '4px 6px' }}
+                  style={{ background: 'var(--mv-control-bg)', color: 'var(--mv-text-primary)', border: '1px solid var(--mv-border-strong)', padding: '4px 6px' }}
                 >
                   <option value="preview">Preview</option>
                   <option value="balanced">Balanced</option>
@@ -2503,7 +3643,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                   <option value="diagnostic">Diagnostic</option>
                 </select>
               </div>
-<div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 72px', alignItems: 'center', gap: 8 }}>
+<div style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr) 48px', alignItems: 'center', gap: 8 }}>
                 <label>Volume scroll</label>
                 <input
                   style={{ width: '100%' }}
@@ -2520,7 +3660,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
 
 
 
-              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 72px', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr) 48px', alignItems: 'center', gap: 8 }}>
                 <label>Opacity</label>
                 <input
                   style={{ width: '100%' }}
@@ -2534,7 +3674,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                 <span style={{ textAlign: 'right' }}>{volumeOpacity.toFixed(2)}</span>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 72px', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr) 48px', alignItems: 'center', gap: 8 }}>
                 <label>Density</label>
                 <input
                   style={{ width: '100%' }}
@@ -2548,7 +3688,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                 <span style={{ textAlign: 'right' }}>{volumeDensity.toFixed(2)}×</span>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr 72px', alignItems: 'center', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr) 48px', alignItems: 'center', gap: 8 }}>
                 <label>Threshold</label>
                 <input
                   style={{ width: '100%' }}
@@ -2569,9 +3709,9 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                   marginTop: 12,
                   width: '100%',
                   padding: '7px 10px',
-                  background: '#2b2b2b',
-                  color: 'white',
-                  border: '1px solid #666',
+                  background: 'var(--mv-surface-2)',
+                  color: 'var(--mv-text-primary)',
+                  border: '1px solid var(--mv-border-strong)',
                   borderRadius: 4,
                   cursor: 'pointer',
                   fontSize: 12,
@@ -2588,8 +3728,8 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
 
         {activeControlTab === 'performance' && (
           <>
-            <div style={{ borderTop: '1px solid #444', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ fontSize: 12, opacity: 0.85 }}>Performance / system</div>
+            <div className="mv-sdv3d-performance-section" style={{ borderTop: '1px solid var(--mv-border-normal)', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="mv-sdv-control-subheading">Performance / System</div>
 
               <label>
                 <input
@@ -2622,7 +3762,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                     setTimeRefreshMode(nextMode);
                     if (nextMode === 'onRelease') setCommittedTimeIndex(indices.time);
                   }}
-                  style={{ background: '#333', color: 'white', border: '1px solid #555' }}
+                  style={{ cursor: 'pointer' }}
                 >
                   <option value="immediate">Immediate</option>
                   <option value="debounced">Debounced</option>
@@ -2638,7 +3778,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
                 <select
                   value={cacheSize}
                   onChange={e => setCacheSize(parseInt(e.target.value, 10))}
-                  style={{ background: '#333', color: 'white', border: '1px solid #555' }}
+                  style={{ cursor: 'pointer' }}
                 >
                   <option value={16}>16 slices</option>
                   <option value={32}>32 slices</option>
@@ -2654,7 +3794,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
               </div>
               <button
                 onClick={refreshBackendCacheInfo}
-                style={{ background: '#333', color: 'white', border: '1px solid #555', padding: '3px 8px', cursor: 'pointer' }}
+                style={{ background: 'var(--mv-surface-3)', color: 'var(--mv-text-primary)', border: '1px solid var(--mv-border-strong)', padding: '3px 8px', cursor: 'pointer' }}
               >
                 Refresh backend cache info
               </button>
@@ -2670,7 +3810,7 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
               </div>
               <button
                 onClick={clearSliceCacheAndRefresh}
-                style={{ background: '#333', color: 'white', border: '1px solid #555', padding: '4px 8px', cursor: 'pointer' }}
+                style={{ background: 'var(--mv-surface-3)', color: 'var(--mv-text-primary)', border: '1px solid var(--mv-border-strong)', padding: '4px 8px', cursor: 'pointer' }}
               >
                 Clear frontend + backend slice cache
               </button>
@@ -2679,6 +3819,501 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
         )}
       </div>
 
+      {sceneOverlaysModalOpen && (
+        <div className="mv-modal-backdrop mv-sdv3d-scene-overlays-modal-backdrop" role="presentation">
+          <section
+            ref={sceneOverlaysModalRef}
+            className="mv-modal mv-sdv3d-scene-overlays-modal"
+            role="dialog"
+            aria-modal="false"
+            aria-labelledby="sdv3d-scene-overlays-modal-title"
+            style={{
+              transform: `translate3d(${sceneOverlaysModalOffset.x}px, ${sceneOverlaysModalOffset.y}px, 0)`,
+            }}
+          >
+            <header
+              className="mv-modal__header mv-sdv3d-scene-overlays-modal-header"
+              onPointerDown={beginSceneOverlaysModalDrag}
+              onPointerMove={moveSceneOverlaysModalDrag}
+              onPointerUp={endSceneOverlaysModalDrag}
+              onPointerCancel={endSceneOverlaysModalDrag}
+              onLostPointerCapture={loseSceneOverlaysModalPointerCapture}
+            >
+              <div>
+                <h2 id="sdv3d-scene-overlays-modal-title">Manage Scene Overlays</h2>
+              </div>
+              <button
+                type="button"
+                className="mv-button mv-button--compact"
+                aria-label="Close Scene Overlays manager"
+                onClick={cancelSceneOverlaysModal}
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="mv-sdv3d-scene-overlays-modal-body">
+              <aside className="mv-sdv3d-scene-overlays-modal-rail" aria-label="Scene Overlay layers">
+                <div className="mv-sdv3d-scene-overlays-modal-rail-heading">Scene Overlays</div>
+                <div className="mv-sdv3d-scene-overlays-modal-nav">
+                  {([
+                    ['grid', 'Horizontal Grid'],
+                    ['bounds', 'Bounding Box'],
+                    ['axes', 'X/Y/Z Axis Lines'],
+                    ['labels', 'Axis Labels'],
+                    ['compass', 'Compass'],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      type="button"
+                      key={key}
+                      className={selectedSceneOverlayLayer === key ? 'is-current' : ''}
+                      onClick={() => setSelectedSceneOverlayLayer(key)}
+                    >
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </aside>
+
+              <section className="mv-sdv3d-scene-overlays-modal-editor">
+                <header className="mv-sdv3d-scene-overlays-modal-editor-header">
+                  <div>
+                    <h3>
+                      {{
+                        grid: 'Horizontal Grid',
+                        bounds: 'Bounding Box',
+                        axes: 'X/Y/Z Axis Lines',
+                        labels: 'Axis Labels',
+                        compass: 'Compass',
+                      }[selectedSceneOverlayLayer]}
+                    </h3>
+                    <p>Appearance and display settings</p>
+                  </div>
+                </header>
+
+                <div className="mv-sdv3d-scene-overlays-modal-content">
+                  <div className="mv-sdv3d-scene-overlays-property-card">
+                    <h4>Display</h4>
+                    <label className="mv-sdv3d-scene-overlays-check-row">
+                      <input
+                        type="checkbox"
+                        checked={sceneOverlayDraftVisibility[selectedSceneOverlayLayer]}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setSceneOverlayDraftVisibility((current) => ({
+                            ...current,
+                            [selectedSceneOverlayLayer]: checked,
+                          }));
+                        }}
+                      />
+                      <span>Show layer</span>
+                    </label>
+                  </div>
+
+                  {selectedSceneOverlayLayer === 'grid' && (
+                    <div className="mv-sdv3d-scene-overlays-property-card">
+                      <h4>Grid Lines</h4>
+                      <div className="mv-sdv3d-scene-overlays-property-grid">
+                        <label className="mv-sdv3d-scene-overlays-field">
+                          <span>Grid color</span>
+                          <input
+                            className="mv-modal-swatch"
+                            type="color"
+                            value={sceneOverlayDraftAppearance.grid.color ?? canvasGridColor}
+                            onChange={(event) => {
+                              const color = event.target.value;
+                              setSceneOverlayDraftAppearance((current) => ({
+                                ...current,
+                                grid: { ...current.grid, color },
+                              }));
+                            }}
+                          />
+                        </label>
+                        <label className="mv-sdv3d-scene-overlays-field mv-sdv3d-scene-overlays-range-field">
+                          <span>Opacity</span>
+                          <span className="mv-sdv3d-scene-overlays-range-control">
+                            <input
+                              className="mv-modal-slider"
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={sceneOverlayDraftAppearance.grid.opacity}
+                              onChange={(event) => {
+                                const opacity = Number(event.target.value);
+                                setSceneOverlayDraftAppearance((current) => ({
+                                  ...current,
+                                  grid: { ...current.grid, opacity },
+                                }));
+                              }}
+                            />
+                            <input
+                              className="mv-modal-number--compact"
+                              type="number"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={sceneOverlayDraftAppearance.grid.opacity}
+                              onChange={(event) => {
+                                const opacity = Math.max(0, Math.min(1, Number(event.target.value)));
+                                setSceneOverlayDraftAppearance((current) => ({
+                                  ...current,
+                                  grid: { ...current.grid, opacity },
+                                }));
+                              }}
+                            />
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedSceneOverlayLayer === 'bounds' && (
+                    <div className="mv-sdv3d-scene-overlays-property-card">
+                      <h4>Lines</h4>
+                      <div className="mv-sdv3d-scene-overlays-property-grid">
+                        <label className="mv-sdv3d-scene-overlays-field">
+                          <span>Line color</span>
+                          <input
+                            className="mv-modal-swatch"
+                            type="color"
+                            value={sceneOverlayDraftAppearance.bounds.color ?? canvasBoundingBoxColor}
+                            onChange={(event) => {
+                              const color = event.target.value;
+                              setSceneOverlayDraftAppearance((current) => ({
+                                ...current,
+                                bounds: { ...current.bounds, color },
+                              }));
+                            }}
+                          />
+                        </label>
+                        <label className="mv-sdv3d-scene-overlays-field mv-sdv3d-scene-overlays-range-field">
+                          <span>Opacity</span>
+                          <span className="mv-sdv3d-scene-overlays-range-control">
+                            <input
+                              className="mv-modal-slider"
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={sceneOverlayDraftAppearance.bounds.opacity ?? (canvasShadeAdaptive ? 0.72 : 0.35)}
+                              onChange={(event) => {
+                                const opacity = Number(event.target.value);
+                                setSceneOverlayDraftAppearance((current) => ({
+                                  ...current,
+                                  bounds: { ...current.bounds, opacity },
+                                }));
+                              }}
+                            />
+                            <input
+                              className="mv-modal-number--compact"
+                              type="number"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={sceneOverlayDraftAppearance.bounds.opacity ?? (canvasShadeAdaptive ? 0.72 : 0.35)}
+                              onChange={(event) => {
+                                const opacity = Math.max(0, Math.min(1, Number(event.target.value)));
+                                setSceneOverlayDraftAppearance((current) => ({
+                                  ...current,
+                                  bounds: { ...current.bounds, opacity },
+                                }));
+                              }}
+                            />
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedSceneOverlayLayer === 'axes' && (
+                    <div className="mv-sdv3d-scene-overlays-property-card">
+                      <h4>Axis Lines</h4>
+                      <div className="mv-sdv3d-scene-overlays-property-grid">
+                        <label className="mv-sdv3d-scene-overlays-field mv-sdv3d-scene-overlays-range-field">
+                          <span>Axis size</span>
+                          <span className="mv-sdv3d-scene-overlays-range-control">
+                            <input
+                              className="mv-modal-slider"
+                              type="range"
+                              min="0.5"
+                              max="2"
+                              step="0.05"
+                              value={sceneOverlayDraftAppearance.axes.scale}
+                              onChange={(event) => {
+                                const scale = Number(event.target.value);
+                                setSceneOverlayDraftAppearance((current) => ({
+                                  ...current,
+                                  axes: { scale },
+                                }));
+                              }}
+                            />
+                            <input
+                              className="mv-modal-number--compact"
+                              type="number"
+                              min="0.5"
+                              max="2"
+                              step="0.05"
+                              value={sceneOverlayDraftAppearance.axes.scale}
+                              onChange={(event) => {
+                                const scale = Math.max(0.5, Math.min(2, Number(event.target.value)));
+                                setSceneOverlayDraftAppearance((current) => ({
+                                  ...current,
+                                  axes: { scale },
+                                }));
+                              }}
+                            />
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedSceneOverlayLayer === 'labels' && (
+                    <div className="mv-sdv3d-scene-overlays-property-card">
+                      <h4>Labels</h4>
+                      <div className="mv-sdv3d-scene-overlays-property-grid">
+                        <label className="mv-sdv3d-scene-overlays-field">
+                          <span>Text color</span>
+                          <input
+                            className="mv-modal-swatch"
+                            type="color"
+                            value={sceneOverlayDraftAppearance.labels.color ?? canvasEnvironmentPalette.axisTextColor}
+                            onChange={(event) => {
+                              const color = event.target.value;
+                              setSceneOverlayDraftAppearance((current) => ({
+                                ...current,
+                                labels: { ...current.labels, color },
+                              }));
+                            }}
+                          />
+                        </label>
+                        <label className="mv-sdv3d-scene-overlays-field mv-sdv3d-scene-overlays-range-field">
+                          <span>Label size</span>
+                          <span className="mv-sdv3d-scene-overlays-range-control">
+                            <input
+                              className="mv-modal-slider"
+                              type="range"
+                              min="0.5"
+                              max="2"
+                              step="0.05"
+                              value={sceneOverlayDraftAppearance.labels.sizeScale}
+                              onChange={(event) => {
+                                const sizeScale = Number(event.target.value);
+                                setSceneOverlayDraftAppearance((current) => ({
+                                  ...current,
+                                  labels: { ...current.labels, sizeScale },
+                                }));
+                              }}
+                            />
+                            <input
+                              className="mv-modal-number--compact"
+                              type="number"
+                              min="0.5"
+                              max="2"
+                              step="0.05"
+                              value={sceneOverlayDraftAppearance.labels.sizeScale}
+                              onChange={(event) => {
+                                const sizeScale = Math.max(0.5, Math.min(2, Number(event.target.value)));
+                                setSceneOverlayDraftAppearance((current) => ({
+                                  ...current,
+                                  labels: { ...current.labels, sizeScale },
+                                }));
+                              }}
+                            />
+                          </span>
+                        </label>
+                        <label className="mv-sdv3d-scene-overlays-field mv-sdv3d-scene-overlays-range-field">
+                          <span>Opacity</span>
+                          <span className="mv-sdv3d-scene-overlays-range-control">
+                            <input
+                              className="mv-modal-slider"
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={sceneOverlayDraftAppearance.labels.opacityScale}
+                              onChange={(event) => {
+                                const opacityScale = Number(event.target.value);
+                                setSceneOverlayDraftAppearance((current) => ({
+                                  ...current,
+                                  labels: { ...current.labels, opacityScale },
+                                }));
+                              }}
+                            />
+                            <input
+                              className="mv-modal-number--compact"
+                              type="number"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={sceneOverlayDraftAppearance.labels.opacityScale}
+                              onChange={(event) => {
+                                const opacityScale = Math.max(0, Math.min(1, Number(event.target.value)));
+                                setSceneOverlayDraftAppearance((current) => ({
+                                  ...current,
+                                  labels: { ...current.labels, opacityScale },
+                                }));
+                              }}
+                            />
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedSceneOverlayLayer === 'compass' && (
+                    <div className="mv-sdv3d-scene-overlays-property-card">
+                      <h4>Compass</h4>
+                      <div className="mv-sdv3d-scene-overlays-property-grid">
+                        <label className="mv-sdv3d-scene-overlays-field mv-sdv3d-scene-overlays-range-field">
+                          <span>Size</span>
+                          <span className="mv-sdv3d-scene-overlays-range-control">
+                            <input
+                              className="mv-modal-slider"
+                              type="range"
+                              min="0.75"
+                              max="1.5"
+                              step="0.05"
+                              value={sceneOverlayDraftAppearance.compass.sizeScale}
+                              onChange={(event) => {
+                                const sizeScale = Number(event.target.value);
+                                setSceneOverlayDraftAppearance((current) => ({
+                                  ...current,
+                                  compass: { ...current.compass, sizeScale },
+                                }));
+                              }}
+                            />
+                            <input
+                              className="mv-modal-number--compact"
+                              type="number"
+                              min="0.75"
+                              max="1.5"
+                              step="0.05"
+                              value={sceneOverlayDraftAppearance.compass.sizeScale}
+                              onChange={(event) => {
+                                const sizeScale = Math.max(0.75, Math.min(1.5, Number(event.target.value)));
+                                setSceneOverlayDraftAppearance((current) => ({
+                                  ...current,
+                                  compass: { ...current.compass, sizeScale },
+                                }));
+                              }}
+                            />
+                          </span>
+                        </label>
+                        <label className="mv-sdv3d-scene-overlays-field mv-sdv3d-scene-overlays-range-field">
+                          <span>Opacity</span>
+                          <span className="mv-sdv3d-scene-overlays-range-control">
+                            <input
+                              className="mv-modal-slider"
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={sceneOverlayDraftAppearance.compass.opacity}
+                              onChange={(event) => {
+                                const opacity = Number(event.target.value);
+                                setSceneOverlayDraftAppearance((current) => ({
+                                  ...current,
+                                  compass: { ...current.compass, opacity },
+                                }));
+                              }}
+                            />
+                            <input
+                              className="mv-modal-number--compact"
+                              type="number"
+                              min="0"
+                              max="1"
+                              step="0.05"
+                              value={sceneOverlayDraftAppearance.compass.opacity}
+                              onChange={(event) => {
+                                const opacity = Math.max(0, Math.min(1, Number(event.target.value)));
+                                setSceneOverlayDraftAppearance((current) => ({
+                                  ...current,
+                                  compass: { ...current.compass, opacity },
+                                }));
+                              }}
+                            />
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <footer className="mv-modal__footer mv-sdv3d-scene-overlays-modal-footer">
+              <div className="mv-sdv3d-scene-overlays-modal-footer-left">
+                <button
+                  type="button"
+                  className="mv-button mv-button--secondary"
+                  onClick={resetSelectedSceneOverlayLayer}
+                >
+                  Reset Layer
+                </button>
+              </div>
+              <div className="mv-sdv3d-scene-overlays-modal-footer-right">
+                <button
+                  type="button"
+                  className="mv-button mv-button--secondary"
+                  onClick={cancelSceneOverlaysModal}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="mv-button mv-button--accent"
+                  onClick={applySceneOverlaysModal}
+                >
+                  Apply
+                </button>
+              </div>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {infoCollapsed && (
+        <button
+          onClick={() => setInfoCollapsed(false)}
+          style={{
+            position: 'absolute',
+            top: 18,
+            right: 0,
+            zIndex: 10,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            minHeight: 136,
+            padding: '10px 6px',
+            background: 'var(--mv-surface-1)',
+            color: 'var(--mv-text-primary)',
+            border: '1px solid var(--mv-border-strong)',
+            borderRight: 'none',
+            borderRadius: '8px 0 0 8px',
+            cursor: 'pointer',
+            boxSizing: 'border-box',
+          }}
+          title="Expand information panel"
+          aria-label="Expand information panel"
+        >
+          <span style={{ fontSize: 16, lineHeight: 1 }}>◀</span>
+          <span
+            style={{
+              writingMode: 'vertical-rl',
+              transform: 'rotate(180deg)',
+              letterSpacing: 1,
+              lineHeight: 1,
+            }}
+          >
+            Info
+          </span>
+        </button>
+      )}
+
       {menuCollapsed && (
         <button
           onClick={() => setMenuCollapsed(false)}
@@ -2686,12 +4321,12 @@ export const Seismic3DViewer: React.FC<Seismic3DViewerProps> = ({ zarrPath, volu
             position: 'absolute',
             top: 18,
             left: 0,
-            zIndex: 10,
+            zIndex: 13,
             writingMode: 'vertical-rl',
             transform: 'rotate(180deg)',
-            background: 'rgba(0,0,0,0.78)',
-            color: 'white',
-            border: '1px solid #555',
+            background: 'var(--mv-surface-1)',
+            color: 'var(--mv-text-primary)',
+            border: '1px solid var(--mv-border-strong)',
             borderLeft: 'none',
             borderRadius: '0 8px 8px 0',
             padding: '10px 6px',

@@ -1,0 +1,4162 @@
+/* ==========================================================================
+   MULTIVIEWER MASTER PRESENTATION COMPONENT CONTRACT V1.0.0
+   Shared by WLV / WDV / WBV / SDV application chrome.
+   Scientific/domain rendering is explicitly out of scope.
+   ========================================================================== */
+
+/* ---------- Application shell ---------- */
+
+.mv-app {
+  min-height: 100%;
+  background: var(--mv-bg-app);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-ui);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-sidebar {
+  background: var(--mv-surface-1);
+  border-right: var(--mv-border-width) solid var(--mv-border-subtle);
+  color: var(--mv-text-secondary);
+}
+
+.mv-topbar {
+  min-height: 58px;
+  background: var(--mv-surface-1);
+  border-bottom: var(--mv-border-width) solid var(--mv-border-subtle);
+  color: var(--mv-text-primary);
+}
+
+/* ---------- Panels ---------- */
+
+.mv-panel {
+  background: var(--mv-surface-1);
+  border: var(--mv-border-width) solid var(--mv-border-subtle);
+  border-radius: var(--mv-panel-radius);
+  color: var(--mv-text-primary);
+}
+
+.mv-panel__header {
+  min-height: var(--mv-control-height);
+  padding: var(--mv-space-4) var(--mv-space-6);
+  background: var(--mv-surface-2);
+  border-bottom: var(--mv-border-width) solid var(--mv-border-subtle);
+  font-weight: var(--mv-font-weight-semibold);
+}
+
+.mv-panel__body {
+  padding: var(--mv-space-6);
+}
+
+.mv-panel--flat {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* ---------- Buttons ---------- */
+
+.mv-button {
+  min-height: var(--mv-button-height);
+  padding: 0 var(--mv-space-5);
+  border: var(--mv-border-width) solid var(--mv-control-border);
+  border-radius: var(--mv-control-radius);
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  font: inherit;
+  font-weight: var(--mv-font-weight-medium);
+  line-height: 1;
+}
+
+.mv-button:hover:not(:disabled) {
+  background: var(--mv-surface-hover);
+}
+
+.mv-button:disabled {
+  color: var(--mv-text-disabled);
+  opacity: 0.65;
+}
+
+.mv-button--compact {
+  min-height: var(--mv-control-height-compact);
+  padding-inline: var(--mv-space-4);
+}
+
+/* ---------- Inputs / selects / textareas ---------- */
+
+.mv-input,
+.mv-select,
+.mv-textarea {
+  box-sizing: border-box;
+  min-height: var(--mv-control-height);
+  border: var(--mv-border-width) solid var(--mv-control-border);
+  border-radius: var(--mv-control-radius);
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  font: inherit;
+}
+
+.mv-input,
+.mv-select {
+  padding: 0 var(--mv-space-4);
+}
+
+.mv-textarea {
+  padding: var(--mv-space-4);
+  line-height: var(--mv-line-height-copy);
+  resize: vertical;
+}
+
+.mv-input::placeholder,
+.mv-textarea::placeholder {
+  color: var(--mv-text-muted);
+}
+
+.mv-input:disabled,
+.mv-select:disabled,
+.mv-textarea:disabled {
+  color: var(--mv-text-disabled);
+  opacity: 0.65;
+}
+
+/* ---------- Tables ---------- */
+
+.mv-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-ui);
+}
+
+.mv-table thead th {
+  min-height: var(--mv-table-row-height);
+  padding: var(--mv-space-3) var(--mv-space-5);
+  background: var(--mv-surface-2);
+  border-bottom: var(--mv-border-width) solid var(--mv-border-normal);
+  color: var(--mv-text-secondary);
+  font-weight: var(--mv-font-weight-semibold);
+  text-align: left;
+}
+
+.mv-table tbody td {
+  min-height: var(--mv-table-row-height);
+  padding: var(--mv-space-3) var(--mv-space-5);
+  background: var(--mv-surface-row);
+  border-bottom: var(--mv-border-width) solid var(--mv-border-subtle);
+}
+
+.mv-table tbody tr:hover td {
+  background: var(--mv-surface-hover);
+}
+
+.mv-table tbody tr[aria-selected="true"] td,
+.mv-table tbody tr.mv-is-selected td {
+  background: var(--mv-surface-selected);
+}
+
+/* ---------- Collapsible / information sections ---------- */
+
+.mv-section {
+  border: var(--mv-border-width) solid var(--mv-border-subtle);
+  border-radius: var(--mv-panel-radius);
+  background: var(--mv-surface-1);
+}
+
+.mv-section__header {
+  display: flex;
+  align-items: center;
+  min-height: var(--mv-control-height);
+  padding: 0 var(--mv-space-5);
+  background: var(--mv-surface-2);
+  border-bottom: var(--mv-border-width) solid var(--mv-border-subtle);
+  font-weight: var(--mv-font-weight-semibold);
+}
+
+.mv-section__body {
+  padding: var(--mv-space-5);
+}
+
+.mv-info-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--mv-space-3) var(--mv-space-6);
+}
+
+.mv-info-grid__label {
+  color: var(--mv-text-muted);
+}
+
+.mv-info-grid__value {
+  color: var(--mv-text-primary);
+}
+
+/* ---------- Modal contract ---------- */
+
+.mv-modal {
+  background: var(--mv-surface-1);
+  border: var(--mv-border-width) solid var(--mv-border-normal);
+  border-radius: var(--mv-panel-radius);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.36);
+}
+
+.mv-modal__header {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--mv-space-6);
+  background: var(--mv-surface-2);
+  border-bottom: var(--mv-border-width) solid var(--mv-border-subtle);
+  font-weight: var(--mv-font-weight-semibold);
+}
+
+.mv-modal__body {
+  padding: var(--mv-space-6);
+}
+
+.mv-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--mv-modal-control-gap);
+  padding: var(--mv-space-5) var(--mv-space-6);
+  border-top: var(--mv-border-width) solid var(--mv-border-subtle);
+}
+
+.mv-modal-row {
+  display: flex;
+  align-items: center;
+  gap: var(--mv-modal-control-gap);
+  margin-bottom: var(--mv-modal-row-gap);
+}
+
+.mv-modal-section + .mv-modal-section {
+  margin-top: var(--mv-modal-section-gap);
+}
+
+.mv-modal-select--short { width: var(--mv-modal-select-short); }
+.mv-modal-select--medium { width: var(--mv-modal-select-medium); }
+.mv-modal-select--long { width: var(--mv-modal-select-long); }
+.mv-modal-number--compact { width: var(--mv-modal-number-compact); }
+.mv-modal-number--standard { width: var(--mv-modal-number-standard); }
+.mv-modal-number--depth { width: var(--mv-modal-number-depth); }
+.mv-modal-slider { width: var(--mv-modal-slider); }
+.mv-modal-swatch {
+  width: var(--mv-modal-swatch);
+  height: var(--mv-modal-swatch);
+}
+
+/* ---------- Utility presentation states ---------- */
+
+.mv-text-primary { color: var(--mv-text-primary); }
+.mv-text-secondary { color: var(--mv-text-secondary); }
+.mv-text-muted { color: var(--mv-text-muted); }
+.mv-is-hidden { display: none !important; }
+
+/* ==========================================================================
+   MULTIVIEWER MASTER TYPOGRAPHY ROLES V1.1.0
+   Canonical application-chrome typography contract.
+   WBV authority distinguishes standard property text from compact right-panel text.
+   Scientific/domain typography remains viewer-owned.
+   ========================================================================== */
+
+.mv-type-panel-title {
+  color: #f1f2f3;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mv-type-meta {
+  color: #8f9aa5;
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.mv-type-section-heading {
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-ui);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/*
+ * Standard WBV property/information role.
+ * Authority:
+ *   .wlv-wbv-well-summary__row > span
+ *   .wlv-wbv-trajectory-grid__row > span
+ *   .wlv-wbv-trajectory-grid__row > strong
+ *   .wlv-wbv-trajectory-list__row > span/strong
+ * = 0.76rem / 600 labels / 400 values / 1.2.
+ */
+.mv-type-property-grid {
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-type-property-label {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mv-type-property-value {
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/*
+ * Compact WBV right-panel role.
+ * Authority:
+ *   .wlv-wbv-panel--right ... row labels/values
+ * = 0.68rem / 1.2, preserving the same label/value colors and weights.
+ */
+.mv-type-property-grid--compact {
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
+.mv-type-property-grid--compact .mv-type-property-label,
+.mv-type-property-label--compact {
+  color: #b7bec6;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.mv-type-property-grid--compact .mv-type-property-value,
+.mv-type-property-value--compact {
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
+.mv-type-helper {
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
+/* Exact WBV interval-information group heading role. */
+.mv-type-micro-heading {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-xs);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.mv-type-micro-label {
+  color: #93a3af;
+  font-size: 0.66rem;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.mv-type-micro-value {
+  color: #dce7ef;
+  font-size: 0.66rem;
+  font-weight: 400;
+  line-height: 1.25;
+}
+/* Primary micro heading: compact uppercase hierarchy with primary white foreground. */
+.mv-type-micro-heading--primary {
+  color: #f1f2f3;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER NEUTRAL CONTROL OWNERSHIP V1.0.0
+   Application-chrome controls only. Scientific/status semantics excluded.
+   ========================================================================== */
+
+.mv-app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+.mv-app select,
+.mv-app textarea,
+.mv-app .volume-select {
+  box-sizing: border-box;
+  min-height: var(--mv-control-height-compact);
+  border: var(--mv-border-width) solid var(--mv-control-border);
+  border-radius: var(--mv-control-radius);
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  padding: 4px 10px;
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  line-height: 1.2;
+  box-shadow: none;
+  outline: none;
+}
+
+.mv-app input::placeholder,
+.mv-app textarea::placeholder {
+  color: var(--mv-text-muted);
+}
+
+.mv-app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):disabled,
+.mv-app select:disabled,
+.mv-app textarea:disabled {
+  color: var(--mv-text-disabled);
+  opacity: 0.65;
+}
+
+.mv-app .data-actions button,
+.mv-app .dataset-nav-button,
+.mv-app .modal-close,
+.mv-app .collapsible-pane-toggle,
+.mv-app .pagination-controls button,
+.mv-app .managed-data-controls button,
+.mv-app .md-control-button {
+  box-sizing: border-box;
+  min-height: var(--mv-control-height-compact);
+  border: var(--mv-border-width) solid var(--mv-control-border);
+  border-radius: var(--mv-control-radius);
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  padding: 4px 10px;
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-medium);
+  line-height: 1.2;
+  box-shadow: none;
+}
+
+.mv-app .data-actions button:hover:not(:disabled),
+.mv-app .dataset-nav-button:hover:not(:disabled),
+.mv-app .modal-close:hover:not(:disabled),
+.mv-app .collapsible-pane-toggle:hover:not(:disabled),
+.mv-app .pagination-controls button:hover:not(:disabled),
+.mv-app .managed-data-controls button:hover:not(:disabled),
+.mv-app .md-control-button:hover:not(:disabled) {
+  background: var(--mv-surface-hover);
+  border-color: var(--mv-border-strong);
+}
+
+.mv-app .data-actions button:disabled,
+.mv-app .dataset-nav-button:disabled,
+.mv-app .modal-close:disabled,
+.mv-app .collapsible-pane-toggle:disabled,
+.mv-app .pagination-controls button:disabled,
+.mv-app .managed-data-controls button:disabled,
+.mv-app .md-control-button:disabled {
+  color: var(--mv-text-disabled);
+  opacity: 0.65;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER TABLE / DATA-GRID OWNERSHIP V1.0.0
+   Canonical neutral application-data table presentation.
+   Column structure and domain semantics remain component-owned.
+   ========================================================================== */
+
+.mv-app {
+  --mv-data-table-header-bg: #1d2228;
+  --mv-data-table-row-bg: #171a1f;
+  --mv-data-table-row-alt-bg: #171a1f;
+  --mv-data-table-row-hover-bg: var(--mv-surface-hover);
+  --mv-data-table-row-selected-bg: #202631;
+  --mv-data-table-border: #2b333d;
+  --mv-data-table-separator: #252c35;
+}
+
+.mv-app .data-manager-table,
+.mv-app .managed-data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+}
+
+.mv-app .data-manager-table thead,
+.mv-app .data-manager-table thead th,
+.mv-app .managed-data-table thead,
+.mv-app .managed-data-table thead th,
+.mv-app .managed-data-scroll-area .data-manager-table thead th,
+.mv-app .managed-data-scroll-area table.managed-data-table thead th,
+.mv-app .managed-data-scroll-area table.managed-data-table thead th.md-col-actions {
+  background: var(--mv-data-table-header-bg);
+  border-color: var(--mv-data-table-border);
+}
+
+.mv-app .data-manager-table th,
+.mv-app .managed-data-table th {
+  height: 38px;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  color: var(--mv-text-muted);
+  font-size: 11px;
+  line-height: var(--mv-line-height-tight);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.mv-app .data-manager-table tbody,
+.mv-app .data-manager-table tbody tr,
+.mv-app .data-manager-table tbody td,
+.mv-app .managed-data-table tbody,
+.mv-app .managed-data-table tbody tr,
+.mv-app .managed-data-table tbody td,
+.mv-app .managed-data-scroll-area table.managed-data-table tbody tr,
+.mv-app .managed-data-scroll-area table.managed-data-table tbody td,
+.mv-app .managed-data-scroll-area table.managed-data-table td.md-col-actions {
+  background: var(--mv-data-table-row-bg);
+  border-color: var(--mv-data-table-border);
+}
+
+.mv-app .data-manager-table td,
+.mv-app .managed-data-table td {
+  min-height: var(--mv-table-row-height);
+  box-sizing: border-box;
+  padding: 9px 12px;
+  color: var(--mv-text-primary);
+  font-size: 12px;
+  line-height: 1.35;
+  vertical-align: middle;
+}
+
+.mv-app .data-manager-table tbody tr,
+.mv-app .managed-data-table tbody tr {
+  height: var(--mv-table-row-height);
+}
+
+.mv-app .data-manager-table tbody tr:nth-child(even),
+.mv-app .data-manager-table tbody tr:nth-child(even) td,
+.mv-app .managed-data-table tbody tr:nth-child(even),
+.mv-app .managed-data-table tbody tr:nth-child(even) td {
+  background: var(--mv-data-table-row-alt-bg);
+}
+
+.mv-app .data-manager-table tbody tr:hover,
+.mv-app .data-manager-table tbody tr:hover td,
+.mv-app .managed-data-table tbody tr:hover,
+.mv-app .managed-data-table tbody tr:hover td {
+  background: var(--mv-data-table-row-hover-bg);
+}
+
+.mv-app .data-manager-table tbody tr.selected-row,
+.mv-app .data-manager-table tbody tr.selected-row td,
+.mv-app .managed-data-table tbody tr.selected-row,
+.mv-app .managed-data-table tbody tr.selected-row td {
+  background: var(--mv-data-table-row-selected-bg);
+}
+
+.mv-app .volume-name,
+.mv-app .managed-data-table .name,
+.mv-app .data-manager-table .name {
+  color: var(--mv-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.mv-app .volume-id,
+.mv-app .managed-data-table .secondary,
+.mv-app .data-manager-table .secondary {
+  color: var(--mv-text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.mv-app .data-manager-table .status,
+.mv-app .managed-data-table .status,
+.mv-app .data-manager-table .state,
+.mv-app .managed-data-table .state,
+.mv-app .compact-state {
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.mv-app .info-grid > div,
+.mv-app .sidecar-list > div,
+.mv-app .metadata-summary-panel,
+.mv-app .volume-info-content section table,
+.mv-app .volume-info-content section tr,
+.mv-app .volume-info-content section td,
+.mv-app .volume-info-content section th {
+  border-color: var(--mv-data-table-border);
+}
+
+.mv-app .volume-info-content section th {
+  background: var(--mv-data-table-header-bg);
+  color: var(--mv-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mv-app .volume-info-content section td {
+  background: var(--mv-data-table-row-bg);
+  color: var(--mv-text-primary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER PAGE / MODAL / TOOLBOX CHROME OWNERSHIP V1.0.0
+   Neutral application chrome only. Layout and semantic/status colors excluded.
+   ========================================================================== */
+
+.mv-app .data-manager,
+.mv-app .toolbox-page,
+.mv-app .volume-info-panel {
+  background: var(--mv-bg-app);
+  color: var(--mv-text-primary);
+}
+
+.mv-app .data-manager-header h2 {
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-lg);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mv-app .toolbox-header h2,
+.mv-app .volume-info-header h2,
+.mv-app .volume-info-panel.empty-info h2 {
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-title);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mv-app .data-manager-header p,
+.mv-app .toolbox-header p,
+.mv-app .toolbox-card p,
+.mv-app .volume-info-header p,
+.mv-app .volume-info-panel.empty-info p {
+  color: var(--mv-text-muted);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-ui);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-copy);
+}
+
+.mv-app .data-manager-table-wrap,
+.mv-app .toolbox-card,
+.mv-app .toolbox-card.muted,
+.mv-app .volume-info-content section,
+.mv-app .info-modal,
+.mv-app .info-grid > div,
+.mv-app .sidecar-list > div,
+.mv-app .metadata-summary-panel {
+  background: var(--mv-surface-2);
+  border-color: var(--mv-border-normal);
+  color: var(--mv-text-primary);
+}
+
+.mv-app .info-modal-header,
+.mv-app .collapsible-pane-header {
+  background: var(--mv-surface-3);
+  border-color: var(--mv-border-normal);
+}
+
+.mv-app .info-modal-header h3,
+.mv-app .collapsible-pane-header h3,
+.mv-app .toolbox-card-title-row h3,
+.mv-app .toolbox-card h3,
+.mv-app .volume-info-content h3,
+.mv-app .metadata-summary-header h3 {
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-lg);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mv-app .info-modal-header p,
+.mv-app .collapsible-pane-header p,
+.mv-app .metadata-summary-subtitle {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .info-modal-body h4,
+.mv-app .metadata-summary-card h4,
+.mv-app .metadata-summary-warning-block h4,
+.mv-app .metadata-summary-doc-block h4 {
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-md);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mv-app .info-grid strong,
+.mv-app .sidecar-list strong,
+.mv-app .toolbox-field span,
+.mv-app .toolbox-path-block span {
+  color: var(--mv-text-secondary);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-semibold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mv-app .info-grid span,
+.mv-app .sidecar-list span,
+.mv-app .toolbox-field strong {
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .text-header,
+.mv-app .json-block,
+.mv-app .toolbox-path-block code,
+.mv-app .toolbox-help {
+  background: var(--mv-control-bg);
+  border-color: var(--mv-border-normal);
+  color: var(--mv-text-secondary);
+  font-family: var(--mv-font-mono);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-copy);
+}
+
+.mv-app .toolbox-eyebrow {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-xs);
+  font-weight: var(--mv-font-weight-semibold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mv-app .toolbox-field,
+.mv-app .toolbox-command-pills span {
+  background: var(--mv-surface-1);
+  border-color: var(--mv-border-normal);
+  color: var(--mv-text-secondary);
+}
+
+.mv-app .toolbox-command-title {
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-ui);
+  font-weight: var(--mv-font-weight-semibold);
+  line-height: var(--mv-line-height-ui);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER VIEWER-CONTROL INLINE OWNERSHIP V1.0.0
+   2D/3D application control chrome only. Scientific rendering excluded.
+   ========================================================================== */
+
+.mv-app .mv-viewer-section-toggle {
+  color: var(--mv-text-secondary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mv-app .mv-viewer-control-row,
+.mv-app .mv-viewer-checkbox-row {
+  color: var(--mv-text-secondary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .mv-viewer-control-value,
+.mv-app .mv-viewer-helper {
+  color: var(--mv-text-muted);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-xs);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .mv-viewer-control-select {
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+}
+
+.mv-app .mv-viewer-controls-panel {
+  color: var(--mv-text-primary);
+  background: var(--mv-surface-1);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-ui);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .mv-viewer-controls-title {
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-ui);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mv-app .mv-viewer-controls-meta {
+  color: var(--mv-text-muted);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .mv-viewer-subsection-title {
+  color: var(--mv-text-secondary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-semibold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0;
+  text-transform: none;
+
+}
+
+.mv-app .mv-viewer-tab {
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  border-color: var(--mv-control-border);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-tight);
+}
+
+.mv-app .mv-viewer-tab--active {
+  background: var(--mv-surface-selected);
+  border-color: var(--mv-border-strong);
+  font-weight: var(--mv-font-weight-semibold);
+}
+
+.mv-app .mv-viewer-neutral-button {
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  border-color: var(--mv-control-border);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-medium);
+  line-height: var(--mv-line-height-tight);
+}
+
+.mv-app .mv-viewer-neutral-button:disabled {
+  color: var(--mv-text-disabled);
+  opacity: 0.65;
+}
+
+/* MULTIVIEWER CANONICAL PRESENTATION CONTRACT V1.0.2 */
+
+/* ==========================================================================
+   MULTIVIEWER CANONICAL SECTION HEADING BRIDGE — 2D SIZE V1.0.0
+   Current 2D Line Info is the size authority: --mv-font-size-ui = 13px.
+   ========================================================================== */
+.wlv-wbv-panel--right .wlv-wbv-information-section h2,
+.wlv-wbv-panel--right .wlv-wbv-section-heading-row h2 {
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-ui);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ==========================================================================
+   MULTIVIEWER VERTICAL SIDE COLUMN TOGGLE V1.0.0
+   Small up/down affordance retained in collapsed side-column headers.
+   ========================================================================== */
+.mv-app .mv-side-column-vertical-toggle {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--mv-control-border);
+  border-radius: 0;
+  background: var(--mv-control-bg);
+  color: var(--mv-text-secondary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-semibold);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mv-app .mv-side-column-vertical-toggle:hover {
+  background: var(--mv-surface-hover);
+  color: var(--mv-text-primary);
+}
+
+/* ==========================================================================
+   MULTIVIEWER CANONICAL VIEWER PRESENTATION GOVERNANCE V1.0.0
+   One shared authority for WDV / WBV / SDV 2D / SDV 3D application chrome.
+   Viewer geometry, interaction and scientific rendering remain local.
+   ========================================================================== */
+
+/* Core viewer headings */
+.mv-app .mv-viewer-controls-title,
+.wlv-prototype-root .wlv-panel-heading h2,
+.wlv-wbv-panel--left .wlv-wbv-panel-heading > strong,
+.wlv-wbv-panel--right .wlv-wbv-panel-heading__content > strong {
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-ui);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Standard compact viewer property / information typography. */
+.wlv-wbv-well-summary__row > span,
+.wlv-wbv-trajectory-grid__row > span,
+.wlv-wbv-trajectory-list__row > span,
+.mv-app .mv-type-property-label {
+  color: var(--mv-text-muted);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.wlv-wbv-well-summary__row > strong,
+.wlv-wbv-trajectory-grid__row > strong,
+.wlv-wbv-trajectory-list__row > strong,
+.mv-app .mv-type-property-value {
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Canonical SDV information-panel grammar. */
+.mv-app .mv-viewer-info-stack {
+  width: 300px;
+}
+
+.mv-app .mv-viewer-info-stack:not(.mv-sdv3d-wbv-info-panel) {
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .mv-viewer-info-header,
+.mv-app .mv-viewer-info-togglebar {
+  background: var(--mv-surface-1);
+  border-bottom: 1px solid var(--mv-border-subtle);
+  padding: 10px 12px;
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .mv-viewer-info-body,
+.mv-app .mv-viewer-info-card {
+  padding: 12px;
+}
+
+.mv-app .mv-viewer-info-card {
+  background: var(--mv-surface-1);
+  border: 1px solid var(--mv-border-subtle);
+  border-radius: 0;
+}
+
+.mv-app .mv-viewer-info-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--mv-border-subtle);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .mv-viewer-info-row > .mv-type-property-label {
+  min-width: 0;
+}
+
+.mv-app .mv-viewer-info-row > .mv-type-property-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mv-app .mv-viewer-info-card .mv-type-property-grid {
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 0 8px;
+}
+
+.mv-app .mv-viewer-info-card .mv-type-property-label,
+.mv-app .mv-viewer-info-card .mv-type-property-value {
+  padding: 5px 0;
+  border-bottom: 1px solid var(--mv-border-subtle);
+}
+
+/* Canonical viewer control typography only.
+   Viewer-specific dimensions and layout remain local. */
+.mv-app .mv-viewer-controls-panel button,
+.mv-app .mv-viewer-controls-panel .mv-viewer-tab,
+.mv-app .mv-viewer-controls-panel input,
+.mv-app .mv-viewer-controls-panel select {
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-tight);
+}
+
+/* Accepted WBV View presentation moved from local WBV stylesheet. */
+.wlv-wbv-panel--left .wlv-wbv-view-controls {
+  gap: 0.5rem;
+  margin-top: 0.56rem;
+  padding-top: 0.5rem;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-view-controls > h2 {
+  margin: 0 0 0.38rem;
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: 0.68rem;
+  font-weight: var(--mv-font-weight-bold);
+  line-height: 1.18;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-view-control-block {
+  gap: 0.3rem;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-view-control-block > h3 {
+  margin: 0;
+  color: var(--mv-text-muted);
+  font-family: var(--mv-font-ui);
+  font-size: 0.58rem;
+  font-weight: var(--mv-font-weight-bold);
+  line-height: 1.15;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-view-controls button {
+  min-width: 0;
+  min-height: 1.72rem;
+  padding: 0.34rem 0.48rem;
+  border: 1px solid var(--mv-control-border);
+  border-radius: 999px;
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: 0.62rem;
+  font-weight: var(--mv-font-weight-semibold);
+  line-height: 1.15;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-view-controls button:hover:not(:disabled) {
+  background: var(--mv-surface-hover);
+  border-color: var(--mv-border-strong);
+}
+
+.wlv-wbv-panel--left .wlv-wbv-view-controls button:disabled {
+  color: var(--mv-text-disabled);
+  opacity: 0.65;
+}
+
+.wlv-wbv-panel--left .wlv-wbv-zoom-value,
+.wlv-wbv-panel--left .wlv-wbv-rotation-value {
+  font-size: 0.68rem;
+  line-height: 1.15;
+}
+
+/* WDV typography governance migrated from track-layout-prototype.css. */
+.wlv-prototype-root,
+.wlv-prototype-root button,
+.wlv-prototype-root input,
+.wlv-prototype-root select,
+.wlv-prototype-root textarea,
+.wlv-prototype-root option {
+  font-family: var(--mv-font-ui);
+}
+
+.wlv-prototype-root .wlv-toolbar-zone-header > span:last-child,
+.wlv-prototype-root .wlv-inventory-section-toggle > span:first-child,
+.wlv-prototype-root .wlv-inventory-section-toggle-meta,
+.wlv-prototype-root .wlv-inventory-section-toggle-meta b,
+.wlv-prototype-root .wlv-properties-panel-v2 .wlv-properties-tabs button,
+.wlv-prototype-root .wlv-properties-panel-v2 .wlv-properties-contract-section h3,
+.wlv-prototype-root .wlv-properties-panel-v2 .wlv-property-section h3,
+.wlv-prototype-root .wlv-properties-panel-v2 .wlv-properties-collapse-toggle strong,
+.wlv-prototype-root .wlv-properties-panel-v2 .wlv-edit-track-launcher {
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-xs);
+  font-weight: var(--mv-font-weight-bold);
+  letter-spacing: 0.03em;
+  line-height: 1;
+  text-transform: none;
+}
+
+.wlv-prototype-root .wlv-inventory-section-toggle {
+  font-size: 10px;
+}
+
+.wlv-prototype-root .wlv-right-panel > .wlv-panel-heading h2 {
+  font-size: var(--mv-font-size-md);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER DRAWER / REPOSITORY CHROME V1.0.0
+   Generic application chrome. Positioning/geometry remains page-local.
+   ========================================================================== */
+
+.mv-app .mv-drawer {
+  background: var(--mv-surface-1);
+  color: var(--mv-text-primary);
+  border-right: var(--mv-border-width) solid var(--mv-border-normal);
+  box-shadow: 6px 0 20px rgba(0, 0, 0, 0.35);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-ui);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .mv-drawer__header {
+  padding: var(--mv-space-6);
+  background: var(--mv-surface-2);
+  border-bottom: var(--mv-border-width) solid var(--mv-border-subtle);
+}
+
+.mv-app .mv-drawer__tabs {
+  padding: var(--mv-space-4) var(--mv-space-5);
+  border-bottom: var(--mv-border-width) solid var(--mv-border-subtle);
+}
+
+.mv-app .mv-drawer__body {
+  padding: var(--mv-space-6);
+  font-size: var(--mv-font-size-ui);
+  line-height: var(--mv-line-height-copy);
+}
+
+.mv-app .mv-button--secondary {
+  border-color: var(--mv-control-border);
+  background: var(--mv-control-bg);
+  color: var(--mv-text-secondary);
+}
+
+.mv-app .mv-button--accent {
+  border-color: var(--mv-accent, #60a5fa);
+  background: transparent;
+  color: var(--mv-accent, #60a5fa);
+}
+
+.mv-app .mv-button--danger {
+  border-color: var(--mv-danger, #f87171);
+  background: transparent;
+  color: var(--mv-danger, #f87171);
+}
+
+.mv-app .mv-button.mv-is-selected,
+.mv-app .mv-button[aria-selected="true"] {
+  border-color: var(--mv-border-strong);
+  background: var(--mv-surface-selected);
+  color: var(--mv-text-primary);
+}
+
+.mv-app .mv-modal-backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.mv-app .mv-repository-panel {
+  background: var(--mv-surface-1);
+  border: var(--mv-border-width) solid var(--mv-border-subtle);
+  border-radius: var(--mv-panel-radius);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+}
+
+.mv-app .mv-repository-form {
+  background: var(--mv-surface-2);
+  border: var(--mv-border-width) solid var(--mv-border-subtle);
+  border-radius: var(--mv-panel-radius);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER DATA WORKFLOW CHROME V1.0.0
+   Generic Data / Source Intake presentation only.
+   Workflow geometry and semantic status colors remain local.
+   ========================================================================== */
+
+.mv-app .mv-workflow-section,
+.mv-app .mv-workbench,
+.mv-app .mv-dialog-shell {
+  background: var(--mv-surface-1);
+  border: var(--mv-border-width) solid var(--mv-border-subtle);
+  border-radius: var(--mv-panel-radius);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+}
+
+.mv-app .mv-workflow-section__toggle {
+  width: 100%;
+  border-color: var(--mv-control-border);
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  text-align: left;
+}
+
+.mv-app .mv-workflow-section__title {
+  display: block;
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-ui);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+}
+
+.mv-app .mv-workflow-section__description,
+.mv-app .mv-workflow-meta {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-copy);
+}
+
+.mv-app .mv-workbench__header {
+  border-bottom: var(--mv-border-width) solid var(--mv-border-subtle);
+}
+
+.mv-app .mv-workbench button {
+  border: var(--mv-border-width) solid var(--mv-control-border);
+  background: var(--mv-control-bg);
+  color: var(--mv-text-secondary);
+  border-radius: var(--mv-control-radius);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-semibold);
+  line-height: var(--mv-line-height-tight);
+}
+
+.mv-app .mv-workbench button:disabled {
+  color: var(--mv-text-disabled);
+  border-color: var(--mv-border-subtle);
+  opacity: 0.62;
+}
+
+.mv-app .mv-workbench .mv-table {
+  color: var(--mv-text-secondary);
+  font-size: var(--mv-font-size-sm);
+}
+
+.mv-app .mv-workbench .mv-table th,
+.mv-app .mv-workbench .mv-table td {
+  padding: 10px 12px;
+  border-top: var(--mv-border-width) solid var(--mv-border-subtle);
+  vertical-align: middle;
+}
+
+.mv-app .mv-dialog-shell {
+  border-color: var(--mv-border-strong);
+}
+
+.mv-app .mv-dialog-shell .mv-dialog-title {
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-ui);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+}
+
+.mv-app .mv-dialog-shell .mv-dialog-subtitle {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .mv-upload-action {
+  border: var(--mv-border-width) solid var(--mv-control-border);
+  background: var(--mv-control-bg);
+  color: var(--mv-text-secondary);
+  border-radius: var(--mv-control-radius);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-semibold);
+  line-height: var(--mv-line-height-tight);
+}
+
+.mv-app .mv-upload-action:not([aria-disabled="true"]) {
+  color: var(--mv-text-primary);
+}
+
+.mv-app .mv-data-tabs .mv-button[aria-selected="true"] {
+  border-color: var(--mv-border-strong);
+  background: var(--mv-surface-selected);
+  color: var(--mv-text-primary);
+  font-weight: var(--mv-font-weight-bold);
+}
+
+/* ==========================================================================
+   MULTIVIEWER SDV 3D LEFT/RIGHT PANEL PRESENTATION PARITY V1.0.0
+   Right Volume/Slice information stack is the presentation reference.
+   Width/layout geometry remains local to Seismic3DViewer.
+   ========================================================================== */
+
+.mv-app .mv-viewer-controls-panel--info-parity {
+  background: var(--mv-surface-1);
+  border: 1px solid var(--mv-border-subtle);
+  border-radius: 0;
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .mv-viewer-controls-panel--info-parity .mv-viewer-controls-title {
+  font-size: var(--mv-font-size-ui);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+}
+
+.mv-app .mv-viewer-controls-panel--info-parity .mv-viewer-controls-meta,
+.mv-app .mv-viewer-controls-panel--info-parity label,
+.mv-app .mv-viewer-controls-panel--info-parity span {
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .mv-viewer-controls-panel--info-parity .mv-viewer-tab,
+.mv-app .mv-viewer-controls-panel--info-parity .mv-viewer-compact-button {
+  min-height: 24px;
+  padding: 2px 6px;
+  border: 1px solid var(--mv-control-border);
+  border-radius: 4px;
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-tight);
+  box-sizing: border-box;
+}
+
+.mv-app .mv-viewer-controls-panel--info-parity .mv-viewer-tab--active {
+  background: var(--mv-surface-selected);
+  border-color: var(--mv-border-strong);
+  font-weight: var(--mv-font-weight-semibold);
+}
+
+.mv-app .mv-viewer-controls-panel--info-parity .mv-viewer-index-input,
+.mv-app .mv-viewer-controls-panel--info-parity select {
+  min-height: 24px;
+  padding: 2px 5px;
+  border: 1px solid var(--mv-control-border);
+  border-radius: 4px;
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-tight);
+  box-sizing: border-box;
+}
+
+.mv-app .mv-viewer-controls-panel--info-parity .mv-viewer-helper {
+  font-size: var(--mv-font-size-xs);
+  line-height: var(--mv-line-height-copy);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER SYSTEM MONITOR / MANAGED DATA CHROME V1.0.0
+   Neutral presentation only. Health/status semantics and page geometry remain local.
+   ========================================================================== */
+
+.mv-app .mv-system-monitor {
+  background: var(--mv-bg-app);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .mv-system-monitor__header {
+  border-bottom: 1px solid var(--mv-border-subtle);
+}
+
+.mv-app .mv-system-monitor__card,
+.mv-app .mv-system-monitor__mini-card,
+.mv-app .mv-system-monitor__job-card {
+  background: var(--mv-surface-1);
+  border: 1px solid var(--mv-border-subtle);
+  border-radius: var(--mv-panel-radius);
+  color: var(--mv-text-primary);
+}
+
+.mv-app .mv-system-monitor__mini-card,
+.mv-app .mv-system-monitor__job-card {
+  background: var(--mv-surface-2);
+}
+
+.mv-app .mv-system-monitor__title {
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+}
+
+.mv-app .mv-system-monitor__kv-label,
+.mv-app .mv-system-monitor__muted,
+.mv-app .mv-system-monitor__path {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-xs);
+  font-weight: var(--mv-font-weight-normal);
+}
+
+.mv-app .mv-system-monitor__kv-value,
+.mv-app .mv-system-monitor__counts,
+.mv-app .mv-system-monitor__job-name {
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-xs);
+}
+
+.mv-app .mv-system-monitor__job-name {
+  font-weight: var(--mv-font-weight-bold);
+}
+
+.mv-app .mv-system-monitor__summary {
+  color: var(--mv-text-secondary);
+  font-size: var(--mv-font-size-xs);
+}
+
+.mv-app .mv-system-monitor .mv-button {
+  min-height: 24px;
+  padding: 3px 7px;
+  font-size: var(--mv-font-size-xs);
+}
+
+.mv-app .managed-data-pane {
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+}
+
+.mv-app .managed-data-pane .collapsible-pane-header {
+  color: var(--mv-text-primary);
+  border-color: var(--mv-border-subtle);
+}
+
+.mv-app .managed-data-pane .md-control-select,
+.mv-app .managed-data-pane .md-control-button {
+  background: var(--mv-control-bg);
+  color: var(--mv-text-secondary);
+  border: 1px solid var(--mv-control-border);
+  border-radius: var(--mv-control-radius);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-tight);
+}
+
+.mv-app .managed-data-pane .data-manager-table {
+  color: var(--mv-text-secondary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+}
+
+.mv-app .managed-data-pane .data-manager-table thead {
+  color: var(--mv-text-secondary);
+}
+
+.mv-app .managed-data-pane .data-manager-table th,
+.mv-app .managed-data-pane .data-manager-table td {
+  border-color: var(--mv-border-subtle);
+}
+
+.mv-app .mv-managed-data-modal-backdrop {
+  background: rgba(2, 6, 23, 0.72);
+}
+
+.mv-app .mv-managed-data-modal {
+  background: var(--mv-surface-1);
+  color: var(--mv-text-primary);
+  border: 1px solid var(--mv-border-strong);
+  border-radius: var(--mv-panel-radius);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.72);
+  font-family: var(--mv-font-ui);
+}
+
+.mv-app .mv-managed-data-tooltip {
+  background: var(--mv-surface-1);
+  color: var(--mv-text-primary);
+  border: 1px solid var(--mv-border-strong);
+  border-radius: var(--mv-control-radius);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.72);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-ui);
+}
+
+.mv-app .mv-managed-data-target-list {
+  border: 1px solid var(--mv-border-subtle);
+  border-radius: var(--mv-panel-radius);
+  color: var(--mv-text-secondary);
+  font-size: var(--mv-font-size-sm);
+}
+
+.mv-app .mv-managed-data-message {
+  border: 1px solid var(--mv-border-normal);
+  border-radius: var(--mv-control-radius);
+  color: var(--mv-text-secondary);
+  font-size: var(--mv-font-size-sm);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WLV TOOLBOX / METADATA MANAGER CHROME V1.0.0
+   Canonical neutral presentation for WLV/WBV manager/toolbox pages.
+   Tool-specific geometry and semantic state remain local.
+   ========================================================================== */
+
+.wlv-toolbox-page,
+.wlv-metadata-tool {
+  background: var(--mv-bg-app);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-ui);
+}
+
+.wlv-toolbox-page__header > span {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-xs);
+  font-weight: var(--mv-font-weight-bold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.wlv-toolbox-page__header h1,
+.wlv-metadata-tool__header h1 {
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-lg);
+  font-weight: var(--mv-font-weight-semibold);
+  line-height: var(--mv-line-height-tight);
+}
+
+.wlv-toolbox-page__header p,
+.wlv-metadata-tool__header p {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-xs);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-copy);
+}
+
+.wlv-toolbox-card {
+  border: 1px solid var(--mv-border-normal);
+  border-radius: var(--mv-panel-radius);
+  background: var(--mv-surface-1);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+}
+
+.wlv-toolbox-card:hover {
+  border-color: var(--mv-border-strong);
+  background: var(--mv-surface-hover);
+}
+
+.wlv-toolbox-card__icon {
+  border: 1px solid var(--mv-border-normal);
+  border-radius: var(--mv-control-radius);
+  background: var(--mv-surface-2);
+}
+
+.wlv-toolbox-card__icon svg {
+  stroke: var(--mv-text-secondary);
+}
+
+.wlv-toolbox-card__text strong {
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-semibold);
+}
+
+.wlv-toolbox-card__text small {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-xs);
+  line-height: var(--mv-line-height-ui);
+}
+
+.wlv-metadata-tool button {
+  border: 1px solid var(--mv-control-border);
+  border-radius: var(--mv-control-radius);
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-xs);
+  font-weight: var(--mv-font-weight-semibold);
+  line-height: var(--mv-line-height-tight);
+}
+
+.wlv-metadata-tool button:hover:not(:disabled) {
+  background: var(--mv-surface-hover);
+  border-color: var(--mv-border-strong);
+}
+
+.wlv-metadata-tool button:disabled {
+  color: var(--mv-text-disabled);
+  opacity: 0.56;
+}
+
+.wlv-metadata-tool__controls,
+.wlv-metadata-tool__drop-zone,
+.wlv-metadata-tool__drop-panel,
+.wlv-metadata-tool__action-row,
+.wlv-metadata-tool__message,
+.wlv-metadata-tool__review {
+  border-color: var(--mv-border-subtle);
+  background: var(--mv-surface-1);
+  color: var(--mv-text-primary);
+}
+
+.wlv-metadata-tool__message {
+  color: var(--mv-text-secondary);
+  font-size: var(--mv-font-size-xs);
+}
+
+.wlv-metadata-tool__file,
+.wlv-metadata-tool__session-summary,
+.wlv-metadata-tool__drop-copy span {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-xs);
+}
+
+.wlv-metadata-tool__drop-copy strong,
+.wlv-metadata-tool__review h2 {
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-ui);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+}
+
+.wlv-metadata-tool__review > header {
+  border-bottom-color: var(--mv-border-subtle);
+}
+
+.wlv-metadata-tool__review > header span {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-xs);
+}
+
+.wlv-metadata-tool table {
+  color: var(--mv-text-secondary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-xs);
+}
+
+.wlv-metadata-tool th,
+.wlv-metadata-tool td {
+  border-bottom-color: var(--mv-border-subtle);
+}
+
+.wlv-metadata-tool th {
+  color: var(--mv-text-muted);
+  background: var(--mv-surface-2);
+  font-size: var(--mv-font-size-xs);
+  font-weight: var(--mv-font-weight-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.wlv-metadata-tool td strong {
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-xs);
+  line-height: var(--mv-line-height-tight);
+}
+
+.wlv-metadata-tool td small,
+.wlv-metadata-tool .is-missing {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-xs);
+}
+
+.wlv-metadata-tool__loaded {
+  color: var(--mv-text-secondary);
+  font-size: var(--mv-font-size-xs);
+}
+
+.wlv-metadata-tool td input,
+.wlv-metadata-tool td select,
+.wlv-metadata-tool td textarea,
+.wlv-metadata-tool__scan-mode {
+  border: 1px solid var(--mv-control-border);
+  border-radius: var(--mv-control-radius);
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-xs);
+}
+
+.wlv-metadata-tool__scan-mode:hover:not(:disabled) {
+  background-color: var(--mv-surface-hover);
+  border-color: var(--mv-border-strong);
+}
+
+.wlv-metadata-tool__scan-mode:focus {
+  outline: none;
+  border-color: var(--mv-border-strong);
+  box-shadow: 0 0 0 1px var(--mv-border-strong);
+}
+
+.wlv-metadata-tool__scan-mode option {
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER MODAL / EDITOR CHROME V1.0.0
+   Generic neutral presentation for WDV/WBV editor controls, MWD export,
+   and CIM utility/floating windows. Geometry and scientific imagery stay local.
+   ========================================================================== */
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-field,
+.wlv-curve-editor-section label,
+.wlv-curve-editor-field-label {
+  color: var(--mv-text-muted);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-xs);
+  font-weight: var(--mv-font-weight-semibold);
+  line-height: var(--mv-line-height-tight);
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-field select,
+.wlv-wbv-layer-manager-modal .wlv-wbv-field input:not([type="checkbox"]):not([type="range"]):not([type="color"]),
+.wlv-curve-editor-section input:not([type="checkbox"]):not([type="range"]):not([type="color"]),
+.wlv-curve-editor-section select {
+  border: 1px solid var(--mv-control-border);
+  border-radius: var(--mv-control-radius);
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-xs);
+  font-weight: var(--mv-font-weight-semibold);
+}
+
+.wlv-wbv-layer-manager-modal input[type="color"],
+.wlv-curve-editor-section input[type="color"] {
+  border: 1px solid var(--mv-control-border);
+  border-radius: var(--mv-control-radius);
+  background: var(--mv-control-bg);
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-manager-toggle-row,
+.wlv-curve-editor-checkbox-row {
+  color: var(--mv-text-secondary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-xs);
+  font-weight: var(--mv-font-weight-semibold);
+}
+
+.wlv-wbv-layer-manager-modal .wlv-wbv-property-group legend,
+.wlv-curve-editor-section > h4 {
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-xs);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0.065em;
+}
+
+.wlv-curve-editor-section {
+  border: 1px solid var(--mv-border-subtle);
+  border-radius: var(--mv-panel-radius);
+  background: var(--mv-surface-1);
+}
+
+.wlv-mwd-export-backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.wlv-mwd-export-modal {
+  border: 1px solid var(--mv-border-normal);
+  border-radius: var(--mv-panel-radius);
+  background: var(--mv-surface-1);
+  color: var(--mv-text-primary);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.5);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-ui);
+}
+
+.wlv-mwd-export-modal > header,
+.wlv-mwd-export-modal > footer {
+  border-color: var(--mv-border-subtle);
+}
+
+.wlv-mwd-export-modal h3 {
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-lg);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+}
+
+.wlv-mwd-export-modal header p,
+.wlv-mwd-export-body p {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-copy);
+}
+
+.wlv-mwd-export-close,
+.wlv-mwd-export-modal > footer button,
+.wlv-mwd-export-body select {
+  border: 1px solid var(--mv-control-border);
+  border-radius: var(--mv-control-radius);
+  background: var(--mv-control-bg);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+}
+
+.wlv-mwd-export-body label > span:first-child,
+.wlv-mwd-export-body strong {
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-bold);
+}
+
+.wlv-mwd-export-body ul {
+  border: 1px solid var(--mv-border-subtle);
+  border-radius: var(--mv-panel-radius);
+  background: var(--mv-surface-2);
+  color: var(--mv-text-secondary);
+  font-size: var(--mv-font-size-sm);
+}
+
+.wlv-cim-url-modal-backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.wlv-cim-url-modal,
+.wlv-cim-floating-window {
+  border: 1px solid var(--mv-border-normal);
+  border-radius: var(--mv-panel-radius);
+  background: var(--mv-surface-1);
+  color: var(--mv-text-primary);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.48);
+  font-family: var(--mv-font-ui);
+}
+
+.wlv-cim-url-modal > header,
+.wlv-cim-url-modal > footer,
+.wlv-cim-floating-window__titlebar,
+.wlv-cim-edit-window > footer {
+  border-color: var(--mv-border-subtle);
+}
+
+.wlv-cim-url-modal h2,
+.wlv-cim-floating-window__titlebar strong {
+  color: var(--mv-text-primary);
+  font-size: var(--mv-font-size-ui);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+}
+
+.wlv-cim-url-modal p,
+.wlv-cim-floating-window__titlebar span,
+.wlv-cim-image-missing,
+.wlv-cim-empty-copy {
+  color: var(--mv-text-muted);
+  font-size: var(--mv-font-size-xs);
+  line-height: var(--mv-line-height-copy);
+}
+
+.wlv-cim-url-modal__field > span,
+.wlv-cim-edit-window__body label > span {
+  color: var(--mv-text-secondary);
+  font-size: var(--mv-font-size-xs);
+  font-weight: var(--mv-font-weight-bold);
+}
+
+.wlv-cim-description-card {
+  border: 1px solid var(--mv-border-subtle);
+  border-radius: var(--mv-control-radius);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WBV SHELL / PANEL CHROME V1.0.0
+   Neutral WBV shell presentation only. Geometry, viewer-specific sizing,
+   active/semantic states, and scientific rendering remain local.
+   ========================================================================== */
+.wlv-wbv-panel--left .wlv-wbv-panel-heading > span {
+  color:#91a2b4; font-family:var(--mv-font-ui); font-size:.68rem; font-weight:800;
+  letter-spacing:.14em; line-height:1.1; text-transform:uppercase;
+}
+.wlv-wbv-panel--left .wlv-wbv-panel-heading > strong {
+  color:#f4f6f8; font-family:var(--mv-font-ui); font-size:.92rem; font-weight:700; line-height:1.2;
+}
+.wlv-wbv-panel--right .wlv-wbv-panel-heading > span {
+  color:#9da4ae; font-family:var(--mv-font-ui); font-size:.72rem; font-weight:700;
+  line-height:1.2; letter-spacing:.09em; text-transform:uppercase;
+}
+.wlv-wbv-panel--right .wlv-wbv-panel-heading > strong {
+  color:#f1f2f3; font-family:var(--mv-font-ui); font-size:1rem; font-weight:700; line-height:1.25;
+}
+.wlv-wbv-panel--right .wlv-wbv-panel-heading > .wlv-wbv-active-well-label {
+  color:#9da7b2; font-family:var(--mv-font-ui); font-size:.62rem; font-weight:700;
+  letter-spacing:.07em; line-height:1.25;
+}
+.wlv-wbv-left-section h2 {
+  color:#f1f3f5; font-family:var(--mv-font-ui); font-size:.8rem; font-weight:700; line-height:1.2;
+}
+.wlv-wbv-panel--left .wlv-wbv-control-list label {
+  color:#dce3e9; font-family:var(--mv-font-ui); font-size:.76rem; font-weight:400; line-height:1.2;
+}
+.wlv-wbv-manage-layers-button,.wlv-wbv-control-button,.wlv-wbv-icon-button {
+  border:1px solid #43515f; border-radius:.85rem; background:#101820; color:#dce4e9;
+  font-family:var(--mv-font-ui); font-size:.68rem; font-weight:600; line-height:1.1;
+}
+.wlv-wbv-control-button:hover:not(:disabled),.wlv-wbv-icon-button:hover:not(:disabled) {
+  border-color:#65b98a; color:#f5faf7;
+}
+.wlv-wbv-panel--left .wlv-wbv-section-collapse-button,
+.wlv-wbv-panel--right .wlv-wbv-panel-collapse-button {
+  border:1px solid rgba(148,156,166,.34); border-radius:6px; background:transparent; color:#c5ccd4;
+  font-family:var(--mv-font-ui); line-height:1;
+}
+.wlv-wbv-panel--left .wlv-wbv-section-collapse-button:hover,
+.wlv-wbv-panel--right .wlv-wbv-panel-collapse-button:hover {
+  border-color:rgba(170,184,198,.62); background:rgba(148,156,166,.08);
+}
+.wlv-wbv-view-properties-rail-heading {
+  color:#aeb9c1; font-family:var(--mv-font-ui); font-size:.62rem; font-weight:750;
+  letter-spacing:.09em; text-transform:uppercase;
+}
+.wlv-wbv-view-properties-nav button {
+  border:0; border-radius:.28rem; background:transparent; color:#b8c3ca; font-family:var(--mv-font-ui);
+}
+.wlv-wbv-view-properties-nav button:hover { background:#152129; color:#edf4f6; }
+.wlv-wbv-segmented-control button {
+  border:0; border-right:1px solid #3a4a56; background:#0b141b; color:#9eabb4;
+  font-family:var(--mv-font-ui); font-size:.63rem;
+}
+.wlv-wbv-panel--left .wlv-wbv-display-layer-row select,
+.wlv-wbv-curve-inventory-toolbar input,
+.wlv-wbv-curve-selector-toolbar input[type="search"] {
+  border:1px solid var(--mv-control-border); border-radius:var(--mv-control-radius);
+  background:var(--mv-control-bg); color:var(--mv-text-primary); font-family:var(--mv-font-ui);
+}
+.wlv-wbv-panel--left .wlv-wbv-display-layer-row select { font-size:.72rem; }
+.wlv-wbv-curve-selector-modal {
+  border:1px solid var(--mv-border-normal); border-radius:var(--mv-panel-radius);
+  background:var(--mv-surface-1); box-shadow:0 1.4rem 4rem rgba(0,0,0,.5);
+  color:var(--mv-text-primary); font-family:var(--mv-font-ui);
+}
+.wlv-wbv-curve-selector-modal > header { border-bottom-color:var(--mv-border-subtle); }
+.wlv-wbv-curve-selector-modal h2 {
+  color:var(--mv-text-primary); font-family:var(--mv-font-ui);
+  font-size:var(--mv-font-size-lg); font-weight:var(--mv-font-weight-bold); line-height:var(--mv-line-height-tight);
+}
+.wlv-wbv-curve-selector-modal header p {
+  color:var(--mv-text-muted); font-family:var(--mv-font-ui);
+  font-size:var(--mv-font-size-xs); line-height:var(--mv-line-height-copy);
+}
+
+/* ==========================================================================
+   WBV VIEW PANEL ACCEPTED COMPACT MASTER REASSERT V1.0.0
+   Restores the previously accepted WBV View presentation after shell
+   governance consolidation. Presentation only; geometry/interaction unchanged.
+   ========================================================================== */
+
+.mv-app .wlv-wbv-panel--left .wlv-wbv-view-controls {
+  gap: 0.5rem;
+  margin-top: 0.56rem;
+  padding-top: 0.5rem;
+}
+
+.mv-app .wlv-wbv-panel--left .wlv-wbv-view-controls > h2 {
+  margin: 0 0 0.38rem;
+  color: #f1f3f5;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.18;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mv-app .wlv-wbv-panel--left .wlv-wbv-view-control-block {
+  gap: 0.3rem;
+}
+
+.mv-app .wlv-wbv-panel--left .wlv-wbv-view-control-block > h3 {
+  margin: 0;
+  color: #91a2ac;
+  font-size: 0.58rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.mv-app .wlv-wbv-panel--left .wlv-wbv-view-controls button {
+  min-width: 0;
+  min-height: 1.72rem;
+  padding: 0.34rem 0.48rem;
+  border: 1px solid rgba(113, 132, 151, 0.42);
+  border-radius: 999px;
+  background: #101820;
+  color: #dce4e9;
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.15;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.mv-app .wlv-wbv-panel--left .wlv-wbv-view-controls button:hover:not(:disabled) {
+  border-color: #65b98a;
+  background: #141f29;
+  color: #f5faf7;
+}
+
+.mv-app .wlv-wbv-panel--left .wlv-wbv-view-controls button.is-active {
+  border-color: #4fbe86;
+  background: #153126;
+  color: #eafaf1;
+}
+
+.mv-app .wlv-wbv-panel--left .wlv-wbv-view-controls button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.mv-app .wlv-wbv-panel--left .wlv-wbv-zoom-value,
+.mv-app .wlv-wbv-panel--left .wlv-wbv-rotation-value {
+  font-size: 0.68rem;
+  line-height: 1.15;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV TOOLBAR / PROPERTIES CHROME V1.0.0
+   Neutral shell only. Active/Lock/Tie/scientific presentation remains local.
+   ========================================================================== */
+
+:where(.mv-ui-scope) .wlv-toolbar-group {
+  border: 1px solid #333842;
+  border-radius: 5px;
+  background: #202124;
+}
+
+:where(.mv-ui-scope) .wlv-toolbar-group > span {
+  color: #a1a1aa;
+  font-family: var(--mv-font-ui);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+:where(.mv-ui-scope) .wlv-toolbar-group button,
+:where(.mv-ui-scope) .wlv-toolbar-group select {
+  border: 1px solid #4b5563;
+  border-radius: 3px;
+  background: transparent;
+  color: #e5e7eb;
+  font-family: var(--mv-font-ui);
+  font-size: 12px;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-properties-tabs button {
+  border: 1px solid #52525b;
+  border-radius: 4px;
+  background: #151515;
+  color: #d4d4d8;
+  font-family: var(--mv-font-ui);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-properties-dark-section,
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-property-section {
+  border: 1px solid #4b5563;
+  border-radius: 4px;
+  background: #151515;
+  color: #d4d4d8;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-property-section h3 {
+  color: #f3f4f6;
+  font-family: var(--mv-font-ui);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-property-section label {
+  color: #b8bcc6;
+  font-family: var(--mv-font-ui);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-property-section input,
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-property-section select {
+  border: 1px solid #4b5563;
+  background: #121214;
+  color: #f3f4f6;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-property-section button {
+  border: 1px solid #4b5563;
+  background: #151515;
+  color: #d1d5db;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-properties-selected-entity {
+  border: 1px solid #4b5563;
+  border-radius: 4px;
+  background: #151515;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-properties-selected-entity strong {
+  color: #f3f4f6;
+  font-family: var(--mv-font-ui);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-properties-contract-table {
+  border: 1px solid #4b5563;
+  border-radius: 4px;
+  background: #101011;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-properties-contract-section h3 {
+  border-bottom: 1px solid #4b5563;
+  background: #18181b;
+  color: #e5e7eb;
+  font-family: var(--mv-font-ui);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-properties-contract-section td small {
+  color: #71717a;
+  font-family: var(--mv-font-ui);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV RIGHT PANEL / INVENTORY CHROME V1.0.0
+   Neutral presentation only. Geometry, active states, semantic colors and
+   scientific rendering remain local.
+   ========================================================================== */
+
+:where(.mv-ui-scope) .wlv-curve-inventory .wlv-panel-heading,
+:where(.mv-ui-scope) .wlv-right-panel .wlv-panel-heading {
+  background: #1e1e1e;
+  border-bottom: 1px solid #2d2d2d;
+  color: #e5e7eb;
+}
+
+:where(.mv-ui-scope) .wlv-curve-inventory .wlv-panel-heading h2,
+:where(.mv-ui-scope) .wlv-right-panel .wlv-panel-heading h2 {
+  color: #e5e7eb;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-curve-inventory .wlv-panel-heading span,
+:where(.mv-ui-scope) .wlv-right-panel .wlv-panel-heading span {
+  border-color: #3f3f46;
+  background: #171717;
+  color: #a1a1aa;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-search-row input,
+:where(.mv-ui-scope) .wlv-search-row button,
+:where(.mv-ui-scope) .wlv-right-panel input,
+:where(.mv-ui-scope) .wlv-right-panel select,
+:where(.mv-ui-scope) .wlv-right-panel button {
+  border: 1px solid #3f3f46;
+  background: #171717;
+  color: #e5e7eb;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-search-row input::placeholder,
+:where(.mv-ui-scope) .wlv-right-panel input::placeholder {
+  color: #71717a;
+}
+
+:where(.mv-ui-scope) .wlv-right-panel label {
+  color: #a1a1aa;
+  font-family: var(--mv-font-ui);
+  font-size: 12px;
+}
+
+:where(.mv-ui-scope) .wlv-inventory-section-toggle {
+  border: 0;
+  border-radius: 0;
+  background: #080a0d;
+  color: rgba(255,255,255,0.72);
+  font-family: var(--mv-font-ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+:where(.mv-ui-scope) .wlv-inventory-section-toggle:hover {
+  background: #11151a;
+  color: #f4f6f8;
+}
+
+:where(.mv-ui-scope) .wlv-inventory-section-body select,
+:where(.mv-ui-scope) .wlv-inventory-section-body input,
+:where(.mv-ui-scope) .wlv-inventory-section-body button,
+:where(.mv-ui-scope) .wlv-search-row input,
+:where(.mv-ui-scope) .wlv-search-row button {
+  background: #0b0e12;
+  color: #e7e9ec;
+  border-color: rgba(255,255,255,0.18);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV GENERIC MODAL / CHOOSER CHROME V1.0.0
+   Neutral dialog presentation only. Geometry, semantic states and scientific
+   picker content remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-template-modal {
+  border:1px solid #475569; border-radius:14px; background:#0f172a; color:#e5e7eb;
+  box-shadow:0 24px 60px rgba(0,0,0,.45); font-family:var(--mv-font-ui);
+}
+:where(.mv-ui-scope) .wlv-template-modal-header { border-bottom:1px solid rgba(148,163,184,.28); }
+:where(.mv-ui-scope) .wlv-template-modal-header h2 {
+  color:#f8fafc; font-family:var(--mv-font-ui); font-size:19px;
+}
+:where(.mv-ui-scope) .wlv-well-info-import-modal {
+  border:1px solid rgba(88,111,139,.82); border-radius:14px; background:#111923;
+  color:#d9e3ef; box-shadow:0 24px 70px rgba(0,0,0,.48); font-family:var(--mv-font-ui);
+}
+:where(.mv-ui-scope) .wlv-well-info-import-modal header p {
+  color:#8f9cad; font-family:var(--mv-font-ui); font-size:.84rem;
+}
+:where(.mv-ui-scope) .wlv-lithology-picker-modal {
+  border:1px solid #4b5563; border-radius:8px; background:#11151a; color:#f4f4f5;
+  box-shadow:0 24px 70px rgba(0,0,0,.58); font-family:var(--mv-font-ui);
+}
+:where(.mv-ui-scope) .wlv-lithology-picker-modal > header {
+  border-bottom:1px solid #343b45; background:#181c22;
+}
+:where(.mv-ui-scope) .wlv-lithology-picker-modal > header span {
+  color:#9ca3af; font-family:var(--mv-font-ui); font-size:9px; font-weight:700;
+  letter-spacing:.09em; text-transform:uppercase;
+}
+:where(.mv-ui-scope) .wlv-lithology-picker-modal > header h2 {
+  font-family:var(--mv-font-ui); font-size:19px;
+}
+:where(.mv-ui-scope) .wlv-lithology-picker-modal > header small {
+  color:#aeb5bf; font-family:var(--mv-font-ui); font-size:10px;
+}
+:where(.mv-ui-scope) .wlv-lithology-picker-modal > header > button {
+  border:1px solid #566171; border-radius:5px; background:#12171d; color:#fff;
+  font-family:var(--mv-font-ui); font-size:22px;
+}
+:where(.mv-ui-scope) .wlv-lithology-picker-toolbar { border-bottom:1px solid #303741; }
+:where(.mv-ui-scope) .wlv-lithology-picker-toolbar input,
+:where(.mv-ui-scope) .wlv-lithology-picker-toolbar select {
+  border:1px solid #495361; border-radius:4px; background:#0d1116; color:#fff;
+  font-family:var(--mv-font-ui); font-size:11px;
+}
+:where(.mv-ui-scope) .wlv-lithology-picker-modal > footer {
+  border-top:1px solid #343b45; background:#171c22;
+}
+:where(.mv-ui-scope) .wlv-lithology-picker-modal > footer button {
+  border:1px solid #556171; border-radius:4px; background:#12171d; color:#fff;
+  font-family:var(--mv-font-ui); font-size:10px;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV -> WBV PUBLISH DIALOG CHROME V1.0.1
+   Correct WLV authority scope: mv-ui-scope.
+   Neutral presentation only; geometry and dynamic state remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-wdv-wbv-publish-dialog {
+  border: 1px solid #566171;
+  border-radius: 6px;
+  background: #171b20;
+  color: #eef2f6;
+  box-shadow: 0 12px 32px rgba(0,0,0,.58);
+  font-family: var(--mv-font-ui);
+  font-size: 12px;
+}
+:where(.mv-ui-scope) .wlv-wdv-wbv-publish-dialog__intro > strong {
+  color: #f3f6f9;
+  font-size: 13px;
+  font-weight: var(--mv-font-weight-bold);
+  line-height: 1.2;
+}
+:where(.mv-ui-scope) .wlv-wdv-wbv-publish-dialog__intro > span,
+:where(.mv-ui-scope) .wlv-wdv-wbv-publish-dialog__empty {
+  color: #b9c2ce;
+  font-size: 11px;
+  line-height: 1.35;
+}
+:where(.mv-ui-scope) .wlv-wdv-wbv-publish-dialog__package {
+  border: 1px solid #3e4855;
+  border-radius: 4px;
+  background: #11151a;
+}
+:where(.mv-ui-scope) .wlv-wdv-wbv-publish-dialog__package > span {
+  color: #9ea9b7;
+  font-size: 11px;
+}
+:where(.mv-ui-scope) .wlv-wdv-wbv-publish-dialog__package > strong {
+  color: #eef2f6;
+  font-size: 12px;
+  font-weight: var(--mv-font-weight-bold);
+}
+:where(.mv-ui-scope) .wlv-wdv-wbv-publish-dialog__button {
+  border: 1px solid #5d6978;
+  border-radius: 5px;
+  background: #20262d;
+  color: #eef2f6;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+:where(.mv-ui-scope) .wlv-wdv-wbv-publish-dialog__button.is-primary {
+  border-color: #20d98b;
+  background: #174b3a;
+  color: #55efaf;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV QUICK VIEW METADATA CHROME V1.0.0
+   Neutral Quick View metadata presentation only.
+   Severity semantics, curve colors, geometry and scientific content remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-qv-metadata-notice {
+  border: 1px dashed rgba(116,132,158,.30);
+  border-radius: 7px;
+  color: #aeb7c6;
+  font-family: var(--mv-font-ui);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.28;
+}
+
+:where(.mv-ui-scope) .wlv-qv-source-name {
+  color: #cbd4e1;
+  font-family: var(--mv-font-ui);
+  font-size: 10.5px;
+  font-weight: 540;
+  line-height: 1.25;
+}
+
+:where(.mv-ui-scope) .wlv-qv-qaqc-flag {
+  border: 1px solid rgba(116,132,158,.16);
+  border-radius: 4px;
+  background: rgba(18,23,31,.42);
+  color: #b7c1d0;
+  font-family: var(--mv-font-ui);
+  font-size: 10.25px;
+  font-weight: 500;
+  line-height: 1.22;
+}
+
+:where(.mv-ui-scope) .wlv-qv-technical-flags {
+  color: #9aa6b8;
+  font-family: var(--mv-font-ui);
+  font-size: 10.25px;
+  font-weight: 500;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV QUICK VIEW STRUCTURED METADATA CHROME V1.0.0
+   Neutral card/row/summary presentation only.
+   Tone and severity colors, geometry and scientific content remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-qv-metadata-card {
+  border: 1px solid rgba(116,132,158,.24);
+  border-radius: 7px;
+  background: rgba(12,15,20,.64);
+}
+
+:where(.mv-ui-scope) .wlv-qv-metadata-row {
+  border-bottom: 1px solid rgba(116,132,158,.09);
+}
+
+:where(.mv-ui-scope) .wlv-qv-metadata-label {
+  color: #8f98a8;
+  font-family: var(--mv-font-ui);
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+
+:where(.mv-ui-scope) .wlv-qv-metadata-value {
+  font-family: var(--mv-font-ui);
+  font-size: 10.5px;
+  font-weight: 520;
+  line-height: 1.22;
+}
+
+:where(.mv-ui-scope) .wlv-qv-metadata-card-title {
+  color: #dfe6f1;
+  font-family: var(--mv-font-ui);
+  font-size: 11px;
+  font-weight: 720;
+  letter-spacing: .095em;
+  text-transform: uppercase;
+}
+
+:where(.mv-ui-scope) .wlv-qv-metadata-card-meta {
+  font-family: var(--mv-font-ui);
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+
+:where(.mv-ui-scope) .wlv-qv-summary-pill {
+  border: 1px solid rgba(116,132,158,.20);
+  border-radius: 5px;
+  background: rgba(18,23,31,.54);
+}
+
+:where(.mv-ui-scope) .wlv-qv-summary-pill-label {
+  color: #9aa6b8;
+  font-family: var(--mv-font-ui);
+  font-size: 9.5px;
+  font-weight: 640;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+:where(.mv-ui-scope) .wlv-qv-summary-pill-value {
+  font-family: var(--mv-font-ui);
+  font-size: 10.5px;
+  font-weight: 680;
+}
+
+:where(.mv-ui-scope) .wlv-qv-summary-group-title {
+  color: #8f98a8;
+  font-family: var(--mv-font-ui);
+  font-size: 9.5px;
+  font-weight: 680;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV QUICK VIEW HEADER AND CURVE ROW SHELL V1.0.0
+   Shared header typography and neutral curve-row shell only.
+   Compact row geometry/type/wrap and mnemonic colors remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-qv-shared-header-text {
+  color: #dfe6f1;
+  font-family: var(--mv-font-ui);
+  font-size: 11px;
+  font-weight: 720;
+  letter-spacing: .115em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+:where(.mv-ui-scope) .wlv-qv-curve-row-compact {
+  border: 1px solid rgba(148,163,184,.20);
+  background: rgba(255,255,255,.025);
+  color: #cbd5e1;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV QUICK VIEW COLLAPSE CONTROL CHROME V1.0.0
+   Neutral collapse-control presentation only.
+   Width/height/position/padding/cursor remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-curve-inventory-collapse-toggle {
+  border: 1px solid #3f3f46;
+  border-radius: 6px;
+  background: #111111;
+  color: #d4d4d8;
+  font-family: var(--mv-font-ui);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+:where(.mv-ui-scope) .wlv-curve-inventory-collapse-toggle:hover {
+  border-color: #60a5fa;
+  color: #60a5fa;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV QUICK VIEW COLLAPSED LABEL AND PANEL BODY V1.0.0
+   Neutral typography only. Placement/rotation/scroll geometry remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-curve-inventory-collapsed-label {
+  color: #a1a1aa;
+  font-family: var(--mv-font-ui);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+:where(.mv-ui-scope) .wlv-qv-metadata-panel {
+  color: #9ca3af;
+  font-family: var(--mv-font-ui);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV QUICK VIEW TRANSIENT STATUS CHROME V1.0.0
+   Neutral transient overlay/status presentation only.
+   Positioning, dimensions, z-index, padding and pointer behavior remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-qv-drop-overlay {
+  background: rgba(3,7,18,.82);
+  color: #f8fafc;
+  font-family: var(--mv-font-ui);
+  font-size: 20px;
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+}
+
+:where(.mv-ui-scope) .wlv-qv-status-message {
+  border: 1px solid #64748b;
+  border-radius: 4px;
+  background: #1e293b;
+  color: #e2e8f0;
+  font-family: var(--mv-font-ui);
+  font-size: 11px;
+  font-weight: var(--mv-font-weight-normal);
+  line-height: 1.25;
+  box-shadow: 0 2px 8px rgba(0,0,0,.28);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV QUICK VIEW TECHNICAL DISCLOSURE TYPOGRAPHY V1.0.0
+   Neutral disclosure summary/message presentation only.
+   Disclosure state and spacing remain component-local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-qv-technical-flags-summary {
+  color: #aeb8c7;
+  font-family: var(--mv-font-ui);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: .025em;
+  cursor: pointer;
+}
+
+:where(.mv-ui-scope) .wlv-qv-technical-flags-message {
+  color: #8f9ca8;
+  font-family: var(--mv-font-ui);
+  font-size: 10px;
+  font-weight: var(--mv-font-weight-normal);
+  line-height: 1.3;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV EMPTY / LOADED CANVAS PRESENTATION V1.0.0
+   Neutral state surfaces and text hierarchy only.
+   Centering, dimensions, padding, margins, radius/shadow and state logic remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-empty-viewer-state,
+:where(.mv-ui-scope) .wlv-loaded-curves-ready-state {
+  background: rgba(4,13,24,.42);
+}
+
+:where(.mv-ui-scope) .wlv-empty-viewer-state {
+  border-top: 1px solid rgba(148,163,184,.14);
+}
+
+:where(.mv-ui-scope) .wlv-loaded-curves-ready-state {
+  border-left: 1px solid rgba(148,163,184,.14);
+  border-right: 1px solid rgba(148,163,184,.14);
+}
+
+:where(.mv-ui-scope) .wlv-empty-viewer-card,
+:where(.mv-ui-scope) .wlv-loaded-curves-ready-card {
+  border: 1px solid rgba(96,165,250,.34);
+  background: rgba(15,23,42,.78);
+  color: #dbeafe;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-empty-viewer-card h2,
+:where(.mv-ui-scope) .wlv-loaded-curves-ready-card h2 {
+  font-family: var(--mv-font-ui);
+  font-size: 1rem;
+  line-height: 1.25;
+  letter-spacing: .01em;
+}
+
+:where(.mv-ui-scope) .wlv-empty-viewer-card p,
+:where(.mv-ui-scope) .wlv-loaded-curves-ready-card p {
+  color: #b6c7dd;
+  font-family: var(--mv-font-ui);
+  font-size: .88rem;
+  line-height: 1.42;
+}
+
+:where(.mv-ui-scope) .wlv-empty-viewer-note {
+  color: #93a4b8 !important;
+  font-family: var(--mv-font-ui);
+  font-size: .9rem;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV READY PROPERTIES BODY TYPOGRAPHY V1.0.0
+   Generic neutral properties-body typography only.
+   Panel padding, scrolling, dimensions and component-specific overrides remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-ready-properties-copy {
+  color: #9ca3af;
+  font-family: var(--mv-font-ui);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV PROPERTIES PANEL SHELL / HEADER CHROME V1.0.0
+   Neutral panel shell/header presentation only.
+   Dimensions, padding, tabs, editor geometry, active states and semantics remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-properties-panel-v2 {
+  background: #0f0f10;
+  color: #e5e7eb;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-panel-heading {
+  border-bottom: 1px solid #3f3f46;
+  background: #171717;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-panel-heading h2 {
+  color: #f3f4f6;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-panel-heading span {
+  border-color: #4b5563;
+  background: #18181b;
+  color: #d1d5db;
+  font-family: var(--mv-font-ui);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV PROPERTIES METADATA TYPOGRAPHY / DIVIDERS V1.0.0
+   Neutral metadata type hierarchy and divider presentation only.
+   Table geometry, widths, padding, wrapping and editor behavior remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-properties-selected-entity span {
+  color: #a1a1aa;
+  font-family: var(--mv-font-ui);
+  font-size: 10.5px;
+  line-height: 1.25;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-properties-contract-section + .wlv-properties-contract-section {
+  border-top: 1px solid #52525b;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-properties-contract-section tr + tr {
+  border-top: 1px solid #2f333a;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-properties-contract-section th {
+  color: #9ca3af;
+  font-family: var(--mv-font-ui);
+  font-weight: 800;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-properties-contract-section td {
+  color: #f3f4f6;
+  font-family: var(--mv-font-ui);
+  font-weight: 750;
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-properties-contract-section td em {
+  color: #a1a1aa;
+  font-family: var(--mv-font-ui);
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV PROPERTIES NOTE / SELECTED CURVE NEUTRAL CHROME V1.0.0
+   Properties-panel scoped neutral surfaces only.
+   Note geometry, selected-curve geometry, curve identity and editor behavior remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-property-note {
+  border-color: #4b5563;
+  background: #111113;
+  color: #a1a1aa;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-properties-panel-v2 .wlv-selected-curve-title {
+  border-color: #4b5563;
+  background: #101011;
+  font-family: var(--mv-font-ui);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV WELL METADATA / STATUS FOOTER CHROME V1.0.0
+   Neutral metadata/status presentation only.
+   Metadata grid geometry and footer dimensions/layout remain local.
+   Track-header Lock/Tie presentation is explicitly outside this block.
+   ========================================================================== */
+:where(.mv-ui-scope) .well-header dt {
+  color: #a1a1aa;
+  font-family: var(--mv-font-ui);
+  font-weight: 400;
+}
+
+:where(.mv-ui-scope) .well-header dd {
+  color: #d4d4d8;
+  font-family: var(--mv-font-ui);
+  font-weight: 400;
+}
+
+:where(.mv-ui-scope) .wlv-status-footer {
+  border-top: 1px solid #2d2d2d;
+  background: #151515;
+  color: #8b8b8b;
+  font-family: var(--mv-font-ui);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV ADD TRACK BUILDER SHELL / LABEL CHROME V1.0.0
+   Neutral builder shell, drag-handle and descriptive typography only.
+   Builder geometry, active/disabled controls, semantic green states and interaction remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-add-track-builder,
+:where(.mv-ui-scope) .wlv-add-track-builder-draggable {
+  border-color: #4b5563;
+  background: #17191d;
+  color: #e5e7eb;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.58);
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-add-track-builder-draggable .builder-drag-handle {
+  border-bottom-color: #3f4650;
+  background: #22262c;
+  color: #f3f4f6;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-add-track-builder .builder-label {
+  color: #aeb7c3;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-add-track-builder .builder-note {
+  color: #8d96a3;
+  font-family: var(--mv-font-ui);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV CURVE HEADER ACTION MENU NEUTRAL CHROME V1.0.1
+   Legacy portal class remains live; paired wlv-prefixed aliases provide explicit
+   WDV presentation identity without changing DOM, positioning, semantics or behavior.
+   ========================================================================== */
+:where(.mv-ui-scope) .curve-header-action-menu,
+:where(.mv-ui-scope) .wlv-curve-header-action-menu {
+  border: 1px solid #9aa8b8;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.24);
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .curve-header-action-menu button,
+:where(.mv-ui-scope) .wlv-curve-header-action-menu button {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #1d2835;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .curve-header-action-menu button:hover:not(:disabled),
+:where(.mv-ui-scope) .wlv-curve-header-action-menu button:hover:not(:disabled) {
+  background: #eaf3ff;
+}
+
+:where(.mv-ui-scope) .curve-header-action-menu button:disabled,
+:where(.mv-ui-scope) .wlv-curve-header-action-menu button:disabled {
+  color: #a0a9b5;
+}
+
+:where(.mv-ui-scope) .curve-menu-divider,
+:where(.mv-ui-scope) .wlv-curve-menu-divider {
+  background: #d7dee6;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WDV FINAL GENERIC POPOVER / EDITOR FOOTER CHROME V1.0.0
+   Final WDV neutral shell consolidation. Geometry, semantic action states,
+   scientific/editor-specific controls and Lock/Tie/header contracts remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-depth-command-popover,
+:where(.mv-ui-scope) .wlv-saved-views-name-popover {
+  border: 1px solid #566274;
+  border-radius: 7px;
+  background: #111827;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-depth-command-popover::before {
+  background: #111827;
+  border-left: 1px solid #566274;
+  border-top: 1px solid #566274;
+}
+
+:where(.mv-ui-scope) .wlv-depth-command-popover label {
+  color: #b8c0cc;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-depth-command-popover input {
+  border: 1px solid #5b6778;
+  border-radius: 4px;
+  background: transparent;
+  color: #eef2f7;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-depth-command-popover button {
+  border: 1px solid #5b6778;
+  border-radius: 4px;
+  background: transparent;
+  color: #dbe2ea;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-depth-command-popover button:hover {
+  border-color: #94a3b8;
+  background: transparent;
+  color: #f8fafc;
+}
+
+:where(.mv-ui-scope) .wlv-saved-views-name-popover input {
+  border: 1px solid #566274;
+  border-radius: 4px;
+  background: #0d1118;
+  color: #f3f4f6;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-edit-track-modal-footer {
+  border-top: 1px solid #394450;
+  background: #171b20;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-edit-track-modal-footer-status {
+  color: #9fa9b6;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-edit-track-modal-footer button {
+  border: 1px solid #596676;
+  border-radius: 5px;
+  font-family: var(--mv-font-ui);
+}
+
+:where(.mv-ui-scope) .wlv-edit-track-modal-footer button.secondary {
+  background: #10161c;
+  color: #e5ebf2;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER WBV/WLV FINAL INFORMATION / GEOMETRY CHROME V1.0.0
+   Final WBV/WLV neutral information-panel/table presentation consolidation.
+   Geometry, View controls, Core/Interval interaction, semantic/scientific colors remain local.
+   ========================================================================== */
+:where(.mv-ui-scope) .wlv-wbv-information-menu > summary {
+  border: 1px solid rgba(113, 132, 151, 0.42);
+  border-radius: 8px;
+  background: rgba(36, 44, 53, 0.88);
+  color: #dce7f0;
+  font-family: var(--mv-font-ui);
+}
+:where(.mv-ui-scope) .wlv-wbv-information-menu[open] > summary {
+  border-color: rgba(111, 211, 255, 0.5);
+  color: #f4f8fb;
+}
+:where(.mv-ui-scope) .wlv-wbv-information-menu__body {
+  border: 1px solid rgba(113, 132, 151, 0.48);
+  border-radius: 12px;
+  background: #141a21;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+}
+:where(.mv-ui-scope) .wlv-wbv-information-menu__body section + section {
+  border-top: 1px solid rgba(113, 132, 151, 0.2);
+}
+:where(.mv-ui-scope) .wlv-wbv-information-menu__body h2 {
+  color: #f4f8fb;
+  font-family: var(--mv-font-ui);
+}
+:where(.mv-ui-scope) .wlv-wbv-information-menu__body p {
+  color: #aab8c6;
+  font-family: var(--mv-font-ui);
+}
+:where(.mv-ui-scope) .wlv-wbv-qaqc-summary strong {
+  color: #dce7f0;
+  font-family: var(--mv-font-ui);
+}
+:where(.mv-ui-scope) .wlv-wbv-qaqc-summary span {
+  color: #8192a4;
+  font-family: var(--mv-font-ui);
+}
+:where(.mv-ui-scope) .wlv-wbv-geometry-table {
+  border: 1px solid rgba(113, 132, 151, 0.22);
+  border-radius: 9px;
+  font-family: var(--mv-font-ui);
+}
+:where(.mv-ui-scope) .wlv-wbv-geometry-table__row {
+  border-top: 1px solid rgba(113, 132, 151, 0.16);
+}
+:where(.mv-ui-scope) .wlv-wbv-geometry-table__row:first-child {
+  border-top: 0;
+}
+:where(.mv-ui-scope) .wlv-wbv-geometry-table__row > * + * {
+  border-left: 1px solid rgba(113, 132, 151, 0.16);
+}
+:where(.mv-ui-scope) .wlv-wbv-geometry-table__row strong {
+  color: #91a2b4;
+  font-family: var(--mv-font-ui);
+}
+:where(.mv-ui-scope) .wlv-wbv-geometry-table__row span {
+  color: #dce7f0;
+  font-family: var(--mv-font-ui);
+}
+:where(.mv-ui-scope) .wlv-wbv-geometry-table__header {
+  background: rgba(36, 44, 53, 0.62);
+}
+:where(.mv-ui-scope) .wlv-wbv-geometry-table__header span {
+  color: #91a2b4;
+  font-family: var(--mv-font-ui);
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER SDV 2D/3D FINAL VIEWER NEUTRAL CHROME V1.0.1
+   Exact-equivalent final SDV neutral presentation ownership.
+   Viewer geometry, collapse behavior, seismic rendering, scientific colors,
+   active/disabled semantics and accepted 3D parity dimensions remain local.
+   ========================================================================== */
+.mv-app .mv-sdv-control-subheading {
+  color: inherit;
+  font-family: var(--mv-font-ui);
+  font-size: 12px;
+  font-weight: var(--mv-font-weight-normal);
+  line-height: inherit;
+  opacity: 0.85;
+}
+
+.mv-app .mv-sdv-scene-button {
+  border: 1px solid var(--mv-border-strong);
+  background: transparent;
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+}
+
+.mv-app .mv-sdv-2d-slice-index-row {
+  border-bottom: 1px solid #27343e;
+}
+
+/* ==========================================================================
+   MULTIVIEWER PHASE 41D — SDV CASCADE-AUTHORITY REPAIR V1.0.0
+   Derived from live CSS cascade audit 2026-09-08 12:05 WEST.
+   Purpose: make WLV/WDV/WBV role selectors outrank the generic 13px/32px
+   presentation rule that was masking the SDV canonical presentation.
+   ========================================================================== */
+
+/* ---------- Suite shell typography ---------- */
+.mv-ui-scope .wlv-demo-shell,
+.mv-ui-scope .wlv-demo-main,
+.mv-ui-scope .wlv-prototype-root,
+.mv-ui-scope .wlv-wbv-page {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  line-height: 17.55px !important;
+}
+
+/* ---------- Application navigation: exact live SDV contract ---------- */
+.mv-ui-scope .wlv-demo-nav-item {
+  box-sizing: border-box !important;
+  height: 64px !important;
+  min-height: 64px !important;
+  padding: 12px 6px !important;
+  border-radius: 6px !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  line-height: 14.85px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* ---------- WDV toolbar category grammar ---------- */
+.mv-ui-scope .wlv-toolbar-zone-header {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 14.4px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* ---------- WDV generic toolbar controls: exact SDV compact-tab contract ---------- */
+.mv-ui-scope .wlv-toolbar-group .wlv-toolbar-actions > button:not(.wlv-add-track-button):not(.wlv-send-to-wbv-button):not(.wlv-viewport-tie-toggle-button):not(.wlv-combination-lock-toggle-button):not(.mv-control-geometry-exempt),
+.mv-ui-scope .wlv-toolbar-group .wlv-toolbar-actions > select:not(.mv-control-geometry-exempt),
+.mv-ui-scope .wlv-toolbar-compact-button,
+.mv-ui-scope .wlv-header-collapse-toggle,
+.mv-ui-scope .wlv-layout-preset-refresh,
+.mv-ui-scope .wlv-backdrop-toggle {
+  box-sizing: border-box !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 14.4px !important;
+}
+
+/* Primary/add action uses the exact SDV 34px navigation-action contract. */
+.mv-ui-scope .wlv-add-track-button {
+  box-sizing: border-box !important;
+  height: 34px !important;
+  min-height: 28px !important;
+  padding: 4px 10px !important;
+  border-radius: 6px !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 14.4px !important;
+}
+
+/* Send-to-WBV already had a compact 28px role: normalize typography only. */
+.mv-ui-scope .wlv-send-to-wbv-button {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 14.4px !important;
+}
+
+/* Lock/Tie keep their accepted semantic geometry and colors; typography only. */
+.mv-ui-scope .wlv-combination-lock-toggle-button,
+.mv-ui-scope .wlv-viewport-tie-toggle-button {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 14.4px !important;
+}
+
+/* ---------- WDV inventory hierarchy ---------- */
+.mv-ui-scope .wlv-inventory-section-toggle {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 14.4px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.mv-ui-scope .wlv-panel-heading,
+.mv-ui-scope .wlv-properties-panel-heading-with-toggle {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  line-height: 15.6px !important;
+}
+
+.mv-ui-scope .wlv-properties-contract-section h3,
+.mv-ui-scope .wlv-property-section h3,
+.mv-ui-scope .wlv-properties-panel-v2 label {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 14.4px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.mv-ui-scope .wlv-edit-curve-launcher,
+.mv-ui-scope .wlv-edit-track-launcher {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 14.4px !important;
+}
+
+/* ---------- WBV shell + headers ---------- */
+.mv-ui-scope .wlv-wbv-header,
+.mv-ui-scope .wlv-wbv-header-tools {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  line-height: 17.55px !important;
+}
+
+.mv-ui-scope .wlv-wbv-panel,
+.mv-ui-scope .wlv-wbv-information-section,
+.mv-ui-scope .wlv-wbv-well-summary,
+.mv-ui-scope .wlv-wbv-trajectory-list,
+.mv-ui-scope .wlv-wbv-field {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 16.2px !important;
+}
+
+.mv-ui-scope .wlv-wbv-panel-heading,
+.mv-ui-scope .wlv-wbv-information-section h2 {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  line-height: 15.6px !important;
+}
+
+/* WBV general header controls align to SDV primary control typography. */
+.mv-ui-scope .wlv-wbv-well-selector__label-button,
+.mv-ui-scope .wlv-wbv-multiwell-select__trigger,
+.mv-ui-scope .wlv-wbv-manage-layers-button {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 14.4px !important;
+}
+
+/*
+ * WBV accepted View/Interval geometry stays untouched.
+ * We only normalize their type voice to SDV.
+ */
+.mv-ui-scope .wlv-wbv-view-controls button,
+.mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-control-button,
+.mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-control-button--compact,
+.mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-control-button,
+.mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-orientation-button,
+.mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-zoom-button,
+.mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-rotation-button {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 14.4px !important;
+}
+
+/* Label/value hierarchy inside WBV panels. */
+/* WBV right-panel metadata labels follow SDV canonical property-label grammar. */
+.mv-ui-scope .wlv-wbv-well-summary__row > span,
+.mv-ui-scope .wlv-wbv-trajectory-list__row > span {
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 16.2px !important;
+}
+
+/* Preserve field-label treatment outside the normalized right panel. */
+.mv-ui-scope .wlv-wbv-field > label {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 14.4px !important;
+}
+
+.mv-ui-scope .wlv-wbv-well-summary__row > strong,
+.mv-ui-scope .wlv-wbv-trajectory-list__row > strong {
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  line-height: 16.2px !important;
+}
+
+/*
+ * Explicitly excluded:
+ * - WDV track-header / placement-selector geometry and Lock/Tie semantics
+ * - WBV View/Interval accepted geometry
+ * - scientific/domain rendering
+ * - semantic/status colors
+ */
+
+/* ==========================================================================
+   MULTIVIEWER RIGHT-PANEL SHARED ROLE PARITY V1.0.0
+   Authority: current SDV Volume Info / Slice Info presentation grammar.
+   Component semantics normalized before this block was introduced.
+   ========================================================================== */
+
+/* Shared right-panel type hierarchy */
+:where(.mv-ui-scope) .mv-role-panel-title,
+:where(.mv-ui-scope) .mv-role-section-title {
+  color: var(--mv-text-primary) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-font-size-ui) !important;
+  font-weight: var(--mv-font-weight-bold) !important;
+  line-height: var(--mv-line-height-tight) !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* SDV property-label grammar: 12px / 400 / 1.35, muted */
+:where(.mv-ui-scope) .mv-role-property-label {
+  color: var(--mv-text-muted) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-font-size-sm) !important;
+  font-weight: var(--mv-font-weight-normal) !important;
+  line-height: var(--mv-line-height-ui) !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* SDV property-value grammar: 12px / 400 / 1.35, primary */
+:where(.mv-ui-scope) .mv-role-property-value {
+  color: var(--mv-text-primary) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-font-size-sm) !important;
+  font-weight: var(--mv-font-weight-normal) !important;
+  line-height: var(--mv-line-height-ui) !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* SDV information-row rhythm without changing viewer-specific column widths. */
+:where(.mv-ui-scope) .mv-role-property-row > .mv-role-property-label,
+:where(.mv-ui-scope) .mv-role-property-row > .mv-role-property-value,
+:where(.mv-ui-scope) .mv-role-property-row > .mv-role-property-value-cell,
+:where(.mv-ui-scope) .mv-role-property-grid .mv-role-property-label,
+:where(.mv-ui-scope) .mv-role-property-grid .mv-role-property-value,
+:where(.mv-ui-scope) .mv-role-property-grid .mv-role-property-value-cell {
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+  border-bottom: 1px solid var(--mv-border-subtle) !important;
+}
+
+/* WDV table cells carry their canonical class on th/td/span; make both cells quiet. */
+:where(.mv-ui-scope) .mv-role-property-row > th.mv-role-property-label,
+:where(.mv-ui-scope) .mv-role-property-row > td.mv-role-property-value-cell {
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-font-size-sm) !important;
+  line-height: var(--mv-line-height-ui) !important;
+  vertical-align: top;
+}
+
+:where(.mv-ui-scope) .mv-role-property-row > th.mv-role-property-label {
+  color: var(--mv-text-muted) !important;
+  font-weight: var(--mv-font-weight-normal) !important;
+}
+
+:where(.mv-ui-scope) .mv-role-property-row > td.mv-role-property-value-cell {
+  color: var(--mv-text-primary) !important;
+  font-weight: var(--mv-font-weight-normal) !important;
+}
+
+/* Section shells: remove heavy visual-table treatment, retain local geometry. */
+:where(.mv-ui-scope) .mv-role-section-shell {
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  line-height: var(--mv-line-height-ui);
+}
+
+/* Right-panel action typography follows SDV primary action grammar. */
+:where(.mv-ui-scope) .mv-role-action-button {
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-font-size-sm) !important;
+  font-weight: var(--mv-font-weight-medium) !important;
+  line-height: var(--mv-line-height-tight) !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* Helper copy stays lower emphasis than property rows. */
+:where(.mv-ui-scope) .mv-role-helper-text {
+  color: var(--mv-text-muted) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-font-size-xs) !important;
+  font-weight: var(--mv-font-weight-normal) !important;
+  line-height: var(--mv-line-height-ui) !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* Collapse controls inherit the same quiet control voice, geometry stays local. */
+:where(.mv-ui-scope) .mv-role-collapse-control {
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-font-size-sm) !important;
+  font-weight: var(--mv-font-weight-normal) !important;
+  line-height: var(--mv-line-height-tight) !important;
+}
+
+/* Ensure canonical SDV class semantics resolve identically inside WLV/WBV scope. */
+:where(.mv-ui-scope) .mv-type-section-heading {
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-ui);
+  font-weight: var(--mv-font-weight-bold);
+  line-height: var(--mv-line-height-tight);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+:where(.mv-ui-scope) .mv-type-property-label {
+  color: var(--mv-text-muted);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+:where(.mv-ui-scope) .mv-type-property-value {
+  color: var(--mv-text-primary);
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-sm);
+  font-weight: var(--mv-font-weight-normal);
+  line-height: var(--mv-line-height-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/*
+ * Explicit preservation boundaries:
+ * - no WDV track-header / Lock-Tie selectors
+ * - no WBV compact View/Interval geometry selectors
+ * - no scientific rendering selectors
+ * - no viewer panel widths/grid placement
+ */
+
+/* ==========================================================================
+   MULTIVIEWER SDV RIGHT-PANEL MUTED LABEL BRIGHTNESS NUDGE V1.0.3
+   Preserve existing muted-label typography. Brightness only is raised slightly.
+   Scope is the SDV viewer-info stack only; the global muted token is unchanged.
+   ========================================================================== */
+:where(.mv-app) .mv-viewer-info-stack .mv-viewer-info-card .mv-type-property-label,
+:where(.mv-app) .mv-viewer-info-stack .mv-viewer-info-row > .mv-type-property-label {
+  color: #aab4bd !important;
+}
+
+/* ==========================================================================
+   MULTIVIEWER MASTER VIEWER COMPONENT CONTRACT V2.0.0
+   Central presentation authority.
+   WDV / WBV / SDV viewers consume these roles; local viewer stylesheets must
+   not redefine generic colors, typography, control geometry, checkbox style,
+   neutral surfaces, section headers, metadata rows, hover/focus/disabled states.
+   Scientific and semantic coloration remains protected.
+   ========================================================================== */
+
+/* --- Shared viewer panel typography / surfaces --- */
+.mv-app .mv-viewer-controls-title,
+.mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-panel-heading > strong,
+.mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-panel-heading__content > strong {
+  color: var(--mv-viewer-text-primary) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-viewer-panel-heading-font-size) !important;
+  font-weight: var(--mv-viewer-panel-heading-font-weight) !important;
+  line-height: var(--mv-viewer-panel-heading-line-height) !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  text-shadow: none !important;
+}
+
+.mv-app .mv-sdv-control-subheading,
+.mv-app .mv-type-section-heading,
+.mv-ui-scope .wlv-wbv-panel .wlv-wbv-section-heading-row h2,
+.mv-ui-scope .wlv-wbv-panel .wlv-wbv-view-controls > h2 {
+  color: var(--mv-viewer-text-primary) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-viewer-section-heading-font-size) !important;
+  font-weight: var(--mv-viewer-section-heading-font-weight) !important;
+  line-height: var(--mv-viewer-section-heading-line-height) !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  text-shadow: none !important;
+}
+
+html[data-mv-theme="light"] .mv-app .mv-sdv-control-subheading,
+html[data-mv-theme="light"] .mv-app .mv-type-section-heading,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel .wlv-wbv-section-heading-row,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel .wlv-wbv-view-controls > h2 {
+  background: var(--mv-viewer-section-header-bg) !important;
+  color: var(--mv-viewer-text-primary) !important;
+}
+
+/* --- Shared ordinary viewer text --- */
+.mv-app .mv-viewer-controls-meta,
+.mv-app .mv-viewer-helper {
+  color: var(--mv-viewer-text-secondary) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-viewer-body-font-size) !important;
+  font-weight: var(--mv-viewer-body-font-weight) !important;
+  line-height: 1.35 !important;
+  letter-spacing: 0 !important;
+}
+
+.mv-app .mv-viewer-controls-panel label:has(> input[type="checkbox"]),
+.mv-app .mv-viewer-info-stack label:has(> input[type="checkbox"]) {
+  color: var(--mv-viewer-text-primary) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-viewer-body-font-size) !important;
+  font-weight: var(--mv-viewer-body-font-weight) !important;
+  line-height: var(--mv-viewer-body-line-height) !important;
+  letter-spacing: 0 !important;
+}
+
+/* --- Shared checkbox contract --- */
+.mv-app .mv-viewer-controls-panel input[type="checkbox"],
+.mv-app .mv-viewer-info-stack input[type="checkbox"],
+.mv-ui-scope .wlv-wbv-panel input[type="checkbox"] {
+  -webkit-appearance: auto !important;
+  appearance: auto !important;
+  width: var(--mv-viewer-checkbox-size) !important;
+  height: var(--mv-viewer-checkbox-size) !important;
+  min-width: var(--mv-viewer-checkbox-size) !important;
+  min-height: var(--mv-viewer-checkbox-size) !important;
+  max-width: var(--mv-viewer-checkbox-size) !important;
+  max-height: var(--mv-viewer-checkbox-size) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  accent-color: #79cfa2 !important;
+}
+
+/* --- Shared viewer button contract: source of truth is accepted WBV View controls --- */
+.mv-app .mv-viewer-controls-panel :is(.mv-viewer-tab, .mv-viewer-compact-button, .mv-sdv-scene-button),
+.mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-controls button {
+  min-width: 0 !important;
+  min-height: var(--mv-viewer-button-height) !important;
+  height: var(--mv-viewer-button-height) !important;
+  box-sizing: border-box !important;
+  padding: var(--mv-viewer-button-padding-y) var(--mv-viewer-button-padding-x) !important;
+  border: 1px solid var(--mv-viewer-border-normal) !important;
+  border-radius: var(--mv-viewer-button-radius) !important;
+  background: var(--mv-viewer-control-bg) !important;
+  color: var(--mv-viewer-text-primary) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-viewer-button-font-size) !important;
+  font-weight: var(--mv-viewer-button-font-weight) !important;
+  line-height: var(--mv-line-height-tight) !important;
+  letter-spacing: 0 !important;
+  white-space: nowrap !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+.mv-app .mv-viewer-controls-panel :is(.mv-viewer-tab, .mv-viewer-compact-button, .mv-sdv-scene-button):hover:not(:disabled),
+.mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-controls button:hover:not(:disabled) {
+  background: var(--mv-surface-hover) !important;
+  border-color: var(--mv-border-strong) !important;
+  color: var(--mv-viewer-text-primary) !important;
+}
+
+.mv-app .mv-viewer-controls-panel :is(.mv-viewer-tab--active, [aria-pressed="true"]),
+.mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-controls button.is-active {
+  color: var(--mv-viewer-text-primary) !important;
+  border-color: var(--mv-viewer-focus-accent) !important;
+  box-shadow: inset 0 -2px 0 var(--mv-viewer-focus-accent) !important;
+}
+
+.mv-app .mv-viewer-controls-panel :is(.mv-viewer-tab, .mv-viewer-compact-button, .mv-sdv-scene-button):disabled,
+.mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-controls button:disabled {
+  color: var(--mv-text-disabled) !important;
+  opacity: 0.65 !important;
+  cursor: not-allowed !important;
+}
+
+/* --- Shared select / numeric viewer-control presentation --- */
+.mv-app .mv-viewer-controls-panel :is(select, input[type="number"], .mv-viewer-index-input) {
+  min-height: var(--mv-control-height-compact) !important;
+  border: 1px solid var(--mv-viewer-border-normal) !important;
+  border-radius: var(--mv-control-radius) !important;
+  background: var(--mv-viewer-control-bg) !important;
+  color: var(--mv-viewer-text-primary) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-viewer-body-font-size) !important;
+  line-height: var(--mv-viewer-body-line-height) !important;
+  box-shadow: none !important;
+}
+
+/* --- Shared property / metadata rows --- */
+.mv-app .mv-type-property-grid:not(.mv-sdv3d-metadata-grid) {
+  color: var(--mv-viewer-text-primary) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-viewer-property-font-size) !important;
+  line-height: var(--mv-viewer-property-line-height) !important;
+}
+
+.mv-app :is(.mv-type-property-label, .mv-type-property-value) {
+  min-width: 0 !important;
+  min-height: var(--mv-viewer-property-row-min-height) !important;
+  box-sizing: border-box !important;
+  border-bottom: 1px solid var(--mv-viewer-divider-soft) !important;
+  background: transparent !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: var(--mv-viewer-property-font-size) !important;
+  line-height: var(--mv-viewer-property-line-height) !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  text-shadow: none !important;
+}
+
+.mv-app .mv-type-property-label {
+  color: var(--mv-viewer-text-secondary) !important;
+  font-weight: 400 !important;
+}
+
+.mv-app .mv-type-property-value {
+  color: var(--mv-viewer-text-primary) !important;
+  font-weight: 500 !important;
+}
+
+/* --- SDV 3D panel neutral surfaces now owned centrally --- */
+.mv-app .mv-sdv3d-wbv-controls-panel {
+  background: var(--mv-viewer-panel-body-bg) !important;
+  color: var(--mv-viewer-text-primary) !important;
+  border-color: var(--mv-viewer-border-normal) !important;
+  font-family: var(--mv-font-ui) !important;
+  box-shadow: none !important;
+}
+
+.mv-app .mv-sdv3d-wbv-info-panel {
+  background: var(--mv-viewer-panel-body-bg) !important;
+  border-color: var(--mv-viewer-border-normal) !important;
+  box-shadow: none !important;
+}
+
+html[data-mv-theme="light"] .mv-app .mv-sdv3d-wbv-controls-panel {
+  background: var(--mv-viewer-panel-body-bg) !important;
+  color: var(--mv-viewer-text-primary) !important;
+}
+
+html[data-mv-theme="light"] .mv-app .mv-sdv3d-wbv-info-panel {
+  background: var(--mv-viewer-panel-body-bg) !important;
+}
+
+/* --- Shared focus contract --- */
+.mv-app .mv-viewer-controls-panel :is(button, select, input):focus-visible,
+.mv-app .mv-viewer-info-stack :is(button, select, input):focus-visible {
+  outline: 2px solid var(--mv-viewer-focus-accent) !important;
+  outline-offset: 1px !important;
+}
+
+/* ==========================================================================
+   MULTIVIEWER VIEWER NUMERIC INPUT SPINNER SUPPRESSION V1.0.0
+   Central viewer-control authority.
+   Removes browser-native incremental spinner controls from numeric input boxes
+   while preserving numeric keyboard entry and all application-owned +/- controls.
+   ========================================================================== */
+.mv-app .mv-viewer-controls-panel input[type="number"],
+.mv-ui-scope .wlv-wbv-panel input[type="number"] {
+  -moz-appearance: textfield !important;
+  appearance: textfield !important;
+}
+
+.mv-app .mv-viewer-controls-panel input[type="number"]::-webkit-inner-spin-button,
+.mv-app .mv-viewer-controls-panel input[type="number"]::-webkit-outer-spin-button,
+.mv-ui-scope .wlv-wbv-panel input[type="number"]::-webkit-inner-spin-button,
+.mv-ui-scope .wlv-wbv-panel input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  margin: 0 !important;
+}
+
+/* ==========================================================================
+   MULTIVIEWER PRIMARY VIEWER PANEL TITLE BAND V1.0.0
+   Central presentation authority.
+   Canonical source: accepted WBV Controls title presentation.
+   Applies the same title typography and light-theme title-band shading to
+   generic viewer control-panel titles such as 3D View Controls.
+   ========================================================================== */
+.mv-app .mv-viewer-controls-title {
+  display: block !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  color: var(--mv-viewer-text-primary) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  font-style: normal !important;
+  line-height: 20px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  text-decoration: none !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+
+html[data-mv-theme="light"] .mv-app .mv-viewer-controls-title {
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-bottom: 1px solid var(--mv-role-border-normal) !important;
+  box-shadow: inset 0 -1px 0 var(--mv-role-border-highlight) !important;
+}
+
+/* ==========================================================================
+   SDV3D METADATA LABEL — EXACT WBV COMPUTED AUTHORITY V1.0.0
+
+   Source: browser-computed WBV "Active wellbore" metadata label.
+
+   Exact WBV computed contract:
+   - font-family: Inter / canonical mv font stack
+   - font-size: 0.76rem       -> 12.16px at current root
+   - font-weight: 400
+   - font-style: normal
+   - line-height: 1.2         -> 14.592px
+   - color: #33414d
+   - letter-spacing: normal
+   - text-transform: none
+   - text-rendering: auto
+   - -webkit-font-smoothing: auto
+   - font-synthesis: weight style small-caps
+   - opacity: 1
+
+   Sole 3DV metadata-label typography authority.
+   Geometry remains in SDV-local CSS.
+   ========================================================================== */
+html[data-mv-theme="light"] .mv-ui-scope.mv-app
+.mv-sdv3d-wbv-info-panel
+.mv-sdv3d-metadata-label {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 0.76rem !important;
+  font-weight: 400 !important;
+  font-style: normal !important;
+  line-height: 1.2 !important;
+  color: #33414d !important;
+  -webkit-text-fill-color: #33414d !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  text-rendering: auto !important;
+  -webkit-font-smoothing: auto !important;
+  -moz-osx-font-smoothing: auto !important;
+  font-synthesis: weight style small-caps !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+/* ========================================================================== 
+   2DV — WBV/3DV SHARED PRESENTATION AUTHORITY RECONCILIATION V1.0.0
+   Architecture decision: shared presentation-authority reconciliation.
+   Scope: non-scientific 2DV chrome only. Renderer, raster/wiggle scientific
+   coloration, amplitude semantics and data behavior are intentionally untouched.
+   Canonical authority: existing MultiViewer WBV/3DV role tokens/classes.
+   ========================================================================== */
+
+.mv-app .mv-sdv2d-wbv-controls-panel,
+.mv-app .mv-sdv2d-wbv-info-panel {
+  box-sizing: border-box !important;
+  background: var(--mv-role-panel-body-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  font-family: var(--mv-font-ui) !important;
+}
+
+.mv-app .mv-sdv2d-wbv-controls-panel {
+  border-right: 1px solid var(--mv-role-border-normal) !important;
+}
+
+.mv-app .mv-sdv2d-wbv-info-panel {
+  border-left: 1px solid var(--mv-role-border-normal) !important;
+}
+
+/* Primary panel title / right-panel title band: existing WBV-derived authority. */
+.mv-app .mv-sdv2d-wbv-controls-panel .mv-viewer-controls-title,
+.mv-app .mv-sdv2d-wbv-info-panel > .mv-viewer-info-header {
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-bottom: 1px solid var(--mv-role-border-normal) !important;
+  box-shadow: inset 0 -1px 0 var(--mv-role-border-highlight) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  text-shadow: none !important;
+}
+
+.mv-app .mv-sdv2d-wbv-info-panel > .mv-viewer-info-header .mv-type-section-heading {
+  color: var(--mv-role-text-primary) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* 2DV collapsible section bands now use the exact established WBV/3DV role. */
+.mv-app .mv-sdv2d-wbv-controls-panel .mv-sdv2d-control-section {
+  box-sizing: border-box !important;
+  border-top: 1px solid var(--mv-role-border-normal) !important;
+  border-bottom: 1px solid var(--mv-role-border-normal) !important;
+  box-shadow: inset 0 1px 0 var(--mv-role-border-highlight), inset 0 -1px 0 var(--mv-role-border-highlight) !important;
+  margin-top: 0.5rem !important;
+  padding-top: 0.42rem !important;
+  padding-bottom: 0.52rem !important;
+}
+
+.mv-app .mv-sdv2d-wbv-controls-panel .mv-sdv2d-control-subheading,
+.mv-app .mv-sdv2d-wbv-info-panel .mv-sdv2d-info-section-heading {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-height: 1.35rem !important;
+  margin: 0 0 0.38rem !important;
+  padding: 0 !important;
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--mv-role-border-normal) !important;
+  box-shadow: inset 0 -1px 0 var(--mv-role-border-highlight) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+
+/* Controls consume central MultiViewer control surfaces and text hierarchy. */
+.mv-app .mv-sdv2d-wbv-controls-panel .mv-viewer-control-row,
+.mv-app .mv-sdv2d-wbv-controls-panel .mv-viewer-checkbox-row {
+  color: var(--mv-role-text-primary) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-weight: 400 !important;
+}
+
+.mv-app .mv-sdv2d-wbv-controls-panel .mv-viewer-control-select,
+.mv-app .mv-sdv2d-wbv-controls-panel select,
+.mv-app .mv-sdv2d-wbv-controls-panel input[type="number"],
+.mv-app .mv-sdv2d-wbv-controls-panel input[type="text"] {
+  background: var(--mv-viewer-control-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border: 1px solid var(--mv-viewer-border-normal) !important;
+  border-radius: var(--mv-viewer-control-radius) !important;
+  font-family: var(--mv-font-ui) !important;
+}
+
+.mv-app .mv-sdv2d-wbv-controls-panel .mv-viewer-control-value,
+.mv-app .mv-sdv2d-wbv-info-panel .mv-type-property-value {
+  color: var(--mv-role-text-primary) !important;
+  opacity: 1 !important;
+  font-weight: 500 !important;
+}
+
+.mv-app .mv-sdv2d-wbv-controls-panel .mv-viewer-control-row > :first-child,
+.mv-app .mv-sdv2d-wbv-info-panel .mv-type-property-label,
+.mv-app .mv-sdv2d-wbv-info-panel .mv-viewer-info-label {
+  color: var(--mv-role-text-secondary) !important;
+  opacity: 1 !important;
+  font-weight: 400 !important;
+}
+
+.mv-app .mv-sdv2d-wbv-controls-panel .mv-side-column-vertical-toggle,
+.mv-app .mv-sdv2d-wbv-info-panel .mv-side-column-vertical-toggle {
+  color: var(--mv-role-text-primary) !important;
+  background: var(--mv-viewer-control-bg) !important;
+  border-color: var(--mv-viewer-border-normal) !important;
+  box-shadow: none !important;
+}
+
+html[data-mv-theme="light"] .mv-app .mv-sdv2d-wbv-controls-panel,
+html[data-mv-theme="light"] .mv-app .mv-sdv2d-wbv-info-panel {
+  background: var(--mv-role-panel-body-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+}
+
+/* ========================================================================== 
+   2DV — VISUAL PARITY HEADER + SECTION CORRECTION V1.0.3
+   Purpose: finish visual parity after the shared-authority migration.
+   Scope: 2DV non-scientific presentation only.
+   - full-width 2D View Controls title band while preserving the existing toggle
+   - flat WBV/3DV section header geometry
+   - remove legacy duplicate section framing now superseded by shared authority
+   No seismic renderer, scientific color, control behavior, right metadata layout,
+   backend, WBV, or 3DV source is modified by this block.
+   ========================================================================== */
+
+.mv-app .mv-sdv2d-wbv-controls-panel > .mv-sdv2d-controls-title-row {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-height: 1.35rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  background: var(--mv-role-section-header-bg) !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--mv-role-border-normal) !important;
+  border-radius: 0 !important;
+  box-shadow: inset 0 -1px 0 var(--mv-role-border-highlight) !important;
+}
+
+/* The row owns the title band; the text child no longer paints a partial-width band. */
+.mv-app .mv-sdv2d-wbv-controls-panel > .mv-sdv2d-controls-title-row > .mv-viewer-controls-title {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Retain the existing collapse behavior and control geometry inside the unified band. */
+.mv-app .mv-sdv2d-wbv-controls-panel > .mv-sdv2d-controls-title-row > .mv-side-column-vertical-toggle {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+}
+
+/* Flat shared WBV/3DV subheader geometry. */
+.mv-app .mv-sdv2d-wbv-controls-panel .mv-sdv2d-control-subheading {
+  width: 100% !important;
+  min-height: 1.35rem !important;
+  margin: 0 0 0.38rem !important;
+  padding: 0 !important;
+  background: var(--mv-role-section-header-bg) !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--mv-role-border-normal) !important;
+  border-radius: 0 !important;
+  box-shadow: inset 0 -1px 0 var(--mv-role-border-highlight) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+}
+
+/* The shared subheader is now the section separator; suppress legacy duplicate rails. */
+.mv-app .mv-sdv2d-wbv-controls-panel .mv-sdv2d-control-section {
+  border-top: 0 !important;
+  border-bottom: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  margin-top: 0.5rem !important;
+  padding-top: 0 !important;
+  padding-bottom: 0.52rem !important;
+}
+
+/* ==========================================================================
+   2DV — EXACT 3DV SUBHEADER PARITY V1.0.4
+   Canonical source: accepted 3DV section/subheader presentation.
+   Required vertical structure:
+     1) top horizontal rule
+     2) clear gap below the rule
+     3) flat shaded subheader row
+     4) bottom rule on the shaded row
+   Scope: 2DV left control sections only.
+   ========================================================================== */
+
+html[data-mv-theme="light"] .mv-app
+.mv-sdv2d-wbv-controls-panel .mv-sdv2d-control-section {
+  border-top: 1px solid var(--mv-role-border-normal) !important;
+  border-bottom: 1px solid var(--mv-role-border-normal) !important;
+  box-shadow:
+    inset 0 1px 0 var(--mv-role-border-highlight),
+    inset 0 -1px 0 var(--mv-role-border-highlight) !important;
+  margin-top: 0.5rem !important;
+  padding-top: 0.42rem !important;
+  padding-bottom: 0.5rem !important;
+  border-radius: 0 !important;
+}
+
+html[data-mv-theme="light"] .mv-app
+.mv-sdv2d-wbv-controls-panel
+.mv-sdv2d-control-section > .mv-sdv2d-control-subheading {
+  box-sizing: border-box !important;
+  background: var(--mv-role-section-header-bg) !important;
+  width: 100% !important;
+  min-height: 1.35rem !important;
+  color: var(--mv-role-text-primary) !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--mv-role-border-normal) !important;
+  border-radius: 0 !important;
+  box-shadow: inset 0 -1px 0 var(--mv-role-border-highlight) !important;
+  font-family: var(--mv-font-ui) !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  text-shadow: none !important;
+  margin: 0 0 0.38rem !important;
+  padding: 0 !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+}
+
+/* ==========================================================================
+   2DV — SECTION LINE REDUCTION V1.0.5
+   Purpose:
+   - remove Display section bottom rule (keep Amplitude top rule)
+   - remove Amplitude section bottom rule (keep Wiggle top rule)
+   - remove Wiggle section bottom rule (keep Grid / Axis top rule)
+   - remove Grid / Axis section bottom rule (keep Zoom top rule)
+   Scope: 2DV left control sections only.
+   Structural interpretation:
+   The "topmost" or "intermediate" lines called out by the user are the
+   section bottom borders / bottom inset highlights. The next section's
+   top rule remains as the retained separator.
+   ========================================================================== */
+
+html[data-mv-theme="light"] .mv-app
+.mv-sdv2d-wbv-controls-panel .mv-sdv2d-control-section:nth-of-type(1),
+html[data-mv-theme="light"] .mv-app
+.mv-sdv2d-wbv-controls-panel .mv-sdv2d-control-section:nth-of-type(2),
+html[data-mv-theme="light"] .mv-app
+.mv-sdv2d-wbv-controls-panel .mv-sdv2d-control-section:nth-of-type(3),
+html[data-mv-theme="light"] .mv-app
+.mv-sdv2d-wbv-controls-panel .mv-sdv2d-control-section:nth-of-type(4) {
+  border-bottom: 0 !important;
+  box-shadow: inset 0 1px 0 var(--mv-role-border-highlight) !important;
+}
+
+/* ==========================================================================
+   2DV — GRID/ZOOM SECOND LINE REMOVAL V1.0.6
+   Requested:
+   - remove the second horizontal line below Grid / Axis
+   - remove the second horizontal line below Zoom
+   Interpretation:
+   these are the residual lower inset-highlight lines on the Grid / Axis and
+   Zoom section containers after their bottom borders were removed.
+   Preserve the subheader bottom rule and the next section top rule.
+   Scope: 2DV left control sections only.
+   ========================================================================== */
+
+html[data-mv-theme="light"] .mv-app
+.mv-sdv2d-wbv-controls-panel .mv-sdv2d-control-section:nth-of-type(4),
+html[data-mv-theme="light"] .mv-app
+.mv-sdv2d-wbv-controls-panel .mv-sdv2d-control-section:nth-of-type(5) {
+  box-shadow: inset 0 1px 0 var(--mv-role-border-highlight) !important;
+  border-bottom: 0 !important;
+}
+
+/* ==========================================================================
+   2DV RIGHT PANEL HEADER + SUBHEADER PARITY V1.0.0
+   Exact presentation transfer:
+   - Line Info mirrors 2D View Controls title treatment.
+   - Display Info mirrors Amplitude section/subheader treatment.
+   ========================================================================== */
+
+.mv-app .mv-sdv2d-wbv-info-panel > .mv-sdv2d-controls-title-row {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-height: 1.35rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  background: var(--mv-role-section-header-bg) !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--mv-role-border-normal) !important;
+  border-radius: 0 !important;
+  box-shadow: inset 0 -1px 0 var(--mv-role-border-highlight) !important;
+}
+
+.mv-app .mv-sdv2d-wbv-info-panel > .mv-sdv2d-controls-title-row > .mv-viewer-controls-title {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  color: var(--mv-role-text-primary) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  font-style: normal !important;
+  line-height: 20px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  text-shadow: none !important;
+}
+
+.mv-app .mv-sdv2d-wbv-info-panel > .mv-sdv2d-controls-title-row > .mv-side-column-vertical-toggle {
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+}
+
+html[data-mv-theme="light"] .mv-app
+.mv-sdv2d-wbv-info-panel .mv-sdv2d-info-display-section {
+  border-top: 1px solid var(--mv-role-border-normal) !important;
+  border-bottom: 0 !important;
+  box-shadow: inset 0 1px 0 var(--mv-role-border-highlight) !important;
+  margin-top: 0.5rem !important;
+  padding-top: 0.42rem !important;
+  padding-bottom: 0.52rem !important;
+  border-radius: 0 !important;
+}
+
+html[data-mv-theme="light"] .mv-app
+.mv-sdv2d-wbv-info-panel
+.mv-sdv2d-info-display-section > .mv-sdv2d-control-subheading {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  min-height: 1.35rem !important;
+  margin: 0 0 0.38rem !important;
+  padding: 0 !important;
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--mv-role-border-normal) !important;
+  border-radius: 0 !important;
+  box-shadow: inset 0 -1px 0 var(--mv-role-border-highlight) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+
+/* ========================================================================== 
+   2DV RIGHT PANEL EXACT 3DV COMPONENT REBASE V1.0.1 — COMPONENTS CSS
+   Generated from CURRENT 3DV right-panel descendant rules in source order.
+   ========================================================================== */
+/* ==========================================================================
+   SDV3D METADATA LABEL — EXACT WBV COMPUTED AUTHORITY V1.0.0
+
+   Source: browser-computed WBV "Active wellbore" metadata label.
+
+   Exact WBV computed contract:
+   - font-family: Inter / canonical mv font stack
+   - font-size: 0.76rem       -> 12.16px at current root
+   - font-weight: 400
+   - font-style: normal
+   - line-height: 1.2         -> 14.592px
+   - color: #33414d
+   - letter-spacing: normal
+   - text-transform: none
+   - text-rendering: auto
+   - -webkit-font-smoothing: auto
+   - font-synthesis: weight style small-caps
+   - opacity: 1
+
+   Sole 3DV metadata-label typography authority.
+   Geometry remains in SDV-local CSS.
+   ========================================================================== */
+html[data-mv-theme="light"] .mv-ui-scope.mv-app
+.mv-sdv2d-wbv-info-panel
+.mv-sdv3d-metadata-label {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 0.76rem !important;
+  font-weight: 400 !important;
+  font-style: normal !important;
+  line-height: 1.2 !important;
+  color: #33414d !important;
+  -webkit-text-fill-color: #33414d !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  text-rendering: auto !important;
+  -webkit-font-smoothing: auto !important;
+  -moz-osx-font-smoothing: auto !important;
+  font-synthesis: weight style small-caps !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+/* ==========================================================================
+   2DV LEFT CONTROL LABEL TYPOGRAPHY = RIGHT METADATA LABEL TYPOGRAPHY V1.0.1
+   Source authority: exact 3DV right metadata-label typography captured from
+   MULTIVIEWER_2DV_3DV_RIGHT_PANEL_EXACT_SOURCE_CAPTURE_20260917_211820.
+   Scope: 2DV left-panel non-header control-row labels only.
+   Section headers are intentionally excluded.
+   ========================================================================== */
+html[data-mv-theme="light"] .mv-ui-scope.mv-app
+.mv-sdv2d-wbv-controls-panel
+.mv-viewer-control-row > :first-child {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 0.76rem !important;
+  font-weight: 400 !important;
+  font-style: normal !important;
+  line-height: 1.2 !important;
+  color: #33414d !important;
+  -webkit-text-fill-color: #33414d !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  text-rendering: auto !important;
+  -webkit-font-smoothing: auto !important;
+  -moz-osx-font-smoothing: auto !important;
+  font-synthesis: weight style small-caps !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+/* ==========================================================================
+   2DV ZOOM LABEL RENDERING FIX V1.0.0
+   Scope: 2DV Zoom subsection only.
+   Fixes washed-out text/glyph rendering caused by inherited disabled/value
+   text presentation. Does not alter enable/disable logic or geometry.
+   ========================================================================== */
+html[data-mv-theme="light"] .mv-ui-scope.mv-app
+.mv-sdv2d-wbv-controls-panel
+.mv-sdv2d-control-section:nth-of-type(5)
+.mv-viewer-control-value {
+  color: #33414d !important;
+  -webkit-text-fill-color: #33414d !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+html[data-mv-theme="light"] .mv-ui-scope.mv-app
+.mv-sdv2d-wbv-controls-panel
+.mv-sdv2d-control-section:nth-of-type(5)
+button:disabled {
+  color: var(--mv-role-text-secondary) !important;
+  -webkit-text-fill-color: var(--mv-role-text-secondary) !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+html[data-mv-theme="light"] .mv-ui-scope.mv-app
+.mv-sdv2d-wbv-controls-panel
+.mv-sdv2d-control-section:nth-of-type(5)
+button:not(:disabled) {
+  color: var(--mv-role-text-primary) !important;
+  -webkit-text-fill-color: var(--mv-role-text-primary) !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+

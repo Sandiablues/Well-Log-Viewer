@@ -30,7 +30,6 @@ type ManagedDataPanelProps = {
   ) => Promise<void> | void;
   viewLoadedDataset: (volume: any) => void;
   unloadFromViewerCatalog: (volume: any) => Promise<void> | void;
-  handleInfo: (volume: any) => void;
   handleRename: (volume: any) => void;
   handleDelete: (volume: any) => Promise<void> | void;
   hasAvailableOptimizedCache: (volume: any) => boolean;
@@ -40,6 +39,7 @@ type ManagedDataPanelProps = {
   setIndexedDeleteHelpVolumeId: (volumeId: string | null) => void;
   setDataWorkflowTab: (tab: string) => void;
   viewerModeFilter: "2d" | "3d";
+  onOpenSeismicDataInformation?: (volume: any) => void;
 };
 
 
@@ -196,7 +196,6 @@ export default function ManagedDataPanel({
   loadSelectedTargets,
   viewLoadedDataset,
   unloadFromViewerCatalog,
-  handleInfo,
   handleRename,
   handleDelete,
   hasAvailableOptimizedCache,
@@ -206,6 +205,7 @@ export default function ManagedDataPanel({
   setIndexedDeleteHelpVolumeId,
   setDataWorkflowTab,
   viewerModeFilter,
+  onOpenSeismicDataInformation,
 }: ManagedDataPanelProps) {
   const [groupBy, setGroupBy] = useState<
     "line_or_volume_name" | "survey_name" | "data_type" | "date_created"
@@ -831,7 +831,6 @@ export default function ManagedDataPanel({
     >
       <div className="collapsible-pane-header">
         <div>
-          <h3>Managed Data</h3>
           <p>
             {managedDataQueryTotalCount} item{managedDataQueryTotalCount === 1 ? "" : "s"}{" "}
             in the {viewerModeFilter === "3d" ? "3D" : "2D"} Managed Data query.
@@ -840,11 +839,11 @@ export default function ManagedDataPanel({
 
         <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
           <label
+            className="mv-type-property-label"
             style={{
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
-              fontSize: 12,
             }}
           >
             <span>Sort by</span>
@@ -855,10 +854,6 @@ export default function ManagedDataPanel({
               }
               className="collapsible-pane-toggle md-control-select"
               style={{
-                background: "transparent",
-                color: "#cbd5e1",
-                border: "1px solid #64748b",
-                borderRadius: 6,
                 padding: "4px 8px",
               }}
             >
@@ -1064,7 +1059,6 @@ export default function ManagedDataPanel({
                               color: "inherit",
                               cursor: "pointer",
                               font: "inherit",
-                              fontWeight: 700,
                               margin: 0,
                               maxWidth: "100%",
                               minWidth: 0,
@@ -1176,7 +1170,13 @@ export default function ManagedDataPanel({
                             Unload
                           </button>
 
-                          <button className="md-row-action md-row-action-neutral" onClick={() => handleInfo(buildManagedInfoVolume(volume))} title="Info">
+                          <button
+                            className="md-row-action md-row-action-neutral"
+                            onClick={() => onOpenSeismicDataInformation?.(buildManagedInfoVolume(volume))}
+                            disabled={!onOpenSeismicDataInformation}
+                            title="Open in Seismic Data Information"
+                            aria-label="Open in Seismic Data Information"
+                          >
                             <Info size={14} />
                           </button>
 
@@ -1226,6 +1226,7 @@ export default function ManagedDataPanel({
 
                               {indexedDeleteHelpVolumeId === volume.id && (
                                 <div
+                                  className="mv-managed-data-tooltip"
                                   role="tooltip"
                                   style={{
                                     position: "fixed",
@@ -1234,13 +1235,6 @@ export default function ManagedDataPanel({
                                     zIndex: 999999,
                                     width: 320,
                                     padding: "8px 10px",
-                                    border: "1px solid #64748b",
-                                    borderRadius: 6,
-                                    background: "#0f172a",
-                                    color: "#e5e7eb",
-                                    boxShadow: "0 18px 48px rgba(0,0,0,0.85)",
-                                    fontSize: 12,
-                                    lineHeight: 1.35,
                                     textAlign: "left",
                                   }}
                                 >
@@ -1320,6 +1314,7 @@ export default function ManagedDataPanel({
 
       {addDocumentsOpen && (
         <div
+          className="mv-managed-data-modal-backdrop"
           role="dialog"
           aria-modal="true"
           aria-label="Add Documents to Managed Data"
@@ -1327,7 +1322,6 @@ export default function ManagedDataPanel({
             position: "fixed",
             inset: 0,
             zIndex: 99999,
-            background: "rgba(2, 6, 23, 0.72)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -1335,19 +1329,15 @@ export default function ManagedDataPanel({
           }}
         >
           <div
+            className="mv-managed-data-modal"
             style={{
               width: 620,
               maxWidth: "92vw",
-              border: "1px solid #475569",
-              borderRadius: 10,
-              background: "#0f172a",
-              color: "#e5e7eb",
-              boxShadow: "0 24px 80px rgba(0,0,0,0.72)",
               padding: 18,
             }}
           >
-            <h3 style={{ margin: "0 0 8px 0" }}>Add Documents</h3>
-            <p style={{ margin: "0 0 14px 0", fontSize: 12, opacity: 0.82 }}>
+            <h3 className="mv-type-panel-title" style={{ margin: "0 0 8px 0" }}>Add Documents</h3>
+            <p className="mv-type-helper" style={{ margin: "0 0 14px 0" }}>
               Attach a supporting document to the selected line/volume, or to all currently listed rows in the same survey.
             </p>
 
@@ -1363,7 +1353,7 @@ export default function ManagedDataPanel({
             />
 
             <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+              <label className="mv-type-property-label" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <input
                   type="radio"
                   checked={addDocumentsScopeKind === "selected_data"}
@@ -1371,7 +1361,7 @@ export default function ManagedDataPanel({
                 />
                 Attach to selected line / volume
               </label>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+              <label className="mv-type-property-label" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                 <input
                   type="radio"
                   checked={addDocumentsScopeKind === "survey"}
@@ -1382,9 +1372,10 @@ export default function ManagedDataPanel({
               </label>
             </div>
 
-            <label style={{ display: "block", fontSize: 12, fontWeight: 700, marginBottom: 12 }}>
+            <label className="mv-type-property-label" style={{ display: "block", marginBottom: 12 }}>
               Document type
               <select
+                className="mv-select"
                 value={addDocumentsDocumentType}
                 onChange={(event) => setAddDocumentsDocumentType(event.currentTarget.value)}
                 style={{
@@ -1392,10 +1383,6 @@ export default function ManagedDataPanel({
                   width: "100%",
                   boxSizing: "border-box",
                   marginTop: 5,
-                  background: "#0f172a",
-                  border: "1px solid #64748b",
-                  borderRadius: 6,
-                  color: "#e5e7eb",
                   padding: "7px 8px",
                 }}
               >
@@ -1411,13 +1398,11 @@ export default function ManagedDataPanel({
             </label>
 
             <div
+              className="mv-managed-data-target-list"
               style={{
-                border: "1px solid #334155",
-                borderRadius: 8,
                 padding: 10,
                 maxHeight: 180,
                 overflow: "auto",
-                fontSize: 12,
                 marginBottom: 12,
               }}
             >
@@ -1437,7 +1422,7 @@ export default function ManagedDataPanel({
             </div>
 
             {addDocumentsMessage && (
-              <div style={{ border: "1px solid #64748b", borderRadius: 6, padding: "6px 8px", fontSize: 12, marginBottom: 12 }}>
+              <div className="mv-managed-data-message" style={{ padding: "6px 8px", marginBottom: 12 }}>
                 {addDocumentsMessage}
               </div>
             )}

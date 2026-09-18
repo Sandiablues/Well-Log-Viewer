@@ -934,7 +934,7 @@ export function VolumeInfoPanel({ volume }: VolumeInfoPanelProps) {
     return (
       <div className="volume-info-panel empty-info">
         <h2>Dataset Information</h2>
-        <p>No dataset selected. Load a volume, 2D line, or 2D survey from the Data Manager.</p>
+        <p>No managed dataset selected. Search or select a 2D or 3D dataset from the top ribbon.</p>
       </div>
     );
   }
@@ -946,7 +946,7 @@ export function VolumeInfoPanel({ volume }: VolumeInfoPanelProps) {
       <div className="volume-info-header volume-info-header-with-score">
         <div className="volume-info-title-block">
           <h2>{getDisplayName(volume)}</h2>
-          <p>{getDatasetTypeLabel(volume)} · {volume.filename}</p>
+          <p>{getDatasetTypeLabel(volume)}</p>
         </div>
         <MetadataScoreHeaderLink volumeId={metadataAuthorityId} />
       </div>

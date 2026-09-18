@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Trash2, Edit3, Database, Info, X, Upload } from 'lucide-react';
+import { Trash2, Edit3, Database, X, Upload } from 'lucide-react';
 import type { Volume } from '../services/zarrService';
 import SourceIntakeWorkflowPanel from "./SourceIntakeWorkflowPanel";
 import ManagedDataPanel from './ManagedDataPanel';
-import VolumeInfoModal from "./VolumeInfoModal";
+import { ManagedDataPageHeader } from './shared/ManagedDataPageHeader';
 import { useManagedDataSelection } from "../hooks/useManagedDataSelection";
 import { useManagedVolumeActions } from "../hooks/useManagedVolumeActions";
 import { useManagedDeleteAction } from "../hooks/useManagedDeleteAction";
-import { useManagedInfoModal } from "../hooks/useManagedInfoModal";
 
 interface DataManagerProps {
   pageMode?: 'source-intake' | 'managed';
@@ -23,6 +22,7 @@ interface DataManagerProps {
   onClearSelectedVolume: () => void;
   onViewIndexedPreview?: (viewerSource: any) => void;
   onOpenSourcesPage?: () => void;
+  onOpenSeismicDataInformation?: (volume: Volume) => void;
 }
 
 function getDisplayName(volume: Volume): string {
@@ -32,10 +32,6 @@ function getDisplayName(volume: Volume): string {
 function getShape(volume: Volume): string {
   const shape = volume.metadata?.shape || volume.metadata?.zarr?.shape;
   return Array.isArray(shape) ? shape.join(' × ') : 'Unknown';
-}
-
-function getGeometrySource(volume: Volume): string {
-  return volume.metadata?.geometry_source || volume.metadata?.zarr?.geometry_source || 'Unknown';
 }
 
 function getDatasetTypeLabel(volume: Volume): string {
@@ -151,46 +147,33 @@ function Import2DSurveyPanel({ onImported }: { onImported: () => void }) {
 
   return (
     <div
+      className="mv-panel"
       style={{
-        border: '1px solid #333',
-        background: '#1f1f1f',
-        borderRadius: 8,
         padding: 12,
         marginBottom: 14,
-        color: 'white',
       }}
     >
 
-      <div style={{ fontWeight: 400, marginBottom: 8 }}>Import 2D Survey from Folder</div>
+      <div className="mv-type-section-heading" style={{ marginBottom: 8 }}>Import 2D Survey from Folder</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr', gap: '8px 10px', alignItems: 'center' }}>
-        <label style={{ fontSize: 13, opacity: 0.8 }}>Survey name</label>
+        <label className="mv-type-property-label">Survey name</label>
         <input
+          className="mv-input"
           value={surveyName}
           onChange={(e) => setSurveyName(e.target.value)}
           disabled={isImporting}
-          style={{
-            background: '#2b2b2b',
-            color: 'white',
-            border: '1px solid #555',
-            borderRadius: 4,
-            padding: '7px 8px',
-          }}
+          style={{ padding: "7px 8px" }}
         />
 
-        <label style={{ fontSize: 13, opacity: 0.8 }}>Source folder</label>
+        <label className="mv-type-property-label">Source folder</label>
         <input
+          className="mv-input"
           value={sourceFolder}
           onChange={(e) => setSourceFolder(e.target.value)}
           disabled={isImporting}
           placeholder="/path/to/master/survey/folder"
-          style={{
-            background: '#2b2b2b',
-            color: 'white',
-            border: '1px solid #555',
-            borderRadius: 4,
-            padding: '7px 8px',
-          }}
+          style={{ padding: "7px 8px" }}
         />
       </div>
 
@@ -260,13 +243,10 @@ function SegyUploadPanel({
 
   return (
     <div
+      className="mv-panel"
       style={{
-        border: '1px solid #333',
-        background: '#1f1f1f',
-        borderRadius: 8,
         padding: 12,
         marginBottom: 14,
-        color: 'white',
         display: 'flex',
         justifyContent: 'space-between',
         gap: 12,
@@ -274,27 +254,22 @@ function SegyUploadPanel({
       }}
     >
       <div>
-        <div style={{ fontWeight: 700, fontSize: 16, color: "#f8fafc", lineHeight: 1.25 }}>{title}</div>
-        <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4, lineHeight: 1.4 }}>{description}</div>
+        <div className="mv-type-section-heading">{title}</div>
+        <div className="mv-type-helper" style={{ marginTop: 4 }}>{description}</div>
       </div>
 
       <label
+        className="mv-upload-action"
+        aria-disabled={importDisabled}
         htmlFor={inputId}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
           gap: 7,
-          background: 'transparent',
-          color: importDisabled ? '#71717a' : '#60a5fa',
-          border: importDisabled ? '1px solid #52525b' : '1px solid #60a5fa',
-          borderRadius: 6,
           padding: '7px 11px',
           cursor: importDisabled ? 'not-allowed' : 'pointer',
           whiteSpace: 'nowrap',
-          fontSize: 13,
-          fontWeight: 650,
-          lineHeight: 1.2,
           minHeight: 34,
           opacity: importDisabled ? 0.65 : 1,
         }}
@@ -311,7 +286,7 @@ function SegyUploadPanel({
         />
       </label>
       {disabled && disabledReason && (
-        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>
+        <div className="mv-type-helper" style={{ marginTop: 6 }}>
           {disabledReason}
         </div>
       )}
@@ -333,6 +308,7 @@ export function DataManager({
   onClearSelectedVolume,
   onViewIndexedPreview,
   onOpenSourcesPage,
+  onOpenSeismicDataInformation,
 }: DataManagerProps) {
 
   const [localDataManagerTab, setLocalDataManagerTab] = useState<'3d' | '2d'>('2d');
@@ -487,14 +463,6 @@ export function DataManager({
   ).length;
 
   const {
-    infoVolume,
-    infoData,
-    infoLoading,
-    infoError,
-    handleInfo,
-    closeInfoModal,
-  } = useManagedInfoModal();
-  const {
     getSelectedTargets,
     setSelectedTarget,
     clearSelectedTargets,
@@ -560,57 +528,32 @@ export function DataManager({
 
 
   return (
-    <div className="data-manager">
+    <div className={`data-manager${pageMode === 'source-intake' ? ' data-manager--source-intake-page' : ''}`}>
 
-      {/* Data Manager Tabs */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          marginBottom: 14,
-          alignItems: 'center',
-        }}
-      >
-        <button
-          onClick={() => {
-            setDataManagerTab('3d');
-          }}
-          style={{
-            background: dataManagerTab === '3d' ? '#3f5f85' : '#2b2b2b',
-            color: 'white',
-            border: dataManagerTab === '3d' ? '1px solid #8fb8e8' : '1px solid #555',
-            borderRadius: 6,
-            padding: '7px 11px',
-            cursor: 'pointer',
-            fontWeight: dataManagerTab === '3d' ? 700 : 400,
-          }}
-        >
-          3D Data ({threeDCount})
-        </button>
-
-        <button
-          onClick={() => {
-            setDataManagerTab('2d');
-          }}
-          style={{
-            background: dataManagerTab === '2d' ? '#3f5f85' : '#2b2b2b',
-            color: 'white',
-            border: dataManagerTab === '2d' ? '1px solid #8fb8e8' : '1px solid #555',
-            borderRadius: 6,
-            padding: '7px 11px',
-            cursor: 'pointer',
-            fontWeight: dataManagerTab === '2d' ? 700 : 400,
-          }}
-        >
-          2D Data ({twoDCount})
-        </button>
-      </div>
-
-      <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 12 }}>
-        {dataManagerTab === '3d'
-          ? 'Showing 3D volumes only.'
-          : 'Showing 2D lines and 2D surveys.'}
-      </div>
+      <ManagedDataPageHeader
+        title={pageMode === 'source-intake' ? 'Source Intake' : 'Managed Data'}
+        subtitle="Manage registered datasets and viewer-ready representations."
+        actions={(
+          <div className="mv-data-tabs" role="tablist" aria-label="Managed Data type">
+            <button
+              type="button"
+              className="mv-button mv-button--compact"
+              aria-selected={dataManagerTab === '3d'}
+              onClick={() => setDataManagerTab('3d')}
+            >
+              3D Data ({threeDCount})
+            </button>
+            <button
+              type="button"
+              className="mv-button mv-button--compact"
+              aria-selected={dataManagerTab === '2d'}
+              onClick={() => setDataManagerTab('2d')}
+            >
+              2D Data ({twoDCount})
+            </button>
+          </div>
+        )}
+      />
 
       {!pageMode && (
         <div
@@ -665,13 +608,6 @@ export function DataManager({
       )}
       {activeWorkflowTab === "managed" && (
         <>
-      <div className="data-manager-header">
-        <div>
-          <h2>Managed Data</h2>
-          <p>Manage registered datasets and viewer-ready representations.</p>
-        </div>
-      </div>
-
       <ManagedDataPanel
         visibleVolumes={visibleVolumes}
         managedDataCollapsed={managedDataCollapsed}
@@ -688,7 +624,6 @@ export function DataManager({
         loadSelectedTargets={loadSelectedTargets}
         viewLoadedDataset={viewLoadedDataset}
         unloadFromViewerCatalog={unloadFromViewerCatalog}
-        handleInfo={handleInfo}
         handleRename={handleRename}
         handleDelete={handleDelete}
         hasAvailableOptimizedCache={hasAvailableOptimizedCache}
@@ -698,24 +633,12 @@ export function DataManager({
         setIndexedDeleteHelpVolumeId={setIndexedDeleteHelpVolumeId}
         setDataWorkflowTab={handleManagedPanelWorkflowNavigation}
         viewerModeFilter={dataManagerTab}
+        onOpenSeismicDataInformation={onOpenSeismicDataInformation}
       />
 
         </>
       )}
 
-
-      {infoVolume && (
-        <VolumeInfoModal
-          infoVolume={infoVolume}
-          infoData={infoData}
-          infoLoading={infoLoading}
-          infoError={infoError}
-          onClose={closeInfoModal}
-          getDisplayName={getDisplayName}
-          getShape={getShape}
-          getGeometrySource={getGeometrySource}
-        />
-      )}
     </div>
   );
 }
