@@ -40,6 +40,8 @@ class WbvCurvePresentationOverride(BaseModel):
     visible: bool | None = None
     color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     opacity: float | None = Field(default=None, ge=0.0, le=1.0)
+    infill_opacity: float | None = Field(default=None, ge=0.0, le=1.0)
+    infill_brightness: float | None = Field(default=None, ge=0.5, le=3.0)
     line_width: float | None = Field(default=None, gt=0)
     radial_exaggeration: float | None = Field(default=None, ge=0.25, le=3.0)
     label_visible: bool | None = None

@@ -167,10 +167,13 @@ class WbvFormationTopItem(BaseModel):
     name: str
     marker_type: str = "Formation top"
     group: str | None = None
+    # Runtime geometry values are canonical metres.
     md: float
     tvd: float | None = None
     tvdss: float | None = None
     uncertainty: float | None = None
+    source_depth_unit: Literal["m", "ft"] = "m"
+    runtime_depth_unit: Literal["m"] = "m"
     pick_status: str | None = None
     source_document: str | None = None
     source_page: int | None = None
@@ -184,9 +187,10 @@ class WbvFormationTopProduct(BaseModel):
 
 class WbvFormationTopProductsContract(BaseModel):
     contract_kind: str = "wbv_formation_top_products"
-    contract_version: str = "wbv_formation_top_products_v1"
+    contract_version: str = "wbv_formation_top_products_v2"
     viewer: Literal["WBV"] = "WBV"
     managed_well_id: str
+    runtime_depth_unit: Literal["m"] = "m"
     products: list[WbvFormationTopProduct] = Field(default_factory=list)
 
 
@@ -195,13 +199,16 @@ class WbvLithologyIntervalItem(BaseModel):
     product_id: str | None = None
     lithology: str
     canonical_lithology: str | None = None
+    # Runtime geometry values are canonical metres.
     top_md: float
     base_md: float
     top_tvd: float | None = None
     base_tvd: float | None = None
     top_tvdss: float | None = None
     base_tvdss: float | None = None
-    depth_unit: str = "m"
+    depth_unit: Literal["m"] = "m"
+    source_depth_unit: Literal["m", "ft"] = "m"
+    runtime_depth_unit: Literal["m"] = "m"
     depth_reference: str = "RT"
     pattern_id: str | None = None
     background_color: str | None = None
@@ -221,9 +228,10 @@ class WbvLithologyProduct(BaseModel):
 
 class WbvLithologyProductsContract(BaseModel):
     contract_kind: str = "wbv_lithology_products"
-    contract_version: str = "wbv_lithology_products_v1"
+    contract_version: str = "wbv_lithology_products_v2"
     viewer: Literal["WBV"] = "WBV"
     managed_well_id: str
+    runtime_depth_unit: Literal["m"] = "m"
     products: list[WbvLithologyProduct] = Field(default_factory=list)
 
 
@@ -233,9 +241,12 @@ class WbvCompletionComponentItem(BaseModel):
     canonical_id: str
     canonical_component_key: str
     label: str
+    # Runtime completion geometry is canonical metres.
     top_md: float
     base_md: float | None = None
-    depth_unit: str = "m"
+    depth_unit: Literal["m"] = "m"
+    source_depth_unit: Literal["m", "ft"] = "m"
+    runtime_depth_unit: Literal["m"] = "m"
     diameter: float | None = None
     status: str | None = None
     confidence: str | None = None
@@ -256,9 +267,10 @@ class WbvCompletionProduct(BaseModel):
 
 class WbvCompletionProductsContract(BaseModel):
     contract_kind: str = "wbv_completion_products"
-    contract_version: str = "wbv_completion_products_v1"
+    contract_version: str = "wbv_completion_products_v2"
     viewer: Literal["WBV"] = "WBV"
     managed_well_id: str
+    runtime_depth_unit: Literal["m"] = "m"
     products: list[WbvCompletionProduct] = Field(default_factory=list)
 
 
@@ -270,9 +282,12 @@ class WbvCurveOverlayCurve(BaseModel):
     description: str | None = None
     unit: str | None = None
     curve_family: str | None = None
+    # Runtime curve depth extent is canonical metres.
     depth_start: float | None = None
     depth_end: float | None = None
-    depth_units: str | None = None
+    depth_units: Literal["m"] = "m"
+    source_depth_unit: Literal["m", "ft"] = "m"
+    runtime_depth_unit: Literal["m"] = "m"
     run_interval: str | None = None
     run_number: str | None = None
     run_date: str | None = None
@@ -292,9 +307,10 @@ class WbvCurveOverlayProduct(BaseModel):
 
 class WbvCurveOverlayProductsContract(BaseModel):
     contract_kind: str = "wbv_curve_overlay_products"
-    contract_version: str = "wbv_curve_overlay_products_v1"
+    contract_version: str = "wbv_curve_overlay_products_v2"
     viewer: Literal["WBV"] = "WBV"
     managed_well_id: str
+    runtime_depth_unit: Literal["m"] = "m"
     products: list[WbvCurveOverlayProduct] = Field(default_factory=list)
 
 
@@ -358,6 +374,8 @@ class WbvCurveOverlayRenderCurve(BaseModel):
     display_name: str
     mnemonic: str
     unit: str | None = None
+    source_depth_unit: Literal["m", "ft"] = "m"
+    runtime_depth_unit: Literal["m"] = "m"
     display_order: int = 0
     radial_lane: int = 0
     track_id: str | None = None
@@ -385,6 +403,10 @@ class WbvCurveOverlayRenderCurve(BaseModel):
     fill_color: str = "#58d39b"
     fill_opacity: float = 0.35
     fill_outline: bool = True
+    # Preserve WDV infill semantics; this is presentation metadata only.
+    infill_source: str | None = None
+    infill_pattern: str | None = None
+    infill_interval_column: str | None = None
     baseline_normalized: float = Field(default=0.0, ge=0.0, le=1.0)
     display_min: float | None = None
     display_max: float | None = None
@@ -398,9 +420,10 @@ class WbvCurveOverlayRenderCurve(BaseModel):
 
 class WbvCurveOverlayRenderContract(BaseModel):
     contract_kind: str = "wbv_curve_overlay_render"
-    contract_version: str = "wbv_curve_overlay_render_v1"
+    contract_version: str = "wbv_curve_overlay_render_v2"
     viewer: Literal["WBV"] = "WBV"
     managed_well_id: str
+    runtime_depth_unit: Literal["m"] = "m"
     track_spacing: float = 0.05
     tracks: list[WbvTrackConfiguration] = Field(default_factory=list)
     curves: list[WbvCurveOverlayRenderCurve] = Field(default_factory=list)
@@ -431,6 +454,8 @@ class WbvLayerAppearanceSettings(BaseModel):
     marker_style: Literal["ring", "disc", "tick", "flag"] = "ring"
     marker_size: float = Field(default=1.0, ge=0.25, le=5.0)
     color_mode: Literal["formation", "well", "classification", "single"] = "formation"
+    tie_formation_colours: bool = False
+    formation_top_color_overrides: dict[str, str] = Field(default_factory=dict)
     label_mode: Literal["name", "name_md", "name_tvd", "name_md_tvd"] = "name_md"
     label_size: float = Field(default=1.0, ge=0.15, le=3.0)
     label_offset: float = Field(default=1.0, ge=0.0, le=8.0)
@@ -559,7 +584,10 @@ class WbvViewerPackageContract(BaseModel):
     well_name: str
     viewer_state: WbvViewerState
     coordinate_mode: WbvCoordinateMode = WbvCoordinateMode.UNAVAILABLE
+    # Presentation preference only. Runtime trajectory/layer geometry is governed
+    # separately by runtime_depth_unit.
     depth_unit: str = "ft"
+    runtime_depth_unit: Literal["m"] = "m"
     angle_unit: str = "deg"
     datum: dict[str, Any] = Field(default_factory=dict)
     crs: dict[str, Any] = Field(default_factory=lambda: {"epsg": None, "status": "not_available"})

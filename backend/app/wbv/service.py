@@ -153,8 +153,12 @@ class WbvService:
         state, coordinate_mode, warnings = self._viewer_state_for_record(record)
         source_unit = self._source_depth_unit(record)
         display_unit = self._display_depth_unit(record, source_unit)
+        runtime_unit = "m"
+        # Canonical WBV runtime trajectory domain is metres. This normalization
+        # happens at package hydration and is independent of display preference.
+        # The m/ft presentation control must never rescale runtime geometry.
         trajectory = self._convert_trajectory_package(
-            self._trajectory_package(record), source_unit, display_unit
+            self._trajectory_package(record), source_unit, runtime_unit
         )
         layers = self._available_layers(record)
         return WbvViewerPackageContract(
@@ -164,16 +168,21 @@ class WbvService:
             viewer_state=state,
             coordinate_mode=coordinate_mode,
             depth_unit=display_unit,
+            runtime_depth_unit=runtime_unit,
             angle_unit=str(record.metadata.get("angle_unit") or self._raw_trajectory_metadata(record).get("angle_unit") or "deg") if isinstance(record.metadata, dict) else "deg",
             datum=self._datum(record),
             crs=self._crs(record),
             trajectory=trajectory,
             survey_qaqc=self._convert_survey_qaqc(
                 self._survey_qaqc_summary(self._trajectory_package(record)),
-                source_unit, display_unit,
+                source_unit, runtime_unit,
             ),
+            # Bounding geometry is canonical runtime geometry as well. For
+            # authoritative station geometry this is already derived from the
+            # canonical trajectory; explicit/source bounding boxes are normalized
+            # once from source units into the runtime metre domain.
             bounding_box=self._convert_bounding_box(
-                self._viewer_bounding_box(record, trajectory), source_unit, display_unit
+                self._viewer_bounding_box(record, trajectory), source_unit, runtime_unit
             ),
             axes=self._dict_metadata(record, "wbv_axes"),
             available_layers=layers,
@@ -326,6 +335,52 @@ class WbvService:
                 return number
         return None
 
+    @staticmethod
+    def _formation_top_row_depth_unit(row: dict[str, Any], record: ManagedWellRecord) -> str:
+        """Resolve the scientific/source unit for one formation-top row.
+
+        Explicit row metadata wins. Rows carrying the canonical ``*_m`` field
+        family are metres by definition. Legacy/generic MD rows fall back to the
+        managed well source depth unit.
+        """
+        for key in ("depth_unit", "unit", "md_unit"):
+            raw = row.get(key)
+            normalized = WbvService._normalize_depth_unit(raw)
+            if normalized in {"m", "ft"}:
+                return normalized
+        if any(
+            row.get(key) is not None
+            for key in ("md_m", "md_m_rt", "tvd_m", "tvd_m_rt", "tvdss_m_msl", "uncertainty_m")
+        ):
+            return "m"
+        return WbvService._source_depth_unit_static(record)
+
+    @staticmethod
+    def _source_depth_unit_static(record: ManagedWellRecord) -> str:
+        """Static equivalent of the service source-unit rule for narrow row helpers."""
+        def normalize(value: Any) -> str | None:
+            raw = str(value or "").strip().lower()
+            if raw in {"m", "meter", "meters", "metre", "metres"}:
+                return "m"
+            if raw in {"ft", "foot", "feet"}:
+                return "ft"
+            return None
+
+        metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        trajectory = metadata.get("trajectory") if isinstance(metadata.get("trajectory"), dict) else {}
+        trajectory_unit = trajectory.get("depth_unit") or trajectory.get("unit")
+        return normalize(record.depth_unit) or normalize(trajectory_unit) or "ft"
+
+    @classmethod
+    def _formation_top_value_to_runtime_m(
+        cls,
+        value: float | None,
+        source_unit: str,
+    ) -> float | None:
+        if value is None:
+            return None
+        return value * cls._distance_factor(source_unit, "m")
+
     def get_formation_top_products(self, managed_well_id: str) -> WbvFormationTopProductsContract:
         record = self.repository.get_record(managed_well_id)
         candidates = self._formation_top_product_items(record)
@@ -335,8 +390,8 @@ class WbvService:
         default_product_id = candidates[0].product_id if len(candidates) == 1 else None
         tops_by_product: dict[str, list[WbvFormationTopItem]] = {item.product_id: [] for item in candidates}
         for index, row in enumerate(rows):
-            md = self._top_number(row, "md", "md_m", "md_m_rt", "depth", "depth_md")
-            if md is None:
+            source_md = self._top_number(row, "md", "md_m", "md_m_rt", "depth", "depth_md")
+            if source_md is None:
                 continue
             name = str(row.get("name") or row.get("marker_name") or row.get("formation") or row.get("marker") or "").strip()
             if not name:
@@ -345,14 +400,37 @@ class WbvService:
             if row_product_id not in tops_by_product:
                 # Preserve MWD authority: do not expose unmanaged/orphan rows as selectable products.
                 continue
+
+            source_unit = self._formation_top_row_depth_unit(row, record)
+            md = self._formation_top_value_to_runtime_m(source_md, source_unit)
+            tvd = self._formation_top_value_to_runtime_m(
+                self._top_number(row, "tvd", "tvd_m", "tvd_m_rt"),
+                source_unit,
+            )
+            tvdss = self._formation_top_value_to_runtime_m(
+                self._top_number(row, "tvdss", "tvdss_m_msl"),
+                source_unit,
+            )
+            uncertainty = self._formation_top_value_to_runtime_m(
+                self._top_number(row, "uncertainty", "uncertainty_m"),
+                source_unit,
+            )
+
             marker_type = str(row.get("marker_type") or row.get("type") or "Formation top").strip() or "Formation top"
             top = WbvFormationTopItem(
-                top_id=str(row.get("top_id") or row.get("id") or f"{row_product_id}:{index}:{md:g}"),
+                # Identity remains source-row based; canonicalization must not
+                # change ownership/identity for a feet-native source.
+                top_id=str(row.get("top_id") or row.get("id") or f"{row_product_id}:{index}:{source_md:g}"),
                 product_id=row_product_id,
-                name=name, marker_type=marker_type, group=str(row.get("group") or "").strip() or None, md=md,
-                tvd=self._top_number(row, "tvd", "tvd_m", "tvd_m_rt"),
-                tvdss=self._top_number(row, "tvdss", "tvdss_m_msl"),
-                uncertainty=self._top_number(row, "uncertainty", "uncertainty_m"),
+                name=name,
+                marker_type=marker_type,
+                group=str(row.get("group") or "").strip() or None,
+                md=md,
+                tvd=tvd,
+                tvdss=tvdss,
+                uncertainty=uncertainty,
+                source_depth_unit=source_unit,
+                runtime_depth_unit="m",
                 pick_status=str(row.get("pick_status") or row.get("status") or "").strip() or None,
                 source_document=str(row.get("source_document") or row.get("source") or "").strip() or None,
                 source_page=int(row["source_page"]) if str(row.get("source_page") or "").isdigit() else None,
@@ -361,11 +439,16 @@ class WbvService:
 
         for item in candidates:
             products.append(WbvFormationTopProduct(
-                product_id=item.product_id, display_name=item.display_name,
+                product_id=item.product_id,
+                display_name=item.display_name,
                 tops=sorted(tops_by_product.get(item.product_id, []), key=lambda top: top.md),
             ))
         products.sort(key=lambda product: (product.display_name.casefold(), product.product_id))
-        return WbvFormationTopProductsContract(managed_well_id=record.managed_well_id, products=products)
+        return WbvFormationTopProductsContract(
+            managed_well_id=record.managed_well_id,
+            runtime_depth_unit="m",
+            products=products,
+        )
 
     def _lithology_product_items(self, record: ManagedWellRecord) -> list[Any]:
         items: list[Any] = []
@@ -399,6 +482,35 @@ class WbvService:
                 return [dict(row) for row in rows if isinstance(row, dict)]
         return []
 
+    @classmethod
+    def _lithology_source_depth_unit(
+        cls,
+        row: dict[str, Any],
+        product: Any | None,
+        record: ManagedWellRecord,
+    ) -> str:
+        """Resolve scientific/source unit for one lithology interval."""
+        for raw in (
+            row.get("depth_unit"),
+            row.get("unit"),
+            getattr(product, "depth_units", None) if product is not None else None,
+            record.depth_unit,
+        ):
+            normalized = cls._normalize_depth_unit(raw)
+            if normalized in {"m", "ft"}:
+                return normalized
+        return cls._source_depth_unit_static(record)
+
+    @classmethod
+    def _lithology_value_to_runtime_m(
+        cls,
+        value: Any,
+        source_unit: str,
+    ) -> float | None:
+        if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+            return None
+        return float(value) * cls._distance_factor(source_unit, "m")
+
     def get_lithology_products(self, managed_well_id: str) -> WbvLithologyProductsContract:
         record = self.repository.get_record(managed_well_id)
         rows = self._lithology_rows(record)
@@ -415,12 +527,23 @@ class WbvService:
                 if not isinstance(row, dict):
                     continue
                 lithology = str(row.get("lithology") or "").strip()
-                top_md = row.get("top_md")
-                base_md = row.get("base_md")
-                if not lithology or not isinstance(top_md, (int, float)) or not isinstance(base_md, (int, float)):
+                source_top_md = row.get("top_md")
+                source_base_md = row.get("base_md")
+                if (
+                    not lithology
+                    or not isinstance(source_top_md, (int, float))
+                    or not isinstance(source_base_md, (int, float))
+                ):
                     continue
-                if float(base_md) <= float(top_md):
+                if float(source_base_md) <= float(source_top_md):
                     continue
+
+                source_unit = self._lithology_source_depth_unit(row, product, record)
+                top_md = self._lithology_value_to_runtime_m(source_top_md, source_unit)
+                base_md = self._lithology_value_to_runtime_m(source_base_md, source_unit)
+                if top_md is None or base_md is None or base_md <= top_md:
+                    continue
+
                 interval_id = str(
                     row.get("interval_id")
                     or row.get("id")
@@ -435,13 +558,15 @@ class WbvService:
                             str(row.get("canonical_lithology")).strip()
                             if row.get("canonical_lithology") is not None else None
                         ),
-                        top_md=float(top_md),
-                        base_md=float(base_md),
-                        top_tvd=float(row["top_tvd"]) if isinstance(row.get("top_tvd"), (int, float)) else None,
-                        base_tvd=float(row["base_tvd"]) if isinstance(row.get("base_tvd"), (int, float)) else None,
-                        top_tvdss=float(row["top_tvdss"]) if isinstance(row.get("top_tvdss"), (int, float)) else None,
-                        base_tvdss=float(row["base_tvdss"]) if isinstance(row.get("base_tvdss"), (int, float)) else None,
-                        depth_unit=str(row.get("depth_unit") or product.depth_units or record.depth_unit or "m"),
+                        top_md=top_md,
+                        base_md=base_md,
+                        top_tvd=self._lithology_value_to_runtime_m(row.get("top_tvd"), source_unit),
+                        base_tvd=self._lithology_value_to_runtime_m(row.get("base_tvd"), source_unit),
+                        top_tvdss=self._lithology_value_to_runtime_m(row.get("top_tvdss"), source_unit),
+                        base_tvdss=self._lithology_value_to_runtime_m(row.get("base_tvdss"), source_unit),
+                        depth_unit="m",
+                        source_depth_unit=source_unit,
+                        runtime_depth_unit="m",
                         depth_reference=str(row.get("depth_reference") or product.depth_reference or "RT"),
                         pattern_id=str(row.get("pattern_id")).strip() if row.get("pattern_id") is not None else None,
                         background_color=str(row.get("background_color")).strip() if row.get("background_color") is not None else None,
@@ -463,29 +588,49 @@ class WbvService:
 
         # Older records may have the authoritative metadata dataset but no
         # product-group item WBV can discover. Surface a deterministic virtual
-        # product rather than hiding valid MWD lithology.
+        # product while applying the same source -> canonical runtime rule.
         if not products and rows:
             product_id = f"lcm-reviewed-lithology:{managed_well_id}"
-            intervals = []
+            intervals: list[WbvLithologyIntervalItem] = []
             for index, row in enumerate(rows):
                 if not isinstance(row, dict):
                     continue
                 lithology = str(row.get("lithology") or "").strip()
-                top_md = row.get("top_md")
-                base_md = row.get("base_md")
-                if not lithology or not isinstance(top_md, (int, float)) or not isinstance(base_md, (int, float)):
+                source_top_md = row.get("top_md")
+                source_base_md = row.get("base_md")
+                if (
+                    not lithology
+                    or not isinstance(source_top_md, (int, float))
+                    or not isinstance(source_base_md, (int, float))
+                ):
                     continue
-                if float(base_md) <= float(top_md):
+                if float(source_base_md) <= float(source_top_md):
                     continue
+
+                source_unit = self._lithology_source_depth_unit(row, None, record)
+                top_md = self._lithology_value_to_runtime_m(source_top_md, source_unit)
+                base_md = self._lithology_value_to_runtime_m(source_base_md, source_unit)
+                if top_md is None or base_md is None or base_md <= top_md:
+                    continue
+
                 intervals.append(
                     WbvLithologyIntervalItem(
                         interval_id=str(row.get("interval_id") or f"{product_id}:interval:{index + 1}"),
                         product_id=product_id,
                         lithology=lithology,
-                        canonical_lithology=str(row.get("canonical_lithology")).strip() if row.get("canonical_lithology") is not None else None,
-                        top_md=float(top_md),
-                        base_md=float(base_md),
-                        depth_unit=display_unit,
+                        canonical_lithology=(
+                            str(row.get("canonical_lithology")).strip()
+                            if row.get("canonical_lithology") is not None else None
+                        ),
+                        top_md=top_md,
+                        base_md=base_md,
+                        top_tvd=self._lithology_value_to_runtime_m(row.get("top_tvd"), source_unit),
+                        base_tvd=self._lithology_value_to_runtime_m(row.get("base_tvd"), source_unit),
+                        top_tvdss=self._lithology_value_to_runtime_m(row.get("top_tvdss"), source_unit),
+                        base_tvdss=self._lithology_value_to_runtime_m(row.get("base_tvdss"), source_unit),
+                        depth_unit="m",
+                        source_depth_unit=source_unit,
+                        runtime_depth_unit="m",
                         depth_reference=str(row.get("depth_reference") or "RT"),
                         pattern_id=str(row.get("pattern_id")).strip() if row.get("pattern_id") is not None else None,
                         background_color=str(row.get("background_color")).strip() if row.get("background_color") is not None else None,
@@ -507,6 +652,7 @@ class WbvService:
 
         return WbvLithologyProductsContract(
             managed_well_id=managed_well_id,
+            runtime_depth_unit="m",
             products=products,
         )
 
@@ -560,41 +706,69 @@ class WbvService:
             item.product_id: [] for item in candidates
         }
 
-        display_unit = self._display_depth_unit(record, self._source_depth_unit(record))
+        # Completion geometry participates in the canonical WBV runtime depth
+        # domain. Presentation preference must not alter placement.
+        runtime_unit = "m"
+        source_well_unit = self._source_depth_unit(record)
+
         for index, row in enumerate(rows):
-            row_unit = self._normalize_depth_unit(row.get("depth_unit") or record.depth_unit or self._source_depth_unit(record)) or self._source_depth_unit(record)
+            row_unit = (
+                self._normalize_depth_unit(
+                    row.get("depth_unit")
+                    or record.depth_unit
+                    or source_well_unit
+                )
+                or source_well_unit
+            )
             try:
-                depth_factor = self._distance_factor(row_unit, display_unit)
+                depth_factor = self._distance_factor(row_unit, runtime_unit)
             except ValueError:
                 continue
-            top_md = self._finite_number(row.get("top_md"))
-            if top_md is None:
+
+            source_top_md = self._finite_number(row.get("top_md"))
+            if source_top_md is None:
                 continue
-            top_md *= depth_factor
-            base_md = self._finite_number(row.get("base_md"))
-            if base_md is not None:
-                base_md *= depth_factor
+            top_md = source_top_md * depth_factor
+
+            source_base_md = self._finite_number(row.get("base_md"))
+            base_md = source_base_md * depth_factor if source_base_md is not None else None
             if base_md is not None and base_md < top_md:
                 continue
+
             canonical_id = str(row.get("canonical_id") or "").strip()
             component_key = str(row.get("canonical_component_key") or "").strip()
-            label = str(row.get("label") or row.get("kr_component_label") or component_key or canonical_id).strip()
+            label = str(
+                row.get("label")
+                or row.get("kr_component_label")
+                or component_key
+                or canonical_id
+            ).strip()
             if not canonical_id or not component_key or not label:
                 continue
-            product_id = str(row.get("product_id") or row.get("source_product_id") or "").strip() or default_product_id
+
+            product_id = (
+                str(row.get("product_id") or row.get("source_product_id") or "").strip()
+                or default_product_id
+            )
             if product_id not in components_by_product:
                 continue
+
             recipe = completion_render_recipe(canonical_id)
             components_by_product[product_id].append(
                 WbvCompletionComponentItem(
-                    component_id=str(row.get("component_id") or f"{product_id}:component:{index + 1}"),
+                    component_id=str(
+                        row.get("component_id")
+                        or f"{product_id}:component:{index + 1}"
+                    ),
                     product_id=product_id,
                     canonical_id=canonical_id,
                     canonical_component_key=component_key,
                     label=label,
                     top_md=top_md,
                     base_md=base_md,
-                    depth_unit=str(row.get("depth_unit") or record.depth_unit or "m"),
+                    depth_unit="m",
+                    source_depth_unit=row_unit,
+                    runtime_depth_unit="m",
                     diameter=self._finite_number(row.get("diameter")),
                     status=str(row.get("status")).strip() if row.get("status") is not None else None,
                     confidence=str(row.get("confidence")).strip() if row.get("confidence") is not None else None,
@@ -612,11 +786,22 @@ class WbvService:
             WbvCompletionProduct(
                 product_id=item.product_id,
                 display_name=item.display_name,
-                components=sorted(components_by_product.get(item.product_id, []), key=lambda component: (component.top_md, component.base_md or component.top_md, component.label.casefold())),
+                components=sorted(
+                    components_by_product.get(item.product_id, []),
+                    key=lambda component: (
+                        component.top_md,
+                        component.base_md or component.top_md,
+                        component.label.casefold(),
+                    ),
+                ),
             )
             for item in candidates
         ]
-        return WbvCompletionProductsContract(managed_well_id=managed_well_id, products=products)
+        return WbvCompletionProductsContract(
+            managed_well_id=managed_well_id,
+            runtime_depth_unit="m",
+            products=products,
+        )
 
     def get_curve_overlay_products(self, managed_well_id: str) -> WbvCurveOverlayProductsContract:
         record = self.repository.get_record(managed_well_id)
@@ -646,38 +831,71 @@ class WbvService:
             labels[product_key] = source_names.get(product_key) or item.source_id or "Managed curve product"
 
         products: list[WbvCurveOverlayProduct] = []
+        source_well_unit = self._source_depth_unit(record)
         for product_key, items in grouped.items():
-            curves = [
-                WbvCurveOverlayCurve(
-                    curve_product_id=item.product_id,
-                    managed_curve_uid=item.managed_curve_uid,
-                    display_name=item.display_name,
-                    mnemonic=item.curve_name or item.display_name,
-                    description=item.curve_description,
-                    unit=item.curve_unit,
-                    curve_family=item.curve_family,
-                    depth_start=item.depth_start,
-                    depth_end=item.depth_end,
-                    depth_units=item.depth_units,
-                    run_interval=item.run_interval if item.run_interval and item.run_interval != "—" else None,
-                    run_number=item.run_number if item.run_number and item.run_number != "—" else None,
-                    run_date=item.run_date if item.run_date and item.run_date != "—" else None,
-                    curve_type=item.curve_type or None,
-                    classification_source=item.classification_source or None,
-                    classification_confidence=item.classification_confidence or None,
-                    review_required=bool(item.review_required),
-                    source_display_name=source_names.get(product_key) or "Managed curve product",
+            curves: list[WbvCurveOverlayCurve] = []
+            for item in sorted(
+                items,
+                key=lambda value: ((value.curve_name or value.display_name).casefold(), value.product_id),
+            ):
+                source_unit = self._normalize_depth_unit(item.depth_units) or source_well_unit
+                try:
+                    factor = self._distance_factor(source_unit, "m")
+                except ValueError:
+                    factor = 1.0
+                    source_unit = source_well_unit
+
+                depth_start = (
+                    float(item.depth_start) * factor
+                    if isinstance(item.depth_start, (int, float)) and math.isfinite(float(item.depth_start))
+                    else None
                 )
-                for item in sorted(items, key=lambda value: ((value.curve_name or value.display_name).casefold(), value.product_id))
-            ]
-            products.append(WbvCurveOverlayProduct(
-                curve_product_id=product_key,
-                display_name=labels[product_key],
-                curve_count=len(curves),
-                curves=curves,
-            ))
+                depth_end = (
+                    float(item.depth_end) * factor
+                    if isinstance(item.depth_end, (int, float)) and math.isfinite(float(item.depth_end))
+                    else None
+                )
+
+                curves.append(
+                    WbvCurveOverlayCurve(
+                        curve_product_id=item.product_id,
+                        managed_curve_uid=item.managed_curve_uid,
+                        display_name=item.display_name,
+                        mnemonic=item.curve_name or item.display_name,
+                        description=item.curve_description,
+                        unit=item.curve_unit,
+                        curve_family=item.curve_family,
+                        depth_start=depth_start,
+                        depth_end=depth_end,
+                        depth_units="m",
+                        source_depth_unit=source_unit,
+                        runtime_depth_unit="m",
+                        run_interval=item.run_interval if item.run_interval and item.run_interval != "—" else None,
+                        run_number=item.run_number if item.run_number and item.run_number != "—" else None,
+                        run_date=item.run_date if item.run_date and item.run_date != "—" else None,
+                        curve_type=item.curve_type or None,
+                        classification_source=item.classification_source or None,
+                        classification_confidence=item.classification_confidence or None,
+                        review_required=bool(item.review_required),
+                        source_display_name=source_names.get(product_key) or "Managed curve product",
+                    )
+                )
+
+            products.append(
+                WbvCurveOverlayProduct(
+                    curve_product_id=product_key,
+                    display_name=labels[product_key],
+                    curve_count=len(curves),
+                    curves=curves,
+                )
+            )
+
         products.sort(key=lambda value: (value.display_name.casefold(), value.curve_product_id))
-        return WbvCurveOverlayProductsContract(managed_well_id=record.managed_well_id, products=products)
+        return WbvCurveOverlayProductsContract(
+            managed_well_id=record.managed_well_id,
+            runtime_depth_unit="m",
+            products=products,
+        )
 
     @staticmethod
     def _curve_overlay_product_key(item: ManagedProductGroupItem) -> str:
@@ -814,6 +1032,7 @@ class WbvService:
         if layer is None or not layer.visible or not layer.selected_item_ids:
             return WbvCurveOverlayRenderContract(
                 managed_well_id=record.managed_well_id,
+                runtime_depth_unit="m",
                 track_spacing=config.track_spacing,
                 tracks=config.tracks,
             )
@@ -835,6 +1054,13 @@ class WbvService:
             normalization = normalized_index.get(curve_id)
             if managed_item is None or normalization is None:
                 continue
+
+            source_unit = self._normalize_depth_unit(managed_item.depth_units) or self._source_depth_unit(record)
+            try:
+                md_factor = self._distance_factor(source_unit, "m")
+            except ValueError:
+                continue
+
             setting = setting_index.get(curve_id)
             appearance = setting.appearance if setting is not None else None
             low = min(normalization.display_min, normalization.display_max)
@@ -848,9 +1074,10 @@ class WbvService:
             for pair in raw.get("samples", []):
                 if not isinstance(pair, (list, tuple)) or len(pair) < 2:
                     continue
-                md = self._finite_number(pair[0]); value = self._finite_number(pair[1])
-                if md is None or value is None:
+                source_md = self._finite_number(pair[0]); value = self._finite_number(pair[1])
+                if source_md is None or value is None:
                     continue
+                md = source_md * md_factor
                 if logarithmic:
                     if value <= 0 or low <= 0 or high <= 0:
                         continue
@@ -877,6 +1104,8 @@ class WbvService:
                 display_name=managed_item.display_name,
                 mnemonic=managed_item.curve_name or managed_item.display_name,
                 unit=managed_item.curve_unit,
+                source_depth_unit=source_unit,
+                runtime_depth_unit="m",
                 display_order=setting.display_order if setting else 0,
                 radial_lane=appearance.radial_lane if appearance else 0,
                 track_id=appearance.track_id if appearance else None,
@@ -904,6 +1133,7 @@ class WbvService:
         curves.sort(key=lambda item: (track_order.get(item.track_id or "", item.radial_lane), item.display_order, item.mnemonic.casefold()))
         return WbvCurveOverlayRenderContract(
             managed_well_id=record.managed_well_id,
+            runtime_depth_unit="m",
             track_spacing=config.track_spacing,
             tracks=config.tracks,
             curves=curves,

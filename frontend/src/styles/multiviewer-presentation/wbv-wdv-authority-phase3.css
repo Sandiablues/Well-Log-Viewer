@@ -1,0 +1,109 @@
+/* ========================================================================== 
+   WBV PRESENTATION PHASE 3 — LEFT PANEL CARD / DIVIDER HIERARCHY
+   V1.0.0 AUDITED — 2026-09-09
+
+   Scope:
+   - light-theme WBV left-panel title/header presentation
+   - Viewer / Display Layers / Active Layers section surface hierarchy
+   - left-panel divider system
+   - left-panel text/glyph tones
+   - View section surface/title tones ONLY
+
+   Protected:
+   - accepted View control geometry (.mv-control-geometry-scope-exempt)
+   - checkbox geometry / native appearance
+   - button geometry and functional states
+   - Three.js/scientific viewport
+   - right-panel interiors
+   - interaction/state/persistence behavior
+   ========================================================================== */
+
+/* Canonical left-panel title band. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-panel-heading {
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-bottom: 1px solid var(--mv-role-border-normal) !important;
+  box-shadow: inset 0 -1px 0 var(--mv-role-border-highlight) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-panel-heading > strong,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-panel-heading > span {
+  color: var(--mv-role-text-primary) !important;
+}
+
+/* Section bodies remain on the canonical WDV panel/body surface. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-left-section,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-controls {
+  background: var(--mv-role-panel-body-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-top: 0 !important;
+  border-bottom: 1px solid var(--mv-role-border-normal) !important;
+  box-shadow: inset 0 -1px 0 var(--mv-role-border-highlight) !important;
+}
+
+/* Section-heading bands: no geometry rewrite; only surface / hierarchy. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-section-heading-row,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-left-section > h2,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-controls > h2 {
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-left-section h2,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-section-heading-row h2,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-controls > h2 {
+  color: var(--mv-role-text-primary) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* Viewer / Display Layers rows. Geometry remains WBV-owned. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-control-list label {
+  color: var(--mv-role-text-primary) !important;
+  background: transparent !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-control-list label.is-disabled,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-display-layer-row.is-disabled,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-information-empty {
+  color: var(--mv-role-text-secondary) !important;
+}
+
+/* Active Layers uses the compact-row authority without changing its layout. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-active-layer-list {
+  background: var(--mv-role-panel-body-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-active-layer-list > div {
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-top-color: var(--mv-role-border-normal) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-active-layer-list strong {
+  color: var(--mv-role-text-primary) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-active-layer-list span {
+  color: var(--mv-role-text-secondary) !important;
+}
+
+/* View hierarchy only. Button geometry and grids remain protected. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-control-block > h3 {
+  color: var(--mv-role-text-secondary) !important;
+}
+
+/* Disclosure glyphs consume secondary WDV tone; dimensions are untouched. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-section-collapse-button {
+  color: var(--mv-role-text-secondary) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-section-collapse-button:hover {
+  color: var(--mv-role-text-primary) !important;
+  background: var(--mv-role-header-control-bg) !important;
+}

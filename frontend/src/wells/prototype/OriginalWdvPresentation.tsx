@@ -808,7 +808,7 @@ function CurveInventory({
   };
 
   return (
-    <aside className="wlv-curve-inventory">
+    <aside className="wlv-curve-inventory mv-control-geometry-scope-exempt">
       <div className="wlv-panel-heading">
         <h2>Curve Inventory</h2>
         <span>{inventoryCount}</span>

@@ -811,7 +811,8 @@ function KrManagedInstructionsWorkbenchInstructions() {
 
         .wlv-kr-workbench > .wlv-kr-summary-grid .wlv-kr-count-card span {
           margin-top: 2px;
-          font-size: 18px;
+          font-size: 16px;
+          font-weight: 700;
           line-height: 1.1;
         }
 

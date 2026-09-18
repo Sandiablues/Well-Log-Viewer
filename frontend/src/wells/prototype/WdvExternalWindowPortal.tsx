@@ -145,10 +145,25 @@ export function WdvExternalWindowPortal({
 
     popup.document.title = title;
     cloneHostStyles(popup.document);
+
+    const syncHostThemeToPopup = () => {
+      const hostRoot = document.documentElement;
+      const popupRoot = popup.document.documentElement;
+      popupRoot.classList.toggle(
+        "mv-ui-scope",
+        hostRoot.classList.contains("mv-ui-scope"),
+      );
+      const theme = hostRoot.getAttribute("data-mv-theme");
+      if (theme) popupRoot.setAttribute("data-mv-theme", theme);
+      else popupRoot.removeAttribute("data-mv-theme");
+    };
+
+    syncHostThemeToPopup();
+
     popup.document.body.replaceChildren();
     popup.document.body.style.margin = "0";
     popup.document.body.style.overflow = "hidden";
-    popup.document.body.style.background = "#0b1218";
+    popup.document.body.style.background = "var(--mv-bg-app, #0b1218)";
 
     const root = popup.document.createElement("div");
     root.id = "multiviewer-external-window-root";
@@ -160,8 +175,15 @@ export function WdvExternalWindowPortal({
 
     let resizeObserver: ResizeObserver | null = null;
     let mutationObserver: MutationObserver | null = null;
+    let themeObserver: MutationObserver | null = null;
     let resizeFrame: number | null = null;
     let observedContent: Element | null = null;
+
+    themeObserver = new MutationObserver(syncHostThemeToPopup);
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "data-mv-theme"],
+    });
 
     const resizePopupToContent = () => {
       if (!fitToContent || popup.closed) return;
@@ -246,6 +268,7 @@ export function WdvExternalWindowPortal({
       popup.removeEventListener("beforeunload", handleExternalBeforeUnload);
       mutationObserver?.disconnect();
       resizeObserver?.disconnect();
+      themeObserver?.disconnect();
       if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
       closingFromHostRef.current = true;
       persistBounds(storageKey, popup);

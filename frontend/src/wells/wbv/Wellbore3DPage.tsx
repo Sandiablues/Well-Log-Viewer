@@ -18,6 +18,156 @@ import {
 } from "./WellboreTrajectoryRenderer";
 
 const WBV_NAVIGATION_CAMERA_VIEW_STORAGE_KEY = "wlv:wbv:navigation-camera-view:v1";
+const WBV_CANVAS_BACKDROP_STORAGE_KEY = "wlv:wbv:canvas-backdrop:v1";
+
+type WbvCanvasShadeId = "dark" | "charcoal" | "slate" | "mid" | "soft" | "light";
+
+type WbvCanvasShadeOption = {
+  id: WbvCanvasShadeId;
+  label: string;
+  background: string;
+  swatch: string;
+  contrast: "dark" | "light";
+  overlaySurface: string;
+  overlayBorder: string;
+  overlayText: string;
+  overlayLine: string;
+  overlayShadow: string;
+  compassSurface: string;
+  compassBorder: string;
+  compassText: string;
+  compassNorth: string;
+  boundingBoxPresetColor: string;
+  gridPresetColor: string;
+  groundPlanePresetColor: string;
+};
+
+const WBV_CANVAS_SHADE_OPTIONS: readonly WbvCanvasShadeOption[] = [
+  {
+    id: "dark",
+    label: "Dark",
+    background: "radial-gradient(circle at 50% 44%, rgba(53,91,108,.18), rgba(0,0,0,0) 50%), linear-gradient(180deg,#04070a,#010203)",
+    swatch: "linear-gradient(180deg,#11171c,#010203)",
+    contrast: "dark",
+    overlaySurface: "rgba(7, 12, 17, 0.86)",
+    overlayBorder: "rgba(111, 211, 255, 0.32)",
+    overlayText: "#a8b8c7",
+    overlayLine: "rgba(199, 241, 255, 0.52)",
+    overlayShadow: "rgba(0, 0, 0, 0.34)",
+    compassSurface: "rgba(4, 11, 15, 0.80)",
+    compassBorder: "rgba(84, 203, 229, 0.42)",
+    compassText: "#cdebf0",
+    compassNorth: "#8ff2ff",
+    boundingBoxPresetColor: "#587080",
+    gridPresetColor: "#526878",
+    groundPlanePresetColor: "#182129",
+  },
+  {
+    id: "charcoal",
+    label: "Charcoal Teal",
+    background: "#2B3539",
+    swatch: "#2B3539",
+    contrast: "dark",
+    overlaySurface: "rgba(31, 42, 47, 0.90)",
+    overlayBorder: "rgba(151, 175, 184, 0.46)",
+    overlayText: "#d3dde0",
+    overlayLine: "rgba(215, 229, 234, 0.62)",
+    overlayShadow: "rgba(0, 0, 0, 0.28)",
+    compassSurface: "rgba(27, 38, 43, 0.90)",
+    compassBorder: "rgba(151, 186, 197, 0.48)",
+    compassText: "#dce7ea",
+    compassNorth: "#a9d6df",
+    boundingBoxPresetColor: "#70828B",
+    gridPresetColor: "#667983",
+    groundPlanePresetColor: "#303A3F",
+  },
+  {
+    id: "slate",
+    label: "Slate Mineral",
+    background: "#526066",
+    swatch: "#526066",
+    contrast: "dark",
+    overlaySurface: "rgba(63, 75, 80, 0.90)",
+    overlayBorder: "rgba(189, 204, 209, 0.46)",
+    overlayText: "#edf2f3",
+    overlayLine: "rgba(231, 239, 241, 0.64)",
+    overlayShadow: "rgba(20, 31, 36, 0.24)",
+    compassSurface: "rgba(58, 70, 75, 0.90)",
+    compassBorder: "rgba(191, 211, 216, 0.50)",
+    compassText: "#f0f5f6",
+    compassNorth: "#c9e3e8",
+    boundingBoxPresetColor: "#9AA8AD",
+    gridPresetColor: "#88989E",
+    groundPlanePresetColor: "#59666B",
+  },
+  {
+    id: "mid",
+    label: "Mineral Gray",
+    background: "#8C989D",
+    swatch: "#8C989D",
+    contrast: "light",
+    overlaySurface: "rgba(82, 94, 100, 0.94)",
+    overlayBorder: "rgba(54, 72, 80, 0.76)",
+    overlayText: "#EFF5F7",
+    overlayLine: "rgba(214, 229, 234, 0.82)",
+    overlayShadow: "rgba(30, 40, 46, 0.26)",
+    compassSurface: "rgba(76, 88, 94, 0.94)",
+    compassBorder: "rgba(66, 88, 97, 0.78)",
+    compassText: "#F2F7F8",
+    compassNorth: "#C6E6EC",
+    boundingBoxPresetColor: "#46565D",
+    gridPresetColor: "#52636A",
+    groundPlanePresetColor: "#768388",
+  },
+  {
+    id: "soft",
+    label: "Mist Gray",
+    background: "#C0C7CA",
+    swatch: "#C0C7CA",
+    contrast: "light",
+    overlaySurface: "rgba(106, 120, 126, 0.90)",
+    overlayBorder: "rgba(72, 94, 102, 0.70)",
+    overlayText: "#F4F8F9",
+    overlayLine: "rgba(224, 235, 239, 0.80)",
+    overlayShadow: "rgba(40, 52, 58, 0.22)",
+    compassSurface: "rgba(99, 113, 120, 0.92)",
+    compassBorder: "rgba(80, 105, 114, 0.72)",
+    compassText: "#F6FAFB",
+    compassNorth: "#D1E9EE",
+    boundingBoxPresetColor: "#6E7B80",
+    gridPresetColor: "#7B888D",
+    groundPlanePresetColor: "#B2BABD",
+  },
+  {
+    id: "light",
+    label: "Light",
+    background: "#E7EBEE",
+    swatch: "#E7EBEE",
+    contrast: "light",
+    overlaySurface: "rgba(132, 146, 153, 0.88)",
+    overlayBorder: "rgba(82, 106, 115, 0.66)",
+    overlayText: "#17262D",
+    overlayLine: "rgba(37, 56, 64, 0.76)",
+    overlayShadow: "rgba(42, 54, 60, 0.18)",
+    compassSurface: "rgba(111, 126, 133, 0.94)",
+    compassBorder: "rgba(74, 101, 111, 0.74)",
+    compassText: "#F2F8FA",
+    compassNorth: "#D7F0F4",
+    boundingBoxPresetColor: "#606C73",
+    gridPresetColor: "#7F8B92",
+    groundPlanePresetColor: "#CBD3D8",
+  },
+] as const;
+
+function isWbvCanvasShadeId(value: string | null): value is WbvCanvasShadeId {
+  return WBV_CANVAS_SHADE_OPTIONS.some((option) => option.id === value);
+}
+
+function getWbvCanvasShadeOption(id: WbvCanvasShadeId): WbvCanvasShadeOption {
+  return WBV_CANVAS_SHADE_OPTIONS.find((option) => option.id === id) ?? WBV_CANVAS_SHADE_OPTIONS[0];
+}
+const WBV_WELL_SELECTION_STORAGE_KEY = "wlv:wbv:well-selection:v1";
+const WBV_WORKING_CANVAS_STORAGE_KEY = "multiviewer.wbv.working-canvas.v1";
 
 function isFiniteCameraTuple(values: readonly number[], expectedLength: number): boolean {
   return values.length === expectedLength && values.every((value) => Number.isFinite(value));
@@ -67,6 +217,59 @@ function writeWbvNavigationCameraView(view: WbvCameraViewState): void {
   } catch {
     // Navigation persistence is best-effort and must never interrupt WBV interaction.
   }
+}
+
+function readWbvCanvasBackdrop(): WbvCanvasShadeId {
+  try {
+    const stored = window.localStorage.getItem(WBV_CANVAS_BACKDROP_STORAGE_KEY)
+      ?? window.sessionStorage.getItem(WBV_CANVAS_BACKDROP_STORAGE_KEY);
+    if (isWbvCanvasShadeId(stored)) {
+      // One-time migration from any prior session-only value.
+      window.localStorage.setItem(WBV_CANVAS_BACKDROP_STORAGE_KEY, stored);
+      return stored;
+    }
+    if (stored !== null) {
+      window.localStorage.removeItem(WBV_CANVAS_BACKDROP_STORAGE_KEY);
+      window.sessionStorage.removeItem(WBV_CANVAS_BACKDROP_STORAGE_KEY);
+    }
+  } catch {
+    // Persistence is best-effort; preserve the established dark fallback.
+  }
+  return "dark";
+}
+
+function writeWbvCanvasBackdrop(backdrop: WbvCanvasShadeId): void {
+  try {
+    window.localStorage.setItem(WBV_CANVAS_BACKDROP_STORAGE_KEY, backdrop);
+  } catch {
+    // Canvas selection persistence must never interrupt WBV interaction.
+  }
+}
+
+// WBV_WELL_SELECTION_PERSISTENCE_V1_0_1_AUDITED
+type WbvPersistedWellSelection = {
+  displayedWellIds: string[];
+  activeManagedWellId: string | null;
+};
+
+function readWbvPersistedWellSelection(): WbvPersistedWellSelection | null {
+  try {
+    const raw = window.localStorage.getItem(WBV_WELL_SELECTION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<WbvPersistedWellSelection>;
+    const displayedWellIds = Array.isArray(parsed.displayedWellIds)
+      ? parsed.displayedWellIds.filter((value): value is string => typeof value === "string" && value.length > 0)
+      : [];
+    const activeManagedWellId = typeof parsed.activeManagedWellId === "string" && parsed.activeManagedWellId.length > 0
+      ? parsed.activeManagedWellId : null;
+    if (displayedWellIds.length === 0 && !activeManagedWellId) return null;
+    return { displayedWellIds: Array.from(new Set(displayedWellIds)), activeManagedWellId };
+  } catch { return null; }
+}
+
+function writeWbvPersistedWellSelection(selection: WbvPersistedWellSelection): void {
+  try { window.localStorage.setItem(WBV_WELL_SELECTION_STORAGE_KEY, JSON.stringify(selection)); }
+  catch { /* best-effort only */ }
 }
 
 function wbvApiBaseUrl(): string {
@@ -308,6 +511,25 @@ type WbvDisplayLayerFilesContract = {
 };
 
 type WbvFormationTopItem = { top_id: string; product_id?: string | null; name: string; marker_type: string; group?: string | null; md: number; tvd?: number | null; tvdss?: number | null; uncertainty?: number | null; pick_status?: string | null; source_document?: string | null; source_page?: number | null; };
+
+function wbvFormationTieKey(name:string):string {
+  return name.normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/ø/g,"o").replace(/Ø/g,"O").replace(/æ/g,"ae").replace(/Æ/g,"AE").replace(/œ/g,"oe").replace(/Œ/g,"OE").trim().toLocaleLowerCase().replace(/[_\-–—]+/g," ").replace(/[()[\]{}.,:;]+/g," ").replace(/\s+/g," ").trim().replace(/\s+(?:top|fm|formation)$/i,"").trim();
+}
+function wbvHslChannelToHex(value:number):string {
+  return Math.round(Math.max(0,Math.min(1,value))*255).toString(16).padStart(2,"0");
+}
+function wbvFormationTieHex(name:string):string {
+  const key=wbvFormationTieKey(name); let hash=2166136261;
+  for(let index=0;index<key.length;index+=1){hash^=key.charCodeAt(index);hash=Math.imul(hash,16777619);}
+  const unsigned=hash>>>0;
+  const hue=(((unsigned%72)*137.50776405)%360)/360;
+  const saturation=[0.68,0.78,0.88][(unsigned>>>7)%3];
+  const lightness=[0.60,0.68,0.76][(unsigned>>>11)%3];
+  const hueToRgb=(p:number,q:number,t:number)=>{let x=t;if(x<0)x+=1;if(x>1)x-=1;if(x<1/6)return p+(q-p)*6*x;if(x<1/2)return q;if(x<2/3)return p+(q-p)*(2/3-x)*6;return p;};
+  let r=lightness,g=lightness,b=lightness;
+  if(saturation!==0){const q=lightness<0.5?lightness*(1+saturation):lightness+saturation-lightness*saturation;const p=2*lightness-q;r=hueToRgb(p,q,hue+1/3);g=hueToRgb(p,q,hue);b=hueToRgb(p,q,hue-1/3);}
+  return `#${wbvHslChannelToHex(r)}${wbvHslChannelToHex(g)}${wbvHslChannelToHex(b)}`;
+}
 type WbvFormationTopProduct = { product_id: string; display_name: string; tops: WbvFormationTopItem[]; };
 type WbvFormationTopProductsContract = { managed_well_id: string; products: WbvFormationTopProduct[]; };
 type WbvLithologyIntervalItem = {
@@ -325,6 +547,15 @@ type WbvLithologyIntervalItem = {
 };
 type WbvLithologyProduct = { product_id: string; display_name: string; intervals: WbvLithologyIntervalItem[]; };
 type WbvLithologyProductsContract = { managed_well_id: string; products: WbvLithologyProduct[]; };
+type WbvLithologyKnowledgeEntry = {
+  id: string;
+  fgdcCode?: number | null;
+  name: string;
+  formalName?: string | null;
+  description: string;
+  category?: string | null;
+  subcategory?: string | null;
+};
 
 type WbvCompletionComponentItem = {
   component_id: string;
@@ -357,6 +588,8 @@ type WbvCurveOverlayCurve = {
   depth_start?: number | null;
   depth_end?: number | null;
   depth_units?: string | null;
+  source_depth_unit?: "m" | "ft" | null;
+  runtime_depth_unit?: "m" | null;
   run_interval?: string | null;
   run_number?: string | null;
   run_date?: string | null;
@@ -385,9 +618,22 @@ type WbvCoreDisplayChunkManifestItem = {
   sequence_index?: number;
   top_depth: number;
   base_depth: number;
-  depth_unit?: string;
+  depth_unit?: "m";
+  source_depth_unit?: "m" | "ft";
+  runtime_depth_unit?: "m";
   pixel_width?: number;
   pixel_height?: number;
+};
+
+type WbvCoreDisplayDescriptionInterval = {
+  description_id?: string;
+  top_depth: number;
+  base_depth?: number | null;
+  text?: string;
+  category?: string;
+  depth_unit?: "m";
+  source_depth_unit?: "m" | "ft";
+  runtime_depth_unit?: "m";
 };
 
 type WbvCoreDisplayChunksContract = {
@@ -396,7 +642,10 @@ type WbvCoreDisplayChunksContract = {
   segment_name?: string | null;
   top_depth?: number | null;
   base_depth?: number | null;
-  depth_unit?: string | null;
+  depth_unit?: "m" | null;
+  source_depth_unit?: "m" | "ft";
+  runtime_depth_unit?: "m";
+  description_intervals?: WbvCoreDisplayDescriptionInterval[];
   chunks: WbvCoreDisplayChunkManifestItem[];
 };
 
@@ -407,18 +656,6 @@ type WbvCoreDescriptionItem = {
   base_md: number;
   text: string;
   category: string;
-};
-
-type WbvCoreManagedWellRecord = {
-  product_groups?: Array<{
-    items?: Array<{
-      product_id?: string | null;
-      product_subgroup_key?: string | null;
-      provenance?: {
-        description_intervals?: Array<Record<string, unknown>> | null;
-      } | null;
-    }>;
-  }>;
 };
 
 type WbvCurveOverlayNormalizationItem = {
@@ -502,7 +739,11 @@ type WbvCurveOverlayRenderCurve = {
   fill_side: "positive" | "negative";
   fill_color: string;
   fill_opacity: number;
+  infill_brightness?: number;
   fill_outline: boolean;
+  infill_source?: 'solid' | 'pattern' | 'interval-column' | string | null;
+  infill_pattern?: string | null;
+  infill_interval_column?: string | null;
   baseline_normalized: number;
   samples: WbvCurveOverlayRenderSample[];
 };
@@ -512,6 +753,19 @@ type WbvCurveOverlayRenderContract = {
   track_spacing: number;
   tracks: WbvTrackConfig[];
   curves: WbvCurveOverlayRenderCurve[];
+};
+
+type WbvIntervalCurveRange = {
+  curve_product_id: string;
+  mnemonic: string;
+  display_name: string;
+  unit?: string | null;
+  minimum: number;
+  maximum: number;
+};
+
+type WbvCurveSamplesContract = {
+  samples?: unknown[];
 };
 
 type WbvManagerTab = "view_properties" | "track_layout" | WbvDisplayLayerKey;
@@ -584,6 +838,8 @@ type WbvLayerConfig = {
     marker_style?: "ring" | "disc" | "tick" | "flag";
     marker_size?: number;
     color_mode?: "formation" | "well" | "classification" | "single";
+    tie_formation_colours?: boolean;
+    formation_top_color_overrides?: Record<string,string> | null;
     label_mode?: "name" | "name_md" | "name_tvd" | "name_md_tvd";
     label_size?: number;
     label_offset?: number;
@@ -605,6 +861,10 @@ type WbvCoreModalSize = { width: number; height: number };
 type WbvCoreRestartRecoveryState = {
   schema_version: 1;
   managed_well_id: string | null;
+  // WBV_LITHOLOGY_VISIBILITY_RESTART_PERSISTENCE_V1_0_1_AUDITED
+  display_layer_visibility_by_well?: Record<string, Partial<Record<WbvDisplayLayerKey, boolean>>>;
+  // WBV_VIEW_PROPERTIES_FULL_RESTART_PERSISTENCE_V1_0_0_AUDITED
+  view_properties_by_well?: Record<string, WbvViewProperties>;
   core_view_mode: boolean;
   core_modal: {
     open: boolean;
@@ -659,6 +919,10 @@ type WbvSavedCanvasSnapshot = {
   view_properties_by_well: Record<string, WbvViewProperties>;
   viewer_controls: WbvViewerControls;
   display_layers: WbvDisplayLayerControls;
+  // WBV_SAVE_CANVAS_COMPLETE_VISIBLE_STATE_V1_0_0_AUDITED
+  display_layer_visibility_by_well?: Record<string, Partial<Record<WbvDisplayLayerKey, boolean>>>;
+  viewer_controls_collapsed?: boolean;
+  well_trajectory_collapsed?: boolean;
   track_values_along_wellbore: boolean;
   view_preset: WbvViewPreset;
   zoom_percent: number;
@@ -668,6 +932,51 @@ type WbvSavedCanvasSnapshot = {
   layer_configurations_by_well: Record<string, WbvDisplayLayerConfigurationContract>;
 };
 type WbvSavedCanvasRecord = SavedCanvasToolbarItem & { snapshot: WbvSavedCanvasSnapshot };
+
+
+type WbvWorkingCanvasPersistence = {
+  schema_version: 1;
+  snapshot: WbvSavedCanvasSnapshot;
+  fresh_well_ids: string[];
+  canvas_local_layer_configurations: Record<string, WbvDisplayLayerConfigurationContract>;
+  curve_render_packages_by_well: Record<string, WbvCurveOverlayRenderContract | null>;
+  updated_at: string;
+};
+
+function readWbvWorkingCanvasPersistence(): WbvWorkingCanvasPersistence | null {
+  try {
+    const raw = window.localStorage.getItem(WBV_WORKING_CANVAS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<WbvWorkingCanvasPersistence>;
+    if (parsed.schema_version !== 1 || !parsed.snapshot || parsed.snapshot.schema_version !== 1) return null;
+    return {
+      schema_version: 1,
+      snapshot: parsed.snapshot,
+      fresh_well_ids: Array.isArray(parsed.fresh_well_ids)
+        ? parsed.fresh_well_ids.filter((value): value is string => typeof value === "string" && value.length > 0)
+        : [],
+      canvas_local_layer_configurations:
+        parsed.canvas_local_layer_configurations && typeof parsed.canvas_local_layer_configurations === "object"
+          ? parsed.canvas_local_layer_configurations
+          : {},
+      curve_render_packages_by_well:
+        parsed.curve_render_packages_by_well && typeof parsed.curve_render_packages_by_well === "object"
+          ? parsed.curve_render_packages_by_well
+          : {},
+      updated_at: typeof parsed.updated_at === "string" ? parsed.updated_at : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeWbvWorkingCanvasPersistence(value: WbvWorkingCanvasPersistence): void {
+  try {
+    window.localStorage.setItem(WBV_WORKING_CANVAS_STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    // Working-canvas persistence is best-effort and must never interrupt WBV interaction.
+  }
+}
 
 
 type WbvInteractionState = WbvInteractionStateV2;
@@ -742,6 +1051,7 @@ function stateLabel(value: string | null | undefined): string {
   return value.replace(/_/g, " ");
 }
 
+
 function fieldLabel(value: string | null | undefined): string {
   if (!value) return "None";
   return value.replace(/_/g, " ");
@@ -757,7 +1067,7 @@ function formatNumber(value: number | null | undefined, digits = 1): string {
 
 
 export type WbvViewProperties = {
-  trajectory: { color: string; materialMode?: "color" | "gray_metallic"; metallicTone?: "light_silver" | "silver" | "steel" | "gunmetal" | "graphite"; thickness: number; opacity: number };
+  trajectory: { color: string; materialMode?: "color" | "gray_metallic"; metallicTone?: "light_silver" | "silver" | "steel" | "gunmetal" | "graphite"; metallicFinish?: "matte" | "satin" | "polished"; metallicMetalness?: number; metallicRoughness?: number; metallicClearcoat?: number; thickness: number; opacity: number };
   boundingBox: { color: string; thickness: number; opacity: number };
   depthLabels: { color: string; size: number; interval: number; offset: number };
   surveyStations: { color: string; size: number; shape: "circle" | "square" | "diamond" | "cross"; orientation: "along" | "across"; opacity: number };
@@ -766,8 +1076,21 @@ export type WbvViewProperties = {
   shading: { intensity: number; ambient: number; directional: number };
 };
 
+function withWbvCanvasShadeViewPresets(
+  current: WbvViewProperties,
+  option: WbvCanvasShadeOption,
+): WbvViewProperties {
+  return {
+    ...current,
+    boundingBox: { ...current.boundingBox, color: option.boundingBoxPresetColor },
+    grids: { ...current.grids, color: option.gridPresetColor },
+    groundPlane: { ...current.groundPlane, color: option.groundPlanePresetColor },
+  };
+}
+
 const defaultViewProperties: WbvViewProperties = {
-  trajectory: { color: "#67d599", materialMode: "color", metallicTone: "silver", thickness: 1, opacity: 1 },
+  // WBV_WELLBORE_METALLIC_APPEARANCE_V1_0_0_AUDITED
+  trajectory: { color: "#67d599", materialMode: "color", metallicTone: "silver", metallicFinish: "satin", thickness: 1, opacity: 1 },
   boundingBox: { color: "#587080", thickness: 1, opacity: 0.72 },
   depthLabels: { color: "#b9f3ff", size: 1, interval: 0, offset: 0.52 },
   surveyStations: { color: "#2f9bff", size: 1, shape: "circle", orientation: "along", opacity: 1 },
@@ -801,6 +1124,67 @@ const initialViewerControls: WbvViewerControls = {
   northArrow: true,
   surfaceLighting: true,
 };
+
+
+const WBV_DISPLAY_LAYER_KEYS: WbvDisplayLayerKey[] = [
+  "formation_tops",
+  "lithology_intervals",
+  "core_images",
+  "casing_hole_sections",
+  "completions",
+  "curve_overlays",
+  "borehole_imagery",
+];
+
+function createCleanWbvLayerConfig(layerType: WbvDisplayLayerKey): WbvLayerConfig {
+  return {
+    layer_type: layerType,
+    visible: false,
+    selected_item_ids: [],
+    source_type: "wmd",
+    source_product_id: null,
+    scale: {
+      mode: "backend_default",
+      minimum: null,
+      maximum: null,
+      scale_type: "linear",
+      direction: "normal",
+    },
+    appearance: {
+      color: null,
+      opacity: 1,
+      line_width: 1,
+      display_mode: "line",
+      show_labels: true,
+      marker_style: "ring",
+      marker_size: 1,
+      color_mode: "formation",
+      label_mode: "name_md",
+      label_size: 1,
+      label_offset: 1,
+      label_position: "right",
+      selected_top_ids: null,
+      selected_interval_ids: null,
+      selected_component_ids: null,
+      label_color: null,
+      brightness: 1.35,
+      pattern_scale: 1.5,
+      hide_underlay: false,
+    },
+    curve_settings: [],
+  };
+}
+
+function createCleanWbvDisplayLayerConfiguration(
+  managedWellId: string,
+): WbvDisplayLayerConfigurationContract {
+  return {
+    managed_well_id: managedWellId,
+    track_spacing: 0.05,
+    tracks: [],
+    layers: WBV_DISPLAY_LAYER_KEYS.map(createCleanWbvLayerConfig),
+  };
+}
 
 function numericRange(values: Array<number | null | undefined>): NumericRange {
   const clean = values.filter(
@@ -896,6 +1280,8 @@ function remapSelectedPointAcrossPackages(
   }, 0);
   return nextPoints[nearestIndex] ?? selectedPoint;
 }
+void remapSelectedPointAcrossPackages;
+
 
 function rangeFromBoundingBox(
   boundingBox: WbvBoundingBox | undefined,
@@ -973,10 +1359,64 @@ export function Wellbore3DPage({
   const [prefetchedWellPackages, setPrefetchedWellPackages] = useState<Record<string, WbvDisplayedWellPackage>>({});
   const [loadingDisplayedWellIds, setLoadingDisplayedWellIds] = useState<Record<string, boolean>>({});
   const [wellSelectorOpen, setWellSelectorOpen] = useState(false);
+  const wellSelectionRestoreAttemptedRef = useRef(false);
+  const pendingWellSelectionRestoreRef = useRef<WbvPersistedWellSelection | null>(null);
+  const wellSelectionRestoreInProgressRef = useRef(false);
+  const sceneWellActivationInFlightRef = useRef<string | null>(null);
+  const sceneWellActivationRequestedRef = useRef<{ managedWellId: string; requestedAt: number } | null>(null);
+  const wbvSessionRefreshInFlightRef = useRef(false);
+  const wbvSessionRefreshCompletedAtRef = useRef(0);
+  // WBV_WORKING_CANVAS_APPLICATION_SWITCH_PERSISTENCE_V1_0_0_AUDITED
+  // Restore the current WBV working-canvas authority synchronously before the
+  // first backend/session hydration can misclassify its wells as fresh.
+  const workingCanvasPersistenceRef = useRef<WbvWorkingCanvasPersistence | null>(
+    readWbvWorkingCanvasPersistence(),
+  );
+  const workingCanvasRestoreInProgressRef = useRef(Boolean(workingCanvasPersistenceRef.current));
+  const workingCanvasPersistenceReadyRef = useRef(!workingCanvasPersistenceRef.current);
+  // WBV_FRESH_WELL_CANVAS_CONFIGURATION_ISOLATION_V1_0_0_AUDITED
+  // A normal well introduction belongs to the current canvas, not to any
+  // historical per-well presentation state persisted by another canvas.
+  const freshCanvasWellIdsRef = useRef<Set<string>>(
+    new Set(workingCanvasPersistenceRef.current?.fresh_well_ids ?? []),
+  );
+  // Current-canvas presentation authority for wells introduced outside a
+  // saved-canvas snapshot. This survives active-well/session hydration and
+  // application switching, but is never imported from another canvas.
+  const canvasLocalLayerConfigurationsRef = useRef<Record<string, WbvDisplayLayerConfigurationContract>>(
+    structuredClone(workingCanvasPersistenceRef.current?.canvas_local_layer_configurations ?? {}),
+  );
+  const savedCanvasRestoreInProgressRef = useRef(false);
+  // WBV_WDV_SAVED_CANVAS_DROPDOWN_AND_CANVAS_SWATCH_V1_0_0_AUDITED
+  // WBV_CANVAS_BACKDROP_PERSISTENCE_V1_0_0_AUDITED:
+  // Restore the last WBV canvas selection across viewer switching, reload and reboot.
+  // WBV_CANVAS_SHADE_POPOVER_V1_0_0_AUDITED:
+  // Separate committed and preview shade state. Preview is live but only Apply persists.
+  const [wbvCanvasBackdrop, setWbvCanvasBackdrop] = useState<WbvCanvasShadeId>(readWbvCanvasBackdrop);
+  const [wbvCanvasShadePreview, setWbvCanvasShadePreview] = useState<WbvCanvasShadeId>(readWbvCanvasBackdrop);
+  const [wbvCanvasShadeMenuOpen, setWbvCanvasShadeMenuOpen] = useState(false);
+  const wbvCanvasShadeMenuRef = useRef<HTMLDivElement | null>(null);
   const [wbvSavedCanvases, setWbvSavedCanvases] = useState<SavedCanvasToolbarItem[]>([]);
+  const [wbvSavedCanvasesLoaded, setWbvSavedCanvasesLoaded] = useState(false);
+  const activeSavedCanvasAutoRestoreAttemptedRef = useRef(false);
   const [wbvSavedCanvasSaving, setWbvSavedCanvasSaving] = useState(false);
   const [wbvSavedCanvasBusyUid, setWbvSavedCanvasBusyUid] = useState<string | null>(null);
   const [wbvSavedCanvasError, setWbvSavedCanvasError] = useState<string | null>(null);
+  const [savedCanvasTransitionPending, setSavedCanvasTransitionPending] = useState(false);
+  const [savedCanvasScenePending, setSavedCanvasScenePending] = useState(false);
+  const [showSavedCanvasRestoreProgress, setShowSavedCanvasRestoreProgress] = useState(false);
+  const savedCanvasVisualReadyRef = useRef(true);
+  const savedCanvasPaintConfirmFrameRef = useRef<number | null>(null);
+  const initialSessionBootstrapAttemptedRef = useRef(false);
+  const activeSavedCanvasUid = useMemo(() => {
+    const activeItem = wbvSavedCanvases.find((item) => {
+      const withActive = item as SavedCanvasToolbarItem & { active?: boolean; is_active?: boolean };
+      return withActive.active === true || withActive.is_active === true;
+    });
+    if (!activeItem) return null;
+    const withUid = activeItem as SavedCanvasToolbarItem & { saved_canvas_uid?: string; uid?: string };
+    return withUid.saved_canvas_uid ?? withUid.uid ?? null;
+  }, [wbvSavedCanvases]);
   const [layerEditorWellId, setLayerEditorWellId] = useState<string | null>(null);
   const [viewPropertiesByWell, setViewPropertiesByWell] = useState<Record<string, WbvViewProperties>>({});
   const [viewPreset, setViewPreset] = useState<WbvViewPreset>("fit");
@@ -1003,6 +1443,38 @@ export function Wellbore3DPage({
   const [interaction, setInteraction] = useState<WbvInteractionState | null>(null);
   const [interactionSaving, setInteractionSaving] = useState(false);
   const [interactionError, setInteractionError] = useState<string | null>(null);
+  // WBV_RIGHT_PANEL_INSTANT_INTERACTION_RESPONSE_V1_0_0_AUDITED
+  // Point/Interval activation is presented locally on the first frame; the
+  // revisioned backend command remains canonical and reconciles afterward.
+  const [selectionModeIntent, setSelectionModeIntent] = useState<"none" | "point" | "interval" | null>(null);
+  const effectiveSelectionMode = selectionModeIntent ?? interaction?.selection_mode ?? "none";
+  useEffect(() => {
+    if (selectionModeIntent === null) return;
+    if (interactionError || (interaction?.selection_mode ?? "none") === selectionModeIntent) {
+      setSelectionModeIntent(null);
+    }
+  }, [interaction?.selection_mode, interactionError, selectionModeIntent]);
+
+  // WBV_CORE_RIGHT_PANEL_MUTUAL_EXCLUSION_RESTORE_V1_0_0_AUDITED
+  // Only one MB1 wellbore-picking mode may own the pointer at a time.
+  const releaseCorePickingForRightPanel = () => {
+    setCoreViewMode(false);
+    setCoreInspectionInterval(null);
+    setCoreModalOpen(false);
+    setCoreModalChunkId("");
+    setCoreLocatorFocusInterval(null);
+  };
+
+  const requestSelectionMode = (mode: "none" | "point" | "interval") => {
+    if (mode !== "none") {
+      releaseCorePickingForRightPanel();
+    }
+    setSelectionModeIntent(mode);
+    // Give the browser a paint opportunity before backend/revision state churn.
+    window.requestAnimationFrame(() => {
+      void setSelectionMode(mode);
+    });
+  };
   // A point projected by the live renderer is the authoritative presentation value.
   // Keep it pending while the backend records the observation so a resampled response
   // cannot visibly replace the exact MD selected by the user.
@@ -1026,12 +1498,23 @@ export function Wellbore3DPage({
     });
   }
   const [trackValuesAlongWellbore, setTrackValuesAlongWellbore] = useState(false);
-  const [depthUnitSaving, setDepthUnitSaving] = useState(false);
+  const [wellTrajectoryCollapsed, setWellTrajectoryCollapsed] = useState(false); // WBV_RIGHT_PANEL_WELL_TRAJECTORY_COLLAPSE_V1_0_0_AUDITED
+  const [viewerControlsCollapsed, setViewerControlsCollapsed] = useState(false); // WBV_LEFT_PANEL_VIEWER_COLLAPSE_AND_HEADER_CLEANUP_V1_0_1_AUDITED
+  // WBV_CANVAS_GLOBAL_DEPTH_PRESENTATION_SWITCH_V1_0_0_AUDITED
+  // One presentation unit governs every well and every depth-bearing display
+  // surface on the current canvas. Runtime geometry/data remain canonical m.
+  const [canvasDisplayDepthUnit, setCanvasDisplayDepthUnit] = useState<WbvDepthUnit>("m");
   const [viewerControls, setViewerControls] = useState<WbvViewerControls>(initialViewerControls);
   const [viewProperties, setViewProperties] = useState<WbvViewProperties>(defaultViewProperties);
   const [draftViewProperties, setDraftViewProperties] = useState<WbvViewProperties>(defaultViewProperties);
   const [selectedViewProperty, setSelectedViewProperty] = useState<keyof WbvViewProperties>("trajectory");
   const [displayLayers, setDisplayLayers] = useState<WbvDisplayLayerControls>({ trajectory: true });
+  // WBV_DISPLAY_LAYER_VISIBILITY_AUTHORITY_AND_NOFLASH_V1_0_0_AUDITED
+  // Data-layer activation/configuration remains Apply-owned. Sidebar Display Layers
+  // is a per-well frontend visibility override only and never rewrites canonical bundles.
+  const [displayLayerVisibilityByWell, setDisplayLayerVisibilityByWell] = useState<
+    Record<string, Partial<Record<WbvDisplayLayerKey, boolean>>>
+  >({});
   const [displayLayerFiles, setDisplayLayerFiles] = useState<WbvDisplayLayerFilesContract | null>(null);
   const [formationTopProducts, setFormationTopProducts] = useState<WbvFormationTopProductsContract | null>(null);
   const [lithologyProducts, setLithologyProducts] = useState<WbvLithologyProductsContract | null>(null);
@@ -1099,6 +1582,11 @@ export function Wellbore3DPage({
   const [, setSelectedCurveProductIds] = useState<string[]>([]);
   const [, setCurveOverlayNormalization] = useState<WbvCurveOverlayNormalizationContract | null>(null);
   const [curveOverlayRenderPackage, setCurveOverlayRenderPackage] = useState<WbvCurveOverlayRenderContract | null>(null);
+  const [intervalCurveRanges, setIntervalCurveRanges] = useState<WbvIntervalCurveRange[]>([]);
+  const [intervalCurveRangesLoading, setIntervalCurveRangesLoading] = useState(false);
+  const [intervalCurveRangesError, setIntervalCurveRangesError] = useState<string | null>(null);
+  const [intervalCoreDescriptions, setIntervalCoreDescriptions] = useState<WbvCoreDescriptionItem[]>([]);
+  const [lithologyKnowledgeById, setLithologyKnowledgeById] = useState<Record<string, WbvLithologyKnowledgeEntry | null>>({});
   const [publishedOverlayPackages, setPublishedOverlayPackages] = useState<WbvOverlayPackage[]>([]);
   const [selectedPublishedPackageUid, setSelectedPublishedPackageUid] = useState<string | null>(null);
   const [publishedPresentationDraft, setPublishedPresentationDraft] = useState<WbvPresentationOverrides | null>(null);
@@ -1114,6 +1602,7 @@ export function Wellbore3DPage({
   const [layerManagerOpen, setLayerManagerOpen] = useState(false);
   const [layerManagerPoppedOut, setLayerManagerPoppedOut] = useState(true);
   const [activeLayerTab, setActiveLayerTab] = useState<WbvManagerTab>("curve_overlays");
+  const [formationTopOverrideTargetId, setFormationTopOverrideTargetId] = useState<string>("");
   const [, setCurveSelectorSearch] = useState("");
   const [draftLayerConfigs, setDraftLayerConfigs] = useState<WbvLayerConfig[]>([]);
   const [appliedLayerConfigs, setAppliedLayerConfigs] = useState<WbvLayerConfig[]>([]);
@@ -1306,9 +1795,12 @@ export function Wellbore3DPage({
 
   const savePublishedPresentation = async () => {
     const managedWellUid = state.session?.active_managed_well_uid;
-    if (!managedWellUid || !selectedPublishedPackage || !publishedPresentationDraft) return;
+    if (!managedWellUid || !selectedPublishedPackage || !publishedPresentationDraft) return null;
     setPublishedPresentationSaving(true);
     try {
+      // WBV_CURVE_PRESENTATION_APPLY_AUTHORITY_FIX_V1_0_0_AUDITED
+      // Return the exact committed presentation authority to Apply so later
+      // display-layer refresh work cannot fall back to the pre-Apply package revision.
       const saved = await updateWbvPresentationOverrides(
         managedWellUid,
         selectedPublishedPackage.package_uid,
@@ -1328,11 +1820,12 @@ export function Wellbore3DPage({
       setSelectedPublishedPackageUid(saved.package_uid);
       setPublishedPresentationDraft(structuredClone(saved.wbv_overrides));
 
+      let committedRenderPackage: WbvCurveOverlayRenderContract | null = null;
       if (saved.status === "active") {
         // Render-package URL is revision-qualified and explicitly no-store so draft
         // preview can hand authority back to the newly committed render package
         // without a stale browser-cached GET restoring the previous presentation.
-        const committedRenderPackage = await fetchWlvJson<WbvCurveOverlayRenderContract>(
+        committedRenderPackage = await fetchWlvJson<WbvCurveOverlayRenderContract>(
           `${publishedWbvRenderPackageUrl(managedWellUid, saved.package_uid)}?package_revision=${encodeURIComponent(String(saved.package_revision))}`,
           { cache: "no-store" },
         );
@@ -1354,8 +1847,23 @@ export function Wellbore3DPage({
               },
             };
           });
+          setPrefetchedWellPackages((current) => {
+            const existing = current[activeManagedWellId];
+            if (!existing) return current;
+            return {
+              ...current,
+              [activeManagedWellId]: {
+                ...existing,
+                layers: {
+                  ...existing.layers,
+                  curveRenderPackage: committedRenderPackage,
+                },
+              },
+            };
+          });
         }
       }
+      return { saved, committedRenderPackage };
     } finally {
       setPublishedPresentationSaving(false);
     }
@@ -1511,11 +2019,21 @@ export function Wellbore3DPage({
   }, []);
 
   useEffect(() => {
-    if (wellSelectorOpen) return;
+    if (wellSelectorOpen || wellSelectionRestoreInProgressRef.current) return;
     setPendingDisplayedWellIds(selectionRecordFromDisplayedPackages(displayedWellPackages));
   }, [displayedWellPackages, wellSelectorOpen]);
 
-  const loadWbvSession = useCallback(async () => {
+  const loadWbvSession = useCallback(async (activationViewTransition?: {
+    outgoingManagedWellId: string | null;
+    outgoingViewProperties: WbvViewProperties | null;
+    incomingManagedWellId: string;
+    incomingViewProperties: WbvViewProperties;
+  }) => {
+    // WBV_RESTORE_REFRESH_RACE_SUPPRESSION_V1_0_0_AUDITED
+    // Avoid overlapping full-session hydrations. Each hydration replaces renderer-
+    // owned object references and can force a complete Three.js reconstruction.
+    if (wbvSessionRefreshInFlightRef.current) return;
+    wbvSessionRefreshInFlightRef.current = true;
     setState((current) => ({ ...current, loading: true, error: null }));
     try {
       const session = await fetchWlvJson<WbvSessionContract>(
@@ -1524,6 +2042,29 @@ export function Wellbore3DPage({
       // The backend-owned WBV session is independent; WDV is only its initial default and synchronization peer.
       const managedWellId = session.active_managed_well_id;
       const managedWellUid = session.active_managed_well_uid;
+      const workingCanvasConfiguration = managedWellId
+        ? (
+            workingCanvasPersistenceRef.current?.snapshot.layer_configurations_by_well[managedWellId]
+            ?? canvasLocalLayerConfigurationsRef.current[managedWellId]
+            ?? null
+          )
+        : null;
+      const workingCurveRenderPackage = managedWellId
+        ? (workingCanvasPersistenceRef.current?.curve_render_packages_by_well[managedWellId] ?? null)
+        : null;
+      if (
+        managedWellId
+        && !savedCanvasRestoreInProgressRef.current
+        && !workingCanvasConfiguration
+        && !freshCanvasWellIdsRef.current.has(managedWellId)
+      ) {
+        // The first normal hydration of a well into an unsaved/current canvas is
+        // a fresh introduction. Saved-canvas restore explicitly bypasses this.
+        freshCanvasWellIdsRef.current.add(managedWellId);
+      }
+      const useFreshCanvasConfiguration = Boolean(
+        managedWellId && freshCanvasWellIdsRef.current.has(managedWellId),
+      );
       const viewerPackage = managedWellId
         ? await fetchWlvJson<WbvViewerPackageContract>(
             `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/viewer-package`,
@@ -1555,32 +2096,45 @@ export function Wellbore3DPage({
           )
         : null;
       const nextLayerConfiguration = managedWellId
-        ? await fetchWlvJson<WbvDisplayLayerConfigurationContract>(
-            `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/display-layer-configuration`,
+        ? (
+            workingCanvasConfiguration
+            ?? (
+              useFreshCanvasConfiguration
+                ? (
+                    canvasLocalLayerConfigurationsRef.current[managedWellId]
+                    ?? (
+                      canvasLocalLayerConfigurationsRef.current[managedWellId]
+                      = createCleanWbvDisplayLayerConfiguration(managedWellId)
+                    )
+                  )
+                : await fetchWlvJson<WbvDisplayLayerConfigurationContract>(
+                    `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/display-layer-configuration`,
+                  )
+            )
           )
         : null;
-      const nextPublishedPackages = managedWellUid
-        ? await listWbvOverlayPackages(managedWellUid)
-        : null;
-      const nextWbvTrackLayout = managedWellUid ? await getWbvTrackLayout(managedWellUid) : null;
-      setWbvTrackLayout(nextWbvTrackLayout);
-      setSelectedLayoutTrackUid((current) => current && nextWbvTrackLayout?.tracks.some((track) => track.track_uid === current) ? current : nextWbvTrackLayout?.tracks[0]?.track_uid ?? null);
+      const nextPublishedPackages =
+        managedWellUid && !useFreshCanvasConfiguration
+          ? await listWbvOverlayPackages(managedWellUid)
+          : null;
+      const nextWbvTrackLayout =
+        managedWellUid && !useFreshCanvasConfiguration
+          ? await getWbvTrackLayout(managedWellUid)
+          : null;
       const activePublishedPackage = nextPublishedPackages?.packages.find((item) => item.status === "active") ?? null;
       const packageItems = nextPublishedPackages?.packages ?? [];
-      setPublishedOverlayPackages(packageItems);
-      setSelectedPublishedPackageUid((current) => {
-        if (current && packageItems.some((item) => item.package_uid === current)) return current;
-        return packageItems.find((item) => item.status === "active")?.package_uid ?? packageItems[0]?.package_uid ?? null;
-      });
       const nextCurveOverlayRenderPackage =
-        managedWellUid && activePublishedPackage
-          ? await fetchWlvJson<WbvCurveOverlayRenderContract>(
-              publishedWbvRenderPackageUrl(
-                managedWellUid,
-                activePublishedPackage.package_uid,
-              ),
-            )
-          : null;
+        workingCurveRenderPackage
+        ?? (
+          managedWellUid && activePublishedPackage && !useFreshCanvasConfiguration
+            ? await fetchWlvJson<WbvCurveOverlayRenderContract>(
+                publishedWbvRenderPackageUrl(
+                  managedWellUid,
+                  activePublishedPackage.package_uid,
+                ),
+              )
+            : null
+        );
       const nextInteraction = managedWellId
         ? await wbvInteractionApiV2.get(managedWellId)
         : null;
@@ -1609,6 +2163,25 @@ export function Wellbore3DPage({
           throw new Error("WBV rejected a curve-overlay render contract for another managed well.");
         }
       }
+
+      // WBV_MULTI_WELL_ACTIVE_SWITCH_TRANSACTIONAL_HYDRATION_V1_0_0_AUDITED
+      // Do not publish renderer-owned state while the incoming active well is still
+      // being hydrated. Premature track-layout / published-package commits caused
+      // the main Three.js effect to destructively rebuild once before the final
+      // active-well/session commit, then rebuild again when the remaining incoming
+      // state arrived. All renderer-affecting state below is now committed only
+      // after every required incoming contract has been fetched and validated.
+      setWbvTrackLayout(nextWbvTrackLayout);
+      setSelectedLayoutTrackUid((current) =>
+        current && nextWbvTrackLayout?.tracks.some((track) => track.track_uid === current)
+          ? current
+          : nextWbvTrackLayout?.tracks[0]?.track_uid ?? null
+      );
+      setPublishedOverlayPackages(packageItems);
+      setSelectedPublishedPackageUid((current) => {
+        if (current && packageItems.some((item) => item.package_uid === current)) return current;
+        return packageItems.find((item) => item.status === "active")?.package_uid ?? packageItems[0]?.package_uid ?? null;
+      });
       setCurveOverlayRenderPackage(nextCurveOverlayRenderPackage);
       interactionAuthorityRef.current?.seed(nextInteraction);
       const loadedLayerConfigs = nextLayerConfiguration?.layers ?? [];
@@ -1672,6 +2245,21 @@ export function Wellbore3DPage({
         });
         return next;
       });
+      if (
+        activationViewTransition
+        && managedWellId
+        && activationViewTransition.incomingManagedWellId === managedWellId
+      ) {
+        const outgoingManagedWellId = activationViewTransition.outgoingManagedWellId;
+        const outgoingViewProperties = activationViewTransition.outgoingViewProperties;
+        if (outgoingManagedWellId && outgoingViewProperties) {
+          setViewPropertiesByWell((current) => ({
+            ...current,
+            [outgoingManagedWellId]: structuredClone(outgoingViewProperties),
+          }));
+        }
+        setViewProperties(structuredClone(activationViewTransition.incomingViewProperties));
+      }
       setState({ session, viewerPackage, loading: false, error: null });
       if (managedWellId && viewerPackage) {
         const name = viewerPackage.well_name?.trim() || managedWellId;
@@ -1711,6 +2299,9 @@ export function Wellbore3DPage({
             ? caught.message
             : "Unable to load WBV session",
       });
+    } finally {
+      wbvSessionRefreshInFlightRef.current = false;
+      wbvSessionRefreshCompletedAtRef.current = Date.now();
     }
   }, []);
 
@@ -1728,16 +2319,17 @@ export function Wellbore3DPage({
     setSelectedUnavailableWellId(null);
     const outgoingActiveWellId = state.session?.active_managed_well_id ?? null;
     const switchingWell = outgoingActiveWellId !== managedWellId;
+    const outgoingViewProperties =
+      switchingWell && outgoingActiveWellId ? structuredClone(viewProperties) : null;
+    const incomingViewProperties =
+      switchingWell
+        ? structuredClone(viewPropertiesByWell[managedWellId] ?? defaultViewProperties)
+        : structuredClone(viewProperties);
     if (switchingWell) {
       // Changing active well transfers standard WBV control focus only.
-      // Preserve the outgoing well's local presentation before focus moves.
-      if (outgoingActiveWellId) {
-        const outgoingViewProperties = structuredClone(viewProperties);
-        setViewPropertiesByWell((current) => ({
-          ...current,
-          [outgoingActiveWellId]: outgoingViewProperties,
-        }));
-      }
+      // Defer view-property ownership transfer until the hydrated incoming session
+      // is committed so the Three.js scene rebuilds once rather than flashing once
+      // for outgoing-property persistence and again for active-well hydration.
       pendingExactSelectedPointRef.current = null;
       setSelectedPoint(null);
       setInteraction(null);
@@ -1753,12 +2345,22 @@ export function Wellbore3DPage({
           body: JSON.stringify({ managed_well_id: managedWellId }),
         });
       }
-      await loadWbvSession();
+      await loadWbvSession(
+        switchingWell
+          ? {
+              outgoingManagedWellId: outgoingActiveWellId,
+              outgoingViewProperties,
+              incomingManagedWellId: managedWellId,
+              incomingViewProperties,
+            }
+          : undefined,
+      );
       await loadWellSelectorItems();
-      if (switchingWell) {
-        const incomingViewProperties = viewPropertiesByWell[managedWellId] ?? defaultViewProperties;
-        setViewProperties(structuredClone(incomingViewProperties));
-      }
+      const persistedSelection = readWbvPersistedWellSelection();
+      writeWbvPersistedWellSelection({
+        displayedWellIds: persistedSelection?.displayedWellIds ?? [managedWellId],
+        activeManagedWellId: managedWellId,
+      });
     } catch (caught) {
       setWellSelectorMessage(caught instanceof Error ? caught.message : "Unable to select well.");
     }
@@ -1771,12 +2373,21 @@ export function Wellbore3DPage({
     viewPropertiesByWell,
   ]);
 
-  const prefetchDisplayedWellPackage = useCallback(async (managedWellId: string) => {
-    if (displayedWellPackages[managedWellId] || prefetchedWellPackages[managedWellId] || loadingDisplayedWellIds[managedWellId]) return;
+  const prefetchDisplayedWellPackage = useCallback(async (managedWellId: string, forceFresh = false) => {
+    if (displayedWellPackages[managedWellId] || (!forceFresh && prefetchedWellPackages[managedWellId]) || loadingDisplayedWellIds[managedWellId]) return;
     const item = wellSelectorItems.find((candidate) => candidate.managedWellId === managedWellId);
     if (!item?.hasSurvey) return;
     setLoadingDisplayedWellIds((current) => ({ ...current, [managedWellId]: true }));
     try {
+      const restoredWorkingConfiguration =
+        workingCanvasPersistenceRef.current?.snapshot.layer_configurations_by_well[managedWellId] ?? null;
+      const restoredWorkingCurveRenderPackage =
+        workingCanvasPersistenceRef.current?.curve_render_packages_by_well[managedWellId] ?? null;
+      const restoringWorkingCanvasWell =
+        workingCanvasRestoreInProgressRef.current && Boolean(restoredWorkingConfiguration);
+      if (!restoringWorkingCanvasWell) {
+        freshCanvasWellIdsRef.current.add(managedWellId);
+      }
       const [
         viewerPackage,
         displayLayerFilesForWell,
@@ -1784,8 +2395,6 @@ export function Wellbore3DPage({
         lithologyProductsForWell,
         completionProductsForWell,
         curveProductsForWell,
-        displayLayerConfigurationForWell,
-        curveRenderPackageForWell,
       ] = await Promise.all([
         fetchWlvJson<WbvViewerPackageContract>(
           `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/viewer-package`,
@@ -1805,13 +2414,16 @@ export function Wellbore3DPage({
         fetchWlvJson<WbvCurveOverlayProductsContract>(
           `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/curve-overlay-products`,
         ),
-        fetchWlvJson<WbvDisplayLayerConfigurationContract>(
-          `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/display-layer-configuration`,
-        ),
-        fetchWlvJson<WbvCurveOverlayRenderContract>(
-          `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/curve-overlays/render-package`,
-        ).catch(() => null),
       ]);
+      const displayLayerConfigurationForWell =
+        restoredWorkingConfiguration
+        ?? canvasLocalLayerConfigurationsRef.current[managedWellId]
+        ?? (
+          canvasLocalLayerConfigurationsRef.current[managedWellId]
+          = createCleanWbvDisplayLayerConfiguration(managedWellId)
+        );
+      const curveRenderPackageForWell: WbvCurveOverlayRenderContract | null =
+        restoredWorkingCurveRenderPackage;
       setPrefetchedWellPackages((current) => ({
         ...current,
         [managedWellId]: {
@@ -1849,8 +2461,31 @@ export function Wellbore3DPage({
       else delete next[managedWellId];
       return next;
     });
-    if (checked) void prefetchDisplayedWellPackage(managedWellId);
-  }, [prefetchDisplayedWellPackage, wellSelectorItems]);
+    if (checked && !displayedWellPackages[managedWellId]) {
+      freshCanvasWellIdsRef.current.add(managedWellId);
+      canvasLocalLayerConfigurationsRef.current[managedWellId] =
+        createCleanWbvDisplayLayerConfiguration(managedWellId);
+      setPrefetchedWellPackages((current) => {
+        if (!current[managedWellId]) return current;
+        const next = { ...current };
+        delete next[managedWellId];
+        return next;
+      });
+      setDisplayLayerVisibilityByWell((current) => {
+        if (!current[managedWellId]) return current;
+        const next = { ...current };
+        delete next[managedWellId];
+        return next;
+      });
+      setViewPropertiesByWell((current) => {
+        if (!current[managedWellId]) return current;
+        const next = { ...current };
+        delete next[managedWellId];
+        return next;
+      });
+      void prefetchDisplayedWellPackage(managedWellId, true);
+    }
+  }, [displayedWellPackages, prefetchDisplayedWellPackage, wellSelectorItems]);
 
   const applyDisplayedWellSelection = useCallback(async () => {
     const targetIds = Object.keys(pendingDisplayedWellIds).filter((managedWellId) => pendingDisplayedWellIds[managedWellId]);
@@ -1871,6 +2506,7 @@ export function Wellbore3DPage({
     const nextActiveWellId = targetIds.includes(state.session?.active_managed_well_id ?? "")
       ? (state.session?.active_managed_well_id ?? null)
       : targetIds[0] ?? null;
+    writeWbvPersistedWellSelection({ displayedWellIds: targetIds, activeManagedWellId: nextActiveWellId });
     setLayerEditorWellId((current) => {
       if (current && targetIds.includes(current)) return current;
       return nextActiveWellId;
@@ -1888,6 +2524,7 @@ export function Wellbore3DPage({
           if (!item?.hasSurvey) return;
           setLoadingDisplayedWellIds((current) => ({ ...current, [managedWellId]: true }));
           try {
+            freshCanvasWellIdsRef.current.add(managedWellId);
             const [
               viewerPackage,
               displayLayerFilesForWell,
@@ -1895,8 +2532,6 @@ export function Wellbore3DPage({
               lithologyProductsForWell,
               completionProductsForWell,
               curveProductsForWell,
-              displayLayerConfigurationForWell,
-              curveRenderPackageForWell,
             ] = await Promise.all([
               fetchWlvJson<WbvViewerPackageContract>(
                 `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/viewer-package`,
@@ -1916,13 +2551,14 @@ export function Wellbore3DPage({
               fetchWlvJson<WbvCurveOverlayProductsContract>(
                 `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/curve-overlay-products`,
               ),
-              fetchWlvJson<WbvDisplayLayerConfigurationContract>(
-                `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/display-layer-configuration`,
-              ),
-              fetchWlvJson<WbvCurveOverlayRenderContract>(
-                `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/curve-overlays/render-package`,
-              ).catch(() => null),
             ]);
+            const displayLayerConfigurationForWell =
+              canvasLocalLayerConfigurationsRef.current[managedWellId]
+              ?? (
+                canvasLocalLayerConfigurationsRef.current[managedWellId]
+                = createCleanWbvDisplayLayerConfiguration(managedWellId)
+              );
+            const curveRenderPackageForWell: WbvCurveOverlayRenderContract | null = null;
             const entry = {
               managedWellId,
               wellName: item.wellName,
@@ -1952,9 +2588,143 @@ export function Wellbore3DPage({
     setWellSelectorMessage(null);
   }, [displayedWellPackages, pendingDisplayedWellIds, prefetchedWellPackages, selectWbvWell, state.session?.active_managed_well_id, wellSelectorItems]);
 
+  // WBV_WELL_SELECTION_ATOMIC_RESTORE_V1_0_0_AUDITED
+  // Restore in two phases: prefetch every persisted well first, then commit the
+  // complete displayed-well map once. This prevents incremental mount/unmount flashes.
+  useEffect(() => {
+    if (
+      wellSelectionRestoreAttemptedRef.current
+      || !wbvSavedCanvasesLoaded
+      || Boolean(activeSavedCanvasUid)
+      || wellSelectorItems.length === 0
+      || state.loading
+      || wbvSessionRefreshInFlightRef.current
+    ) return;
+    wellSelectionRestoreAttemptedRef.current = true;
+    const workingSnapshot = workingCanvasPersistenceRef.current?.snapshot ?? null;
+    const persisted: WbvPersistedWellSelection | null = workingSnapshot
+      ? {
+          displayedWellIds: workingSnapshot.displayed_well_ids,
+          activeManagedWellId: workingSnapshot.active_managed_well_id,
+        }
+      : readWbvPersistedWellSelection();
+    if (!persisted) {
+      workingCanvasRestoreInProgressRef.current = false;
+      workingCanvasPersistenceReadyRef.current = true;
+      return;
+    }
+
+    const qualifiedIds = persisted.displayedWellIds.filter((managedWellId) =>
+      wellSelectorItems.some((item) => item.managedWellId === managedWellId && item.hasSurvey),
+    );
+    if (qualifiedIds.length === 0) {
+      workingCanvasRestoreInProgressRef.current = false;
+      workingCanvasPersistenceReadyRef.current = true;
+      return;
+    }
+
+    const activeManagedWellId =
+      persisted.activeManagedWellId && qualifiedIds.includes(persisted.activeManagedWellId)
+        ? persisted.activeManagedWellId
+        : qualifiedIds[0] ?? null;
+
+    wellSelectionRestoreInProgressRef.current = true;
+    pendingWellSelectionRestoreRef.current = { displayedWellIds: qualifiedIds, activeManagedWellId };
+    setPendingDisplayedWellIds(
+      Object.fromEntries(qualifiedIds.map((managedWellId) => [managedWellId, true])),
+    );
+
+    qualifiedIds.forEach((managedWellId) => {
+      if (!displayedWellPackages[managedWellId] && !prefetchedWellPackages[managedWellId]) {
+        void prefetchDisplayedWellPackage(managedWellId);
+      }
+    });
+  }, [
+    activeSavedCanvasUid,
+    displayedWellPackages,
+    prefetchDisplayedWellPackage,
+    prefetchedWellPackages,
+    state.loading,
+    wbvSavedCanvasesLoaded,
+    wellSelectorItems,
+  ]);
+
+  useEffect(() => {
+    const restore = pendingWellSelectionRestoreRef.current;
+    if (!restore || !wellSelectionRestoreInProgressRef.current) return;
+
+    const allReady = restore.displayedWellIds.every(
+      (managedWellId) => Boolean(displayedWellPackages[managedWellId] ?? prefetchedWellPackages[managedWellId]),
+    );
+    if (!allReady) return;
+
+    const restoredPackages: Record<string, WbvDisplayedWellPackage> = {};
+    restore.displayedWellIds.forEach((managedWellId) => {
+      const available = displayedWellPackages[managedWellId] ?? prefetchedWellPackages[managedWellId];
+      if (available) restoredPackages[managedWellId] = available;
+    });
+
+    pendingWellSelectionRestoreRef.current = null;
+    setDisplayedWellPackages(restoredPackages);
+    setPendingDisplayedWellIds(
+      Object.fromEntries(restore.displayedWellIds.map((managedWellId) => [managedWellId, true])),
+    );
+    writeWbvPersistedWellSelection({
+      displayedWellIds: restore.displayedWellIds,
+      activeManagedWellId: restore.activeManagedWellId,
+    });
+    wellSelectionRestoreInProgressRef.current = false;
+
+    const workingSnapshot = workingCanvasPersistenceRef.current?.snapshot ?? null;
+    if (workingSnapshot && workingCanvasRestoreInProgressRef.current) {
+      setViewerControls(structuredClone(workingSnapshot.viewer_controls));
+      setDisplayLayers(structuredClone(workingSnapshot.display_layers));
+      setDisplayLayerVisibilityByWell(structuredClone(workingSnapshot.display_layer_visibility_by_well ?? {}));
+      setViewerControlsCollapsed(Boolean(workingSnapshot.viewer_controls_collapsed));
+      setWellTrajectoryCollapsed(Boolean(workingSnapshot.well_trajectory_collapsed));
+      setTrackValuesAlongWellbore(workingSnapshot.track_values_along_wellbore);
+      setViewPreset(workingSnapshot.view_preset);
+      setHorizontalRotationLocked(workingSnapshot.horizontal_rotation_locked);
+      setVerticalRotationLocked(workingSnapshot.vertical_rotation_locked);
+      setViewPropertiesByWell(structuredClone(workingSnapshot.view_properties_by_well));
+      if (restore.activeManagedWellId) {
+        setViewProperties(structuredClone(
+          workingSnapshot.view_properties_by_well[restore.activeManagedWellId] ?? defaultViewProperties,
+        ));
+      }
+      if (workingSnapshot.camera_view) {
+        const restoredCameraView = structuredClone(workingSnapshot.camera_view);
+        wbvCameraViewRef.current = restoredCameraView;
+        setWbvCameraViewRestore(restoredCameraView);
+        setWbvCameraViewRestoreId((current) => current + 1);
+        setZoomPercent(Math.round(restoredCameraView.zoom * 100));
+      }
+    }
+    workingCanvasRestoreInProgressRef.current = false;
+    workingCanvasPersistenceReadyRef.current = true;
+
+    if (
+      restore.activeManagedWellId
+      && restore.activeManagedWellId !== state.session?.active_managed_well_id
+    ) {
+      void selectWbvWell(restore.activeManagedWellId);
+    }
+  }, [
+    displayedWellPackages,
+    prefetchedWellPackages,
+    selectWbvWell,
+    state.session?.active_managed_well_id,
+  ]);
+
   const setSelectionMode = async (mode: "none" | "point" | "interval") => {
     if (mode !== "point") pendingExactSelectedPointRef.current = null;
-    const managedWellId = layerEditorWellId ?? state.viewerPackage?.managed_well_id;
+    // WBV_ACTIVE_WELL_POINT_PICK_REBIND_V1_0_0_AUDITED
+    // Right-panel point/interval interaction belongs to the current active WBV well,
+    // not to the Manage Display Layers editor target. After active-well switching
+    // the editor target may intentionally remain on the original well while its
+    // modal is closed; using it here leaves the newly active well in selection_mode
+    // "none" and makes point tracking/picking appear bound to the startup well.
+    const managedWellId = state.viewerPackage?.managed_well_id;
     if (!managedWellId) return;
     setInteractionSaving(true);
     try {
@@ -2031,98 +2801,76 @@ export function Wellbore3DPage({
     }
   };
 
-  const changeDepthUnit = async (nextUnit: WbvDepthUnit) => {
-    const managedWellId = state.viewerPackage?.managed_well_id;
-    if (!managedWellId || nextUnit === state.viewerPackage?.depth_unit) return;
-
-    setDepthUnitSaving(true);
-    setState((current) => ({ ...current, error: null }));
-    try {
-      const settings = await fetchWlvJson<{
-        managed_well_id?: string;
-        depth_unit?: WbvDepthUnit;
-      }>(
-        `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/display-settings`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ depth_unit: nextUnit }),
-        },
-      );
-      if (settings.depth_unit !== nextUnit) {
-        throw new Error("WBV backend did not confirm the selected depth unit.");
-      }
-
-      const viewerPackage = await fetchWlvJson<WbvViewerPackageContract>(
-        `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/viewer-package`,
-      );
-      if (viewerPackage.depth_unit !== nextUnit) {
-        throw new Error("WBV viewer package did not return converted depth values.");
-      }
-
-      const currentPoints = state.viewerPackage?.trajectory?.render_points ?? [];
-      const nextPoints = viewerPackage.trajectory?.render_points ?? [];
-      setSelectedPoint((currentSelectedPoint) =>
-        remapSelectedPointAcrossPackages(
-          currentSelectedPoint,
-          currentPoints,
-          nextPoints,
-        ),
-      );
-      setState((current) => ({
-        ...current,
-        viewerPackage,
-        loading: false,
-        error: null,
-      }));
-    } catch (caught) {
-      setState((current) => ({
-        ...current,
-        error:
-          caught instanceof Error
-            ? caught.message
-            : "Unable to change WBV depth units",
-      }));
-    } finally {
-      setDepthUnitSaving(false);
-    }
+  const changeDepthUnit = (nextUnit: WbvDepthUnit) => {
+    if (nextUnit === canvasDisplayDepthUnit) return;
+    // Presentation-only: do not persist per-well settings, refetch packages,
+    // remap selection state, or touch canonical runtime geometry.
+    setCanvasDisplayDepthUnit(nextUnit);
   };
 
   useEffect(() => {
-    setSelectedPoint(null);
-    void loadWbvSession();
+    // Load inventory first. Do not publish a generic WBV session before we know
+    // whether a backend-active Saved Canvas owns initial presentation.
     void loadWellSelectorItems();
-  }, [loadWbvSession, loadWellSelectorItems]);
+  }, [loadWellSelectorItems]);
 
   useEffect(() => {
-    const refreshFromBackend = () => {
-      void loadWbvSession();
+    if (
+      initialSessionBootstrapAttemptedRef.current
+      || !wbvSavedCanvasesLoaded
+      || Boolean(activeSavedCanvasUid)
+      || wellSelectorItems.length === 0
+    ) return;
+
+    initialSessionBootstrapAttemptedRef.current = true;
+    setSelectedPoint(null);
+    void loadWbvSession();
+  }, [
+    activeSavedCanvasUid,
+    loadWbvSession,
+    wbvSavedCanvasesLoaded,
+    wellSelectorItems.length,
+  ]);
+
+  useEffect(() => {
+    let refreshTimer: number | null = null;
+
+    const scheduleRefreshFromBackend = () => {
+      if (savedCanvasRestoreInProgressRef.current) return;
+      if (activeSavedCanvasUid) return;
+      if (wellSelectionRestoreInProgressRef.current) return;
+      if (wbvSessionRefreshInFlightRef.current) return;
+
+      const elapsedSinceRefresh = Date.now() - wbvSessionRefreshCompletedAtRef.current;
+      if (elapsedSinceRefresh >= 0 && elapsedSinceRefresh < 750) return;
+
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        if (wellSelectionRestoreInProgressRef.current) return;
+        if (wbvSessionRefreshInFlightRef.current) return;
+        void loadWbvSession();
+      }, 140);
     };
+
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") {
-        refreshFromBackend();
+        scheduleRefreshFromBackend();
       }
     };
 
-    window.addEventListener("focus", refreshFromBackend);
+    window.addEventListener("focus", scheduleRefreshFromBackend);
     document.addEventListener("visibilitychange", refreshWhenVisible);
 
     return () => {
-      window.removeEventListener("focus", refreshFromBackend);
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      window.removeEventListener("focus", scheduleRefreshFromBackend);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [loadWbvSession]);
+  }, [activeSavedCanvasUid, loadWbvSession]);
 
-  const defaultLayerConfig = (layerType: WbvDisplayLayerKey): WbvLayerConfig => ({
-    layer_type: layerType,
-    visible: false,
-    selected_item_ids: [],
-    source_type: "wmd",
-    source_product_id: null,
-    scale: { mode: "backend_default", minimum: null, maximum: null, scale_type: "linear", direction: "normal" },
-    appearance: { color: null, opacity: 1, line_width: 1, display_mode: "line", show_labels: true, marker_style: "ring", marker_size: 1, color_mode: "formation", label_mode: "name_md", label_size: 1, label_offset: 1, label_position: "right", brightness: 1.35, pattern_scale: 1.5, hide_underlay: false },
-    curve_settings: [],
-  });
+  const defaultLayerConfig = (layerType: WbvDisplayLayerKey): WbvLayerConfig =>
+    createCleanWbvLayerConfig(layerType);
 
   const layerConfigFor = (configs: WbvLayerConfig[], layerType: WbvDisplayLayerKey): WbvLayerConfig =>
     configs.find((item) => item.layer_type === layerType) ?? defaultLayerConfig(layerType);
@@ -2130,6 +2878,17 @@ export function Wellbore3DPage({
   const loadLayerEditorWell = async (managedWellId: string) => {
     setLayerEditorWellLoading(true);
     try {
+      const existingCanvasPackage = displayedWellPackages[managedWellId] ?? prefetchedWellPackages[managedWellId];
+      const freshCanvasConfiguration = freshCanvasWellIdsRef.current.has(managedWellId)
+        ? (
+            canvasLocalLayerConfigurationsRef.current[managedWellId]
+            ?? existingCanvasPackage?.layers.configuration
+            ?? (
+              canvasLocalLayerConfigurationsRef.current[managedWellId]
+              = createCleanWbvDisplayLayerConfiguration(managedWellId)
+            )
+          )
+        : null;
       const [
         nextDisplayLayerFiles,
         nextFormationTopProducts,
@@ -2153,9 +2912,11 @@ export function Wellbore3DPage({
         fetchWlvJson<WbvCurveOverlayProductsContract>(
           `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/curve-overlay-products`,
         ),
-        fetchWlvJson<WbvDisplayLayerConfigurationContract>(
-          `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/display-layer-configuration`,
-        ),
+        freshCanvasConfiguration
+          ? Promise.resolve(freshCanvasConfiguration)
+          : fetchWlvJson<WbvDisplayLayerConfigurationContract>(
+              `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/display-layer-configuration`,
+            ),
       ]);
       const editorContracts = [nextDisplayLayerFiles, nextFormationTopProducts, nextLithologyProducts, nextCompletionProducts, nextCurveProducts, nextLayerConfiguration];
       if (editorContracts.some((contract) => contract.managed_well_id !== managedWellId)) {
@@ -2170,8 +2931,7 @@ export function Wellbore3DPage({
       setLayerEditorCurveProducts(nextCurveProducts);
 
       const loaded = nextLayerConfiguration.layers;
-      const allTabs: WbvDisplayLayerKey[] = ["formation_tops", "lithology_intervals", "core_images", "casing_hole_sections", "completions", "curve_overlays", "borehole_imagery"];
-      setDraftLayerConfigs(allTabs.map((key) => {
+      setDraftLayerConfigs(WBV_DISPLAY_LAYER_KEYS.map((key) => {
         const layer = layerConfigFor(loaded, key);
         return {
           ...layer,
@@ -2324,6 +3084,21 @@ export function Wellbore3DPage({
     setLayerManagerExpanded(true);
   };
 
+  // WBV_ACTION_BUTTON_ACCEPTANCE_FLASH_STANDARD_V1_0_1_AUDITED
+  // Shared success-only acknowledgement for durable action buttons.
+  const flashAcceptedActionButton = (labels: string | string[]) => {
+    const acceptedLabels = new Set(
+      (Array.isArray(labels) ? labels : [labels]).map((label) => label.trim()),
+    );
+    const button = Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+      .find((candidate) => acceptedLabels.has((candidate.textContent ?? "").trim()));
+    if (!button) return;
+    button.classList.remove("wlv-action-button--accepted");
+    void button.offsetWidth;
+    button.classList.add("wlv-action-button--accepted");
+    window.setTimeout(() => button.classList.remove("wlv-action-button--accepted"), 180);
+  };
+
   const flashLayerManagerApply = () => {
     if (layerManagerApplyFlashTimerRef.current !== null) {
       window.clearTimeout(layerManagerApplyFlashTimerRef.current);
@@ -2332,7 +3107,7 @@ export function Wellbore3DPage({
     layerManagerApplyFlashTimerRef.current = window.setTimeout(() => {
       setLayerManagerApplyFlash(false);
       layerManagerApplyFlashTimerRef.current = null;
-    }, 420);
+    }, 180);
   };
 
   const applyLayerManager = async () => {
@@ -2352,9 +3127,10 @@ export function Wellbore3DPage({
     if (!managedWellId) return;
     setLayerManagerSaving(true);
     try {
-      if (activeLayerTab === "curve_overlays") {
-        await savePublishedPresentation();
-      }
+      const publishedPresentationCommit =
+        activeLayerTab === "curve_overlays"
+          ? await savePublishedPresentation()
+          : null;
 
       const layersForApply = draftLayerConfigs.map((layer) => {
         const isCurrentLayer = layer.layer_type === activeLayerTab;
@@ -2387,16 +3163,39 @@ export function Wellbore3DPage({
           }),
         },
       );
+      // Applying to a fresh well authors presentation for THIS canvas only.
+      // Keep the well under fresh/current-canvas ownership for the entire
+      // unsaved canvas session so later hydrations never revive legacy state
+      // from a different canvas.
+      if (freshCanvasWellIdsRef.current.has(managedWellId)) {
+        canvasLocalLayerConfigurationsRef.current[managedWellId] = structuredClone(saved);
+      }
       const applyingToActiveWell = managedWellId === activeManagedWellId;
       if (applyingToActiveWell) {
         setAppliedLayerConfigs(saved.layers);
         setAppliedTracks(saved.tracks ?? []);
         setTrackSpacing(saved.track_spacing ?? 0.05);
       }
-      const refreshedCurveRenderPackage = await fetchWlvJson<WbvCurveOverlayRenderContract>(
-        `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/curve-overlays/render-package`,
-        { cache: "no-store" },
-      ).catch(() => null);
+      const appliedCurrentLayer = saved.layers.find((layer) => layer.layer_type === activeLayerTab);
+      if (
+        activeLayerTab !== "track_layout"
+        && appliedCurrentLayer?.visible
+      ) {
+        setDisplayLayerVisibilityByWell((current) => ({
+          ...current,
+          [managedWellId]: {
+            ...(current[managedWellId] ?? {}),
+            [activeLayerTab]: true,
+          },
+        }));
+      }
+      const refreshedCurveRenderPackage =
+        activeLayerTab === "curve_overlays"
+          ? (publishedPresentationCommit?.committedRenderPackage ?? curveOverlayRenderPackage)
+          : await fetchWlvJson<WbvCurveOverlayRenderContract>(
+              `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/curve-overlays/render-package`,
+              { cache: "no-store" },
+            ).catch(() => null);
       setDisplayedWellPackages((current) => {
         const existing = current[managedWellId];
         if (!existing) return current;
@@ -2454,19 +3253,42 @@ export function Wellbore3DPage({
         setSelectedCurveOverlayProductId(curveConfig.source_product_id ?? "");
         await normalizeSelectedCurves(curveConfig.selected_item_ids);
         const managedWellUid = state.session?.active_managed_well_uid;
-        const activePublishedPackage = publishedOverlayPackages.find(
-          (item) => item.status === "active",
-        );
+        const activePublishedPackage =
+          publishedPresentationCommit?.saved.status === "active"
+            ? publishedPresentationCommit.saved
+            : publishedOverlayPackages.find((item) => item.status === "active");
         if (managedWellUid && activePublishedPackage) {
           const renderPackage = await fetchWlvJson<WbvCurveOverlayRenderContract>(
-            publishedWbvRenderPackageUrl(
+            `${publishedWbvRenderPackageUrl(
               managedWellUid,
               activePublishedPackage.package_uid,
-            ),
+            )}?package_revision=${encodeURIComponent(String(activePublishedPackage.package_revision))}`,
             { cache: "no-store" },
           );
           setCurveOverlayRenderPackage(renderPackage);
-        } else {
+          setDisplayedWellPackages((current) => {
+            const existing = current[managedWellId];
+            if (!existing) return current;
+            return {
+              ...current,
+              [managedWellId]: {
+                ...existing,
+                layers: { ...existing.layers, curveRenderPackage: renderPackage },
+              },
+            };
+          });
+          setPrefetchedWellPackages((current) => {
+            const existing = current[managedWellId];
+            if (!existing) return current;
+            return {
+              ...current,
+              [managedWellId]: {
+                ...existing,
+                layers: { ...existing.layers, curveRenderPackage: renderPackage },
+              },
+            };
+          });
+        } else if (activeLayerTab !== "curve_overlays") {
           setCurveOverlayRenderPackage(null);
         }
       }
@@ -2477,87 +3299,28 @@ export function Wellbore3DPage({
     } finally { setLayerManagerSaving(false); }
   };
 
+  const effectiveDataLayerVisibility = (
+    managedWellId: string | null | undefined,
+    layerType: WbvDisplayLayerKey,
+    configuredVisible: boolean,
+  ): boolean => {
+    if (!managedWellId) return configuredVisible;
+    return displayLayerVisibilityByWell[managedWellId]?.[layerType] ?? configuredVisible;
+  };
+
   const setActiveWellLayerVisibility = (layerType: WbvDisplayLayerKey, visible: boolean) => {
     const managedWellId = activeManagedWellId;
     if (!managedWellId) return;
 
-    const previousLayers = appliedLayerConfigs;
-    const updatedLayers = (() => {
-      const existing = previousLayers.find((item) => item.layer_type === layerType);
-      if (existing) {
-        return previousLayers.map((item) =>
-          item.layer_type === layerType ? { ...item, visible } : item
-        );
-      }
-      return [...previousLayers, { ...defaultLayerConfig(layerType), visible }];
-    })();
-
-    const previousBundle = displayedWellPackages[managedWellId] ?? prefetchedWellPackages[managedWellId];
-    const previousConfiguration = previousBundle?.layers.configuration ?? null;
-    const nextConfiguration: WbvDisplayLayerConfigurationContract = previousConfiguration
-      ? {
-          ...previousConfiguration,
-          layers: updatedLayers,
-          tracks: appliedTracks,
-          track_spacing: trackSpacing,
-        }
-      : {
-          managed_well_id: managedWellId,
-          layers: updatedLayers,
-          tracks: appliedTracks,
-          track_spacing: trackSpacing,
-        };
-
-    const updateBundle = (
-      current: Record<string, WbvDisplayedWellPackage>,
-      configuration: WbvDisplayLayerConfigurationContract,
-    ) => {
-      const existing = current[managedWellId];
-      if (!existing) return current;
-      return {
-        ...current,
-        [managedWellId]: {
-          ...existing,
-          layers: { ...existing.layers, configuration },
-        },
-      };
-    };
-
-    // One optimistic state update feeds both the active renderer/sidebar and the
-    // displayed-well bundle used if this well later becomes a context well.
-    setAppliedLayerConfigs(updatedLayers);
-    setDisplayedWellPackages((current) => updateBundle(current, nextConfiguration));
-    setPrefetchedWellPackages((current) => updateBundle(current, nextConfiguration));
-
-    void fetchWlvJson<WbvDisplayLayerConfigurationContract>(
-      `/api/wlv/wbv/wells/${encodeURIComponent(managedWellId)}/display-layer-configuration`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          track_spacing: trackSpacing,
-          tracks: appliedTracks,
-          layers: updatedLayers,
-        }),
+    // Visibility-only operation. Deliberately no configuration PUT, no
+    // appliedLayerConfigs mutation, and no displayed/prefetched bundle rewrite.
+    setDisplayLayerVisibilityByWell((current) => ({
+      ...current,
+      [managedWellId]: {
+        ...(current[managedWellId] ?? {}),
+        [layerType]: visible,
       },
-    ).then((saved) => {
-      setAppliedLayerConfigs(saved.layers);
-      setAppliedTracks(saved.tracks ?? appliedTracks);
-      setTrackSpacing(saved.track_spacing ?? trackSpacing);
-      setDisplayedWellPackages((current) => updateBundle(current, saved));
-      setPrefetchedWellPackages((current) => updateBundle(current, saved));
-    }).catch((caught) => {
-      // Restore the exact pre-toggle local authority if persistence fails.
-      setAppliedLayerConfigs(previousLayers);
-      if (previousConfiguration) {
-        setDisplayedWellPackages((current) => updateBundle(current, previousConfiguration));
-        setPrefetchedWellPackages((current) => updateBundle(current, previousConfiguration));
-      }
-      setState((current) => ({
-        ...current,
-        error: caught instanceof Error ? caught.message : "Unable to persist WBV layer visibility",
-      }));
-    });
+    }));
   };
 
   const normalizeSelectedCurves = async (curveIds: string[]) => {
@@ -2591,30 +3354,52 @@ export function Wellbore3DPage({
   const session = selectedUnavailableWellId ? null : state.session;
   const viewerPackage = selectedUnavailableWellId ? null : state.viewerPackage;
   const trajectory = viewerPackage?.trajectory;
-  const surveyQaqc = viewerPackage?.survey_qaqc;
   const renderPoints = trajectory?.render_points ?? [];
   // Keep renderer collection props referentially stable while zoom percentage
   // updates rerender this page. Fresh fallback arrays here previously caused the
   // Three.js construction effect to dispose and rebuild the entire scene on
   // successive zoom frames.
-  const rendererCurveOverlays = useMemo(() => {
-    const baseCurves = curveOverlayRenderPackage?.curves ?? [];
-    const activeManagedWellUid = state.session?.active_managed_well_uid ?? null;
-    const editingPublishedCurves =
-      layerManagerOpen
-      && activeLayerTab === "curve_overlays"
-      && Boolean(publishedPresentationDraft)
-      && selectedPublishedPackage?.status === "active"
-      && selectedPublishedPackage.managed_well_uid === activeManagedWellUid;
+  // WBV_PERSISTENT_FILL_VISIBILITY_NOFLASH_V1_0_0_AUDITED
+  // Sidebar layer clicks update activeLayerTab for the next Manage action. While
+  // Manage Display Layers is closed, that bookkeeping must not manufacture a new
+  // curve overlay array and tear down/recreate persistent fill materials/textures.
+  const curvePresentationPreviewActive =
+    layerManagerOpen && activeLayerTab === "curve_overlays";
 
-    if (!editingPublishedCurves || !publishedPresentationDraft) return baseCurves;
-    if (!publishedPresentationDraft.package_visible) return [];
+  const rendererCurveOverlays = useMemo(() => {
+    // WBV_CURVE_INFILL_FULL_STRENGTH_AND_LOCAL_OPACITY_V1_0_0_AUDITED
+    // WDV remains immutable source authority. WBV presents categorical
+    // lithology infill at full imported strength unless a WBV-local
+    // presentation override explicitly reduces it.
+    const baseCurves = (curveOverlayRenderPackage?.curves ?? []).map((curve) =>
+      curve.infill_interval_column === "lithology"
+        ? { ...curve, fill_opacity: 1 }
+        : curve
+    );
+    const activeManagedWellUid = state.session?.active_managed_well_uid ?? null;
+    const activePublishedPresentation =
+      selectedPublishedPackage?.status === "active"
+      && selectedPublishedPackage.managed_well_uid === activeManagedWellUid
+        ? selectedPublishedPackage.wbv_overrides
+        : null;
+    const editingPublishedCurves =
+      curvePresentationPreviewActive
+      && Boolean(publishedPresentationDraft)
+      && Boolean(activePublishedPresentation);
+    // Draft presentation owns live preview while the editor is open. Outside the
+    // editor, the committed package overrides remain renderer authority so depth
+    // clipping and the rest of WBV post-production survive Apply / close / reload.
+    const effectivePublishedPresentation =
+      editingPublishedCurves ? publishedPresentationDraft : activePublishedPresentation;
+
+    if (!effectivePublishedPresentation) return baseCurves;
+    if (!effectivePublishedPresentation.package_visible) return [];
 
     const overrides = new Map(
-      publishedPresentationDraft.curves.map((item) => [item.assignment_uid, item]),
+      effectivePublishedPresentation.curves.map((item) => [item.assignment_uid, item]),
     );
-    const depthMin = publishedPresentationDraft.depth_clip_min;
-    const depthMax = publishedPresentationDraft.depth_clip_max;
+    const depthMin = effectivePublishedPresentation.depth_clip_min;
+    const depthMax = effectivePublishedPresentation.depth_clip_max;
 
     return baseCurves.flatMap((curve) => {
       const override = curve.assignment_uid
@@ -2636,6 +3421,8 @@ export function Wellbore3DPage({
         color: override?.color ?? curve.color,
         line_width: override?.line_width ?? curve.line_width,
         opacity: override?.opacity ?? curve.opacity,
+        fill_opacity: override?.infill_opacity ?? curve.fill_opacity,
+        infill_brightness: override?.infill_brightness ?? 1,
         radial_width: override?.radial_exaggeration ?? curve.radial_width,
         label_visible: override?.label_visible ?? curve.label_visible ?? false,
         label_content: override?.label_content ?? curve.label_content ?? "mnemonic",
@@ -2656,8 +3443,7 @@ export function Wellbore3DPage({
     });
   }, [
     curveOverlayRenderPackage?.curves,
-    layerManagerOpen,
-    activeLayerTab,
+    curvePresentationPreviewActive,
     publishedPresentationDraft,
     selectedPublishedPackage,
     state.session?.active_managed_well_uid,
@@ -2675,6 +3461,12 @@ export function Wellbore3DPage({
   const activeManagedWellId = state.session?.active_managed_well_id ?? null;
 
   useEffect(() => {
+    if (sceneWellActivationRequestedRef.current?.managedWellId === activeManagedWellId) {
+      sceneWellActivationRequestedRef.current = null;
+    }
+  }, [activeManagedWellId]);
+
+  useEffect(() => {
     let cancelled = false;
     void fetchWlvJson<WbvRecoveryStateRecord>("/api/wlv/wbv/saved-canvases/recovery-state")
       .then((record) => {
@@ -2686,6 +3478,20 @@ export function Wellbore3DPage({
         }
 
         setCoreViewMode(Boolean(recovered.core_view_mode));
+
+        const recoveredDisplayLayerVisibilityByWell = recovered.display_layer_visibility_by_well;
+        if (recoveredDisplayLayerVisibilityByWell && typeof recoveredDisplayLayerVisibilityByWell === "object") {
+          setDisplayLayerVisibilityByWell(structuredClone(recoveredDisplayLayerVisibilityByWell));
+        }
+
+        const recoveredViewPropertiesByWell = recovered.view_properties_by_well;
+        if (recoveredViewPropertiesByWell && typeof recoveredViewPropertiesByWell === "object") {
+          const clonedViewPropertiesByWell = structuredClone(recoveredViewPropertiesByWell);
+          setViewPropertiesByWell(clonedViewPropertiesByWell);
+          if (recovered.managed_well_id && clonedViewPropertiesByWell[recovered.managed_well_id]) {
+            setViewProperties(structuredClone(clonedViewPropertiesByWell[recovered.managed_well_id]));
+          }
+        }
 
         const layout = recovered.core_layout;
         if (layout) {
@@ -2781,19 +3587,71 @@ export function Wellbore3DPage({
   const previewCompletionProducts = layerManagerOpen && editingActiveLayerWell
     ? (layerEditorCompletionProducts ?? completionProducts)
     : completionProducts;
-  const previewCompletionComponents = (previewCompletionProducts?.products ?? [])
-    .filter((product) => previewCompletionConfig.selected_item_ids.includes(product.product_id))
-    .flatMap((product) => {
-      const selectedComponentIds = previewCompletionConfig.appearance.selected_component_ids;
-      return selectedComponentIds == null
-        ? product.components
-        : product.components.filter((component) => selectedComponentIds.includes(component.component_id));
-    });
+  const previewFormationTopsForRenderer = useMemo(
+    () => (previewFormationTopProducts?.products ?? [])
+      .filter((product) => previewFormationTopConfig.selected_item_ids.includes(product.product_id))
+      .flatMap((product) => {
+        const selectedTopIds = previewFormationTopConfig.appearance.selected_top_ids;
+        return selectedTopIds == null
+          ? product.tops
+          : product.tops.filter((top) => selectedTopIds.includes(top.top_id));
+      }),
+    [previewFormationTopProducts, previewFormationTopConfig],
+  );
+
+  const previewLithologyIntervalsForRenderer = useMemo(
+    () => (previewLithologyProducts?.products ?? [])
+      .filter((product) => previewLithologyConfig.selected_item_ids.includes(product.product_id))
+      .flatMap((product) => {
+        const selectedIntervalIds = previewLithologyConfig.appearance.selected_interval_ids;
+        const selectedIntervals = selectedIntervalIds == null
+          ? product.intervals
+          : product.intervals.filter((interval) => selectedIntervalIds.includes(interval.interval_id));
+        return selectedIntervals.map(lithologyRendererInterval);
+      }),
+    [previewLithologyProducts, previewLithologyConfig],
+  );
+
+  const previewLithologyAppearanceForRenderer = useMemo(() => ({
+    opacity: previewLithologyConfig.appearance.opacity,
+    radiusMultiplier: previewLithologyConfig.appearance.line_width,
+    brightness: previewLithologyConfig.appearance.brightness ?? 1.35,
+    patternScale: previewLithologyConfig.appearance.pattern_scale ?? 1.5,
+    hideUnderlyingWellbore: previewLithologyConfig.appearance.hide_underlay ?? false,
+  }), [previewLithologyConfig.appearance]);
+
+  const previewCompletionComponents = useMemo(
+    () => (previewCompletionProducts?.products ?? [])
+      .filter((product) => previewCompletionConfig.selected_item_ids.includes(product.product_id))
+      .flatMap((product) => {
+        const selectedComponentIds = previewCompletionConfig.appearance.selected_component_ids;
+        return selectedComponentIds == null
+          ? product.components
+          : product.components.filter((component) => selectedComponentIds.includes(component.component_id));
+      }),
+    [previewCompletionProducts, previewCompletionConfig],
+  );
+
+  const previewCompletionAppearanceForRenderer = useMemo(() => ({
+    color: previewCompletionConfig.appearance.color,
+    opacity: previewCompletionConfig.appearance.opacity,
+    sizeMultiplier: previewCompletionConfig.appearance.line_width,
+    showLabels: previewCompletionConfig.appearance.show_labels,
+    labelMode: previewCompletionConfig.appearance.label_mode ?? "name_md",
+    labelColor: previewCompletionConfig.appearance.label_color ?? "#dce7ef",
+    labelSize: previewCompletionConfig.appearance.label_size ?? 1,
+    labelOffset: previewCompletionConfig.appearance.label_offset ?? 1,
+    labelPosition: previewCompletionConfig.appearance.label_position ?? "right",
+  }), [previewCompletionConfig.appearance]);
 
   const previewCoreConfig = layerConfigFor(
     layerManagerOpen && editingActiveLayerWell ? draftLayerConfigs : appliedLayerConfigs,
     "core_images",
   );
+  const previewCoreAppearanceForRenderer = useMemo(() => ({
+    color: previewCoreConfig.appearance.color ?? "#7b838a",
+    brightness: previewCoreConfig.appearance.brightness ?? 1.35,
+  }), [previewCoreConfig.appearance]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2806,7 +3664,7 @@ export function Wellbore3DPage({
 
     void Promise.all(productIds.map(async (productId) => {
       const manifest = await fetchWlvJson<WbvCoreDisplayChunksContract>(
-        `/api/wlv/inventory/wells/${encodeURIComponent(managedWellId)}/core-segment-display-chunks?product_id=${encodeURIComponent(productId)}`,
+        `/api/wlv/inventory/wells/${encodeURIComponent(managedWellId)}/core-segment-display-chunks?product_id=${encodeURIComponent(productId)}&runtime_depth_unit=m`,
       );
       return (manifest.chunks ?? []).map((chunk): WbvCoreRenderChunk => ({
         product_id: productId,
@@ -2834,49 +3692,35 @@ export function Wellbore3DPage({
   useEffect(() => {
     let cancelled = false;
     const managedWellId = activeManagedWellId;
-    const selectedProductIds = new Set(previewCoreConfig.selected_item_ids);
+    const productIds = previewCoreConfig.selected_item_ids;
 
-    if (!managedWellId || !previewCoreConfig.visible || selectedProductIds.size === 0) {
+    if (!managedWellId || !previewCoreConfig.visible || productIds.length === 0) {
       setCoreDescriptions([]);
       return () => { cancelled = true; };
     }
 
-    void fetchWlvJson<WbvCoreManagedWellRecord>(
-      `/api/wlv/inventory/wells/${encodeURIComponent(managedWellId)}`,
-    ).then((record) => {
+    void Promise.all(productIds.map(async (productId) => {
+      const manifest = await fetchWlvJson<WbvCoreDisplayChunksContract>(
+        `/api/wlv/inventory/wells/${encodeURIComponent(managedWellId)}/core-segment-display-chunks?product_id=${encodeURIComponent(productId)}&runtime_depth_unit=m`,
+      );
+      return (manifest.description_intervals ?? []).flatMap((raw, index): WbvCoreDescriptionItem[] => {
+        const topMd = Number(raw.top_depth);
+        const baseCandidate = raw.base_depth;
+        const baseMd = baseCandidate == null ? topMd : Number(baseCandidate);
+        const text = String(raw.text ?? "").trim();
+        if (!Number.isFinite(topMd) || !Number.isFinite(baseMd) || !text) return [];
+        return [{
+          description_id: String(raw.description_id ?? `${productId}:description:${index}`),
+          product_id: productId,
+          top_md: Math.min(topMd, baseMd),
+          base_md: Math.max(topMd, baseMd),
+          text,
+          category: String(raw.category ?? "core_description"),
+        }];
+      });
+    })).then((groups) => {
       if (cancelled) return;
-      const descriptions: WbvCoreDescriptionItem[] = [];
-
-      for (const group of record.product_groups ?? []) {
-        for (const item of group.items ?? []) {
-          const productId = String(item.product_id ?? "");
-          if (
-            item.product_subgroup_key !== "compound_core_segment"
-            || !productId
-            || !selectedProductIds.has(productId)
-          ) continue;
-
-          for (const [index, raw] of (item.provenance?.description_intervals ?? []).entries()) {
-            if (!raw || typeof raw !== "object") continue;
-            const topMd = Number(raw.top_depth ?? raw.top_md ?? raw.depth_md);
-            const baseCandidate = raw.base_depth ?? raw.base_md;
-            const baseMd = baseCandidate == null ? topMd : Number(baseCandidate);
-            const text = String(raw.text ?? "").trim();
-            if (!Number.isFinite(topMd) || !Number.isFinite(baseMd) || !text) continue;
-
-            descriptions.push({
-              description_id: String(raw.description_id ?? `${productId}:description:${index}`),
-              product_id: productId,
-              top_md: Math.min(topMd, baseMd),
-              base_md: Math.max(topMd, baseMd),
-              text,
-              category: String(raw.category ?? "core_description"),
-            });
-          }
-        }
-      }
-
-      descriptions.sort((first, second) =>
+      const descriptions = groups.flat().sort((first, second) =>
         first.top_md - second.top_md
         || first.base_md - second.base_md
         || first.description_id.localeCompare(second.description_id)
@@ -2894,17 +3738,6 @@ export function Wellbore3DPage({
   }, [
     activeManagedWellId,
     previewCoreConfig.visible,
-    previewCoreConfig.selected_item_ids.join("|"),
-  ]);
-
-  useEffect(() => {
-    setCoreInspectionInterval(null);
-    setCoreLocatorFocusInterval(null);
-    setCoreModalOpen(false);
-    setCoreModalChunkId("");
-    coreDescriptionSideTouchedRef.current = false;
-  }, [
-    activeManagedWellId,
     previewCoreConfig.selected_item_ids.join("|"),
   ]);
 
@@ -2968,14 +3801,41 @@ export function Wellbore3DPage({
   );
   const coreModalDepthTicks = useMemo(() => {
     if (!coreModalChunks.length) return [];
-    const rawStep = coreModalZoom >= 2.5 ? 0.5 : coreModalZoom >= 1.25 ? 1 : 2;
-    const first = Math.ceil(coreModalTopMd / rawStep) * rawStep;
-    const ticks: number[] = [];
-    for (let md = first; md <= coreModalBaseMd + 1e-6; md += rawStep) {
-      ticks.push(Number(md.toFixed(3)));
+
+    const displayFactor = canvasDisplayDepthUnit === "ft" ? 1 / 0.3048 : 1;
+    const canonicalFactor = canvasDisplayDepthUnit === "ft" ? 0.3048 : 1;
+    const displayTopMd = coreModalTopMd * displayFactor;
+    const displayBaseMd = coreModalBaseMd * displayFactor;
+
+    // Presentation lattice only. Keep Core geometry/scroll/chunk placement in
+    // canonical metres while scheduling human-readable ticks in the selected
+    // canvas unit.
+    const displayStep = canvasDisplayDepthUnit === "ft"
+      ? (coreModalZoom >= 2.5 ? 1 : coreModalZoom >= 1.25 ? 2 : 5)
+      : (coreModalZoom >= 2.5 ? 0.5 : coreModalZoom >= 1.25 ? 1 : 2);
+    const majorEvery = canvasDisplayDepthUnit === "ft" ? 10 : 1;
+    const firstDisplayMd = Math.ceil(displayTopMd / displayStep) * displayStep;
+    const ticks: Array<{ md: number; displayMd: number; major: boolean }> = [];
+
+    for (
+      let displayMd = firstDisplayMd;
+      displayMd <= displayBaseMd + 1e-6;
+      displayMd += displayStep
+    ) {
+      ticks.push({
+        md: Number((displayMd * canonicalFactor).toFixed(6)),
+        displayMd: Number(displayMd.toFixed(3)),
+        major: Math.abs(displayMd / majorEvery - Math.round(displayMd / majorEvery)) < 1e-6,
+      });
     }
     return ticks;
-  }, [coreModalChunks.length, coreModalTopMd, coreModalBaseMd, coreModalZoom]);
+  }, [
+    canvasDisplayDepthUnit,
+    coreModalChunks.length,
+    coreModalTopMd,
+    coreModalBaseMd,
+    coreModalZoom,
+  ]);
   const coreModalDescriptions = useMemo(
     () => coreDescriptions.filter((item) =>
       (!coreModalProductId || item.product_id === coreModalProductId)
@@ -3104,7 +3964,7 @@ export function Wellbore3DPage({
     viewerPackage?.viewer_state ?? session?.viewer_state ?? "not_loaded";
   const layers = viewerPackage?.available_layers ?? session?.available_layers;
   const hasTrajectory = renderPoints.length > 0;
-  const depthUnit = viewerPackage?.depth_unit ?? "ft";
+  const depthUnit = canvasDisplayDepthUnit;
 
   // WBV_WELL_INFORMATION_DATUM_BINDING_V1_0_1
   // Well Information is the canonical user-facing datum authority.
@@ -3114,9 +3974,45 @@ export function Wellbore3DPage({
   const wellInfoDepthReference = activeWellInfoMetadata.depth_reference?.value?.trim() || '';
   const wellInfoReferenceElevation = activeWellInfoMetadata.reference_elevation?.value?.trim() || '';
   const wellInfoReferenceElevationUnit = activeWellInfoMetadata.reference_elevation?.unit?.trim() || depthUnit;
-  const wellInfoElevationHasEmbeddedUnit = /[A-Za-z]/.test(wellInfoReferenceElevation);
-  const wellInfoSurfaceDatumLabel = wellInfoDepthReference && wellInfoReferenceElevation
-    ? `${wellInfoReferenceElevation}${wellInfoElevationHasEmbeddedUnit || !wellInfoReferenceElevationUnit ? '' : ` ${wellInfoReferenceElevationUnit}`} ${wellInfoDepthReference}`
+
+  // WBV_SURFACE_DATUM_REFERENCE_RECONCILIATION_V1_0_0_AUDITED
+  // Some imported Well Information records carry the authoritative datum
+  // elevation inline in the depth-reference string, e.g.
+  // "Rotary Table @ 54.90 m (...)", while reference_elevation may contain a
+  // truncated or otherwise inconsistent value. When an explicit inline datum
+  // value is present, use it as the scene-label elevation source of truth.
+  const inlineDepthReferenceMatch = wellInfoDepthReference.match(
+    /@\s*(-?\d+(?:\.\d+)?)\s*([A-Za-z]+)\b/i,
+  );
+  const inlineDepthReferenceElevation = inlineDepthReferenceMatch?.[1] ?? '';
+  const inlineDepthReferenceUnit = inlineDepthReferenceMatch?.[2] ?? '';
+
+  const sceneDatumElevationRaw = inlineDepthReferenceElevation || wellInfoReferenceElevation;
+  const sceneDatumSourceUnit = inlineDepthReferenceUnit || wellInfoReferenceElevationUnit || "m";
+
+  const sceneDatumElevationNumber = Number(sceneDatumElevationRaw);
+  const sceneDatumCanonicalM = Number.isFinite(sceneDatumElevationNumber)
+    ? (/^(ft|feet|foot)$/i.test(sceneDatumSourceUnit) ? sceneDatumElevationNumber * 0.3048 : sceneDatumElevationNumber)
+    : null;
+  const sceneDatumDisplayValue = sceneDatumCanonicalM == null
+    ? null
+    : (depthUnit === "ft" ? sceneDatumCanonicalM / 0.3048 : sceneDatumCanonicalM);
+  const sceneDatumElevation = sceneDatumDisplayValue != null
+    ? sceneDatumDisplayValue.toLocaleString(undefined, {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      })
+    : sceneDatumElevationRaw.replace(/\s*[A-Za-z]+\s*$/, '').trim();
+  const sceneDatumUnit = sceneDatumDisplayValue != null ? depthUnit : sceneDatumSourceUnit;
+
+  const sceneDatumSource = /rotary\s+table/i.test(wellInfoDepthReference)
+    ? 'Rotary Table'
+    : wellInfoDepthReference
+        .split(/\s+@\s+|\s*\([^)]*\)\s*$/)[0]
+        ?.trim() || '';
+
+  const wellInfoSurfaceDatumLabel = sceneDatumSource && sceneDatumElevation
+    ? `${sceneDatumElevation}${sceneDatumUnit ? ` ${sceneDatumUnit}` : ''} ${sceneDatumSource}`
     : null;
   const angleUnit = viewerPackage?.angle_unit ?? "deg";
   const verticalTrajectory = isVerticalTrajectory(
@@ -3133,11 +4029,455 @@ export function Wellbore3DPage({
   const zRange =
     rangeFromBoundingBox(viewerPackage?.bounding_box, "z") ??
     numericRange(renderPoints.map((point) => point.z));
-  const qaqcFindingCount =
-    surveyQaqc?.finding_count ?? surveyQaqc?.findings?.length ?? 0;
-  const qaqcDisplayState =
-    qaqcFindingCount === 0 ? "Pass" : fieldLabel(surveyQaqc?.overall_state);
-  const primaryQaqcFinding = surveyQaqc?.findings?.[0]?.message ?? null;
+  const selectedInformationInterval = interaction?.saved_interval ?? null;
+  const selectedInformationTopMd = selectedInformationInterval
+    ? Math.min(selectedInformationInterval.top_md, selectedInformationInterval.base_md)
+    : null;
+  const selectedInformationBaseMd = selectedInformationInterval
+    ? Math.max(selectedInformationInterval.top_md, selectedInformationInterval.base_md)
+    : null;
+  const selectedInformationIsSpot = selectedInformationTopMd != null
+    && selectedInformationBaseMd != null
+    && Math.abs(selectedInformationBaseMd - selectedInformationTopMd) <= 1e-6;
+  const selectedInformationSpotMd = selectedInformationIsSpot ? selectedInformationTopMd : null;
+  // WBV_INFORMATION_INTERVAL_RENDER_LOOP_STABILITY_V1_0_0_AUDITED
+  // layerConfigFor() returns defaultLayerConfig() when a committed layer is absent.
+  // defaultLayerConfig() allocates fresh arrays/objects, so resolving committed
+  // configs directly on every render made effect dependency identities unstable.
+  // Resolve once per committed configuration revision instead.
+  const committedFormationTopConfig = useMemo(
+    () => layerConfigFor(appliedLayerConfigs, "formation_tops"),
+    [appliedLayerConfigs],
+  );
+  const committedLithologyConfig = useMemo(
+    () => layerConfigFor(appliedLayerConfigs, "lithology_intervals"),
+    [appliedLayerConfigs],
+  );
+  const committedCoreConfig = useMemo(
+    () => layerConfigFor(appliedLayerConfigs, "core_images"),
+    [appliedLayerConfigs],
+  );
+  const committedCompletionConfig = useMemo(
+    () => layerConfigFor(appliedLayerConfigs, "completions"),
+    [appliedLayerConfigs],
+  );
+  const committedCurveConfig = useMemo(
+    () => layerConfigFor(appliedLayerConfigs, "curve_overlays"),
+    [appliedLayerConfigs],
+  );
+  const committedCasingConfig = useMemo(
+    () => layerConfigFor(appliedLayerConfigs, "casing_hole_sections"),
+    [appliedLayerConfigs],
+  );
+  const committedImageryConfig = useMemo(
+    () => layerConfigFor(appliedLayerConfigs, "borehole_imagery"),
+    [appliedLayerConfigs],
+  );
+  // WBV_INFORMATION_VISIBLE_LAYERS_ONLY_V1_0_2
+
+  const intervalFormationTops = useMemo(() => {
+    if (!committedFormationTopConfig.visible || selectedInformationTopMd == null || selectedInformationBaseMd == null) return [];
+    const selectedTopIds = committedFormationTopConfig.appearance.selected_top_ids;
+    return (formationTopProducts?.products ?? [])
+      .filter((product) => committedFormationTopConfig.selected_item_ids.includes(product.product_id))
+      .flatMap((product) => product.tops
+        .filter((top) => selectedTopIds == null || selectedTopIds.includes(top.top_id))
+        .filter((top) => top.md >= selectedInformationTopMd && top.md <= selectedInformationBaseMd)
+        .map((top) => ({ ...top, product_display_name: product.display_name })));
+  }, [committedFormationTopConfig.appearance.selected_top_ids, committedFormationTopConfig.selected_item_ids, committedFormationTopConfig.visible, formationTopProducts, selectedInformationBaseMd, selectedInformationTopMd]);
+
+  const intervalLithology = useMemo(() => {
+    if (!committedLithologyConfig.visible || selectedInformationTopMd == null || selectedInformationBaseMd == null) return [];
+    const selectedIntervalIds = committedLithologyConfig.appearance.selected_interval_ids;
+    return (lithologyProducts?.products ?? [])
+      .filter((product) => committedLithologyConfig.selected_item_ids.includes(product.product_id))
+      .flatMap((product) => product.intervals
+        .filter((interval) => selectedIntervalIds == null || selectedIntervalIds.includes(interval.interval_id))
+        .filter((interval) => interval.base_md >= selectedInformationTopMd && interval.top_md <= selectedInformationBaseMd)
+        .map((interval) => ({ ...interval, product_display_name: product.display_name })));
+  }, [committedLithologyConfig.appearance.selected_interval_ids, committedLithologyConfig.selected_item_ids, committedLithologyConfig.visible, lithologyProducts, selectedInformationBaseMd, selectedInformationTopMd]);
+
+  const intervalLithologyKnowledgeIds = useMemo(
+    () => Array.from(new Set(
+      intervalLithology
+        .map((interval) => interval.canonical_lithology?.trim())
+        .filter((value): value is string => Boolean(value)),
+    )),
+    [intervalLithology],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const missingIds = intervalLithologyKnowledgeIds.filter(
+      (id) => !(id in lithologyKnowledgeById),
+    );
+    if (missingIds.length === 0) return () => { cancelled = true; };
+
+    void Promise.all(missingIds.map(async (id) => {
+      try {
+        const entry = await fetchWlvJson<WbvLithologyKnowledgeEntry>(
+          `/api/wlv/knowledge/lithology/entries/${encodeURIComponent(id)}`,
+        );
+        return [id, entry] as const;
+      } catch (error) {
+        console.error("WBV Information lithology metadata load failed", id, error);
+        return [id, null] as const;
+      }
+    })).then((entries) => {
+      if (cancelled) return;
+      setLithologyKnowledgeById((current) => {
+        const next = { ...current };
+        for (const [id, entry] of entries) next[id] = entry;
+        return next;
+      });
+    });
+
+    return () => { cancelled = true; };
+  }, [intervalLithologyKnowledgeIds, lithologyKnowledgeById]);
+
+  const intervalCompletions = useMemo(() => {
+    if (!committedCompletionConfig.visible || selectedInformationTopMd == null || selectedInformationBaseMd == null) return [];
+    const selectedComponentIds = committedCompletionConfig.appearance.selected_component_ids;
+    return (completionProducts?.products ?? [])
+      .filter((product) => committedCompletionConfig.selected_item_ids.includes(product.product_id))
+      .flatMap((product) => product.components
+        .filter((component) => selectedComponentIds == null || selectedComponentIds.includes(component.component_id))
+        .filter((component) => {
+          const componentBase = component.base_md ?? component.top_md;
+          return componentBase >= selectedInformationTopMd && component.top_md <= selectedInformationBaseMd;
+        })
+        .map((component) => ({ ...component, product_display_name: product.display_name })));
+  }, [committedCompletionConfig.appearance.selected_component_ids, committedCompletionConfig.selected_item_ids, committedCompletionConfig.visible, completionProducts, selectedInformationBaseMd, selectedInformationTopMd]);
+
+  const normalizeDepthUnit = useCallback((value?: string | null): WbvDepthUnit | null => {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (normalized === "m" || normalized === "meter" || normalized === "meters" || normalized === "metre" || normalized === "metres") return "m";
+    if (normalized === "ft" || normalized === "foot" || normalized === "feet") return "ft";
+    return null;
+  }, []);
+
+  const convertDepthToCanonicalM = useCallback((value: number, sourceUnit?: string | null) => {
+    const source = normalizeDepthUnit(sourceUnit) ?? "m";
+    return source === "ft" ? value * 0.3048 : value;
+  }, [normalizeDepthUnit]);
+
+  const convertCanonicalDepthToDisplay = useCallback((value: number | null | undefined): number | null => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    return depthUnit === "ft" ? value / 0.3048 : value;
+  }, [depthUnit]);
+
+  const convertDepthToDisplayUnit = useCallback((value: number, sourceUnit?: string | null) => {
+    return convertCanonicalDepthToDisplay(convertDepthToCanonicalM(value, sourceUnit));
+  }, [convertCanonicalDepthToDisplay, convertDepthToCanonicalM]);
+
+  const convertCanonicalDoglegToDisplay = useCallback((value: number | null | undefined): number | null => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    return depthUnit === "ft" ? value * (30.48 / 30.0) : value;
+  }, [depthUnit]);
+
+  const intervalProductFiles = useCallback((layerType: WbvDisplayLayerKey, config: WbvLayerConfig) => {
+    if (!config.visible || selectedInformationTopMd == null || selectedInformationBaseMd == null) return [];
+    return (displayLayerFiles?.layers[layerType] ?? [])
+      .filter((file) => config.selected_item_ids.includes(file.product_id))
+      .map((file) => {
+        const canonicalDepthStart = typeof file.depth_start === "number"
+          ? convertDepthToCanonicalM(file.depth_start, file.depth_units)
+          : null;
+        const canonicalDepthEnd = typeof file.depth_end === "number"
+          ? convertDepthToCanonicalM(file.depth_end, file.depth_units)
+          : null;
+        return {
+          ...file,
+          canonical_depth_start: canonicalDepthStart,
+          canonical_depth_end: canonicalDepthEnd,
+          display_depth_start: canonicalDepthStart == null ? null : convertCanonicalDepthToDisplay(canonicalDepthStart),
+          display_depth_end: canonicalDepthEnd == null ? null : convertCanonicalDepthToDisplay(canonicalDepthEnd),
+        };
+      })
+      .filter((file) => {
+        const top = file.canonical_depth_start;
+        const base = file.canonical_depth_end;
+        if (top == null && base == null) return true;
+        const normalizedTop = Math.min(top ?? base ?? selectedInformationTopMd, base ?? top ?? selectedInformationBaseMd);
+        const normalizedBase = Math.max(top ?? base ?? selectedInformationTopMd, base ?? top ?? selectedInformationBaseMd);
+        return normalizedBase >= selectedInformationTopMd && normalizedTop <= selectedInformationBaseMd;
+      });
+  }, [convertDepthToDisplayUnit, displayLayerFiles, selectedInformationBaseMd, selectedInformationTopMd]);
+
+  const intervalCoreFiles = useMemo(
+    () => intervalProductFiles("core_images", committedCoreConfig),
+    [committedCoreConfig, intervalProductFiles],
+  );
+  const intervalCasingFiles = useMemo(
+    () => intervalProductFiles("casing_hole_sections", committedCasingConfig),
+    [committedCasingConfig, intervalProductFiles],
+  );
+  const intervalImageryFiles = useMemo(
+    () => intervalProductFiles("borehole_imagery", committedImageryConfig),
+    [committedImageryConfig, intervalProductFiles],
+  );
+  useEffect(() => {
+    let cancelled = false;
+    const managedWellId = activeManagedWellId;
+    const productIds = committedCoreConfig.selected_item_ids;
+
+    if (
+      !committedCoreConfig.visible
+      || !managedWellId
+      || selectedInformationTopMd == null
+      || selectedInformationBaseMd == null
+      || productIds.length === 0
+    ) {
+      setIntervalCoreDescriptions([]);
+      return () => { cancelled = true; };
+    }
+
+    void Promise.all(productIds.map(async (productId) => {
+      const manifest = await fetchWlvJson<WbvCoreDisplayChunksContract>(
+        `/api/wlv/inventory/wells/${encodeURIComponent(managedWellId)}/core-segment-display-chunks?product_id=${encodeURIComponent(productId)}&runtime_depth_unit=m`,
+      );
+      const top = Number(manifest.top_depth);
+      const base = Number(manifest.base_depth);
+      const coverage = Number.isFinite(top) && Number.isFinite(base)
+        ? { top: Math.min(top, base), base: Math.max(top, base) }
+        : null;
+      const descriptions = (manifest.description_intervals ?? []).flatMap((raw, index): WbvCoreDescriptionItem[] => {
+        const topMd = Number(raw.top_depth);
+        const baseCandidate = raw.base_depth;
+        const baseMd = baseCandidate == null ? topMd : Number(baseCandidate);
+        const text = String(raw.text ?? "").trim();
+        if (!Number.isFinite(topMd) || !Number.isFinite(baseMd) || !text) return [];
+        return [{
+          description_id: String(raw.description_id ?? `${productId}:description:${index}`),
+          product_id: productId,
+          top_md: Math.min(topMd, baseMd),
+          base_md: Math.max(topMd, baseMd),
+          text,
+          category: String(raw.category ?? "core_description"),
+        }];
+      });
+      return { productId, coverage, descriptions };
+    })).then((groups) => {
+      if (cancelled) return;
+
+      const candidates = groups.flatMap((group) => group.descriptions);
+      let descriptions: WbvCoreDescriptionItem[];
+
+      if (selectedInformationIsSpot && selectedInformationSpotMd != null) {
+        const directlyCoveredCoreProductIds = new Set(
+          groups
+            .filter((group) =>
+              group.coverage != null
+              && selectedInformationSpotMd >= group.coverage.top
+              && selectedInformationSpotMd <= group.coverage.base
+            )
+            .map((group) => group.productId),
+        );
+
+        const nearestByProduct = new Map<string, { item: WbvCoreDescriptionItem; distance: number }>();
+        for (const item of candidates) {
+          if (!directlyCoveredCoreProductIds.has(item.product_id)) continue;
+          const distance = selectedInformationSpotMd < item.top_md
+            ? item.top_md - selectedInformationSpotMd
+            : selectedInformationSpotMd > item.base_md
+              ? selectedInformationSpotMd - item.base_md
+              : 0;
+          const current = nearestByProduct.get(item.product_id);
+          if (
+            current == null
+            || distance < current.distance
+            || (distance === current.distance && item.top_md < current.item.top_md)
+          ) {
+            nearestByProduct.set(item.product_id, { item, distance });
+          }
+        }
+        descriptions = Array.from(nearestByProduct.values()).map(({ item }) => item);
+      } else {
+        descriptions = candidates.filter(
+          (item) => item.base_md >= selectedInformationTopMd && item.top_md <= selectedInformationBaseMd,
+        );
+      }
+
+      descriptions.sort((first, second) =>
+        first.top_md - second.top_md
+        || first.base_md - second.base_md
+        || first.description_id.localeCompare(second.description_id)
+      );
+      setIntervalCoreDescriptions(descriptions);
+    }).catch((error) => {
+      console.error("WBV interval Core description load failed", error);
+      if (!cancelled) setIntervalCoreDescriptions([]);
+    });
+
+    return () => { cancelled = true; };
+  }, [
+    activeManagedWellId,
+    committedCoreConfig.selected_item_ids.join("|"),
+    committedCoreConfig.visible,
+    selectedInformationBaseMd,
+    selectedInformationIsSpot,
+    selectedInformationSpotMd,
+    selectedInformationTopMd,
+  ]);
+
+  const intervalActiveCurveProductIds = useMemo(() => {
+    if (!committedCurveConfig.visible) return [];
+    /*
+     * Published WBV curve packages are the committed curve activation authority.
+     * Legacy display-layer selected_item_ids remains only a fallback for wells
+     * that have not yet been migrated to a published curve package.
+     */
+    const publishedCurveIds = (curveOverlayRenderPackage?.curves ?? [])
+      .map((curve) => curve.curve_product_id)
+      .filter((curveProductId) => Boolean(curveProductId));
+    return Array.from(new Set(
+      publishedCurveIds.length > 0
+        ? publishedCurveIds
+        : committedCurveConfig.selected_item_ids,
+    ));
+  }, [committedCurveConfig.selected_item_ids, committedCurveConfig.visible, curveOverlayRenderPackage?.curves]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const managedWellId = activeManagedWellId;
+    if (!managedWellId || selectedInformationTopMd == null || selectedInformationBaseMd == null || intervalActiveCurveProductIds.length === 0) {
+      setIntervalCurveRanges([]);
+      setIntervalCurveRangesLoading(false);
+      setIntervalCurveRangesError(null);
+      return () => { cancelled = true; };
+    }
+
+    const topMd = Math.min(selectedInformationTopMd, selectedInformationBaseMd);
+    const baseMd = Math.max(selectedInformationTopMd, selectedInformationBaseMd);
+    const renderCurveById = new Map(
+      (curveOverlayRenderPackage?.curves ?? []).map((curve) => [curve.curve_product_id, curve] as const),
+    );
+    const inventoryCurveById = new Map(
+      (curveOverlayProducts?.products ?? [])
+        .flatMap((product) => product.curves)
+        .map((curve) => [curve.curve_product_id, curve] as const),
+    );
+
+    const rangesFromRenderPackage: WbvIntervalCurveRange[] = [];
+    const legacyCurveIds: string[] = [];
+
+    for (const curveProductId of intervalActiveCurveProductIds) {
+      const renderCurve = renderCurveById.get(curveProductId);
+      const validSamples = (renderCurve?.samples ?? []).filter(
+        (sample) => Number.isFinite(sample.md) && Number.isFinite(sample.value),
+      );
+      const intervalSamples = selectedInformationIsSpot && selectedInformationSpotMd != null
+        ? (() => {
+            const nearestDistance = validSamples.reduce(
+              (best, sample) => Math.min(best, Math.abs(sample.md - selectedInformationSpotMd)),
+              Number.POSITIVE_INFINITY,
+            );
+            return validSamples.filter(
+              (sample) => Math.abs(Math.abs(sample.md - selectedInformationSpotMd) - nearestDistance) <= 1e-9,
+            );
+          })()
+        : validSamples.filter((sample) => sample.md >= topMd && sample.md <= baseMd);
+
+      if (renderCurve && intervalSamples.length > 0) {
+        const values = intervalSamples.map((sample) => sample.value);
+        const intervalMinimum = Math.min(...values);
+        const intervalMaximum = Math.max(...values);
+        rangesFromRenderPackage.push({
+          curve_product_id: curveProductId,
+          mnemonic: renderCurve.mnemonic || renderCurve.display_name || curveProductId,
+          display_name: renderCurve.display_name || renderCurve.mnemonic || curveProductId,
+          unit: renderCurve.unit ?? null,
+          minimum: selectedInformationIsSpot ? intervalMaximum : intervalMinimum,
+          maximum: intervalMaximum,
+        });
+      } else if (!renderCurve || (renderCurve.samples?.length ?? 0) === 0) {
+        legacyCurveIds.push(curveProductId);
+      }
+    }
+
+    if (legacyCurveIds.length === 0) {
+      setIntervalCurveRanges(rangesFromRenderPackage);
+      setIntervalCurveRangesLoading(false);
+      setIntervalCurveRangesError(null);
+      return () => { cancelled = true; };
+    }
+
+    setIntervalCurveRangesLoading(true);
+    setIntervalCurveRangesError(null);
+
+    void Promise.all(legacyCurveIds.map(async (curveProductId): Promise<WbvIntervalCurveRange | null> => {
+      const curve = inventoryCurveById.get(curveProductId);
+      const sourceUnit = normalizeDepthUnit(curve?.source_depth_unit ?? curve?.depth_units) ?? "m";
+      const canonicalToSource = (value: number) => sourceUnit === "ft" ? value / 0.3048 : value;
+      const legacyTopMd = canonicalToSource(topMd);
+      const legacyBaseMd = canonicalToSource(baseMd);
+      const response = await fetchWlvJson<WbvCurveSamplesContract>(
+        `/api/wlv/inventory/wells/${encodeURIComponent(managedWellId)}/curve-samples?product_id=${encodeURIComponent(curveProductId)}&max_samples=100000`,
+      );
+      const parsedSamples = (response.samples ?? [])
+        .filter((raw): raw is unknown[] => Array.isArray(raw) && raw.length >= 2)
+        .map((raw) => ({ md: Number(raw[0]), value: Number(raw[1]) }))
+        .filter((sample) => Number.isFinite(sample.md) && Number.isFinite(sample.value));
+      const selectedSamples = selectedInformationIsSpot && selectedInformationSpotMd != null
+        ? (() => {
+            const sourceSpotMd = canonicalToSource(selectedInformationSpotMd);
+            const nearestDistance = parsedSamples.reduce(
+              (best, sample) => Math.min(best, Math.abs(sample.md - sourceSpotMd)),
+              Number.POSITIVE_INFINITY,
+            );
+            return parsedSamples.filter(
+              (sample) => Math.abs(Math.abs(sample.md - sourceSpotMd) - nearestDistance) <= 1e-9,
+            );
+          })()
+        : parsedSamples.filter(
+            (sample) => sample.md >= Math.min(legacyTopMd, legacyBaseMd)
+              && sample.md <= Math.max(legacyTopMd, legacyBaseMd),
+          );
+      const values = selectedSamples.map((sample) => sample.value);
+      if (values.length === 0) return null;
+      const intervalMinimum = Math.min(...values);
+      const intervalMaximum = Math.max(...values);
+      return {
+        curve_product_id: curveProductId,
+        mnemonic: curve?.mnemonic || curve?.display_name || curveProductId,
+        display_name: curve?.display_name || curve?.mnemonic || curveProductId,
+        unit: curve?.unit ?? null,
+        minimum: selectedInformationIsSpot ? intervalMaximum : intervalMinimum,
+        maximum: intervalMaximum,
+      };
+    }))
+      .then((legacyRanges) => {
+        if (cancelled) return;
+        setIntervalCurveRanges([
+          ...rangesFromRenderPackage,
+          ...legacyRanges.filter((item): item is WbvIntervalCurveRange => item !== null),
+        ]);
+        setIntervalCurveRangesError(null);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setIntervalCurveRanges(rangesFromRenderPackage);
+        setIntervalCurveRangesError(
+          rangesFromRenderPackage.length > 0
+            ? null
+            : (error instanceof Error ? error.message : "Unable to query interval curve values."),
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setIntervalCurveRangesLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [activeManagedWellId, curveOverlayProducts, curveOverlayRenderPackage?.curves, intervalActiveCurveProductIds, normalizeDepthUnit, selectedInformationBaseMd, selectedInformationIsSpot, selectedInformationSpotMd, selectedInformationTopMd]);
+
+  const intervalInformationHasResults = intervalFormationTops.length > 0
+    || intervalLithology.length > 0
+    || intervalCompletions.length > 0
+    || intervalCoreFiles.length > 0
+    || intervalCoreDescriptions.length > 0
+    || intervalCasingFiles.length > 0
+    || intervalImageryFiles.length > 0
+    || intervalCurveRanges.length > 0;
   const trajectoryPointCount =
     trajectory?.station_count ??
     trajectory?.source_station_count ??
@@ -3149,14 +4489,36 @@ export function Wellbore3DPage({
   const activateWellFromScene = useCallback((managedWellId: string) => {
     if (!managedWellId || managedWellId === activeManagedWellId) return;
 
+    const now = performance.now();
+    const recentRequest = sceneWellActivationRequestedRef.current;
+    if (
+      recentRequest?.managedWellId === managedWellId
+      && now - recentRequest.requestedAt < 750
+    ) return;
+    if (sceneWellActivationInFlightRef.current) return;
+
+    sceneWellActivationRequestedRef.current = { managedWellId, requestedAt: now };
+
+    // Scene activation is serialized. Repeated pointer gestures while the backend
+    // session is changing must not launch overlapping hydrations that repeatedly
+    // tear down and recreate the Three.js scene.
+    sceneWellActivationInFlightRef.current = managedWellId;
+
     // Scene click changes standard WBV control authority. An open modal with
     // its own well selector keeps its explicit target independently.
     const explicitModalTarget = layerManagerOpen ? layerEditorWellId : null;
     void selectWbvWell(managedWellId).finally(() => {
       if (explicitModalTarget) {
         setLayerEditorWellId(explicitModalTarget);
-      } else if (!layerManagerOpen) {
-        setLayerEditorWellId(managedWellId);
+      }
+      // When Manage Display Layers is closed, layerEditorWellId is not an active
+      // renderer concern. Do not retarget it after a scene click: openLayerManager()
+      // already initializes the editor target from activeManagedWellId. Updating
+      // this closed-modal state here changes contextTrajectories identity and
+      // provokes a second destructive Three.js scene rebuild after the actual
+      // active-well switch has already completed.
+      if (sceneWellActivationInFlightRef.current === managedWellId) {
+        sceneWellActivationInFlightRef.current = null;
       }
     });
   }, [
@@ -3210,11 +4572,12 @@ export function Wellbore3DPage({
           color: viewPropertiesByWell[entry.managedWellId]?.trajectory.color ?? "#67d599",
           materialMode: viewPropertiesByWell[entry.managedWellId]?.trajectory.materialMode ?? "color",
           metallicTone: viewPropertiesByWell[entry.managedWellId]?.trajectory.metallicTone ?? "silver",
+          metallicFinish: viewPropertiesByWell[entry.managedWellId]?.trajectory.metallicFinish ?? "satin",
           thickness: viewPropertiesByWell[entry.managedWellId]?.trajectory.thickness ?? 1,
           opacity: viewPropertiesByWell[entry.managedWellId]?.trajectory.opacity ?? 1,
           formationTops: formationTopsForWell,
           formationTopAppearance: formationConfig.appearance,
-          showFormationTops: formationConfig.visible,
+          showFormationTops: displayLayerVisibilityByWell[entry.managedWellId]?.formation_tops ?? formationConfig.visible,
           lithologyIntervals: (lithologyProductsForWell?.products ?? [])
             .filter((product) => lithologyConfig.selected_item_ids.includes(product.product_id))
             .flatMap((product) => {
@@ -3231,7 +4594,7 @@ export function Wellbore3DPage({
             patternScale: lithologyConfig.appearance.pattern_scale ?? 1.5,
             hideUnderlyingWellbore: lithologyConfig.appearance.hide_underlay ?? false,
           },
-          showLithologyOverlay: lithologyConfig.visible,
+          showLithologyOverlay: displayLayerVisibilityByWell[entry.managedWellId]?.lithology_intervals ?? lithologyConfig.visible,
           completionComponents: (completionProductsForWell?.products ?? [])
             .filter((product) => completionConfig.selected_item_ids.includes(product.product_id))
             .flatMap((product) => {
@@ -3251,8 +4614,8 @@ export function Wellbore3DPage({
             labelOffset: completionConfig.appearance.label_offset ?? 1,
             labelPosition: completionConfig.appearance.label_position ?? "right",
           },
-          showCompletions: completionConfig.visible,
-          curveOverlays: curveConfig.visible ? (entry.layers.curveRenderPackage?.curves ?? []) : [],
+          showCompletions: displayLayerVisibilityByWell[entry.managedWellId]?.completions ?? completionConfig.visible,
+          curveOverlays: (displayLayerVisibilityByWell[entry.managedWellId]?.curve_overlays ?? curveConfig.visible) ? (entry.layers.curveRenderPackage?.curves ?? []) : [],
           curveTracks: (entry.layers.curveRenderPackage?.tracks ?? []).map((track) => ({
             ...track,
             track_type: track.track_type,
@@ -3260,9 +4623,8 @@ export function Wellbore3DPage({
             grid_color: "#5f7384",
           })),
           curveTrackSpacing: entry.layers.curveRenderPackage?.track_spacing ?? entry.layers.configuration?.track_spacing ?? 0.05,
-          showCurveOverlays: curveConfig.visible,
+          showCurveOverlays: displayLayerVisibilityByWell[entry.managedWellId]?.curve_overlays ?? curveConfig.visible,
           layerFiles: entry.layers.files,
-          depthUnit: entry.viewerPackage.depth_unit ?? depthUnit,
         };
       })
       .filter((entry) => entry.renderPoints.length > 1),
@@ -3271,12 +4633,11 @@ export function Wellbore3DPage({
       displayedWellList,
       viewPropertiesByWell,
       layerManagerOpen,
-      layerEditorWellId,
+      layerManagerOpen ? layerEditorWellId : null,
       draftLayerConfigs,
       layerEditorFormationTopProducts,
       layerEditorLithologyProducts,
       layerEditorCompletionProducts,
-      depthUnit,
     ],
   );
   useEffect(() => {
@@ -3284,9 +4645,15 @@ export function Wellbore3DPage({
     if (coreRecoverySaveTimerRef.current !== null) window.clearTimeout(coreRecoverySaveTimerRef.current);
 
     coreRecoverySaveTimerRef.current = window.setTimeout(() => {
+      const recoveryViewPropertiesByWell = structuredClone(viewPropertiesByWell);
+      if (activeManagedWellId) {
+        recoveryViewPropertiesByWell[activeManagedWellId] = structuredClone(viewProperties);
+      }
       const recoveryState: WbvCoreRestartRecoveryState = {
         schema_version: 1,
         managed_well_id: activeManagedWellId,
+        display_layer_visibility_by_well: structuredClone(displayLayerVisibilityByWell),
+        view_properties_by_well: recoveryViewPropertiesByWell,
         core_view_mode: coreViewMode,
         core_modal: {
           open: coreModalOpen,
@@ -3359,6 +4726,9 @@ export function Wellbore3DPage({
     layerManagerPoppedOut,
     layerManagerRect,
     selectedViewProperty,
+    viewProperties,
+    viewPropertiesByWell,
+    displayLayerVisibilityByWell,
   ]);
 
   const refreshWbvSavedCanvases = useCallback(async () => {
@@ -3368,6 +4738,8 @@ export function Wellbore3DPage({
       setWbvSavedCanvasError(null);
     } catch (error) {
       setWbvSavedCanvasError(error instanceof Error ? error.message : "Unable to list WBV Saved Canvases");
+    } finally {
+      setWbvSavedCanvasesLoaded(true);
     }
   }, []);
 
@@ -3425,6 +4797,9 @@ export function Wellbore3DPage({
       view_properties_by_well: effectiveViewPropertiesByWell,
       viewer_controls: structuredClone(viewerControls),
       display_layers: structuredClone(displayLayers),
+      display_layer_visibility_by_well: structuredClone(displayLayerVisibilityByWell),
+      viewer_controls_collapsed: viewerControlsCollapsed,
+      well_trajectory_collapsed: wellTrajectoryCollapsed,
       track_values_along_wellbore: trackValuesAlongWellbore,
       view_preset: viewPreset,
       zoom_percent: zoomPercent,
@@ -3433,13 +4808,50 @@ export function Wellbore3DPage({
       vertical_rotation_locked: verticalRotationLocked,
       layer_configurations_by_well: layerConfigurationsByWell,
     };
-  }, [activeLayerTab, appliedLayerConfigs, appliedTracks, coreDescriptionFontSize, coreDescriptionOffset, coreDescriptionPanelWidth, coreDescriptionShowMd, coreDescriptionSide, coreLatticeOffset, coreLatticeSide, coreLocatorFocusInterval, coreModalChunkId, coreModalExpanded, coreModalOpen, coreModalPosition, coreModalSize, coreModalTargetMd, coreModalZoom, coreModalZoomLocked, coreViewMode, displayLayers, displayedWellPackages, horizontalRotationLocked, layerManagerExpanded, layerManagerPoppedOut, layerManagerRect, selectedViewProperty, state.session?.active_managed_well_id, trackSpacing, trackValuesAlongWellbore, verticalRotationLocked, viewPreset, viewProperties, viewPropertiesByWell, viewerControls, zoomPercent]);
+  }, [activeLayerTab, appliedLayerConfigs, appliedTracks, coreDescriptionFontSize, coreDescriptionOffset, coreDescriptionPanelWidth, coreDescriptionShowMd, coreDescriptionSide, coreLatticeOffset, coreLatticeSide, coreLocatorFocusInterval, coreModalChunkId, coreModalExpanded, coreModalOpen, coreModalPosition, coreModalSize, coreModalTargetMd, coreModalZoom, coreModalZoomLocked, coreViewMode, displayLayers, displayedWellPackages, horizontalRotationLocked, layerManagerExpanded, layerManagerPoppedOut, layerManagerRect, selectedViewProperty, state.session?.active_managed_well_id, trackSpacing, trackValuesAlongWellbore, verticalRotationLocked, viewPreset, viewProperties, viewPropertiesByWell, viewerControls, viewerControlsCollapsed, wellTrajectoryCollapsed, displayLayerVisibilityByWell, zoomPercent]);
+
+  useEffect(() => {
+    if (
+      !workingCanvasPersistenceReadyRef.current
+      || workingCanvasRestoreInProgressRef.current
+      || wellSelectionRestoreInProgressRef.current
+      || state.loading
+      || Object.keys(displayedWellPackages).length === 0
+    ) return;
+
+    const snapshot = buildWbvSavedCanvasSnapshot();
+    const curveRenderPackagesByWell: Record<string, WbvCurveOverlayRenderContract | null> = {};
+    Object.entries(displayedWellPackages).forEach(([managedWellId, entry]) => {
+      curveRenderPackagesByWell[managedWellId] =
+        managedWellId === state.session?.active_managed_well_id
+          ? (curveOverlayRenderPackage ?? entry.layers.curveRenderPackage ?? null)
+          : (entry.layers.curveRenderPackage ?? null);
+    });
+
+    const working: WbvWorkingCanvasPersistence = {
+      schema_version: 1,
+      snapshot,
+      fresh_well_ids: Array.from(freshCanvasWellIdsRef.current),
+      canvas_local_layer_configurations: structuredClone(canvasLocalLayerConfigurationsRef.current),
+      curve_render_packages_by_well: structuredClone(curveRenderPackagesByWell),
+      updated_at: new Date().toISOString(),
+    };
+    workingCanvasPersistenceRef.current = working;
+    writeWbvWorkingCanvasPersistence(working);
+  }, [
+    buildWbvSavedCanvasSnapshot,
+    curveOverlayRenderPackage,
+    displayedWellPackages,
+    state.loading,
+    state.session?.active_managed_well_id,
+  ]);
 
   const saveWbvCanvas = useCallback(async (name: string) => {
     setWbvSavedCanvasSaving(true); setWbvSavedCanvasError(null);
     try {
       await fetchWlvJson("/api/wlv/wbv/saved-canvases", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({name,snapshot:buildWbvSavedCanvasSnapshot()}) });
       await refreshWbvSavedCanvases();
+      flashAcceptedActionButton("Save As New");
     } catch (error) { setWbvSavedCanvasError(error instanceof Error ? error.message : "Unable to save WBV canvas"); }
     finally { setWbvSavedCanvasSaving(false); }
   }, [buildWbvSavedCanvasSnapshot, refreshWbvSavedCanvases]);
@@ -3449,6 +4861,7 @@ export function Wellbore3DPage({
     try {
       await fetchWlvJson(`/api/wlv/wbv/saved-canvases/${encodeURIComponent(uid)}`, { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({snapshot:buildWbvSavedCanvasSnapshot()}) });
       await refreshWbvSavedCanvases();
+      flashAcceptedActionButton("Save Changes");
     } catch (error) { setWbvSavedCanvasError(error instanceof Error ? error.message : "Unable to save WBV canvas changes"); }
     finally { setWbvSavedCanvasSaving(false); }
   }, [buildWbvSavedCanvasSnapshot, refreshWbvSavedCanvases]);
@@ -3469,13 +4882,78 @@ export function Wellbore3DPage({
     return { managedWellId, wellName:item.wellName, viewerPackage, layers:{files,configuration,formationTops,lithologyProducts:lithologyProductsForWell,completionProducts:completionProductsForWell,curveProducts,curveRenderPackage} };
   }, [wellSelectorItems]);
 
+  const beginSavedCanvasVisualRestore = useCallback(() => {
+    if (savedCanvasPaintConfirmFrameRef.current !== null) {
+      window.cancelAnimationFrame(savedCanvasPaintConfirmFrameRef.current);
+      savedCanvasPaintConfirmFrameRef.current = null;
+    }
+
+    savedCanvasVisualReadyRef.current = false;
+    setSavedCanvasScenePending(true);
+    setShowSavedCanvasRestoreProgress(true);
+  }, []);
+
+  const completeSavedCanvasVisualRestoreAfterPaint = useCallback(() => {
+    if (savedCanvasVisualReadyRef.current) return;
+
+    // renderer.render() occurs before the browser presents that frame.
+    // Wait across two animation-frame boundaries so completion is measured
+    // after the final canvas has had an opportunity to paint.
+    savedCanvasPaintConfirmFrameRef.current = window.requestAnimationFrame(() => {
+      savedCanvasPaintConfirmFrameRef.current = window.requestAnimationFrame(() => {
+        savedCanvasPaintConfirmFrameRef.current = null;
+        savedCanvasVisualReadyRef.current = true;
+
+        setSavedCanvasScenePending(false);
+        setShowSavedCanvasRestoreProgress(false);
+      });
+    });
+  }, []);
+
+  useEffect(() => () => {
+    if (savedCanvasPaintConfirmFrameRef.current !== null) {
+      window.cancelAnimationFrame(savedCanvasPaintConfirmFrameRef.current);
+    }
+  }, []);
+
+  const waitForSavedCanvasRestoreIndicatorPaint = useCallback(async () => {
+    // React state setters above schedule the restore UI, but do not guarantee
+    // that the browser has painted it before this async function continues.
+    // Cross two animation-frame boundaries so the loading screen is committed
+    // and presented before any Saved Canvas restore work can monopolize the UI.
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => resolve());
+      });
+    });
+  }, []);
+
   const loadWbvSavedCanvas = useCallback(async (uid: string) => {
     if (wbvSavedCanvasBusyUid) return;
+    beginSavedCanvasVisualRestore();
+    setSavedCanvasTransitionPending(true);
     setWbvSavedCanvasBusyUid(uid); setWbvSavedCanvasError(null); setLayerManagerOpen(false);
+
+    // WBV_SAVED_CANVAS_PRE_RESTORE_PAINT_BARRIER_V1_0_0_AUDITED
+    // Never start the restore pipeline until the immediate spinner/message has
+    // actually had a browser paint opportunity on this specific load.
+    await waitForSavedCanvasRestoreIndicatorPaint();
+
+    savedCanvasRestoreInProgressRef.current = true;
+    workingCanvasRestoreInProgressRef.current = false;
+    workingCanvasPersistenceReadyRef.current = false;
+    workingCanvasPersistenceRef.current = null;
     try {
       const record = await fetchWlvJson<WbvSavedCanvasRecord>(`/api/wlv/wbv/saved-canvases/${encodeURIComponent(uid)}/restore`, {method:"POST"});
       const snapshot = record.snapshot;
       if (!snapshot || snapshot.schema_version !== 1) throw new Error("Unsupported WBV Saved Canvas schema");
+      canvasLocalLayerConfigurationsRef.current = {};
+      // Snapshot membership is explicit canvas authority. Never classify those
+      // wells as fresh while restoring this saved canvas.
+      snapshot.displayed_well_ids.forEach((managedWellId) => {
+        freshCanvasWellIdsRef.current.delete(managedWellId);
+        delete canvasLocalLayerConfigurationsRef.current[managedWellId];
+      });
       for (const managedWellId of snapshot.displayed_well_ids) {
         const item = wellSelectorItems.find((candidate) => candidate.managedWellId === managedWellId);
         if (!item?.hasSurvey) throw new Error(`Cannot load ${record.name}: ${managedWellId} is not displayable`);
@@ -3496,8 +4974,10 @@ export function Wellbore3DPage({
       const packageMap=Object.fromEntries(packages.map((entry)=>[entry.managedWellId,entry]));
       setDisplayedWellPackages(packageMap); setPrefetchedWellPackages((current)=>({...current,...packageMap}));
       setPendingDisplayedWellIds(Object.fromEntries(snapshot.displayed_well_ids.map((managedWellId)=>[managedWellId,true])));
-      setViewPropertiesByWell(structuredClone(snapshot.view_properties_by_well));
       setViewerControls(structuredClone(snapshot.viewer_controls)); setDisplayLayers(structuredClone(snapshot.display_layers));
+      setDisplayLayerVisibilityByWell(structuredClone(snapshot.display_layer_visibility_by_well ?? {}));
+      setViewerControlsCollapsed(Boolean(snapshot.viewer_controls_collapsed));
+      setWellTrajectoryCollapsed(Boolean(snapshot.well_trajectory_collapsed));
       setTrackValuesAlongWellbore(snapshot.track_values_along_wellbore); setViewPreset(snapshot.view_preset);
       setHorizontalRotationLocked(snapshot.horizontal_rotation_locked); setVerticalRotationLocked(snapshot.vertical_rotation_locked);
       if (snapshot.core_recovery_state) {
@@ -3526,7 +5006,23 @@ export function Wellbore3DPage({
         setSelectedViewProperty(recovered.display_modal.selected_view_property);
         if (recovered.core_modal.open) pendingCoreModalRecoveryRef.current = recovered;
       }
-      if (snapshot.active_managed_well_id) { setViewProperties(structuredClone(snapshot.view_properties_by_well[snapshot.active_managed_well_id] ?? defaultViewProperties)); await selectWbvWell(snapshot.active_managed_well_id); }
+      if (snapshot.active_managed_well_id) {
+        await selectWbvWell(snapshot.active_managed_well_id);
+      }
+
+      // WBV_SAVED_CANVAS_VIEW_PROPERTIES_RESTORE_ORDER_V1_0_0_AUDITED
+      // The immutable Saved Canvas snapshot is the final presentation authority.
+      // Apply it only after active-well selection completes so selection-side
+      // hydration cannot overwrite trajectory colour/material/tone or other View Properties.
+      const restoredViewPropertiesByWell = structuredClone(snapshot.view_properties_by_well);
+      setViewPropertiesByWell(restoredViewPropertiesByWell);
+      if (snapshot.active_managed_well_id) {
+        setViewProperties(
+          structuredClone(
+            restoredViewPropertiesByWell[snapshot.active_managed_well_id] ?? defaultViewProperties,
+          ),
+        );
+      }
       if (snapshot.camera_view) {
         const restoredCameraView = structuredClone(snapshot.camera_view);
         wbvCameraViewRef.current = restoredCameraView;
@@ -3534,14 +5030,96 @@ export function Wellbore3DPage({
         setWbvCameraViewRestore(restoredCameraView);
         setWbvCameraViewRestoreId((current) => current + 1);
         setZoomPercent(Math.round(restoredCameraView.zoom * 100));
+
+        // Saved Canvas is the final view authority. Re-assert after queued
+        // well/config/presentation hydration has completed its current frame.
+        window.requestAnimationFrame(() => {
+          const finalCameraView = structuredClone(restoredCameraView);
+          wbvCameraViewRef.current = finalCameraView;
+          writeWbvNavigationCameraView(finalCameraView);
+          setWbvCameraViewRestore(finalCameraView);
+          setWbvCameraViewRestoreId((current) => current + 1);
+          setZoomPercent(Math.round(finalCameraView.zoom * 100));
+        });
       } else {
         setWbvCameraViewRestore(null);
         setZoomPercent(snapshot.zoom_percent);
       }
       await refreshWbvSavedCanvases();
     } catch (error) { setWbvSavedCanvasError(error instanceof Error ? error.message : "Unable to load WBV Saved Canvas"); }
-    finally { setWbvSavedCanvasBusyUid(null); }
-  }, [fetchSavedCanvasWellPackage, refreshWbvSavedCanvases, selectWbvWell, wbvSavedCanvasBusyUid, wellSelectorItems]);
+    finally {
+      savedCanvasRestoreInProgressRef.current = false;
+      workingCanvasPersistenceReadyRef.current = true;
+      setWbvSavedCanvasBusyUid(null);
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          // Data/snapshot transaction is complete. The restore indicator was
+          // painted before restore work began and remains mounted; only now may
+          // the heavy renderer mount. Visual restore remains pending until its
+          // first completed frame is painted.
+          setSavedCanvasTransitionPending(false);
+        });
+      });
+    }
+  }, [beginSavedCanvasVisualRestore, fetchSavedCanvasWellPackage, refreshWbvSavedCanvases, selectWbvWell, waitForSavedCanvasRestoreIndicatorPaint, wbvSavedCanvasBusyUid, wellSelectorItems]);
+
+  // WBV_ACTIVE_SAVED_CANVAS_AUTORESTORE_V1_0_0_AUDITED
+  // The backend's active Saved Canvas is the presentation authority across
+  // MultiViewer application switches/remounts. Restore that immutable snapshot
+  // before ordinary well-selection/fresh-well hydration is allowed to run.
+  useEffect(() => {
+    if (
+      activeSavedCanvasAutoRestoreAttemptedRef.current
+      || !wbvSavedCanvasesLoaded
+      || !activeSavedCanvasUid
+      || wellSelectorItems.length === 0
+      || wbvSavedCanvasBusyUid
+    ) return;
+
+    activeSavedCanvasAutoRestoreAttemptedRef.current = true;
+    wellSelectionRestoreAttemptedRef.current = true;
+    pendingWellSelectionRestoreRef.current = null;
+    wellSelectionRestoreInProgressRef.current = false;
+
+    void loadWbvSavedCanvas(activeSavedCanvasUid);
+  }, [
+    activeSavedCanvasUid,
+    loadWbvSavedCanvas,
+    wbvSavedCanvasBusyUid,
+    wbvSavedCanvasesLoaded,
+    wellSelectorItems.length,
+  ]);
+
+  const wbvCanvasShadeOption = getWbvCanvasShadeOption(wbvCanvasShadePreview);
+  const wbvCanvasContrast = wbvCanvasShadeOption.contrast;
+
+  useEffect(() => {
+    if (!wbvCanvasShadeMenuOpen) return undefined;
+
+    const cancelPreview = () => {
+      setWbvCanvasShadePreview(wbvCanvasBackdrop);
+      setWbvCanvasShadeMenuOpen(false);
+    };
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && wbvCanvasShadeMenuRef.current?.contains(target)) return;
+      cancelPreview();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      cancelPreview();
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [wbvCanvasBackdrop, wbvCanvasShadeMenuOpen]);
 
   const deleteWbvSavedCanvas = useCallback(async (uid: string) => {
     if (wbvSavedCanvasBusyUid) return;
@@ -3560,73 +5138,208 @@ export function Wellbore3DPage({
       ? selectorSummaryItems[0].wellName
       : `${selectorSummaryItems.length} wells displayed`;
 
+  const acceptSavedCanvasFirstRenderedFrame = useCallback(() => {
+    if (savedCanvasTransitionPending || !savedCanvasScenePending) return;
+    completeSavedCanvasVisualRestoreAfterPaint();
+  }, [
+    completeSavedCanvasVisualRestoreAfterPaint,
+    savedCanvasScenePending,
+    savedCanvasTransitionPending,
+  ]);
+
   return (
     <section className="wlv-wbv-page" aria-label="3D Wellbore Viewer">
-      <header className="wlv-wbv-header">
-        <div>
-          <span className="wlv-page-kicker">3D Wellbore</span>
-          <h1>3D Wellbore Viewer</h1>
+      <style>{`
+        input[placeholder="Canvas name"] {
+          background: #fbfcfd !important;
+          color: #2e414d !important;
+          -webkit-text-fill-color: #2e414d !important;
+          caret-color: #2e414d !important;
+          border-color: #aebdc8 !important;
+          box-shadow: none !important;
+        }
+        input[placeholder="Canvas name"]::placeholder {
+          color: #657986 !important;
+          -webkit-text-fill-color: #657986 !important;
+          opacity: 1 !important;
+        }
+        input[placeholder="Canvas name"]:focus {
+          background: #ffffff !important;
+          color: #2e414d !important;
+          -webkit-text-fill-color: #2e414d !important;
+          border-color: #7f98aa !important;
+          outline: 2px solid rgba(127, 152, 170, 0.22);
+          outline-offset: 1px;
+        }
+        .wlv-wbv-saved-canvas-restore-status {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+        }
+        .wlv-wbv-saved-canvas-restore-spinner {
+          width: 18px;
+          height: 18px;
+          flex: 0 0 18px;
+          border: 2px solid rgba(82, 102, 115, 0.28);
+          border-top-color: #526673;
+          border-radius: 50%;
+          animation: wlv-wbv-saved-canvas-restore-spin 0.8s linear infinite;
+        }
+        @keyframes wlv-wbv-saved-canvas-restore-spin {
+          to { transform: rotate(360deg); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .wlv-wbv-saved-canvas-restore-spinner {
+            animation-duration: 1.8s;
+          }
+        }
+      `}</style>
+      <header className="mv-wbv-header" aria-label="WBV toolbar">
+        <div className="mv-wbv-header__identity">
+          <h1 className="mv-wbv-header__title">3D Wellbore Viewer</h1>
         </div>
-        <div className="wlv-wbv-header-tools">
-          <div className="wlv-wbv-save-canvas-field" aria-label="WBV Save Canvas">
-            <span className="wlv-wbv-save-canvas-title">Save Canvas</span>
-            <div className="wlv-toolbar-group wlv-toolbar-group-saved-canvas wlv-wbv-save-canvas-slot" data-toolbar-group="saved-canvas" aria-label="Saved Canvases">
-              <div className="wlv-toolbar-actions">
-                <SavedCanvasToolbarControl items={wbvSavedCanvases} disabled={state.loading} saving={wbvSavedCanvasSaving} busySavedCanvasUid={wbvSavedCanvasBusyUid} error={wbvSavedCanvasError} onSave={saveWbvCanvas} onSaveChanges={saveActiveWbvCanvas} onLoad={loadWbvSavedCanvas} onDelete={deleteWbvSavedCanvas} />
-              </div>
+
+        <div className="mv-wbv-header__workspace">
+          <div className="wlv-toolbar-group wlv-toolbar-group-saved-canvas wlv-wbv-save-canvas-slot" data-toolbar-group="saved-canvas" aria-label="Saved Canvases">
+            <div className="wlv-toolbar-actions">
+              <SavedCanvasToolbarControl items={wbvSavedCanvases} disabled={state.loading} saving={wbvSavedCanvasSaving} busySavedCanvasUid={wbvSavedCanvasBusyUid} error={wbvSavedCanvasError} onSave={saveWbvCanvas} onSaveChanges={saveActiveWbvCanvas} onLoad={loadWbvSavedCanvas} onDelete={deleteWbvSavedCanvas} />
             </div>
           </div>
-          <div className="wlv-wbv-well-selector" aria-label="Select managed wells for display">
-          <button
-            type="button"
-            className={`wlv-wbv-well-selector__label-button ${wellSelectionDirty ? "is-pending" : "is-ready"}`}
-            disabled={wellSelectorLoading || !wellSelectionDirty}
-            onClick={() => void applyDisplayedWellSelection()}
-          >
-            Well Selection
-          </button>
-          <div className={`wlv-wbv-multiwell-select ${wellSelectorOpen ? "is-open" : ""}`}>
-            <button
-              id="wbv-managed-well-select"
-              type="button"
-              className="wlv-wbv-multiwell-select__trigger"
-              disabled={wellSelectorLoading}
-              aria-expanded={wellSelectorOpen}
-              onClick={() => {
-                setWellSelectorOpen((open) => {
-                  if (!open) setPendingDisplayedWellIds(selectionRecordFromDisplayedPackages(displayedWellPackages));
-                  return !open;
-                });
-              }}
-            >
-              <span>{wellSelectorLoading ? "Loading wells…" : displayedWellSummary}</span>
-              <span aria-hidden="true">⌄</span>
-            </button>
-            {wellSelectorOpen ? (
-              <div className="wlv-wbv-multiwell-select__menu" role="listbox" aria-multiselectable="true">
-                {wellSelectorItems.map((item) => {
-                  const checked = Boolean(pendingDisplayedWellIds[item.managedWellId]);
-                  const active = activeManagedWellId === item.managedWellId;
-                  return (
-                    <label key={item.managedWellId} className={`wlv-wbv-multiwell-select__option ${!item.hasSurvey ? "is-unavailable" : ""} ${active ? "is-active" : ""}`}>
-                      <input type="checkbox" checked={checked} disabled={!item.hasSurvey} onChange={(event) => togglePendingDisplayedWell(item.managedWellId, event.target.checked)} />
-                      <span className="wlv-wbv-multiwell-select__name">{item.wellName}</span>
-                      {loadingDisplayedWellIds[item.managedWellId] ? <span className="wlv-wbv-multiwell-select__badge is-loading">LOADING</span> : active ? <span className="wlv-wbv-multiwell-select__badge">ACTIVE</span> : item.activeInWdv ? <span className="wlv-wbv-multiwell-select__badge">WDV</span> : null}
-                    </label>
-                  );
-                })}
+
+          <div className="mv-wbv-toolbar-group mv-wbv-toolbar-group--well" aria-label="Select managed wells for display">
+            <div className="mv-wbv-toolbar-group__control-row">
+              <button
+                type="button"
+                className={`mv-wbv-toolbar-group__action ${wellSelectionDirty ? "is-pending" : "is-ready"}`}
+                disabled={wellSelectorLoading || !wellSelectionDirty}
+                onClick={() => void applyDisplayedWellSelection()}
+              >
+                Well Selection
+              </button>
+
+              <div className={`mv-wbv-well-select ${wellSelectorOpen ? "is-open" : ""}`}>
+                <button
+                  id="wbv-managed-well-select"
+                  type="button"
+                  className="mv-wbv-well-select__trigger"
+                  disabled={wellSelectorLoading}
+                  aria-expanded={wellSelectorOpen}
+                  onClick={() => {
+                    setWellSelectorOpen((open) => {
+                      if (!open) setPendingDisplayedWellIds(selectionRecordFromDisplayedPackages(displayedWellPackages));
+                      return !open;
+                    });
+                  }}
+                >
+                  <span>{wellSelectorLoading ? "Loading wells…" : displayedWellSummary}</span>
+                  <span className="mv-wbv-disclosure" aria-hidden="true">⌄</span>
+                </button>
+
+                {wellSelectorOpen ? (
+                  <div className="mv-wbv-well-select__menu" role="listbox" aria-multiselectable="true">
+                    {wellSelectorItems.map((item) => {
+                      const checked = Boolean(pendingDisplayedWellIds[item.managedWellId]);
+                      const active = activeManagedWellId === item.managedWellId;
+                      return (
+                        <label key={item.managedWellId} className={`mv-wbv-well-select__option ${!item.hasSurvey ? "is-unavailable" : ""} ${active ? "is-active" : ""}`}>
+                          <input type="checkbox" checked={checked} disabled={!item.hasSurvey} onChange={(event) => togglePendingDisplayedWell(item.managedWellId, event.target.checked)} />
+                          <span className="mv-wbv-well-select__name">{item.wellName}</span>
+                          {loadingDisplayedWellIds[item.managedWellId] ? <span className="mv-wbv-well-select__badge is-loading">LOADING</span> : active ? <span className="mv-wbv-well-select__badge">ACTIVE</span> : item.activeInWdv ? <span className="mv-wbv-well-select__badge">WDV</span> : null}
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-          </div>
-          {selectedWellItem && !selectedWellItem.hasSurvey ? (
-            <p className="wlv-wbv-well-selector__warning">No deviation survey is connected. This well cannot be displayed in the Wellbore Viewer.</p>
-          ) : selectedWellItem?.activeInWdv ? (
-            <p className="wlv-wbv-well-selector__active">Active in the Well Data Viewer. Linked data exchange is available.</p>
-          ) : selectedWellItem?.hasSurvey ? (
-            <p className="wlv-wbv-well-selector__notice">Deviation survey available. This well can be displayed independently in WBV; load and activate it in WDV only to enable linked curve data and data exchange.</p>
-          ) : null}
-          {wellSelectionDirty ? <p className="wlv-wbv-well-selector__pending">Selection changed. Click the Well Selection header to activate the updated display set.</p> : null}
-          {wellSelectorMessage && !selectedWellItem ? <p className="wlv-wbv-well-selector__error">{wellSelectorMessage}</p> : null}
+              <div className="wlv-wbv-canvas-shade-control" ref={wbvCanvasShadeMenuRef}>
+                <button
+                  type="button"
+                  className="wlv-backdrop-toggle wlv-wbv-canvas-backdrop-toggle"
+                  aria-label="Choose WBV canvas shade"
+                  aria-haspopup="dialog"
+                  aria-expanded={wbvCanvasShadeMenuOpen}
+                  title="Canvas shade"
+                  onClick={() => {
+                    setWbvCanvasShadePreview(wbvCanvasBackdrop);
+                    setWbvCanvasShadeMenuOpen((current) => !current);
+                  }}
+                >
+                  ◐
+                </button>
+                {wbvCanvasShadeMenuOpen ? (
+                  <div className="wlv-wbv-canvas-shade-popover" role="dialog" aria-label="Canvas shade">
+                    <div className="wlv-wbv-canvas-shade-popover__title">Canvas Shade</div>
+                    <div className="wlv-wbv-canvas-shade-swatches" role="radiogroup" aria-label="Canvas shades">
+                      {WBV_CANVAS_SHADE_OPTIONS.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          className={`wlv-wbv-canvas-shade-swatch ${wbvCanvasShadePreview === option.id ? "is-selected" : ""}`}
+                          role="radio"
+                          aria-checked={wbvCanvasShadePreview === option.id}
+                          aria-label={option.label}
+                          title={option.label}
+                          onClick={() => setWbvCanvasShadePreview(option.id)}
+                        >
+                          <span
+                            className="wlv-wbv-canvas-shade-swatch__sample"
+                            aria-hidden="true"
+                            style={{ background: option.swatch }}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                    <div className="wlv-wbv-canvas-shade-popover__range" aria-hidden="true">
+                      <span>Dark</span>
+                      <span>Light</span>
+                    </div>
+                    <div className="wlv-wbv-canvas-shade-popover__actions">
+                      <button
+                        type="button"
+                        className="wlv-wbv-canvas-shade-cancel"
+                        onClick={() => {
+                          setWbvCanvasShadePreview(wbvCanvasBackdrop);
+                          setWbvCanvasShadeMenuOpen(false);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="wlv-wbv-canvas-shade-apply"
+                        onClick={() => {
+                          const selectedShade = getWbvCanvasShadeOption(wbvCanvasShadePreview);
+                          const nextViewProperties = withWbvCanvasShadeViewPresets(viewProperties, selectedShade);
+                          setWbvCanvasBackdrop(wbvCanvasShadePreview);
+                          writeWbvCanvasBackdrop(wbvCanvasShadePreview);
+                          setViewProperties(nextViewProperties);
+                          if (activeManagedWellId) {
+                            setViewPropertiesByWell((current) => ({
+                              ...current,
+                              [activeManagedWellId]: structuredClone(nextViewProperties),
+                            }));
+                          }
+                          setWbvCanvasShadeMenuOpen(false);
+                        }}
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="mv-wbv-toolbar-group__status" aria-live="polite">
+              {selectedWellItem && !selectedWellItem.hasSurvey ? (
+                <p className="is-warning">No deviation survey is connected. This well cannot be displayed in the Wellbore Viewer.</p>
+              ) : selectedWellItem?.activeInWdv ? (
+                <p className="is-active">Active in the Well Data Viewer. Linked data exchange is available.</p>
+              ) : null}
+              {wellSelectionDirty ? <p className="is-pending">Selection changed. Click Well Selection to activate the updated display set.</p> : null}
+              {wellSelectorMessage && !selectedWellItem ? <p className="is-error">{wellSelectorMessage}</p> : null}
+            </div>
           </div>
         </div>
       </header>
@@ -3637,17 +5350,24 @@ export function Wellbore3DPage({
           aria-label="WBV display controls"
         >
           <div className="wlv-wbv-panel-heading">
-            <span>Display</span>
-            <strong>WBV Controls</strong>
+            <strong className="mv-wbv-primary-panel-title">WBV Controls</strong>
           </div>
-          {activeManagedWellId ? (
-            <div className="wlv-wbv-active-control-well" title="All standard WBV controls apply to this active well">
-              Active well: {selectedWellItem?.wellName ?? activeManagedWellId}
-            </div>
-          ) : null}
 
           <section className="wlv-wbv-left-section" aria-labelledby="wbv-viewer-controls-heading">
-            <h2 id="wbv-viewer-controls-heading">Viewer</h2>
+            <div className="wlv-wbv-section-heading-row wlv-wbv-section-heading-row--collapsible wlv-wbv-section-heading-row--scene-overlays">
+              <h2 id="wbv-viewer-controls-heading" className="mv-type-section-heading mv-role-section-title">Scene Overlays</h2>
+              <button
+                type="button"
+                className="wlv-wbv-section-collapse-button"
+                aria-label={viewerControlsCollapsed ? "Expand Scene Overlays controls" : "Collapse Scene Overlays controls"}
+                aria-expanded={!viewerControlsCollapsed}
+                onClick={() => setViewerControlsCollapsed((collapsed) => !collapsed)}
+                title={viewerControlsCollapsed ? "Expand Scene Overlays" : "Collapse Scene Overlays"}
+              >
+                <span aria-hidden="true">{viewerControlsCollapsed ? "▾" : "▴"}</span>
+              </button>
+            </div>
+            {!viewerControlsCollapsed ? (
             <div className="wlv-wbv-control-list">
               {([
                 ["boundingBox", "Bounding box"],
@@ -3671,12 +5391,19 @@ export function Wellbore3DPage({
                 </label>
               ))}
             </div>
+            ) : null}
           </section>
 
-          <section className="wlv-wbv-left-section" aria-labelledby="wbv-display-layers-heading">
+          <section className="wlv-wbv-left-section wlv-wbv-left-section--display-layers" aria-labelledby="wbv-display-layers-heading">
             <div className="wlv-wbv-section-heading-row">
               <h2 id="wbv-display-layers-heading">Display Layers</h2>
-              <button type="button" className="wlv-wbv-manage-layers-button" onClick={() => openLayerManager(activeLayerTab)}>Manage</button>
+              <button
+                type="button"
+                className={["wlv-wbv-manage-layers-button", layerManagerOpen ? "is-active" : ""].filter(Boolean).join(" ")}
+                onClick={() => openLayerManager(activeLayerTab)}
+              >
+                Manage
+              </button>
             </div>
             <div className="wlv-wbv-control-list">
               <label className={!layers?.trajectory ? "is-disabled" : ""}>
@@ -3692,7 +5419,7 @@ export function Wellbore3DPage({
                   && rendererCurveOverlays.length > 0;
                 const configured = config.selected_item_ids.length > 0 || Boolean(config.source_product_id) || hasRenderableCurveContent;
                 return <label key={key} className={!configured ? "is-disabled" : ""} onClick={() => setActiveLayerTab(key)}>
-                  <input type="checkbox" checked={configured && config.visible} disabled={!configured} onChange={(event) => {
+                  <input type="checkbox" checked={configured && effectiveDataLayerVisibility(activeManagedWellId, key, config.visible)} disabled={!configured} onChange={(event) => {
                     event.stopPropagation();
                     setActiveWellLayerVisibility(key, event.target.checked);
                   }} />
@@ -3702,25 +5429,49 @@ export function Wellbore3DPage({
             </div>
           </section>
 
-          {appliedLayerConfigs.some((item) => item.selected_item_ids.length > 0 || item.source_product_id) ? (
+          {/* WBV_ACTIVE_LAYERS_COMMITTED_CONFIGURATION_RESTORE_V1_0_0_AUDITED
+              Active Layers reports committed/configured data-layer activity only.
+              Display Layers visibility is deliberately NOT part of this predicate.
+              Published curve overlays use the committed render package rather than
+              the retired selected_item_ids/source_product_id path. */}
+          {appliedLayerConfigs.some((item) =>
+            item.selected_item_ids.length > 0
+            || Boolean(item.source_product_id)
+            || (item.layer_type === "curve_overlays" && (curveOverlayRenderPackage?.curves.length ?? 0) > 0)
+          ) ? (
             <section className="wlv-wbv-left-section" aria-label="Active layers">
               <h2>Active Layers</h2>
               <div className="wlv-wbv-active-layer-list">
-                {appliedLayerConfigs.filter((item) => item.selected_item_ids.length > 0 || item.source_product_id).map((item) => (
-                  <div key={item.layer_type}><strong>{fieldLabel(item.layer_type)}</strong><span>{item.layer_type === "curve_overlays" ? `${item.selected_item_ids.length} curves` : `${item.selected_item_ids.length || 1} item`}</span></div>
-                ))}
+                {appliedLayerConfigs.filter((item) =>
+                  item.selected_item_ids.length > 0
+                  || Boolean(item.source_product_id)
+                  || (item.layer_type === "curve_overlays" && (curveOverlayRenderPackage?.curves.length ?? 0) > 0)
+                ).map((item) => {
+                  const sourceDisplayName = (displayLayerFiles?.layers[item.layer_type] ?? []).find((file) => file.product_id === item.source_product_id)?.display_name;
+                  const activeItemCount = item.layer_type === "curve_overlays"
+                    ? (curveOverlayRenderPackage?.curves.length ?? item.selected_item_ids.length)
+                    : (item.selected_item_ids.length || 1);
+                  return (
+                    <div key={item.layer_type}>
+                      <strong>{sourceDisplayName ?? fieldLabel(item.layer_type)}</strong>
+                      <span>{item.layer_type === "curve_overlays" ? `${activeItemCount} curves` : `${activeItemCount} item`}</span>
+                    </div>
+                  );
+                })}
               </div>
             </section>
           ) : null}
 
-          <section className="wlv-wbv-view-controls" aria-label="WBV view controls">
-            <h2>View</h2>
+          <section className="wlv-wbv-view-controls mv-control-geometry-scope-exempt" aria-label="WBV view controls">
+            <div className="wlv-wbv-section-heading-row wlv-wbv-section-heading-row--view-standard" data-audit="WBV_VIEW_HEADER_STANDARDIZATION_V1_0_0_AUDITED">
+              <h2 className="mv-type-section-heading mv-role-section-title">View</h2>
+            </div>
 
             <div className="wlv-wbv-view-control-block">
               <h3>Framing</h3>
               <div className="wlv-wbv-view-control-grid wlv-wbv-view-control-grid--two">
-                <button type="button" disabled={!hasTrajectory} onClick={() => requestViewPreset("fit")}>Fit Well</button>
-                <button type="button" disabled={!hasTrajectory || !interaction?.saved_interval} onClick={() => requestViewAction("fit-selection")}>Fit Selection</button>
+                <button className="mv-control-geometry-exempt" type="button" disabled={!hasTrajectory} onClick={() => requestViewPreset("fit")}>Fit Well</button>
+                <button className="mv-control-geometry-exempt" type="button" disabled={!hasTrajectory || !interaction?.saved_interval} onClick={() => requestViewAction("fit-selection")}>Fit Selection</button>
               </div>
             </div>
 
@@ -3728,7 +5479,7 @@ export function Wellbore3DPage({
               <h3>Orientation</h3>
               <div className="wlv-wbv-view-control-grid wlv-wbv-view-control-grid--five">
                 {orientationPresetOrder.map((preset) => (
-                  <button type="button" key={preset} className={viewPreset === preset ? "is-active" : ""} disabled={!hasTrajectory} onClick={() => requestViewPreset(preset)}>
+                  <button type="button" key={preset} className={`mv-control-geometry-exempt${viewPreset === preset ? " is-active" : ""}`} disabled={!hasTrajectory} onClick={() => requestViewPreset(preset)}>
                     {orientationLabels[preset]}
                   </button>
                 ))}
@@ -3738,9 +5489,9 @@ export function Wellbore3DPage({
             <div className="wlv-wbv-view-control-block">
               <h3>Zoom</h3>
               <div className="wlv-wbv-zoom-controls">
-                <button type="button" aria-label="Zoom out" disabled={!hasTrajectory || zoomPercent <= 25} onClick={() => requestViewAction("zoom-out")}>−</button>
-                <button type="button" className="wlv-wbv-zoom-value" disabled={!hasTrajectory} title="Reset zoom to 100%" onClick={() => requestViewAction("zoom-reset")}>{zoomPercent}%</button>
-                <button type="button" aria-label="Zoom in" disabled={!hasTrajectory || zoomPercent >= 800} onClick={() => requestViewAction("zoom-in")}>+</button>
+                <button className="mv-control-geometry-exempt" type="button" aria-label="Zoom out" disabled={!hasTrajectory || zoomPercent <= 25} onClick={() => requestViewAction("zoom-out")}>−</button>
+                <button type="button" className="wlv-wbv-zoom-value mv-control-geometry-exempt" disabled={!hasTrajectory} title="Reset zoom to 100%" onClick={() => requestViewAction("zoom-reset")}>{zoomPercent}%</button>
+                <button className="mv-control-geometry-exempt" type="button" aria-label="Zoom in" disabled={!hasTrajectory || zoomPercent >= 800} onClick={() => requestViewAction("zoom-in")}>+</button>
               </div>
             </div>
 
@@ -3749,7 +5500,7 @@ export function Wellbore3DPage({
               <div className="wlv-wbv-rotation-center-row">
                 <button
                   type="button"
-                  className={rotationCenterActive ? "is-active" : ""}
+                  className={`mv-control-geometry-exempt${rotationCenterActive ? " is-active" : ""}`}
                   disabled={!hasTrajectory}
                   aria-pressed={rotationCenterActive}
                   aria-label={rotationCenterActive ? "Clear rotation center" : "Set rotation center"}
@@ -3759,7 +5510,7 @@ export function Wellbore3DPage({
                 </button>
               </div>
               <div className="wlv-wbv-horizontal-rotation-controls">
-                <button
+                <button className="mv-control-geometry-exempt"
                   type="button"
                   aria-label="Rotate horizontally negative"
                   disabled={!hasTrajectory || !horizontalRotationLocked}
@@ -3772,7 +5523,7 @@ export function Wellbore3DPage({
                 >−</button>
                 <button
                   type="button"
-                  className={horizontalRotationLocked ? "is-active" : ""}
+                  className={`mv-control-geometry-exempt${horizontalRotationLocked ? " is-active" : ""}`}
                   disabled={!hasTrajectory}
                   onClick={() => {
                     clearHorizontalRotationHold();
@@ -3786,7 +5537,7 @@ export function Wellbore3DPage({
                 >
                   Horizontal
                 </button>
-                <button
+                <button className="mv-control-geometry-exempt"
                   type="button"
                   aria-label="Rotate horizontally positive"
                   disabled={!hasTrajectory || !horizontalRotationLocked}
@@ -3799,7 +5550,7 @@ export function Wellbore3DPage({
                 >+</button>
               </div>
               <div className="wlv-wbv-vertical-rotation-controls">
-                <button
+                <button className="mv-control-geometry-exempt"
                   type="button"
                   aria-label="Rotate vertically negative"
                   disabled={!hasTrajectory || !verticalRotationLocked}
@@ -3812,7 +5563,7 @@ export function Wellbore3DPage({
                 >−</button>
                 <button
                   type="button"
-                  className={verticalRotationLocked ? "is-active" : ""}
+                  className={`mv-control-geometry-exempt${verticalRotationLocked ? " is-active" : ""}`}
                   disabled={!hasTrajectory}
                   onClick={() => {
                     clearHorizontalRotationHold();
@@ -3826,7 +5577,7 @@ export function Wellbore3DPage({
                 >
                   Vertical
                 </button>
-                <button
+                <button className="mv-control-geometry-exempt"
                   type="button"
                   aria-label="Rotate vertically positive"
                   disabled={!hasTrajectory || !verticalRotationLocked}
@@ -3844,9 +5595,21 @@ export function Wellbore3DPage({
 
         <main className="wlv-wbv-scene-shell" aria-label="WBV 3D scene shell">
           <div
-            className={`wlv-wbv-scene-frame ${hasTrajectory ? "has-trajectory-package" : ""}`}
+            className={`wlv-wbv-scene-frame ${hasTrajectory ? "has-trajectory-package" : ""} ${wbvCanvasContrast === "light" ? "wlv-wbv-canvas-light" : "wlv-wbv-canvas-dark"}`}
+            style={{
+              "--wbv-canvas-background": wbvCanvasShadeOption.background,
+              "--wbv-overlay-surface": wbvCanvasShadeOption.overlaySurface,
+              "--wbv-overlay-border": wbvCanvasShadeOption.overlayBorder,
+              "--wbv-overlay-text": wbvCanvasShadeOption.overlayText,
+              "--wbv-overlay-line": wbvCanvasShadeOption.overlayLine,
+              "--wbv-overlay-shadow": wbvCanvasShadeOption.overlayShadow,
+              "--wbv-compass-surface": wbvCanvasShadeOption.compassSurface,
+              "--wbv-compass-border": wbvCanvasShadeOption.compassBorder,
+              "--wbv-compass-text": wbvCanvasShadeOption.compassText,
+              "--wbv-compass-north": wbvCanvasShadeOption.compassNorth,
+            } as React.CSSProperties}
           >
-            {hasTrajectory ? (
+            {hasTrajectory && !savedCanvasTransitionPending ? (
               <>
               <WellboreTrajectoryRenderer
                 renderPoints={renderPoints}
@@ -3871,7 +5634,7 @@ export function Wellbore3DPage({
                 rotationCenterPickArmed={rotationCenterPickArmed}
                 onRotationCenterEstablished={handleRotationCenterEstablished}
                 selectedPoint={interaction?.selected_point_visible ? selectedPoint : null}
-                selectionMode={interaction?.selection_mode ?? "none"}
+                selectionMode={effectiveSelectionMode}
                 intervalDraftStart={interaction?.interval_visible ? interaction.interval_draft_start : null}
                 savedInterval={interaction?.interval_visible ? interaction.saved_interval : null}
                 trackValuesAlongWellbore={trackValuesAlongWellbore}
@@ -3882,6 +5645,8 @@ export function Wellbore3DPage({
                 showGroundPlane={viewerControls.groundPlane}
                 showBottomGrid={viewerControls.bottomGrid}
                 showTopGrid={viewerControls.topGrid}
+                canvasBackdrop={wbvCanvasContrast}
+                canvasShadeId={wbvCanvasShadePreview}
                 surfaceDatumLabel={wellInfoSurfaceDatumLabel}
                 showAxes={false}
                 showNorthArrow={viewerControls.northArrow}
@@ -3896,35 +5661,57 @@ export function Wellbore3DPage({
                     curveConfig.selected_item_ids.length > 0
                     || Boolean(curveConfig.source_product_id)
                     || rendererCurveOverlays.length > 0;
-                  return curveLayerConfigured && curveConfig.visible;
+                  return curveLayerConfigured && effectiveDataLayerVisibility(activeManagedWellId, "curve_overlays", curveConfig.visible);
                 })()}
-                formationTops={(previewFormationTopProducts?.products ?? []).filter((product) => previewFormationTopConfig.selected_item_ids.includes(product.product_id)).flatMap((product) => { const selectedTopIds = previewFormationTopConfig.appearance.selected_top_ids; return selectedTopIds == null ? product.tops : product.tops.filter((top) => selectedTopIds.includes(top.top_id)); })}
+                formationTops={previewFormationTopsForRenderer}
                 formationTopAppearance={previewFormationTopConfig.appearance}
-                showFormationTops={previewFormationTopConfig.visible}
-                lithologyIntervals={(previewLithologyProducts?.products ?? []).filter((product) => previewLithologyConfig.selected_item_ids.includes(product.product_id)).flatMap((product) => { const selectedIntervalIds=previewLithologyConfig.appearance.selected_interval_ids; const selectedIntervals=selectedIntervalIds == null ? product.intervals : product.intervals.filter((interval)=>selectedIntervalIds.includes(interval.interval_id)); return selectedIntervals.map(lithologyRendererInterval); })}
-                lithologyAppearance={{ opacity: previewLithologyConfig.appearance.opacity, radiusMultiplier: previewLithologyConfig.appearance.line_width, brightness: previewLithologyConfig.appearance.brightness ?? 1.35, patternScale: previewLithologyConfig.appearance.pattern_scale ?? 1.5, hideUnderlyingWellbore: previewLithologyConfig.appearance.hide_underlay ?? false }}
-                showLithologyOverlay={previewLithologyConfig.visible}
+                showFormationTops={effectiveDataLayerVisibility(activeManagedWellId, "formation_tops", previewFormationTopConfig.visible)}
+                lithologyIntervals={previewLithologyIntervalsForRenderer}
+                lithologyAppearance={previewLithologyAppearanceForRenderer}
+                showLithologyOverlay={effectiveDataLayerVisibility(activeManagedWellId, "lithology_intervals", previewLithologyConfig.visible)}
                 completionComponents={previewCompletionComponents}
-                completionAppearance={{ color: previewCompletionConfig.appearance.color, opacity: previewCompletionConfig.appearance.opacity, sizeMultiplier: previewCompletionConfig.appearance.line_width, showLabels: previewCompletionConfig.appearance.show_labels, labelMode: previewCompletionConfig.appearance.label_mode ?? "name_md", labelColor: previewCompletionConfig.appearance.label_color ?? "#dce7ef", labelSize: previewCompletionConfig.appearance.label_size ?? 1, labelOffset: previewCompletionConfig.appearance.label_offset ?? 1, labelPosition: previewCompletionConfig.appearance.label_position ?? "right" }}
-                showCompletions={previewCompletionConfig.visible}
+                completionAppearance={previewCompletionAppearanceForRenderer}
+                showCompletions={effectiveDataLayerVisibility(activeManagedWellId, "completions", previewCompletionConfig.visible)}
                 coreChunks={coreRenderChunks}
                 coreTracks={coreTrackRenderLayout}
                 trackLayoutTracks={trackPlacementRenderLayout}
-                coreAppearance={{ color: previewCoreConfig.appearance.color ?? "#7b838a", brightness: previewCoreConfig.appearance.brightness ?? 1.35 }}
-                showCoreOverlay={previewCoreConfig.visible}
+                coreAppearance={previewCoreAppearanceForRenderer}
+                showCoreOverlay={effectiveDataLayerVisibility(activeManagedWellId, "core_images", previewCoreConfig.visible)}
                 coreInspectionInterval={coreInspectionInterval}
                 coreLocatorFocusInterval={coreLocatorFocusInterval}
                 coreViewMode={coreViewMode}
                 onCoreLocatorPick={handleCoreLocatorPick}
-                viewProperties={previewViewProperties}
+                onFirstFrameRendered={
+                  savedCanvasScenePending && !savedCanvasTransitionPending
+                    ? acceptSavedCanvasFirstRenderedFrame
+                    : undefined
+                }
+                viewProperties={
+                  wbvCanvasShadeMenuOpen
+                    ? withWbvCanvasShadeViewPresets(previewViewProperties, wbvCanvasShadeOption)
+                    : previewViewProperties
+                }
               />
               </>
             ) : null}
 
             <div
-              className={`wlv-wbv-scene-message ${hasTrajectory ? "wlv-wbv-scene-message--package" : ""}`}
+              className={`wlv-wbv-scene-message ${hasTrajectory && !showSavedCanvasRestoreProgress ? "wlv-wbv-scene-message--package" : ""}`}
             >
-              {state.loading ? (
+              {showSavedCanvasRestoreProgress ? (
+                <>
+                  <div
+                    className="wlv-wbv-saved-canvas-restore-status"
+                    role="status"
+                    aria-live="polite"
+                    aria-label="Restoring Saved Canvas"
+                  >
+                    <span className="wlv-wbv-saved-canvas-restore-spinner" aria-hidden="true" />
+                    <h2>Restoring Saved Canvas…</h2>
+                  </div>
+                  <p>Applying the complete saved well and overlay presentation.</p>
+                </>
+              ) : (savedCanvasTransitionPending || savedCanvasScenePending) ? null : state.loading ? (
                 <>
                   <h2>Loading WBV session…</h2>
                   <p>Fetching backend-owned WBV availability state.</p>
@@ -3961,51 +5748,63 @@ export function Wellbore3DPage({
         </main>
 
         <aside
-          className="wlv-wbv-panel wlv-wbv-panel--right"
+          className="wlv-wbv-panel wlv-wbv-panel--right mv-viewer-info-card mv-role-panel-shell"
           aria-label="WBV information panel"
         >
-          <div className="wlv-wbv-panel-heading">
-            <span>Inspection</span>
-            <strong>Well &amp; Trajectory</strong><span className="wlv-wbv-active-well-label">ACTIVE WELLBORE: {selectedWellItem?.wellName ?? "None"}</span>
+          <div className="wlv-wbv-panel-heading wlv-wbv-panel-heading--collapsible">
+            <div className="wlv-wbv-panel-heading__content"> {/* WBV_RIGHT_PANEL_HEADER_TONE_REFINEMENT_V1_0_0_AUDITED */}
+              <strong className="mv-type-section-heading mv-role-panel-title mv-wbv-primary-panel-title">Well &amp; Trajectory</strong>
+            </div>
+            <button
+              type="button"
+              className="wlv-wbv-panel-collapse-button mv-role-collapse-control"
+              aria-label={wellTrajectoryCollapsed ? "Expand Well and Trajectory" : "Collapse Well and Trajectory"}
+              aria-expanded={!wellTrajectoryCollapsed}
+              onClick={() => setWellTrajectoryCollapsed((collapsed) => !collapsed)}
+              title={wellTrajectoryCollapsed ? "Expand Well & Trajectory" : "Collapse Well & Trajectory"}
+            >
+              <span aria-hidden="true">{wellTrajectoryCollapsed ? "▾" : "▴"}</span>
+            </button>
           </div>
 
+          {!wellTrajectoryCollapsed ? (
           <section
-            className="wlv-wbv-information-section wlv-wbv-information-section--well"
+            className="wlv-wbv-information-section wlv-wbv-information-section--well mv-role-section-shell"
             aria-label="Well and trajectory information"
           >
             <div className="wlv-wbv-well-summary">
-              <div className="wlv-wbv-well-summary__row">
-                <span>Name</span>
-                <strong>{viewerPackage?.well_name ?? session?.well_name ?? "Not loaded"}</strong>
+              <div className="wlv-wbv-well-summary__row mv-role-property-row">
+                <span className="mv-type-property-label mv-role-property-label">{/* WBV_WELL_HEADER_DEDUP_AND_SHADE_BALANCE_V1_0_1_AUDITED */}Active wellbore</span>
+                <strong className="mv-type-property-value mv-role-property-value">{viewerPackage?.well_name ?? session?.well_name ?? "Not loaded"}</strong>
               </div>
-              <div className="wlv-wbv-well-summary__row">
-                <span>Coordinate mode</span>
-                <strong>{viewerPackage?.coordinate_mode ?? session?.coordinate_mode ?? "unavailable"}</strong>
+              <div className="wlv-wbv-well-summary__row mv-role-property-row">
+                <span className="mv-type-property-label mv-role-property-label">Coordinate mode</span>
+                <strong className="mv-type-property-value mv-role-property-value">{viewerPackage?.coordinate_mode ?? session?.coordinate_mode ?? "unavailable"}</strong>
               </div>
-              <div className="wlv-wbv-well-summary__row">
-                <span>Depth units</span>
+              <div className="wlv-wbv-well-summary__row mv-role-property-row">
+                <span className="mv-type-property-label mv-role-property-label">Depth units</span>
                 <div className="wlv-wbv-depth-unit-toggle" role="group" aria-label="Depth units">
                   {(["ft", "m"] as WbvDepthUnit[]).map((unit) => (
                     <button
                       type="button"
                       key={unit}
-                      className={depthUnit === unit ? "is-active" : ""}
+                      className={`mv-control-geometry-exempt${depthUnit === unit ? " is-active" : ""}`}
                       aria-pressed={depthUnit === unit}
-                      disabled={depthUnitSaving || !viewerPackage?.managed_well_id}
-                      onClick={() => void changeDepthUnit(unit)}
+                      disabled={!viewerPackage?.managed_well_id}
+                      onClick={() => changeDepthUnit(unit)}
                     >
                       {unit}
                     </button>
                   ))}
                 </div>
               </div>
-              <div className="wlv-wbv-well-summary__row">
-                <span>Angle units</span>
-                <strong>{angleUnit}</strong>
+              <div className="wlv-wbv-well-summary__row mv-role-property-row">
+                <span className="mv-type-property-label mv-role-property-label">Angle units</span>
+                <strong className="mv-type-property-value mv-role-property-value">{angleUnit}</strong>
               </div>
-              <div className="wlv-wbv-well-summary__row">
-                <span>Trajectory points</span>
-                <strong>{trajectoryPointCount.toLocaleString()}</strong>
+              <div className="wlv-wbv-well-summary__row mv-role-property-row">
+                <span className="mv-type-property-label mv-role-property-label">Trajectory points</span>
+                <strong className="mv-type-property-value mv-role-property-value">{trajectoryPointCount.toLocaleString()}</strong>
               </div>
             </div>
 
@@ -4015,32 +5814,32 @@ export function Wellbore3DPage({
                   "Measured depth (MD)",
                   typeof endpoints.first?.md === "number" &&
                   typeof endpoints.last?.md === "number"
-                    ? `${formatNumber(endpoints.first.md, 1)}–${formatNumber(endpoints.last.md, 1)} ${depthUnit}`
+                    ? `${formatNumber(convertCanonicalDepthToDisplay(endpoints.first.md), 1)}–${formatNumber(convertCanonicalDepthToDisplay(endpoints.last.md), 1)} ${depthUnit}`
                     : "—",
                 ],
                 [
                   "True vertical depth (TVD)",
                   typeof endpoints.first?.tvd === "number" &&
                   typeof endpoints.last?.tvd === "number"
-                    ? `${formatNumber(endpoints.first.tvd, 1)}–${formatNumber(endpoints.last.tvd, 1)} ${depthUnit}`
+                    ? `${formatNumber(convertCanonicalDepthToDisplay(endpoints.first.tvd), 1)}–${formatNumber(convertCanonicalDepthToDisplay(endpoints.last.tvd), 1)} ${depthUnit}`
                     : "—",
                 ],
                 [
                   "X displacement",
                   typeof xRange.min === "number" && typeof xRange.max === "number"
-                    ? `${formatNumber(xRange.min, 1)}–${formatNumber(xRange.max, 1)} ${depthUnit}`
+                    ? `${formatNumber(convertCanonicalDepthToDisplay(xRange.min), 1)}–${formatNumber(convertCanonicalDepthToDisplay(xRange.max), 1)} ${depthUnit}`
                     : "—",
                 ],
                 [
                   "Y displacement",
                   typeof yRange.min === "number" && typeof yRange.max === "number"
-                    ? `${formatNumber(yRange.min, 1)}–${formatNumber(yRange.max, 1)} ${depthUnit}`
+                    ? `${formatNumber(convertCanonicalDepthToDisplay(yRange.min), 1)}–${formatNumber(convertCanonicalDepthToDisplay(yRange.max), 1)} ${depthUnit}`
                     : "—",
                 ],
                 [
                   "Vertical coordinate (Z)",
                   typeof zRange.min === "number" && typeof zRange.max === "number"
-                    ? `${formatNumber(zRange.min, 1)}–${formatNumber(zRange.max, 1)} ${depthUnit}`
+                    ? `${formatNumber(convertCanonicalDepthToDisplay(zRange.min), 1)}–${formatNumber(convertCanonicalDepthToDisplay(zRange.max), 1)} ${depthUnit}`
                     : "—",
                 ],
                 [
@@ -4056,19 +5855,24 @@ export function Wellbore3DPage({
                     : "—",
                 ],
               ].map(([label, value]) => (
-                <div className="wlv-wbv-trajectory-list__row" key={label}>
-                  <span>{label}</span>
-                  <strong>{value}</strong>
+                <div className="wlv-wbv-trajectory-list__row mv-role-property-row" key={label}>
+                  <span className="mv-type-property-label mv-role-property-label">{label}</span>
+                  <strong className="mv-type-property-value mv-role-property-value">{value}</strong>
                 </div>
               ))}
             </div>
           </section>
+          ) : null}
 
           <section
-            className="wlv-wbv-information-section"
+            className="wlv-wbv-information-section mv-role-section-shell"
             aria-label="Selected trajectory point"
           >
-            <div className="wlv-wbv-section-heading-row"><h2>Selected Point</h2><input aria-label="Show Selected Point selector" type="checkbox" checked={interaction?.selection_mode === "point"} disabled={interactionSaving} onChange={(event) => setSelectionMode(event.target.checked ? "point" : "none")} /></div>
+            {/* WBV_SELECTION_MODE_IMMEDIATE_VISUAL_STATE_V1_0_1_AUDITED
+                Selection mode is locally authoritative for immediate checkbox presentation.
+                Backend synchronization remains revisioned/in-flight, but must not force the
+                native checkbox into its disabled appearance while the request completes. */}
+            <div className="wlv-wbv-section-heading-row"><h2 className="mv-type-section-heading mv-role-section-title">Selected Point</h2><input aria-label="Show Selected Point selector" type="checkbox" checked={effectiveSelectionMode === "point"} aria-busy={interactionSaving} onChange={(event) => requestSelectionMode(event.target.checked ? "point" : "none")} /></div>
             {interactionError ? <p className="wlv-wbv-interaction-error" role="alert">{interactionError}</p> : null}
             {selectedPoint ? (
               <div
@@ -4076,32 +5880,32 @@ export function Wellbore3DPage({
                 role="table"
                 aria-label="Selected point values"
               >
-                <div className="wlv-wbv-selected-point-row wlv-wbv-selected-point-row--paired" role="row">
-                  <span className="wlv-wbv-selected-point-label" role="rowheader">MD</span>
-                  <span className="wlv-wbv-selected-point-value" role="cell">
-                    {formatNumber(selectedPoint.md, 1)} {depthUnit}
+                <div className="wlv-wbv-selected-point-row wlv-wbv-selected-point-row--paired mv-role-property-row" role="row">
+                  <span className="wlv-wbv-selected-point-label mv-type-property-label mv-role-property-label" role="rowheader">MD</span>
+                  <span className="wlv-wbv-selected-point-value mv-type-property-value mv-role-property-value" role="cell">
+                    {formatNumber(convertCanonicalDepthToDisplay(selectedPoint.md), 1)} {depthUnit}
                   </span>
-                  <span className="wlv-wbv-selected-point-label" role="rowheader">TVD</span>
-                  <span className="wlv-wbv-selected-point-value" role="cell">
-                    {formatNumber(selectedPoint.tvd, 1)} {depthUnit}
+                  <span className="wlv-wbv-selected-point-label mv-type-property-label mv-role-property-label" role="rowheader">TVD</span>
+                  <span className="wlv-wbv-selected-point-value mv-type-property-value mv-role-property-value" role="cell">
+                    {formatNumber(convertCanonicalDepthToDisplay(selectedPoint.tvd), 1)} {depthUnit}
                   </span>
                 </div>
-                <div className="wlv-wbv-selected-point-row" role="row">
-                  <span className="wlv-wbv-selected-point-label" role="rowheader">Inclination</span>
-                  <span className="wlv-wbv-selected-point-value" role="cell">
+                <div className="wlv-wbv-selected-point-row mv-role-property-row" role="row">
+                  <span className="wlv-wbv-selected-point-label mv-type-property-label mv-role-property-label" role="rowheader">Inclination</span>
+                  <span className="wlv-wbv-selected-point-value mv-type-property-value mv-role-property-value" role="cell">
                     {formatNumber(selectedPoint.inclination, 2)} {angleUnit}
                   </span>
                 </div>
-                <div className="wlv-wbv-selected-point-row" role="row">
-                  <span className="wlv-wbv-selected-point-label" role="rowheader">Azimuth</span>
-                  <span className="wlv-wbv-selected-point-value" role="cell">
+                <div className="wlv-wbv-selected-point-row mv-role-property-row" role="row">
+                  <span className="wlv-wbv-selected-point-label mv-type-property-label mv-role-property-label" role="rowheader">Azimuth</span>
+                  <span className="wlv-wbv-selected-point-value mv-type-property-value mv-role-property-value" role="cell">
                     {formatNumber(selectedPoint.azimuth, 2)} {angleUnit}
                   </span>
                 </div>
-                <div className="wlv-wbv-selected-point-row" role="row">
-                  <span className="wlv-wbv-selected-point-label" role="rowheader">Dogleg</span>
-                  <span className="wlv-wbv-selected-point-value" role="cell">
-                    {formatNumber(selectedPoint.dogleg_severity, 2)} {depthUnit === "m" ? "°/30 m" : "°/100 ft"}
+                <div className="wlv-wbv-selected-point-row mv-role-property-row" role="row">
+                  <span className="wlv-wbv-selected-point-label mv-type-property-label mv-role-property-label" role="rowheader">Dogleg</span>
+                  <span className="wlv-wbv-selected-point-value mv-type-property-value mv-role-property-value" role="cell">
+                    {formatNumber(convertCanonicalDoglegToDisplay(selectedPoint.dogleg_severity), 2)} {depthUnit === "m" ? "°/30 m" : "°/100 ft"}
                   </span>
                 </div>
               </div>
@@ -4114,39 +5918,168 @@ export function Wellbore3DPage({
               <input
                 type="checkbox"
                 checked={trackValuesAlongWellbore}
-                onChange={(event) => setTrackValuesAlongWellbore(event.target.checked)}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  if (checked) releaseCorePickingForRightPanel();
+                  setTrackValuesAlongWellbore(checked);
+                }}
                 disabled={!selectedPoint}
               />
-              <span>Track values along wellbore</span>
+              <span className="mv-role-helper-text">Track values along wellbore</span>
             </label>
           </section>
 
-          <section className="wlv-wbv-information-section wlv-wbv-interval-section" aria-label="Interval selection">
-            <div className="wlv-wbv-section-heading-row"><h2>Interval Selection</h2><input aria-label="Enable Interval Selection" type="checkbox" checked={interaction?.selection_mode === "interval"} disabled={interactionSaving} onChange={(event) => setSelectionMode(event.target.checked ? "interval" : "none")} /></div>
+          <section className="wlv-wbv-information-section wlv-wbv-interval-section mv-role-section-shell" aria-label="Interval selection">
+            <div className="wlv-wbv-section-heading-row"><h2 className="mv-type-section-heading mv-role-section-title">Interval Selection</h2><input aria-label="Enable Interval Selection" type="checkbox" checked={effectiveSelectionMode === "interval"} aria-busy={interactionSaving} onChange={(event) => requestSelectionMode(event.target.checked ? "interval" : "none")} /></div>
             {interaction?.saved_interval ? <div className="wlv-wbv-selected-point-table wlv-wbv-interval-table">
-              <div className="wlv-wbv-selected-point-row"><span className="wlv-wbv-selected-point-label">Start MD</span><strong className="wlv-wbv-selected-point-value">{formatNumber(interaction.saved_interval.start.md, 1)} {depthUnit}</strong></div>
-              <div className="wlv-wbv-selected-point-row"><span className="wlv-wbv-selected-point-label">End MD</span><strong className="wlv-wbv-selected-point-value">{formatNumber(interaction.saved_interval.end.md, 1)} {depthUnit}</strong></div>
-              <div className="wlv-wbv-selected-point-row"><span className="wlv-wbv-selected-point-label">Length</span><strong className="wlv-wbv-selected-point-value">{formatNumber(interaction.saved_interval.base_md - interaction.saved_interval.top_md, 1)} {depthUnit}</strong></div>
+              <div className="wlv-wbv-selected-point-row mv-role-property-row"><span className="wlv-wbv-selected-point-label mv-type-property-label mv-role-property-label">Start MD</span><strong className="wlv-wbv-selected-point-value mv-type-property-value mv-role-property-value">{formatNumber(convertCanonicalDepthToDisplay(interaction.saved_interval.start.md), 1)} {depthUnit}</strong></div>
+              <div className="wlv-wbv-selected-point-row mv-role-property-row"><span className="wlv-wbv-selected-point-label mv-type-property-label mv-role-property-label">End MD</span><strong className="wlv-wbv-selected-point-value mv-type-property-value mv-role-property-value">{formatNumber(convertCanonicalDepthToDisplay(interaction.saved_interval.end.md), 1)} {depthUnit}</strong></div>
+              <div className="wlv-wbv-selected-point-row mv-role-property-row"><span className="wlv-wbv-selected-point-label mv-type-property-label mv-role-property-label">Length</span><strong className="wlv-wbv-selected-point-value mv-type-property-value mv-role-property-value">{formatNumber(convertCanonicalDepthToDisplay(interaction.saved_interval.base_md - interaction.saved_interval.top_md), 1)} {depthUnit}</strong></div>
             </div> : <p className="wlv-wbv-information-empty">{interaction?.interval_draft_start ? "Select the interval end." : "Select the interval start, then the end."}</p>}
-            <div className="wlv-wbv-inline-action-row">
-              <button type="button" className="wlv-wbv-control-button wlv-wbv-control-button--compact" disabled={!interaction?.saved_interval || interactionSaving} onClick={sendIntervalToLogViewer}>Send to Log Viewer as AOI</button>
-              <button type="button" className="wlv-wbv-control-button wlv-wbv-control-button--compact" disabled={(!interaction?.saved_interval && !interaction?.interval_draft_start) || interactionSaving} onClick={() => { const id = state.viewerPackage?.managed_well_id; if (id) void interactionAuthorityRef.current?.runRevisioned((expectedRevision) => wbvInteractionApiV2.clearInterval(id, expectedRevision)); }}>Clear</button>
+            <div className="wlv-wbv-inline-action-row wlv-wbv-interval-actions mv-control-geometry-scope-exempt">
+              <button type="button" className="wlv-wbv-control-button wlv-wbv-control-button--compact mv-control-geometry-exempt" disabled={!interaction?.saved_interval || interactionSaving} onClick={sendIntervalToLogViewer}>Send to Log Viewer as AOI</button>
+              <button type="button" className="wlv-wbv-control-button wlv-wbv-control-button--compact mv-control-geometry-exempt" disabled={(!interaction?.saved_interval && !interaction?.interval_draft_start) || interactionSaving} onClick={() => { const id = state.viewerPackage?.managed_well_id; if (id) void interactionAuthorityRef.current?.runRevisioned((expectedRevision) => wbvInteractionApiV2.clearInterval(id, expectedRevision)); }}>Clear</button>
             </div>
           </section>
 
           <section
-            className="wlv-wbv-information-section"
-            aria-label="Survey QAQC summary"
+            className="wlv-wbv-information-section wlv-wbv-interval-information mv-role-section-shell"
+            aria-label="Selected interval information"
           >
-            <h2>Survey QAQC</h2>
-            <div className="wlv-wbv-qaqc-summary">
-              <strong>{qaqcDisplayState}</strong>
-              <span>
-                {qaqcFindingCount}{" "}
-                {qaqcFindingCount === 1 ? "finding" : "findings"}
-              </span>
+            <div className="wlv-wbv-section-heading-row wlv-wbv-section-heading-row--information">
+              <h2 className="mv-type-section-heading mv-role-section-title">{/* WBV_INFORMATION_HEADER_SHADE_ROLE_REMAP_V1_0_1_AUDITED */}Information</h2>
             </div>
-            {primaryQaqcFinding ? <p>{primaryQaqcFinding}</p> : null}
+            {!selectedInformationInterval ? (
+              <p className="wlv-wbv-information-empty">Select an interval to query active layers.</p>
+            ) : (
+              <div className="wlv-wbv-interval-information__body">
+                <div className="wlv-wbv-interval-information__range">
+                  <span>{selectedInformationIsSpot ? "Selected spot" : "Selected interval"}</span>
+                  <strong>{selectedInformationIsSpot
+                    ? `${formatNumber(convertCanonicalDepthToDisplay(selectedInformationSpotMd), 1)} ${depthUnit}`
+                    : `${formatNumber(convertCanonicalDepthToDisplay(selectedInformationTopMd), 1)}–${formatNumber(convertCanonicalDepthToDisplay(selectedInformationBaseMd), 1)} ${depthUnit}`}</strong>
+                </div>
+
+                                {/* WBV_INFORMATION_COLUMN_ORDER_AND_HEADER_SPACING_V1_0_0_AUDITED */}
+                {/* WBV_INFORMATION_FORMATION_TOPS_ABOVE_CURVES_V1_0_0_AUDITED */}
+{intervalLithology.length > 0 ? <section className="wlv-wbv-interval-information__group" aria-label="Lithology information">
+                  <h3>Lithology</h3>
+                  {intervalLithology.map((interval) => {
+                    const canonicalId = interval.canonical_lithology?.trim() || "";
+                    const knowledge = canonicalId ? lithologyKnowledgeById[canonicalId] : null;
+                    return <div className="wlv-wbv-interval-information__lithology" key={`${interval.product_id ?? "lithology"}:${interval.interval_id}`}>
+                      <div className="wlv-wbv-interval-information__row mv-role-property-row">
+                        <strong>{knowledge?.name || knowledge?.formalName || interval.lithology || "Lithology"}</strong>
+                        <span>{selectedInformationIsSpot
+                          ? `${formatNumber(convertCanonicalDepthToDisplay(selectedInformationSpotMd), 1)} ${depthUnit}`
+                          : `${formatNumber(convertCanonicalDepthToDisplay(Math.max(interval.top_md, selectedInformationTopMd ?? interval.top_md)), 1)}–${formatNumber(convertCanonicalDepthToDisplay(Math.min(interval.base_md, selectedInformationBaseMd ?? interval.base_md)), 1)} ${depthUnit}`}</span>
+                      </div>
+                      {knowledge?.formalName && knowledge.formalName !== knowledge.name
+                        ? <p className="wlv-wbv-interval-information__metadata">{knowledge.formalName}</p>
+                        : null}
+                    </div>;
+                  })}
+                </section> : null}
+
+                {intervalFormationTops.length > 0 ? <section className="wlv-wbv-interval-information__group" aria-label="Formation tops information">
+                  <h3>Formation Tops</h3>
+                  {intervalFormationTops.map((top) => <div className="wlv-wbv-interval-information__row mv-role-property-row" key={`${top.product_id ?? "top"}:${top.top_id}`}>
+                    <strong>{top.name}</strong>
+                    <span>{formatNumber(convertCanonicalDepthToDisplay(top.md), 1)} {depthUnit}</span>
+                  </div>)}
+                </section> : null}
+
+                {intervalCurveRangesLoading || intervalCurveRanges.length > 0 || intervalCurveRangesError ? <section className="wlv-wbv-interval-information__group" aria-label="Curve information">
+                  <h3>Curves</h3>
+                  {intervalCurveRanges.map((curve) => <div className="wlv-wbv-interval-information__row mv-role-property-row" key={curve.curve_product_id}>
+                    <strong>{curve.mnemonic}</strong>
+                    <span>{selectedInformationIsSpot
+                      ? `${formatNumber(curve.maximum, 3)}${curve.unit ? ` ${curve.unit}` : ""}`
+                      : `${formatNumber(curve.minimum, 3)}–${formatNumber(curve.maximum, 3)}${curve.unit ? ` ${curve.unit}` : ""}`}</span>
+                  </div>)}
+                  {intervalCurveRangesLoading ? <p>Querying active curve values…</p> : null}
+                  {intervalCurveRangesError ? <p className="wlv-wbv-interaction-error">{intervalCurveRangesError}</p> : null}
+                </section> : null}
+
+                {intervalCompletions.length > 0 ? <section className="wlv-wbv-interval-information__group" aria-label="Completion information">
+                  <h3>Completions</h3>
+                  {intervalCompletions.map((component) => <div className="wlv-wbv-interval-information__row mv-role-property-row" key={`${component.product_id ?? "completion"}:${component.component_id}`}>
+                    <strong>{component.label}</strong>
+                    <span>{component.base_md == null || component.base_md === component.top_md
+                      ? `${formatNumber(convertCanonicalDepthToDisplay(component.top_md), 1)} ${depthUnit}`
+                      : `${formatNumber(convertCanonicalDepthToDisplay(component.top_md), 1)}–${formatNumber(convertCanonicalDepthToDisplay(component.base_md), 1)} ${depthUnit}`}</span>
+                  </div>)}
+                </section> : null}
+
+                {intervalCoreFiles.length > 0 || intervalCoreDescriptions.length > 0 ? <section className="wlv-wbv-interval-information__group" aria-label="Core information">
+                  <h3>Core</h3>
+                  {intervalCoreFiles.map((file) => {
+                    const fileDescriptions = intervalCoreFiles.length === 1
+                      ? intervalCoreDescriptions
+                      : intervalCoreDescriptions.filter((item) => item.product_id === file.product_id);
+                    return <details className="wlv-wbv-interval-information__core-disclosure" key={file.product_id}>
+                      <summary className="wlv-wbv-interval-information__core-summary">
+                        <span className="wlv-wbv-interval-information__core-title">
+                          <strong>{file.display_name}</strong>
+                          <span className="wlv-wbv-interval-information__core-chevron" aria-hidden="true">▸</span>
+                        </span>
+                        <span>{file.display_depth_start != null || file.display_depth_end != null
+                          ? `${formatNumber(file.display_depth_start ?? file.display_depth_end, 1)}–${formatNumber(file.display_depth_end ?? file.display_depth_start, 1)} ${depthUnit}`
+                          : "Active"}</span>
+                      </summary>
+                      <div className="wlv-wbv-interval-information__core-segments">
+                        {fileDescriptions.length > 0
+                          ? fileDescriptions.map((item) => <div className="wlv-wbv-interval-information__description" key={item.description_id}>
+                              <span>{formatNumber(convertCanonicalDepthToDisplay(item.top_md), 1)}–{formatNumber(convertCanonicalDepthToDisplay(item.base_md), 1)} {depthUnit}</span>
+                              <p>{item.text}</p>
+                            </div>)
+                          : <p className="wlv-wbv-information-empty">No segment metadata intersects this selection.</p>}
+                      </div>
+                    </details>;
+                  })}
+                  {intervalCoreFiles.length === 0 && intervalCoreDescriptions.length > 0
+                    ? <details className="wlv-wbv-interval-information__core-disclosure">
+                        <summary className="wlv-wbv-interval-information__core-summary">
+                          <span className="wlv-wbv-interval-information__core-title">
+                            <strong>Core segment metadata</strong>
+                            <span className="wlv-wbv-interval-information__core-chevron" aria-hidden="true">▸</span>
+                          </span>
+                        </summary>
+                        <div className="wlv-wbv-interval-information__core-segments">
+                          {intervalCoreDescriptions.map((item) => <div className="wlv-wbv-interval-information__description" key={item.description_id}>
+                            <span>{formatNumber(convertCanonicalDepthToDisplay(item.top_md), 1)}–{formatNumber(convertCanonicalDepthToDisplay(item.base_md), 1)} {depthUnit}</span>
+                            <p>{item.text}</p>
+                          </div>)}
+                        </div>
+                      </details>
+                    : null}
+                </section> : null}
+
+                {intervalCasingFiles.length > 0 ? <section className="wlv-wbv-interval-information__group" aria-label="Casing and hole section information">
+                  <h3>Casing / Hole</h3>
+                  {intervalCasingFiles.map((file) => <div className="wlv-wbv-interval-information__row mv-role-property-row" key={file.product_id}>
+                    <strong>{file.display_name}</strong>
+                    <span>{file.display_depth_start != null || file.display_depth_end != null
+                      ? `${formatNumber(file.display_depth_start ?? file.display_depth_end, 1)}–${formatNumber(file.display_depth_end ?? file.display_depth_start, 1)} ${depthUnit}`
+                      : "Active"}</span>
+                  </div>)}
+                </section> : null}
+
+                {intervalImageryFiles.length > 0 ? <section className="wlv-wbv-interval-information__group" aria-label="Borehole imagery information">
+                  <h3>Borehole Imagery</h3>
+                  {intervalImageryFiles.map((file) => <div className="wlv-wbv-interval-information__row mv-role-property-row" key={file.product_id}>
+                    <strong>{file.display_name}</strong>
+                    <span>{file.display_depth_start != null || file.display_depth_end != null
+                      ? `${formatNumber(file.display_depth_start ?? file.display_depth_end, 1)}–${formatNumber(file.display_depth_end ?? file.display_depth_start, 1)} ${depthUnit}`
+                      : "Active"}</span>
+                  </div>)}
+                </section> : null}
+
+                {!intervalInformationHasResults && !intervalCurveRangesLoading && !intervalCurveRangesError
+                  ? <p className="wlv-wbv-information-empty">No active-layer data intersects the selected interval.</p>
+                  : null}
+              </div>
+            )}
           </section>
 
         </aside>
@@ -4229,10 +6162,11 @@ export function Wellbore3DPage({
             </nav>
             <div
               className={["wlv-wbv-layer-manager-body", activeLayerTab === "track_layout" ? "is-track-layout" : "", activeLayerTab === "curve_overlays" ? "is-curve-overlays" : "", activeLayerTab === "formation_tops" ? "is-formation-tops" : "", activeLayerTab === "lithology_intervals" ? "is-lithology" : "", activeLayerTab === "core_images" ? "is-core-images" : "", activeLayerTab === "completions" ? "is-completions" : ""].filter(Boolean).join(" ")}
-              style={activeLayerTab === "completions" ? { gridTemplateColumns: "250px 560px 390px", justifyContent: "start", alignItems: "stretch" } : undefined}
+              style={activeLayerTab === "completions" ? { gridTemplateColumns: "250px 450px 500px", justifyContent: "start", alignItems: "stretch" } : undefined}
             >
               {(() => {
                 if (activeLayerTab === "view_properties") {
+                  // WBV_MANAGE_DISPLAY_LAYERS_PRESENTATION_ONLY_RESTORE_V1_0_0_AUDITED
                   const updateSection = <K extends keyof WbvViewProperties>(section: K, patch: Partial<WbvViewProperties[K]>) => setDraftViewProperties((current) => ({ ...current, [section]: { ...current[section], ...patch } }));
                   const propertyLabels: Array<[keyof WbvViewProperties, string]> = [["trajectory","Trajectory"],["boundingBox","Bounding Box"],["depthLabels","Depth Labels"],["surveyStations","Survey Stations"],["groundPlane","Ground Plane"],["grids","Bottom / Top Grids"],["shading","3D Shading"]];
                   return <>
@@ -4259,14 +6193,14 @@ export function Wellbore3DPage({
                         </div>
                       </header>
                       <div className="wlv-wbv-view-properties-content">
-                        {selectedViewProperty==="trajectory"?<div className="wlv-wbv-property-card"><h4>Appearance</h4><div className="wlv-wbv-property-grid" style={{gridTemplateColumns:"minmax(220px,1fr) minmax(340px,1.55fr) minmax(140px,.7fr) minmax(140px,.7fr)"}}><label className="wlv-wbv-field"><span>Color</span><div style={{display:"flex",alignItems:"center",gap:8}}><button type="button" aria-label="Use custom wellbore color" aria-pressed={(draftViewProperties.trajectory.materialMode ?? "color")==="color"} title="Use selected wellbore color" onClick={()=>updateSection("trajectory",{materialMode:"color"})} style={{width:42,height:42,padding:4,borderRadius:6,border:(draftViewProperties.trajectory.materialMode ?? "color")==="color"?"2px solid #67d599":"1px solid #53616b",background:"#10171c",cursor:"pointer"}}><span aria-hidden="true" style={{display:"block",width:"100%",height:"100%",borderRadius:3,background:draftViewProperties.trajectory.color}}/></button><input type="color" aria-label="Wellbore custom color" value={draftViewProperties.trajectory.color} onChange={e=>updateSection("trajectory",{color:e.target.value,materialMode:"color"})}/></div></label><div className="wlv-wbv-field"><span>Gray Metallic</span><div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><button type="button" aria-label="Use light silver metallic wellbore" aria-pressed={(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="light_silver"} title="Light Silver" onClick={()=>updateSection("trajectory",{materialMode:"gray_metallic",metallicTone:"light_silver"})} style={{width:42,height:42,padding:4,borderRadius:6,border:(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="light_silver"?"2px solid #67d599":"1px solid #53616b",background:"#10171c",cursor:"pointer"}}><span aria-hidden="true" style={{display:"block",width:"100%",height:"100%",borderRadius:3,background:"linear-gradient(90deg,#ffffff 0%,#d7dde0 25%,#f7f9fa 52%,#aab3b8 78%,#e6ecef 100%)"}}/></button><button type="button" aria-label="Use silver metallic wellbore" aria-pressed={(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="silver"} title="Silver" onClick={()=>updateSection("trajectory",{materialMode:"gray_metallic",metallicTone:"silver"})} style={{width:42,height:42,padding:4,borderRadius:6,border:(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="silver"?"2px solid #67d599":"1px solid #53616b",background:"#10171c",cursor:"pointer"}}><span aria-hidden="true" style={{display:"block",width:"100%",height:"100%",borderRadius:3,background:"linear-gradient(90deg,#eef2f4 0%,#9ca7ad 40%,#e7ecef 70%,#7e898f 100%)"}}/></button><button type="button" aria-label="Use steel metallic wellbore" aria-pressed={(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="steel"} title="Steel" onClick={()=>updateSection("trajectory",{materialMode:"gray_metallic",metallicTone:"steel"})} style={{width:42,height:42,padding:4,borderRadius:6,border:(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="steel"?"2px solid #67d599":"1px solid #53616b",background:"#10171c",cursor:"pointer"}}><span aria-hidden="true" style={{display:"block",width:"100%",height:"100%",borderRadius:3,background:"linear-gradient(90deg,#c5cdd1 0%,#7f898f 38%,#b6c0c5 68%,#667078 100%)"}}/></button><button type="button" aria-label="Use gunmetal metallic wellbore" aria-pressed={(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="gunmetal"} title="Gunmetal" onClick={()=>updateSection("trajectory",{materialMode:"gray_metallic",metallicTone:"gunmetal"})} style={{width:42,height:42,padding:4,borderRadius:6,border:(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="gunmetal"?"2px solid #67d599":"1px solid #53616b",background:"#10171c",cursor:"pointer"}}><span aria-hidden="true" style={{display:"block",width:"100%",height:"100%",borderRadius:3,background:"linear-gradient(90deg,#899299 0%,#4e565c 38%,#7a848a 68%,#394046 100%)"}}/></button><button type="button" aria-label="Use graphite metallic wellbore" aria-pressed={(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="graphite"} title="Graphite" onClick={()=>updateSection("trajectory",{materialMode:"gray_metallic",metallicTone:"graphite"})} style={{width:42,height:42,padding:4,borderRadius:6,border:(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="graphite"?"2px solid #67d599":"1px solid #53616b",background:"#10171c",cursor:"pointer"}}><span aria-hidden="true" style={{display:"block",width:"100%",height:"100%",borderRadius:3,background:"linear-gradient(90deg,#666d72 0%,#2f3438 38%,#555c61 68%,#202428 100%)"}}/></button></div></div><label className="wlv-wbv-field"><span>Thickness</span><input type="number" min="0.25" max="6" step="0.25" value={draftViewProperties.trajectory.thickness} onChange={e=>updateSection("trajectory",{thickness:Number(e.target.value)})}/></label><label className="wlv-wbv-field"><span>Opacity</span><input type="number" min="0" max="1" step="0.05" value={draftViewProperties.trajectory.opacity} onChange={e=>updateSection("trajectory",{opacity:Number(e.target.value)})}/></label></div><span style={{display:"none"}}>{/* WBV_TRAJECTORY_METALLIC_SHADE_PALETTE_V1_0_0 */}</span></div>:null}
-                        {selectedViewProperty==="boundingBox"?<div className="wlv-wbv-property-card"><h4>Lines</h4><div className="wlv-wbv-property-grid is-three"><label className="wlv-wbv-field">Line color<input type="color" value={draftViewProperties.boundingBox.color} onChange={e=>updateSection("boundingBox",{color:e.target.value})}/></label><label className="wlv-wbv-field">Line thickness<input type="number" min="0.5" max="5" step="0.5" value={draftViewProperties.boundingBox.thickness} onChange={e=>updateSection("boundingBox",{thickness:Number(e.target.value)})}/></label><label className="wlv-wbv-field">Opacity<input type="number" min="0" max="1" step="0.05" value={draftViewProperties.boundingBox.opacity} onChange={e=>updateSection("boundingBox",{opacity:Number(e.target.value)})}/></label></div></div>:null}
-                        {selectedViewProperty==="depthLabels"?<div className="wlv-wbv-property-card"><h4>Labels</h4><div className="wlv-wbv-property-grid"><label className="wlv-wbv-field">Text color<input type="color" value={draftViewProperties.depthLabels.color} onChange={e=>updateSection("depthLabels",{color:e.target.value})}/></label><label className="wlv-wbv-field">Label size<input type="number" min="0.5" max="3" step="0.1" value={draftViewProperties.depthLabels.size} onChange={e=>updateSection("depthLabels",{size:Number(e.target.value)})}/></label><label className="wlv-wbv-field">Label interval <small>0 = automatic</small><input type="number" min="0" step="10" value={draftViewProperties.depthLabels.interval} onChange={e=>updateSection("depthLabels",{interval:Number(e.target.value)})}/></label><label className="wlv-wbv-field">Offset from trajectory<input type="number" min="0" max="2" step="0.05" value={draftViewProperties.depthLabels.offset} onChange={e=>updateSection("depthLabels",{offset:Number(e.target.value)})}/></label></div></div>:null}
-                        {selectedViewProperty==="surveyStations"?<><div className="wlv-wbv-property-card"><h4>Marker</h4><div className="wlv-wbv-property-grid"><label className="wlv-wbv-field">Shape<select value={draftViewProperties.surveyStations.shape} onChange={e=>updateSection("surveyStations",{shape:e.target.value as WbvViewProperties["surveyStations"]["shape"]})}><option value="circle">Circle</option><option value="square">Square</option><option value="diamond">Diamond</option><option value="cross">Cross</option></select></label><label className="wlv-wbv-field">Size<input type="number" min="0.25" max="8" step="0.25" value={draftViewProperties.surveyStations.size} onChange={e=>updateSection("surveyStations",{size:Number(e.target.value)})}/></label><label className="wlv-wbv-field">Color<input type="color" value={draftViewProperties.surveyStations.color} onChange={e=>updateSection("surveyStations",{color:e.target.value})}/></label><label className="wlv-wbv-field">Opacity<input type="number" min="0" max="1" step="0.05" value={draftViewProperties.surveyStations.opacity} onChange={e=>updateSection("surveyStations",{opacity:Number(e.target.value)})}/></label></div></div><div className="wlv-wbv-property-card"><h4>Orientation</h4><div className="wlv-wbv-segmented-control" role="group" aria-label="Survey station orientation"><button type="button" className={draftViewProperties.surveyStations.orientation==="along"?"is-active":""} onClick={()=>updateSection("surveyStations",{orientation:"along"})}>Along wellbore</button><button type="button" className={draftViewProperties.surveyStations.orientation==="across"?"is-active":""} onClick={()=>updateSection("surveyStations",{orientation:"across"})}>Across wellbore</button></div></div></>:null}
+                        {selectedViewProperty==="trajectory"?<div className="wlv-wbv-property-card"><h4>Appearance</h4><div className="wlv-wbv-property-grid wlv-wbv-property-grid--trajectory"><label className="wlv-wbv-field wlv-wbv-trajectory-color-field"><span>Color</span><div style={{display:"flex",alignItems:"center",gap:8}}><button type="button" aria-label="Use custom wellbore color" aria-pressed={(draftViewProperties.trajectory.materialMode ?? "color")==="color"} title="Use selected wellbore color" onClick={()=>updateSection("trajectory",{materialMode:"color"})} style={{width:34,height:34,padding:2,borderRadius:4,border:(draftViewProperties.trajectory.materialMode ?? "color")==="color"?"2px solid #67d599":"1px solid #aebdc8",background:"#fbfcfd",cursor:"pointer"}}><span aria-hidden="true" style={{display:"block",width:"100%",height:"100%",borderRadius:3,background:draftViewProperties.trajectory.color}}/></button><input type="color" aria-label="Wellbore custom color" value={draftViewProperties.trajectory.color} onChange={e=>updateSection("trajectory",{color:e.target.value,materialMode:"color"})}/></div></label><div className="wlv-wbv-field wlv-wbv-trajectory-metallic-field"><span>Gray Metallic</span><div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><button type="button" aria-label="Use light silver metallic wellbore" aria-pressed={(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="light_silver"} title="Light Silver" onClick={()=>updateSection("trajectory",{materialMode:"gray_metallic",metallicTone:"light_silver"})} style={{width:34,height:34,padding:2,borderRadius:4,border:(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="light_silver"?"2px solid #67d599":"1px solid #aebdc8",background:"#fbfcfd",cursor:"pointer"}}><span aria-hidden="true" style={{display:"block",width:"100%",height:"100%",borderRadius:3,background:"linear-gradient(90deg,#ffffff 0%,#d7dde0 25%,#f7f9fa 52%,#aab3b8 78%,#e6ecef 100%)"}}/></button><button type="button" aria-label="Use silver metallic wellbore" aria-pressed={(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="silver"} title="Silver" onClick={()=>updateSection("trajectory",{materialMode:"gray_metallic",metallicTone:"silver"})} style={{width:34,height:34,padding:2,borderRadius:4,border:(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="silver"?"2px solid #67d599":"1px solid #aebdc8",background:"#fbfcfd",cursor:"pointer"}}><span aria-hidden="true" style={{display:"block",width:"100%",height:"100%",borderRadius:3,background:"linear-gradient(90deg,#eef2f4 0%,#9ca7ad 40%,#e7ecef 70%,#7e898f 100%)"}}/></button><button type="button" aria-label="Use steel metallic wellbore" aria-pressed={(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="steel"} title="Steel" onClick={()=>updateSection("trajectory",{materialMode:"gray_metallic",metallicTone:"steel"})} style={{width:34,height:34,padding:2,borderRadius:4,border:(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="steel"?"2px solid #67d599":"1px solid #aebdc8",background:"#fbfcfd",cursor:"pointer"}}><span aria-hidden="true" style={{display:"block",width:"100%",height:"100%",borderRadius:3,background:"linear-gradient(90deg,#c5cdd1 0%,#7f898f 38%,#b6c0c5 68%,#667078 100%)"}}/></button><button type="button" aria-label="Use gunmetal metallic wellbore" aria-pressed={(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="gunmetal"} title="Gunmetal" onClick={()=>updateSection("trajectory",{materialMode:"gray_metallic",metallicTone:"gunmetal"})} style={{width:34,height:34,padding:2,borderRadius:4,border:(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="gunmetal"?"2px solid #67d599":"1px solid #aebdc8",background:"#fbfcfd",cursor:"pointer"}}><span aria-hidden="true" style={{display:"block",width:"100%",height:"100%",borderRadius:3,background:"linear-gradient(90deg,#899299 0%,#4e565c 38%,#7a848a 68%,#394046 100%)"}}/></button><button type="button" aria-label="Use graphite metallic wellbore" aria-pressed={(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="graphite"} title="Graphite" onClick={()=>updateSection("trajectory",{materialMode:"gray_metallic",metallicTone:"graphite"})} style={{width:34,height:34,padding:2,borderRadius:4,border:(draftViewProperties.trajectory.materialMode ?? "color")==="gray_metallic"&&(draftViewProperties.trajectory.metallicTone ?? "silver")==="graphite"?"2px solid #67d599":"1px solid #aebdc8",background:"#fbfcfd",cursor:"pointer"}}><span aria-hidden="true" style={{display:"block",width:"100%",height:"100%",borderRadius:3,background:"linear-gradient(90deg,#666d72 0%,#2f3438 38%,#555c61 68%,#202428 100%)"}}/></button></div></div><div className="wlv-wbv-field wlv-wbv-metallic-finish-field"><span>Finish</span><div className="wlv-wbv-metallic-finish-control" role="group" aria-label="Metallic wellbore finish"><button type="button" className={(draftViewProperties.trajectory.metallicFinish ?? "satin")==="matte"?"is-active":""} aria-pressed={(draftViewProperties.trajectory.metallicFinish ?? "satin")==="matte"} onClick={()=>updateSection("trajectory",{materialMode:"gray_metallic",metallicFinish:"matte"})}>Matte</button><button type="button" className={(draftViewProperties.trajectory.metallicFinish ?? "satin")==="satin"?"is-active":""} aria-pressed={(draftViewProperties.trajectory.metallicFinish ?? "satin")==="satin"} onClick={()=>updateSection("trajectory",{materialMode:"gray_metallic",metallicFinish:"satin"})}>Satin</button><button type="button" className={(draftViewProperties.trajectory.metallicFinish ?? "satin")==="polished"?"is-active":""} aria-pressed={(draftViewProperties.trajectory.metallicFinish ?? "satin")==="polished"} onClick={()=>updateSection("trajectory",{materialMode:"gray_metallic",metallicFinish:"polished"})}>Polished</button></div></div><label className="wlv-wbv-field wlv-wbv-compact-range-field wlv-wbv-trajectory-thickness-field"><span>Thickness</span><span className="wlv-wbv-compact-range-control"><input type="range" min="0.25" max="6" step="0.25" value={draftViewProperties.trajectory.thickness} onChange={e=>updateSection("trajectory",{thickness:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0.25" max="6" step="0.25" value={draftViewProperties.trajectory.thickness} onChange={e=>updateSection("trajectory",{thickness:Number(e.target.value)})}/></span></label><label className="wlv-wbv-field wlv-wbv-compact-range-field wlv-wbv-trajectory-opacity-field"><span>Opacity</span><span className="wlv-wbv-compact-range-control"><input type="range" min="0" max="1" step="0.05" value={draftViewProperties.trajectory.opacity} onChange={e=>updateSection("trajectory",{opacity:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0" max="1" step="0.05" value={draftViewProperties.trajectory.opacity} onChange={e=>updateSection("trajectory",{opacity:Number(e.target.value)})}/></span></label></div><span style={{display:"none"}}>{/* WBV_TRAJECTORY_METALLIC_SHADE_PALETTE_V1_0_0 */}</span></div>:null}
+                        {selectedViewProperty==="boundingBox"?<div className="wlv-wbv-property-card"><h4>Lines</h4><div className="wlv-wbv-property-grid is-three"><label className="wlv-wbv-field">Line color<input type="color" value={draftViewProperties.boundingBox.color} onChange={e=>updateSection("boundingBox",{color:e.target.value})}/></label><label className="wlv-wbv-field wlv-wbv-compact-range-field">Line thickness<span className="wlv-wbv-compact-range-control"><input type="range" min="0.5" max="5" step="0.5" value={draftViewProperties.boundingBox.thickness} onChange={e=>updateSection("boundingBox",{thickness:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0.5" max="5" step="0.5" value={draftViewProperties.boundingBox.thickness} onChange={e=>updateSection("boundingBox",{thickness:Number(e.target.value)})}/></span></label><label className="wlv-wbv-field wlv-wbv-compact-range-field">Opacity<span className="wlv-wbv-compact-range-control"><input type="range" min="0" max="1" step="0.05" value={draftViewProperties.boundingBox.opacity} onChange={e=>updateSection("boundingBox",{opacity:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0" max="1" step="0.05" value={draftViewProperties.boundingBox.opacity} onChange={e=>updateSection("boundingBox",{opacity:Number(e.target.value)})}/></span></label></div></div>:null}
+                        {selectedViewProperty==="depthLabels"?<div className="wlv-wbv-property-card"><h4>Labels</h4><div className="wlv-wbv-property-grid"><label className="wlv-wbv-field">Text color<input type="color" value={draftViewProperties.depthLabels.color} onChange={e=>updateSection("depthLabels",{color:e.target.value})}/></label><label className="wlv-wbv-field wlv-wbv-compact-range-field">Label size<span className="wlv-wbv-compact-range-control"><input type="range" min="0.5" max="3" step="0.1" value={draftViewProperties.depthLabels.size} onChange={e=>updateSection("depthLabels",{size:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0.5" max="3" step="0.1" value={draftViewProperties.depthLabels.size} onChange={e=>updateSection("depthLabels",{size:Number(e.target.value)})}/></span></label><label className="wlv-wbv-field wlv-wbv-compact-range-field">Label interval <small>0 = automatic</small><span className="wlv-wbv-compact-range-control"><input type="range" min="0" step="10" value={draftViewProperties.depthLabels.interval} onChange={e=>updateSection("depthLabels",{interval:Number(e.target.value)})} max={Math.max(200,draftViewProperties.depthLabels.interval*2+20)}/><input className="wlv-wbv-range-number" type="number" min="0" step="10" value={draftViewProperties.depthLabels.interval} onChange={e=>updateSection("depthLabels",{interval:Number(e.target.value)})}/></span></label><label className="wlv-wbv-field wlv-wbv-compact-range-field">Offset from trajectory<span className="wlv-wbv-compact-range-control"><input type="range" min="0" max="2" step="0.05" value={draftViewProperties.depthLabels.offset} onChange={e=>updateSection("depthLabels",{offset:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0" max="2" step="0.05" value={draftViewProperties.depthLabels.offset} onChange={e=>updateSection("depthLabels",{offset:Number(e.target.value)})}/></span></label></div></div>:null}
+                        {selectedViewProperty==="surveyStations"?<><div className="wlv-wbv-property-card"><h4>Marker</h4><div className="wlv-wbv-property-grid"><label className="wlv-wbv-field">Shape<select value={draftViewProperties.surveyStations.shape} onChange={e=>updateSection("surveyStations",{shape:e.target.value as WbvViewProperties["surveyStations"]["shape"]})}><option value="circle">Circle</option><option value="square">Square</option><option value="diamond">Diamond</option><option value="cross">Cross</option></select></label><label className="wlv-wbv-field wlv-wbv-compact-range-field">Size<span className="wlv-wbv-compact-range-control"><input type="range" min="0.25" max="8" step="0.25" value={draftViewProperties.surveyStations.size} onChange={e=>updateSection("surveyStations",{size:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0.25" max="8" step="0.25" value={draftViewProperties.surveyStations.size} onChange={e=>updateSection("surveyStations",{size:Number(e.target.value)})}/></span></label><label className="wlv-wbv-field">Color<input type="color" value={draftViewProperties.surveyStations.color} onChange={e=>updateSection("surveyStations",{color:e.target.value})}/></label><label className="wlv-wbv-field wlv-wbv-compact-range-field">Opacity<span className="wlv-wbv-compact-range-control"><input type="range" min="0" max="1" step="0.05" value={draftViewProperties.surveyStations.opacity} onChange={e=>updateSection("surveyStations",{opacity:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0" max="1" step="0.05" value={draftViewProperties.surveyStations.opacity} onChange={e=>updateSection("surveyStations",{opacity:Number(e.target.value)})}/></span></label></div></div><div className="wlv-wbv-property-card"><h4>Orientation</h4><div className="wlv-wbv-segmented-control" role="group" aria-label="Survey station orientation"><button type="button" className={draftViewProperties.surveyStations.orientation==="along"?"is-active":""} onClick={()=>updateSection("surveyStations",{orientation:"along"})}>Along wellbore</button><button type="button" className={draftViewProperties.surveyStations.orientation==="across"?"is-active":""} onClick={()=>updateSection("surveyStations",{orientation:"across"})}>Across wellbore</button></div></div></>:null}
                         
-                        {selectedViewProperty==="groundPlane"?<div className="wlv-wbv-property-card"><h4>Surface</h4><div className="wlv-wbv-property-grid is-three"><label className="wlv-wbv-field">Color<input type="color" value={draftViewProperties.groundPlane.color} onChange={e=>updateSection("groundPlane",{color:e.target.value})}/></label><label className="wlv-wbv-field">Size<input type="number" min="0.5" max="3" step="0.1" value={draftViewProperties.groundPlane.size} onChange={e=>updateSection("groundPlane",{size:Number(e.target.value)})}/></label><label className="wlv-wbv-field">Opacity<input type="number" min="0" max="1" step="0.05" value={draftViewProperties.groundPlane.opacity} onChange={e=>updateSection("groundPlane",{opacity:Number(e.target.value)})}/></label></div></div>:null}
-                        {selectedViewProperty==="grids"?<div className="wlv-wbv-property-card"><h4>Grid lines</h4><div className="wlv-wbv-property-grid"><label className="wlv-wbv-field">Grid color<input type="color" value={draftViewProperties.grids.color} onChange={e=>updateSection("grids",{color:e.target.value})}/></label><label className="wlv-wbv-field">Line thickness<input type="number" min="0.5" max="5" step="0.5" value={draftViewProperties.grids.thickness} onChange={e=>updateSection("grids",{thickness:Number(e.target.value)})}/></label><label className="wlv-wbv-field">Grid divisions<input type="number" min="2" max="40" step="1" value={draftViewProperties.grids.spacing} onChange={e=>updateSection("grids",{spacing:Number(e.target.value)})}/></label><label className="wlv-wbv-field">Opacity<input type="number" min="0" max="1" step="0.05" value={draftViewProperties.grids.opacity} onChange={e=>updateSection("grids",{opacity:Number(e.target.value)})}/></label></div></div>:null}
-                        {selectedViewProperty==="shading"?<div className="wlv-wbv-property-card"><h4>Lighting</h4><div className="wlv-wbv-property-grid is-three"><label className="wlv-wbv-field">Shading intensity<input type="number" min="0" max="2" step="0.05" value={draftViewProperties.shading.intensity} onChange={e=>updateSection("shading",{intensity:Number(e.target.value)})}/></label><label className="wlv-wbv-field">Ambient light<input type="number" min="0" max="3" step="0.05" value={draftViewProperties.shading.ambient} onChange={e=>updateSection("shading",{ambient:Number(e.target.value)})}/></label><label className="wlv-wbv-field">Directional light<input type="number" min="0" max="3" step="0.05" value={draftViewProperties.shading.directional} onChange={e=>updateSection("shading",{directional:Number(e.target.value)})}/></label></div></div>:null}
+                        {selectedViewProperty==="groundPlane"?<div className="wlv-wbv-property-card"><h4>Surface</h4><div className="wlv-wbv-property-grid is-three"><label className="wlv-wbv-field">Color<input type="color" value={draftViewProperties.groundPlane.color} onChange={e=>updateSection("groundPlane",{color:e.target.value})}/></label><label className="wlv-wbv-field wlv-wbv-compact-range-field">Size<span className="wlv-wbv-compact-range-control"><input type="range" min="0.5" max="3" step="0.1" value={draftViewProperties.groundPlane.size} onChange={e=>updateSection("groundPlane",{size:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0.5" max="3" step="0.1" value={draftViewProperties.groundPlane.size} onChange={e=>updateSection("groundPlane",{size:Number(e.target.value)})}/></span></label><label className="wlv-wbv-field wlv-wbv-compact-range-field">Opacity<span className="wlv-wbv-compact-range-control"><input type="range" min="0" max="1" step="0.05" value={draftViewProperties.groundPlane.opacity} onChange={e=>updateSection("groundPlane",{opacity:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0" max="1" step="0.05" value={draftViewProperties.groundPlane.opacity} onChange={e=>updateSection("groundPlane",{opacity:Number(e.target.value)})}/></span></label></div></div>:null}
+                        {selectedViewProperty==="grids"?<div className="wlv-wbv-property-card"><h4>Grid lines</h4><div className="wlv-wbv-property-grid"><label className="wlv-wbv-field">Grid color<input type="color" value={draftViewProperties.grids.color} onChange={e=>updateSection("grids",{color:e.target.value})}/></label><label className="wlv-wbv-field wlv-wbv-compact-range-field">Line thickness<span className="wlv-wbv-compact-range-control"><input type="range" min="0.5" max="5" step="0.5" value={draftViewProperties.grids.thickness} onChange={e=>updateSection("grids",{thickness:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0.5" max="5" step="0.5" value={draftViewProperties.grids.thickness} onChange={e=>updateSection("grids",{thickness:Number(e.target.value)})}/></span></label><label className="wlv-wbv-field wlv-wbv-compact-range-field">Grid divisions<span className="wlv-wbv-compact-range-control"><input type="range" min="2" max="40" step="1" value={draftViewProperties.grids.spacing} onChange={e=>updateSection("grids",{spacing:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="2" max="40" step="1" value={draftViewProperties.grids.spacing} onChange={e=>updateSection("grids",{spacing:Number(e.target.value)})}/></span></label><label className="wlv-wbv-field wlv-wbv-compact-range-field">Opacity<span className="wlv-wbv-compact-range-control"><input type="range" min="0" max="1" step="0.05" value={draftViewProperties.grids.opacity} onChange={e=>updateSection("grids",{opacity:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0" max="1" step="0.05" value={draftViewProperties.grids.opacity} onChange={e=>updateSection("grids",{opacity:Number(e.target.value)})}/></span></label></div></div>:null}
+                        {selectedViewProperty==="shading"?<div className="wlv-wbv-property-card"><h4>Lighting</h4><div className="wlv-wbv-property-grid is-three"><label className="wlv-wbv-field wlv-wbv-compact-range-field">Shading intensity<span className="wlv-wbv-compact-range-control"><input type="range" min="0" max="2" step="0.05" value={draftViewProperties.shading.intensity} onChange={e=>updateSection("shading",{intensity:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0" max="2" step="0.05" value={draftViewProperties.shading.intensity} onChange={e=>updateSection("shading",{intensity:Number(e.target.value)})}/></span></label><label className="wlv-wbv-field wlv-wbv-compact-range-field">Ambient light<span className="wlv-wbv-compact-range-control"><input type="range" min="0" max="3" step="0.05" value={draftViewProperties.shading.ambient} onChange={e=>updateSection("shading",{ambient:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0" max="3" step="0.05" value={draftViewProperties.shading.ambient} onChange={e=>updateSection("shading",{ambient:Number(e.target.value)})}/></span></label><label className="wlv-wbv-field wlv-wbv-compact-range-field">Directional light<span className="wlv-wbv-compact-range-control"><input type="range" min="0" max="3" step="0.05" value={draftViewProperties.shading.directional} onChange={e=>updateSection("shading",{directional:Number(e.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0" max="3" step="0.05" value={draftViewProperties.shading.directional} onChange={e=>updateSection("shading",{directional:Number(e.target.value)})}/></span></label></div></div>:null}
                       </div>
                     </section>
                   </>;
@@ -4299,7 +6233,7 @@ export function Wellbore3DPage({
                         <label className="wlv-wbv-check-row"><input type="checkbox" checked={selectedTrack.visible} onChange={(e)=>updateSelected({visible:e.target.checked})}/><span>Show track</span></label>
                         <label className="wlv-wbv-field">Track name<input key={`${selectedTrack.track_uid}-name-${selectedTrack.display_name}`} defaultValue={selectedTrack.display_name} onBlur={(e)=>{const value=e.target.value.trim();if(value&&value!==selectedTrack.display_name)updateSelected({display_name:value});}}/></label>
                         <div className="wlv-wbv-inline-fields"><label className="wlv-wbv-field">Track type<select value={selectedTrack.track_type} onChange={(e)=>updateSelected({track_type:e.target.value as WbvLayoutTrack["track_type"]})}><option value="curve">Curve</option><option value="depth">Depth</option><option value="formation_tops">Formation Tops</option><option value="lithology">Lithology</option><option value="core">Core</option><option value="casing_hole">Casing / Hole</option><option value="completions">Completions</option><option value="borehole_imagery">Borehole Imagery</option></select></label><label className="wlv-wbv-field">Position<select value={selectedTrack.position} onChange={(e)=>updateSelected({position:e.target.value as WbvLayoutTrack["position"]})}><option value="right">Right</option><option value="left">Left</option><option value="center">Center</option></select></label></div>
-                        <div className="wlv-wbv-inline-fields">{isClosestToWellbore?<label className="wlv-wbv-field">Distance from wellbore<input key={`${selectedTrack.track_uid}-distance-${selectedTrack.distance_from_wellbore}`} type="number" min="0" step="0.05" defaultValue={selectedTrack.distance_from_wellbore} onBlur={(e)=>updateSelected({distance_from_wellbore:Number(e.target.value)})}/></label>:<label className="wlv-wbv-field">Gap from previous track<input key={`${selectedTrack.track_uid}-gap-${selectedTrack.previous_track_gap}`} type="number" min="0" step="0.05" defaultValue={selectedTrack.previous_track_gap} onBlur={(e)=>updateSelected({previous_track_gap:Number(e.target.value)})}/></label>}<label className="wlv-wbv-field">Width<input key={`${selectedTrack.track_uid}-width-${selectedTrack.width}`} type="number" min="0.1" step="0.05" defaultValue={selectedTrack.width} onBlur={(e)=>updateSelected({width:Number(e.target.value)})}/></label></div>
+                        <div className="wlv-wbv-inline-fields">{isClosestToWellbore?<label className="wlv-wbv-field wlv-wbv-compact-range-field">Distance from wellbore<span className="wlv-wbv-compact-range-control"><input key={`${selectedTrack.track_uid}-distance-range-${selectedTrack.distance_from_wellbore}`} type="range" min="0" max={Math.max(1,selectedTrack.distance_from_wellbore*2+0.5)} step="0.05" defaultValue={selectedTrack.distance_from_wellbore} onPointerUp={(e)=>updateSelected({distance_from_wellbore:Number(e.currentTarget.value)})}/><input className="wlv-wbv-range-number" key={`${selectedTrack.track_uid}-distance-${selectedTrack.distance_from_wellbore}`} type="number" min="0" step="0.05" defaultValue={selectedTrack.distance_from_wellbore} onBlur={(e)=>updateSelected({distance_from_wellbore:Number(e.target.value)})}/></span></label>:<label className="wlv-wbv-field wlv-wbv-compact-range-field">Gap from previous track<span className="wlv-wbv-compact-range-control"><input key={`${selectedTrack.track_uid}-gap-range-${selectedTrack.previous_track_gap}`} type="range" min="0" max={Math.max(1,selectedTrack.previous_track_gap*2+0.5)} step="0.05" defaultValue={selectedTrack.previous_track_gap} onPointerUp={(e)=>updateSelected({previous_track_gap:Number(e.currentTarget.value)})}/><input className="wlv-wbv-range-number" key={`${selectedTrack.track_uid}-gap-${selectedTrack.previous_track_gap}`} type="number" min="0" step="0.05" defaultValue={selectedTrack.previous_track_gap} onBlur={(e)=>updateSelected({previous_track_gap:Number(e.target.value)})}/></span></label>}<label className="wlv-wbv-field wlv-wbv-compact-range-field">Width<span className="wlv-wbv-compact-range-control"><input key={`${selectedTrack.track_uid}-width-range-${selectedTrack.width}`} type="range" min="0.1" max={Math.max(2,selectedTrack.width*2+0.5)} step="0.05" defaultValue={selectedTrack.width} onPointerUp={(e)=>updateSelected({width:Number(e.currentTarget.value)})}/><input className="wlv-wbv-range-number" key={`${selectedTrack.track_uid}-width-${selectedTrack.width}`} type="number" min="0.1" step="0.05" defaultValue={selectedTrack.width} onBlur={(e)=>updateSelected({width:Number(e.target.value)})}/></span></label></div>
                         <div className="wlv-wbv-inline-fields">
                           <label className="wlv-wbv-field">Track background<select value={selectedTrack.background_mode} onChange={(e)=>updateSelected({background_mode:e.target.value as WbvLayoutTrack["background_mode"]})}><option value="transparent">Transparent</option><option value="solid">Solid</option></select></label>
                           <label className="wlv-wbv-field">Background color<input type="color" value={selectedTrack.background_color} disabled={selectedTrack.background_mode==="transparent"} onChange={(e)=>updateSelected({background_color:e.target.value})}/></label>
@@ -4307,17 +6241,22 @@ export function Wellbore3DPage({
                         <label className="wlv-wbv-check-row"><input type="checkbox" checked={selectedTrack.outline_visible} onChange={(e)=>updateSelected({outline_visible:e.target.checked})}/><span>Track outline</span></label>
                         {selectedTrack.track_type==="depth"?<>
                           <div className="wlv-wbv-inline-fields">
-                            <label className="wlv-wbv-field">Depth type<select value={selectedTrack.depth_type} onChange={(e)=>updateSelected({depth_type:e.target.value as WbvLayoutTrack["depth_type"]})}><option value="MD">MD</option><option value="TVD">TVD</option><option value="TVDSS">TVDSS</option></select></label>
-                            <label className="wlv-wbv-field">Depth increment<input key={`${selectedTrack.track_uid}-depth-increment-${selectedTrack.depth_increment}`} type="number" min="0.000001" step="10" defaultValue={selectedTrack.depth_increment} onBlur={(e)=>updateSelected({depth_increment:Number(e.target.value)})}/></label>
+                            <label className="wlv-wbv-field">Outline color<input type="color" value={selectedTrack.outline_color ?? "#b9f3ff"} disabled={!selectedTrack.outline_visible} onChange={(e)=>updateSelected({outline_color:e.target.value})}/></label>
+                            <label className="wlv-wbv-field">Tick color<input type="color" value={selectedTrack.tick_color ?? "#b9f3ff"} onChange={(e)=>updateSelected({tick_color:e.target.value})}/></label>
+                            <label className="wlv-wbv-field">Label color<input type="color" value={selectedTrack.label_color ?? "#b9f3ff"} onChange={(e)=>updateSelected({label_color:e.target.value})}/></label>
                           </div>
                           <div className="wlv-wbv-inline-fields">
-                            <label className="wlv-wbv-field">Label increment<input key={`${selectedTrack.track_uid}-label-increment-${selectedTrack.label_increment}`} type="number" min="0.000001" step="10" defaultValue={selectedTrack.label_increment} onBlur={(e)=>updateSelected({label_increment:Number(e.target.value)})}/></label>
-                            <label className="wlv-wbv-field">Label size<input key={`${selectedTrack.track_uid}-label-size-${selectedTrack.label_size}`} type="number" min="0.1" step="0.1" defaultValue={selectedTrack.label_size} onBlur={(e)=>updateSelected({label_size:Number(e.target.value)})}/></label>
+                            <label className="wlv-wbv-field">Depth type<select value={selectedTrack.depth_type} onChange={(e)=>updateSelected({depth_type:e.target.value as WbvLayoutTrack["depth_type"]})}><option value="MD">MD</option><option value="TVD">TVD</option><option value="TVDSS">TVDSS</option></select></label>
+                            <label className="wlv-wbv-field wlv-wbv-compact-range-field">Depth increment<span className="wlv-wbv-compact-range-control"><input key={`${selectedTrack.track_uid}-depth-increment-range-${selectedTrack.depth_increment}`} type="range" min="0.000001" max={Math.max(200,selectedTrack.depth_increment*2+20)} step="10" defaultValue={selectedTrack.depth_increment} onPointerUp={(e)=>updateSelected({depth_increment:Number(e.currentTarget.value)})}/><input className="wlv-wbv-range-number" key={`${selectedTrack.track_uid}-depth-increment-${selectedTrack.depth_increment}`} type="number" min="0.000001" step="10" defaultValue={selectedTrack.depth_increment} onBlur={(e)=>updateSelected({depth_increment:Number(e.target.value)})}/></span></label>
+                          </div>
+                          <div className="wlv-wbv-inline-fields">
+                            <label className="wlv-wbv-field wlv-wbv-compact-range-field">Label increment<span className="wlv-wbv-compact-range-control"><input key={`${selectedTrack.track_uid}-label-increment-range-${selectedTrack.label_increment}`} type="range" min="0.000001" max={Math.max(200,selectedTrack.label_increment*2+20)} step="10" defaultValue={selectedTrack.label_increment} onPointerUp={(e)=>updateSelected({label_increment:Number(e.currentTarget.value)})}/><input className="wlv-wbv-range-number" key={`${selectedTrack.track_uid}-label-increment-${selectedTrack.label_increment}`} type="number" min="0.000001" step="10" defaultValue={selectedTrack.label_increment} onBlur={(e)=>updateSelected({label_increment:Number(e.target.value)})}/></span></label>
+                            <label className="wlv-wbv-field wlv-wbv-compact-range-field">Label size<span className="wlv-wbv-compact-range-control"><input key={`${selectedTrack.track_uid}-label-size-range-${selectedTrack.label_size}`} type="range" min="0.05" max={Math.max(2,selectedTrack.label_size*2+0.25)} step="0.05" defaultValue={selectedTrack.label_size} onPointerUp={(e)=>updateSelected({label_size:Number(e.currentTarget.value)})}/><input className="wlv-wbv-range-number" key={`${selectedTrack.track_uid}-label-size-${selectedTrack.label_size}`} type="number" min="0.05" step="0.05" defaultValue={selectedTrack.label_size} onBlur={(e)=>updateSelected({label_size:Number(e.target.value)})}/></span></label>
                           </div>
                           <label className="wlv-wbv-check-row"><input type="checkbox" checked={selectedTrack.show_depth_units} onChange={(e)=>updateSelected({show_depth_units:e.target.checked})}/><span>Show units</span></label>
                           {selectedTrack.depth_type==="TVDSS"?<div className="wlv-wbv-warning-inline">Precise surface elevation/datum is not available. TVDSS is currently referenced to TVD.</div>:null}
                         </>:<label className="wlv-wbv-field">Track grid<select value={selectedTrack.grid_mode} onChange={(e)=>updateSelected({grid_mode:e.target.value as WbvLayoutTrack["grid_mode"]})}><option value="off">Off</option><option value="linear">Linear</option><option value="logarithmic">Logarithmic</option></select></label>}
-                        <label className="wlv-wbv-field">Track opacity<input key={`${selectedTrack.track_uid}-opacity-${selectedTrack.opacity}`} type="number" min="0" max="1" step="0.05" defaultValue={selectedTrack.opacity} onBlur={(e)=>updateSelected({opacity:Number(e.target.value)})}/></label>
+                        <label className="wlv-wbv-field wlv-wbv-compact-range-field">Track opacity<span className="wlv-wbv-compact-range-control"><input key={`${selectedTrack.track_uid}-opacity-range-${selectedTrack.opacity}`} type="range" min="0" max="1" step="0.05" defaultValue={selectedTrack.opacity} onPointerUp={(e)=>updateSelected({opacity:Number(e.currentTarget.value)})}/><input className="wlv-wbv-range-number" key={`${selectedTrack.track_uid}-opacity-${selectedTrack.opacity}`} type="number" min="0" max="1" step="0.05" defaultValue={selectedTrack.opacity} onBlur={(e)=>updateSelected({opacity:Number(e.target.value)})}/></span></label>
                         <div className="wlv-wbv-inline-action-row"><button type="button" className="wlv-wbv-control-button" disabled={layoutCommandSaving||selectedTrack.display_order===0} onClick={()=>void runLayoutCommand({command:"move_up",track_uid:selectedTrack.track_uid})}>Move Up</button><button type="button" className="wlv-wbv-control-button" disabled={layoutCommandSaving||selectedTrack.display_order===tracks.length-1} onClick={()=>void runLayoutCommand({command:"move_down",track_uid:selectedTrack.track_uid})}>Move Down</button><button type="button" className="wlv-wbv-control-button" disabled={layoutCommandSaving} onClick={()=>void runLayoutCommand({command:"duplicate_track",track_uid:selectedTrack.track_uid})}>Duplicate</button><button type="button" className="wlv-wbv-control-button is-danger" disabled={layoutCommandSaving} onClick={()=>void runLayoutCommand({command:"delete_track",track_uid:selectedTrack.track_uid})}>Delete</button></div>
                       </div>:<div className="wlv-wbv-empty-state">Add a track.</div>}
                     </section>
@@ -4325,6 +6264,7 @@ export function Wellbore3DPage({
                 }
                 const config = layerConfigFor(draftLayerConfigs, activeLayerTab);
                 if (activeLayerTab === "curve_overlays") {
+                  // WBV_CURVE_INFILL_BRIGHTNESS_CONTROL_V1_0_2_AUDITED
                   const selectedPackage = selectedPublishedPackage;
                   const presentation = publishedPresentationDraft;
                   const tracks = (selectedPackage?.published_snapshot.tracks ?? []).filter((track) => track.assignments.length > 0);
@@ -4353,6 +6293,8 @@ export function Wellbore3DPage({
                       visible: null,
                       color: null,
                       opacity: null,
+                      infill_opacity: null,
+                      infill_brightness: null,
                       line_width: null,
                       radial_exaggeration: null,
                       label_visible: null,
@@ -4433,8 +6375,8 @@ export function Wellbore3DPage({
                         <div className="wlv-wbv-post-package-controls">
                           <label className="wlv-wbv-check-row"><input type="checkbox" checked={presentation.package_visible} onChange={(event)=>setPublishedPresentationDraft({...presentation,package_visible:event.target.checked})}/><span>Show published package</span></label>
                           <div className="wlv-wbv-inline-fields">
-                            <label className="wlv-wbv-field">Depth clip minimum<input type="number" step="any" value={presentation.depth_clip_min ?? ""} onChange={(event)=>setPublishedPresentationDraft({...presentation,depth_clip_min:event.target.value===""?null:Number(event.target.value)})}/></label>
-                            <label className="wlv-wbv-field">Depth clip maximum<input type="number" step="any" value={presentation.depth_clip_max ?? ""} onChange={(event)=>setPublishedPresentationDraft({...presentation,depth_clip_max:event.target.value===""?null:Number(event.target.value)})}/></label>
+                            <label className="wlv-wbv-field wlv-wbv-depth-entry-field">Depth clip minimum<input type="number" step="any" value={presentation.depth_clip_min ?? ""} onChange={(event)=>setPublishedPresentationDraft({...presentation,depth_clip_min:event.target.value===""?null:Number(event.target.value)})}/></label>
+                            <label className="wlv-wbv-field wlv-wbv-depth-entry-field">Depth clip maximum<input type="number" step="any" value={presentation.depth_clip_max ?? ""} onChange={(event)=>setPublishedPresentationDraft({...presentation,depth_clip_max:event.target.value===""?null:Number(event.target.value)})}/></label>
                           </div>
                         </div>
                         <div className="wlv-wbv-post-track-list">
@@ -4455,14 +6397,18 @@ export function Wellbore3DPage({
                                 const effectiveColor = curveEdit.color ?? renderedCurve?.color ?? "#58d39b";
                                 const effectiveWidth = curveEdit.line_width ?? renderedCurve?.line_width ?? curve.line_width ?? 1.5;
                                 const effectiveOpacity = curveEdit.opacity ?? renderedCurve?.opacity ?? (curve.line_opacity / 100);
+                                const hasInfill = Boolean(renderedCurve && renderedCurve.fill_mode !== "none");
+                                const effectiveInfillOpacity = curveEdit.infill_opacity ?? (renderedCurve?.infill_interval_column === "lithology" ? 1 : (renderedCurve?.fill_opacity ?? 1));
+                                const effectiveInfillBrightness = curveEdit.infill_brightness ?? 1;
                                 const effectiveExaggeration = curveEdit.radial_exaggeration ?? renderedCurve?.radial_width ?? 1;
                                 return <div className="wlv-wbv-published-curve-edit" key={curve.assignment_uid}>
                                   <strong>{curve.observed_mnemonic}</strong>
                                   <label className="wlv-wbv-field wlv-wbv-curve-compact-toggle"><span>Visible</span><input type="checkbox" checked={curveEdit.visible ?? true} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{visible:event.target.checked})}/></label>
                                   <label className="wlv-wbv-field wlv-wbv-colour-field"><span>Curve Color</span><input type="color" value={effectiveColor} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{color:event.target.value})}/></label>
-                                  <label className="wlv-wbv-field wlv-wbv-curve-number-compact"><span>Width</span><input type="number" min="0.1" step="0.1" value={effectiveWidth} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{line_width:Number(event.target.value)})}/></label>
-                                  <label className="wlv-wbv-field wlv-wbv-curve-number-compact"><span>Opacity</span><input type="number" min="0" max="1" step="0.05" value={effectiveOpacity} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{opacity:Number(event.target.value)})}/></label>
-                                  <label className="wlv-wbv-field wlv-wbv-curve-number-standard"><span>Lateral Exaggeration</span><input type="number" min="0.25" max="3" step="0.25" value={effectiveExaggeration} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{radial_exaggeration:Math.min(3,Math.max(0.25,Number(event.target.value)))})}/></label>
+                                  <label className="wlv-wbv-field wlv-wbv-compact-range-field"><span>Width</span><span className="wlv-wbv-compact-range-control"><input type="range" min="0.1" max={Math.max(4,effectiveWidth*2+0.5)} step="0.1" value={effectiveWidth} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{line_width:Number(event.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0.1" step="0.1" value={effectiveWidth} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{line_width:Number(event.target.value)})}/></span></label>
+                                  <label className="wlv-wbv-field wlv-wbv-compact-range-field"><span>Opacity</span><span className="wlv-wbv-compact-range-control"><input type="range" min="0" max="1" step="0.05" value={effectiveOpacity} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{opacity:Number(event.target.value)})}/><input className="wlv-wbv-range-number" type="number" min="0" max="1" step="0.05" value={effectiveOpacity} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{opacity:Number(event.target.value)})}/></span></label>
+                                  {hasInfill ? <label className="wlv-wbv-field wlv-wbv-compact-range-field"><span>Infill Opacity</span><span className="wlv-wbv-compact-range-control"><input type="range" min="0" max="1" step="0.05" value={effectiveInfillOpacity} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{infill_opacity:Math.min(1,Math.max(0,Number(event.target.value)))})}/><input className="wlv-wbv-range-number" type="number" min="0" max="1" step="0.05" value={effectiveInfillOpacity} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{infill_opacity:Math.min(1,Math.max(0,Number(event.target.value)))})}/></span></label> : null}{hasInfill ? <label className="wlv-wbv-field wlv-wbv-range-field wlv-wbv-infill-brightness-field"><span>Infill Brightness</span><input key={`${curve.assignment_uid}-infill-brightness-range-${effectiveInfillBrightness}`} type="range" min="0.5" max="3" step="0.05" defaultValue={effectiveInfillBrightness} onPointerUp={(event)=>updateCurveOverride(curve.assignment_uid,{infill_brightness:Math.min(3,Math.max(0.5,Number(event.currentTarget.value)))})}/><span className="wlv-wbv-range-number-box"><input key={`${curve.assignment_uid}-infill-brightness-number-${effectiveInfillBrightness}`} className="wlv-wbv-range-number" type="number" min="0.5" max="3" step="0.05" defaultValue={effectiveInfillBrightness} onBlur={(event)=>updateCurveOverride(curve.assignment_uid,{infill_brightness:Math.min(3,Math.max(0.5,Number(event.currentTarget.value)))})}/><span>x</span></span></label> : null}
+                                  <label className="wlv-wbv-field wlv-wbv-compact-range-field"><span>Lateral Exaggeration</span><span className="wlv-wbv-compact-range-control"><input type="range" min="0.25" max="3" step="0.25" value={effectiveExaggeration} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{radial_exaggeration:Math.min(3,Math.max(0.25,Number(event.target.value)))})}/><input className="wlv-wbv-range-number" type="number" min="0.25" max="3" step="0.25" value={effectiveExaggeration} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{radial_exaggeration:Math.min(3,Math.max(0.25,Number(event.target.value)))})}/></span></label>
                                   <div className="wlv-wbv-curve-label-summary">
                                     <label className="wlv-wbv-curve-label-toggle"><span>Show Label</span><input type="checkbox" checked={curveEdit.label_visible ?? renderedCurve?.label_visible ?? false} onChange={(event)=>updateCurveOverride(curve.assignment_uid,{label_visible:event.target.checked})}/></label>
                                     <button type="button" className="wlv-wbv-control-button" onClick={()=>setCurveLabelEditorAssignmentUid(curve.assignment_uid)}>Edit Label</button>
@@ -4483,7 +6429,7 @@ export function Wellbore3DPage({
                             </fieldset>
                             <fieldset className="wlv-wbv-curve-label-section is-anchor"><legend>Anchor</legend>
                               <label className="wlv-wbv-field">Depth<select value={selectedLabelOverride.label_anchor ?? selectedLabelRenderedCurve?.label_anchor ?? "top"} onChange={(event)=>updateCurveOverride(selectedLabelCurve.assignment_uid,{label_anchor:event.target.value as "top"|"base"|"custom_md"})}><option value="top">Top of curve</option><option value="base">Base of curve</option><option value="custom_md">Custom MD</option></select></label>
-                              {(selectedLabelOverride.label_anchor ?? selectedLabelRenderedCurve?.label_anchor ?? "top")==="custom_md"?<label className="wlv-wbv-field">Custom MD<input type="number" step="any" value={selectedLabelOverride.label_custom_md ?? selectedLabelRenderedCurve?.label_custom_md ?? ""} onChange={(event)=>updateCurveOverride(selectedLabelCurve.assignment_uid,{label_custom_md:event.target.value===""?null:Number(event.target.value)})}/></label>:null}
+                              {(selectedLabelOverride.label_anchor ?? selectedLabelRenderedCurve?.label_anchor ?? "top")==="custom_md"?<label className="wlv-wbv-field wlv-wbv-depth-entry-field">Custom MD<input type="number" step="any" value={selectedLabelOverride.label_custom_md ?? selectedLabelRenderedCurve?.label_custom_md ?? ""} onChange={(event)=>updateCurveOverride(selectedLabelCurve.assignment_uid,{label_custom_md:event.target.value===""?null:Number(event.target.value)})}/></label>:null}
                               <label className="wlv-wbv-field">Placement<select value={(selectedLabelOverride.label_position ?? selectedLabelRenderedCurve?.label_position ?? "on_track")==="center"?"on_track":(selectedLabelOverride.label_position ?? selectedLabelRenderedCurve?.label_position ?? "on_track")} onChange={(event)=>updateCurveOverride(selectedLabelCurve.assignment_uid,{label_position:event.target.value as "on_track"|"left"|"right"})}><option value="on_track">On track</option><option value="left">Left of track</option><option value="right">Right of track</option></select></label>
                             </fieldset>
                             {(selectedLabelOverride.label_content ?? selectedLabelRenderedCurve?.label_content ?? "mnemonic")!=="scale"?<fieldset className="wlv-wbv-curve-label-section is-mnemonic"><legend>Mnemonic</legend>
@@ -4554,8 +6500,8 @@ export function Wellbore3DPage({
                       {components.length>0? <>
                         <div className="wlv-wbv-manager-top-actions"><button type="button" className="wlv-wbv-control-button" onClick={()=>setComponentSelection(components.map((component)=>component.component_id))}>Select All</button><button type="button" className="wlv-wbv-control-button" onClick={()=>setComponentSelection([])}>None</button></div>
                         <div role="group" aria-label="Completion components to display" style={{padding:"0 8px 12px",overflowY:"auto"}}>
-                          <div aria-hidden="true" style={{display:"grid",gridTemplateColumns:"28px minmax(0, 1fr) 138px",gap:10,padding:"7px 8px 6px",borderBottom:"1px solid rgba(132,157,174,0.22)",color:"#9fb0bd",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}><span></span><span>Component</span><span style={{textAlign:"right"}}>MD</span></div>
-                          {components.map((component)=><label key={component.component_id} title={component.canonical_id} style={{display:"grid",gridTemplateColumns:"28px minmax(0, 1fr) 138px",gap:10,alignItems:"center",padding:"7px 8px",borderBottom:"1px solid rgba(132,157,174,0.14)",cursor:"pointer"}}><input type="checkbox" checked={selectedComponentSet.has(component.component_id)} onChange={(event)=>{ const next=event.target.checked?[...selectedComponentIds,component.component_id]:selectedComponentIds.filter((id)=>id!==component.component_id); setComponentSelection(Array.from(new Set(next))); }}/><span style={{minWidth:0,color:"#dce7ef",fontWeight:600,fontSize:13.5,lineHeight:1.28,whiteSpace:"normal",overflowWrap:"anywhere"}}>{component.label}</span><span style={{color:"#c7d5df",fontVariantNumeric:"tabular-nums",fontWeight:600,fontSize:13,textAlign:"right",whiteSpace:"nowrap"}}>{componentMdLabel(component)} {component.depth_unit || "MD"}</span></label>)}
+                          <div aria-hidden="true" style={{display:"grid",gridTemplateColumns:"28px minmax(0, 1fr) 138px",gap:10,padding:"7px 8px 6px",borderBottom:"1px solid #cbd5dc",color:"#617582",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}><span></span><span>Component</span><span style={{textAlign:"right"}}>MD</span></div>
+                          {components.map((component)=><label key={component.component_id} title={component.canonical_id} style={{display:"grid",gridTemplateColumns:"28px minmax(0, 1fr) 138px",gap:10,alignItems:"center",padding:"7px 8px",borderBottom:"1px solid #d9e0e5",cursor:"pointer"}}><input type="checkbox" checked={selectedComponentSet.has(component.component_id)} onChange={(event)=>{ const next=event.target.checked?[...selectedComponentIds,component.component_id]:selectedComponentIds.filter((id)=>id!==component.component_id); setComponentSelection(Array.from(new Set(next))); }}/><span style={{minWidth:0,color:"#2e414d",fontWeight:600,fontSize:13.5,lineHeight:1.28,whiteSpace:"normal",overflowWrap:"anywhere"}}>{component.label}</span><span style={{color:"#526673",fontVariantNumeric:"tabular-nums",fontWeight:600,fontSize:13,textAlign:"right",whiteSpace:"nowrap"}}>{componentMdLabel(component)} {component.depth_unit || "MD"}</span></label>)}
                         </div>
                       </> : <p>Select a registered Completion product.</p>}
                     </>;
@@ -4576,6 +6522,21 @@ export function Wellbore3DPage({
                       <label className="wlv-wbv-field wlv-wbv-range-field"><span>Size</span><input disabled={!config.appearance.show_labels} type="range" min="0.15" max="3" step="0.05" value={config.appearance.label_size ?? 1} onChange={(e)=>updateDraftLayer(activeLayerTab,(current)=>({...current,appearance:{...current.appearance,label_size:Number(e.target.value)}}))}/><span className="wlv-wbv-range-number-box"><input disabled={!config.appearance.show_labels} className="wlv-wbv-range-number" type="number" min="0.15" max="3" step="0.05" value={config.appearance.label_size ?? 1} onChange={(e)=>updateDraftLayer(activeLayerTab,(current)=>({...current,appearance:{...current.appearance,label_size:Number(e.target.value)}}))}/><span>×</span></span></label>
                       <label className="wlv-wbv-field">Position<select disabled={!config.appearance.show_labels} value={config.appearance.label_position ?? "right"} onChange={(e)=>updateDraftLayer(activeLayerTab,(current)=>({...current,appearance:{...current.appearance,label_position:e.target.value as WbvLayerConfig["appearance"]["label_position"]}}))}><option value="right">Right</option><option value="left">Left</option><option value="above">Above</option><option value="below">Below</option></select></label>
                       <label className="wlv-wbv-field wlv-wbv-range-field"><span>Distance</span><input disabled={!config.appearance.show_labels} type="range" min="0" max="8" step="0.25" value={config.appearance.label_offset ?? 1} onChange={(e)=>updateDraftLayer(activeLayerTab,(current)=>({...current,appearance:{...current.appearance,label_offset:Number(e.target.value)}}))}/><span className="wlv-wbv-range-number-box"><input disabled={!config.appearance.show_labels} className="wlv-wbv-range-number" type="number" min="0" max="8" step="0.25" value={config.appearance.label_offset ?? 1} onChange={(e)=>updateDraftLayer(activeLayerTab,(current)=>({...current,appearance:{...current.appearance,label_offset:Number(e.target.value)}}))}/><span>×</span></span></label>
+                      <label className="wlv-wbv-manager-toggle-row"><input type="checkbox" checked={config.appearance.tie_formation_colours ?? false} onChange={(e)=>updateDraftLayer(activeLayerTab,(current)=>({...current,appearance:{...current.appearance,tie_formation_colours:e.target.checked}}))}/><span>Tie formation colours</span></label>
+                      {(config.appearance.tie_formation_colours ?? false) && (config.appearance.color_mode ?? "formation") === "formation" ? (()=>{
+                        const overrideTops=(layerEditorFormationTopProducts?.products ?? []).filter((product)=>config.selected_item_ids.includes(product.product_id)).flatMap((product)=>product.tops);
+                        const targetTop=overrideTops.find((top)=>top.top_id===formationTopOverrideTargetId) ?? overrideTops[0] ?? null;
+                        const overrides=config.appearance.formation_top_color_overrides ?? {};
+                        const manualColor=targetTop ? overrides[targetTop.top_id] : undefined;
+                        const commitOverrides=(next:Record<string,string>)=>updateDraftLayer(activeLayerTab,(current)=>({...current,appearance:{...current.appearance,formation_top_color_overrides:next}}));
+                        return overrideTops.length ? <>
+                          <label className="wlv-wbv-field"><span>Colour override</span><select value={targetTop?.top_id ?? ""} onChange={(e)=>setFormationTopOverrideTargetId(e.target.value)}>{overrideTops.map((top)=><option key={top.top_id} value={top.top_id}>{top.name}</option>)}</select></label>
+                          <div className="wlv-wbv-inline-fields" style={{alignItems:"end"}}>
+                            <label className="wlv-wbv-field wlv-wbv-colour-field"><span>Colour</span><input type="color" value={manualColor ?? (targetTop ? wbvFormationTieHex(targetTop.name) : "#58d39b")} onChange={(e)=>{if(!targetTop)return;commitOverrides({...overrides,[targetTop.top_id]:e.target.value});}}/></label>
+                            <button type="button" className="wlv-wbv-control-button" disabled={!targetTop || !manualColor} onClick={()=>{if(!targetTop)return;const next={...overrides};delete next[targetTop.top_id];commitOverrides(next);}}>Use tied colour</button>
+                          </div>
+                        </> : null;
+                      })() : null}
                     </fieldset>
                   </div> : activeLayerTab === "lithology_intervals" ? <div className="wlv-wbv-manager-properties-stack wlv-wbv-lithology-properties">
                     <fieldset className="wlv-wbv-property-group"><legend>Wellbore Overlay</legend>
@@ -4620,7 +6581,10 @@ export function Wellbore3DPage({
                           onClick={() => {
                             setCoreViewMode((active) => {
                               const next = !active;
-                              if (!next) {
+                              if (next) {
+                                setTrackValuesAlongWellbore(false);
+                                requestSelectionMode("none");
+                              } else {
                                 setCoreModalOpen(false);
                                 setCoreModalChunkId("");
                                 setCoreLocatorFocusInterval(null);
@@ -4638,63 +6602,63 @@ export function Wellbore3DPage({
                         style={{
                           marginTop: 10,
                           padding: "9px 11px",
-                          border: "1px solid rgba(128,146,160,.36)",
+                          border: "1px solid #c3ced6",
                           borderRadius: 7,
-                          background: "rgba(7,14,21,.34)",
+                          background: "#f7f9fa",
                           minHeight: 48,
                         }}
                         aria-live="polite"
                       >
                         <div style={{fontSize:11,fontWeight:700,letterSpacing:".06em",textTransform:"uppercase",opacity:.7,marginBottom:4}}>Core selection</div>
                         {coreLocatorFocusInterval ? <>
-                          <div style={{fontSize:13,fontWeight:600,color:"#dce5ec"}}>Core inspection</div>
-                          <div style={{fontSize:12,color:"#aebac5",marginTop:2}}>{`${Math.min(coreLocatorFocusInterval.top_md,coreLocatorFocusInterval.base_md).toLocaleString(undefined,{maximumFractionDigits:2})}–${Math.max(coreLocatorFocusInterval.top_md,coreLocatorFocusInterval.base_md).toLocaleString(undefined,{maximumFractionDigits:2})} MD visible`}</div>
+                          <div style={{fontSize:13,fontWeight:600,color:"#2e414d"}}>Core inspection</div>
+                          <div style={{fontSize:12,color:"#657986",marginTop:2}}>{`${formatNumber(convertCanonicalDepthToDisplay(Math.min(coreLocatorFocusInterval.top_md,coreLocatorFocusInterval.base_md)),2)}–${formatNumber(convertCanonicalDepthToDisplay(Math.max(coreLocatorFocusInterval.top_md,coreLocatorFocusInterval.base_md)),2)} ${depthUnit} MD visible`}</div>
                         </> : <div style={{fontSize:12,opacity:.74}}>{coreViewMode ? "Select a point on the illustrated core." : "No core selected"}</div>}
                       </div>
 
                       <fieldset className="wlv-wbv-property-group" style={{marginTop:14}}>
                         <legend>Core Inspection Layout</legend>
                         <div style={{display:"grid",gridTemplateColumns:"150px 1fr",columnGap:16,rowGap:12,alignItems:"center"}}>
-                          <div style={{fontSize:12,fontWeight:400,color:"#c7d1da"}}>Depth lattice</div>
+                          <div style={{fontSize:12,fontWeight:400,color:"#526673"}}>Depth lattice</div>
                           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
                             <button type="button" className={`wlv-wbv-control-button${coreLatticeSide==="off"?" is-primary":""}`} onClick={()=>setCoreLatticeSide("off")}>Off</button>
                             <button type="button" className={`wlv-wbv-control-button${coreLatticeSide==="left"?" is-primary":""}`} onClick={()=>setCoreLatticeSide("left")}>Left</button>
                             <button type="button" className={`wlv-wbv-control-button${coreLatticeSide==="right"?" is-primary":""}`} onClick={()=>setCoreLatticeSide("right")}>Right</button>
                           </div>
 
-                          <div style={{fontSize:12,fontWeight:400,color:"#c7d1da"}}>Lattice offset</div>
+                          <div style={{fontSize:12,fontWeight:400,color:"#526673"}}>Lattice offset</div>
                           <div style={{display:"flex",gap:6,alignItems:"center"}}>
                             <button type="button" className="wlv-wbv-control-button" disabled={coreLatticeSide==="off"} onClick={()=>setCoreLatticeOffset((value)=>Math.max(0,value-2))}>−</button>
-                            <span style={{minWidth:48,textAlign:"center",fontSize:12,color:"#d5dee6",fontWeight:400}}>{coreLatticeOffset}px</span>
+                            <span style={{minWidth:48,textAlign:"center",fontSize:12,color:"#334753",fontWeight:400}}>{coreLatticeOffset}px</span>
                             <button type="button" className="wlv-wbv-control-button" disabled={coreLatticeSide==="off"} onClick={()=>setCoreLatticeOffset((value)=>Math.min(80,value+2))}>+</button>
                           </div>
 
-                          <div style={{fontSize:12,fontWeight:400,color:"#c7d1da"}}>Core descriptions</div>
+                          <div style={{fontSize:12,fontWeight:400,color:"#526673"}}>Core descriptions</div>
                           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
                             <button type="button" className={`wlv-wbv-control-button${coreDescriptionSide==="off"?" is-primary":""}`} onClick={()=>{coreDescriptionSideTouchedRef.current=true;setCoreDescriptionSide("off");}}>Off</button>
                             <button type="button" className={`wlv-wbv-control-button${coreDescriptionSide==="left"?" is-primary":""}`} disabled={coreDescriptions.length===0} onClick={()=>{coreDescriptionSideTouchedRef.current=true;setCoreDescriptionSide("left");}}>Left</button>
                             <button type="button" className={`wlv-wbv-control-button${coreDescriptionSide==="right"?" is-primary":""}`} disabled={coreDescriptions.length===0} onClick={()=>{coreDescriptionSideTouchedRef.current=true;setCoreDescriptionSide("right");}}>Right</button>
-                            <span style={{fontSize:11,color:"#8f9da9",marginLeft:4,fontWeight:400}}>{coreDescriptions.length>0?`${coreDescriptions.length} published`:"No published descriptions"}</span>
+                            <span style={{fontSize:11,color:"#6f818d",marginLeft:4,fontWeight:400}}>{coreDescriptions.length>0?`${coreDescriptions.length} published`:"No published descriptions"}</span>
                           </div>
 
-                          <div style={{fontSize:12,fontWeight:400,color:"#c7d1da"}}>Description offset</div>
+                          <div style={{fontSize:12,fontWeight:400,color:"#526673"}}>Description offset</div>
                           <div style={{display:"flex",gap:6,alignItems:"center"}}>
                             <button type="button" className="wlv-wbv-control-button" disabled={coreDescriptionSide==="off"} onClick={()=>setCoreDescriptionOffset((value)=>Math.max(0,value-2))}>−</button>
-                            <span style={{minWidth:48,textAlign:"center",fontSize:12,color:"#d5dee6",fontWeight:400}}>{coreDescriptionOffset}px</span>
+                            <span style={{minWidth:48,textAlign:"center",fontSize:12,color:"#334753",fontWeight:400}}>{coreDescriptionOffset}px</span>
                             <button type="button" className="wlv-wbv-control-button" disabled={coreDescriptionSide==="off"} onClick={()=>setCoreDescriptionOffset((value)=>Math.min(80,value+2))}>+</button>
                           </div>
 
-                          <div style={{fontSize:12,fontWeight:400,color:"#c7d1da"}}>Description width</div>
+                          <div style={{fontSize:12,fontWeight:400,color:"#526673"}}>Description width</div>
                           <div style={{display:"flex",gap:6,alignItems:"center"}}>
                             <button type="button" className="wlv-wbv-control-button" disabled={coreDescriptionSide==="off"} onClick={()=>setCoreDescriptionPanelWidth((width)=>Math.max(140,width-20))}>−</button>
-                            <span style={{minWidth:54,textAlign:"center",fontSize:12,color:"#d5dee6",fontWeight:400}}>{coreDescriptionPanelWidth}px</span>
+                            <span style={{minWidth:54,textAlign:"center",fontSize:12,color:"#334753",fontWeight:400}}>{coreDescriptionPanelWidth}px</span>
                             <button type="button" className="wlv-wbv-control-button" disabled={coreDescriptionSide==="off"} onClick={()=>setCoreDescriptionPanelWidth((width)=>Math.min(420,width+20))}>+</button>
                           </div>
 
-                          <div style={{fontSize:12,fontWeight:400,color:"#c7d1da"}}>Description text</div>
+                          <div style={{fontSize:12,fontWeight:400,color:"#526673"}}>Description text</div>
                           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
                             <button type="button" className="wlv-wbv-control-button" disabled={coreDescriptionSide==="off"} onClick={()=>setCoreDescriptionFontSize((size)=>Math.max(8,size-1))}>−</button>
-                            <span style={{minWidth:42,textAlign:"center",fontSize:12,color:"#d5dee6",fontWeight:400}}>{coreDescriptionFontSize}px</span>
+                            <span style={{minWidth:42,textAlign:"center",fontSize:12,color:"#334753",fontWeight:400}}>{coreDescriptionFontSize}px</span>
                             <button type="button" className="wlv-wbv-control-button" disabled={coreDescriptionSide==="off"} onClick={()=>setCoreDescriptionFontSize((size)=>Math.min(24,size+1))}>+</button>
                             <button type="button" className={`wlv-wbv-control-button${coreDescriptionShowMd?" is-primary":""}`} disabled={coreDescriptionSide==="off"} aria-pressed={coreDescriptionShowMd} onClick={()=>setCoreDescriptionShowMd((visible)=>!visible)}>MD labels</button>
                           </div>
@@ -4752,11 +6716,11 @@ export function Wellbore3DPage({
                 resize: "none",
                 overflow: "hidden",
                 boxSizing: "border-box",
-                border: "1px solid rgba(128,146,160,.48)",
+                border: "1px solid #aebdc8",
                 borderRadius: 10,
-                background: "#111820",
-                boxShadow: "0 24px 64px rgba(0,0,0,.46)",
-                color: "#e5edf4",
+                background: "#fbfcfd",
+                boxShadow: "0 18px 48px rgba(47,65,77,.18)",
+                color: "#2e414d",
                 display: "flex",
                 flexDirection: "column",
                 pointerEvents: "auto",
@@ -4769,7 +6733,9 @@ export function Wellbore3DPage({
                   justifyContent:"space-between",
                   gap:16,
                   padding:"12px 14px",
-                  borderBottom:"1px solid rgba(128,146,160,.28)",
+                  borderBottom:"1px solid #cbd5dc",
+                  background:"#fbfcfd",
+                  color:"#2e414d",
                   cursor: coreModalDragging ? "grabbing" : "grab",
                   userSelect:"none",
                   flex:"0 0 auto",
@@ -4804,10 +6770,10 @@ export function Wellbore3DPage({
               >
                 <div>
                   <div style={{fontWeight:700}}>Core Inspection</div>
-                  <div style={{fontSize:12,opacity:.72,marginTop:2}}>
+                  <div style={{fontSize:12,color:"#657986",marginTop:2}}>
                     {coreLocatorFocusInterval
-                      ? `${Math.min(coreLocatorFocusInterval.top_md,coreLocatorFocusInterval.base_md).toLocaleString(undefined,{maximumFractionDigits:2})}–${Math.max(coreLocatorFocusInterval.top_md,coreLocatorFocusInterval.base_md).toLocaleString(undefined,{maximumFractionDigits:2})} MD visible`
-                      : `${coreModalTopMd.toLocaleString(undefined,{maximumFractionDigits:2})}–${coreModalBaseMd.toLocaleString(undefined,{maximumFractionDigits:2})} MD`}
+                      ? `${formatNumber(convertCanonicalDepthToDisplay(Math.min(coreLocatorFocusInterval.top_md,coreLocatorFocusInterval.base_md)),2)}–${formatNumber(convertCanonicalDepthToDisplay(Math.max(coreLocatorFocusInterval.top_md,coreLocatorFocusInterval.base_md)),2)} ${depthUnit} MD visible`
+                      : `${formatNumber(convertCanonicalDepthToDisplay(coreModalTopMd),2)}–${formatNumber(convertCanonicalDepthToDisplay(coreModalBaseMd),2)} ${depthUnit} MD`}
                   </div>
                 </div>
                 <div style={{display:"flex",gap:6}}>
@@ -4822,12 +6788,12 @@ export function Wellbore3DPage({
                 </div>
               </header>
 
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 14px",borderBottom:"1px solid rgba(128,146,160,.18)",flex:"0 0 auto"}}>
-                <div style={{fontSize:12,opacity:.72}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 14px",borderBottom:"1px solid #d6dde3",background:"#f7f9fa",color:"#526673",flex:"0 0 auto"}}>
+                <div style={{fontSize:12,color:"#657986"}}>
                   Drag core to pan continuously
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:12,opacity:.72}}>Zoom</span>
+                  <span style={{fontSize:12,color:"#657986"}}>Zoom</span>
                   <button
                     type="button"
                     className="wlv-wbv-control-button"
@@ -4863,7 +6829,7 @@ export function Wellbore3DPage({
                   flex:"1 1 auto",
                   overflow:"auto",
                   padding:14,
-                  background:"#0b1117",
+                  background:"#eef2f4",
                   cursor:"grab",
                   touchAction:"none",
                 }}
@@ -4937,23 +6903,23 @@ export function Wellbore3DPage({
                 >
                   {coreLatticeSide !== "off" ? (
                   <div
-                    aria-label="Measured depth lattice"
+                    aria-label={`Measured depth lattice (${depthUnit})`}
                     style={{
                       position:"relative",
                       order:coreLatticeSide==="left"?0:4,
                       flex:"0 0 56px",
                       height:`${coreModalContentHeight}px`,
                       transform:`translateX(${coreLatticeSide==="left"?-coreLatticeOffset:coreLatticeOffset}px)`,
-                      borderRight:coreLatticeSide==="left"?"1px solid rgba(185,243,255,.35)":"none",
-                      borderLeft:coreLatticeSide==="right"?"1px solid rgba(185,243,255,.35)":"none",
+                      borderRight:coreLatticeSide==="left"?"1px solid #cbd5dc":"none",
+                      borderLeft:coreLatticeSide==="right"?"1px solid #cbd5dc":"none",
                     }}
                   >
-                    {coreModalDepthTicks.map((md,index)=>{
-                      const topPct = ((md-coreModalTopMd)/Math.max(.001,coreModalBaseMd-coreModalTopMd))*100;
-                      const major = Math.abs(md-Math.round(md)) < 1e-6;
+                    {coreModalDepthTicks.map((tick,index)=>{
+                      const topPct = ((tick.md-coreModalTopMd)/Math.max(.001,coreModalBaseMd-coreModalTopMd))*100;
+                      const major = tick.major;
                       return (
                         <div
-                          key={`core-depth-tick-${index}-${md}`}
+                          key={`core-depth-tick-${index}-${tick.md}`}
                           style={{
                             position:"absolute",
                             top:`${topPct}%`,
@@ -4966,11 +6932,11 @@ export function Wellbore3DPage({
                             flexDirection:coreLatticeSide==="left"?"row":"row-reverse",
                             fontSize:major?11:10,
                             whiteSpace:"nowrap",
-                            color:major?"#d9f4ff":"rgba(207,233,244,.72)",
+                            color:major?"#334753":"#657986",
                           }}
                         >
-                          <span>{md.toLocaleString(undefined,{maximumFractionDigits:2})}</span>
-                          <span style={{display:"block",height:1,width:major?16:9,background:major?"rgba(185,243,255,.82)":"rgba(185,243,255,.42)"}} />
+                          <span>{tick.displayMd.toLocaleString(undefined,{maximumFractionDigits:2})}</span>
+                          <span style={{display:"block",height:1,width:major?16:9,background:major?"#7f898f":"#b7c5d0"}} />
                         </div>
                       );
                     })}
@@ -4987,9 +6953,9 @@ export function Wellbore3DPage({
                         flex:`0 0 ${coreDescriptionPanelWidth}px`,
                         width:coreDescriptionPanelWidth,
                         height:`${coreModalContentHeight}px`,
-                        borderRight:coreDescriptionSide==="left"?"1px solid rgba(128,146,160,.32)":"none",
-                        borderLeft:coreDescriptionSide==="right"?"1px solid rgba(128,146,160,.32)":"none",
-                        background:"rgba(12,19,25,.78)",
+                        borderRight:coreDescriptionSide==="left"?"1px solid #cbd5dc":"none",
+                        borderLeft:coreDescriptionSide==="right"?"1px solid #cbd5dc":"none",
+                        background:"#f7f9fa",
                         transform:`translateX(${coreDescriptionSide==="left"?-coreDescriptionOffset:coreDescriptionOffset}px)`,
                         overflow:"hidden",
                       }}
@@ -5005,18 +6971,18 @@ export function Wellbore3DPage({
                               left:0,
                               right:0,
                               padding:"3px 6px",
-                              borderTop:"1px solid rgba(185,243,255,.42)",
+                              borderTop:"1px solid #aebdc8",
                               boxSizing:"border-box",
                               fontSize:coreDescriptionFontSize,
                               lineHeight:1.18,
-                              color:"#dbe7ed",
-                              background:"rgba(17,24,32,.92)",
+                              color:"#334753",
+                              background:"#fbfcfd",
                               overflowWrap:"anywhere",
                             }}
                           >
                             {coreDescriptionShowMd ? (
-                              <div style={{fontSize:Math.max(8,coreDescriptionFontSize-1),fontWeight:600,color:"#b9f3ff",marginBottom:2}}>
-                                {`${description.top_md.toLocaleString(undefined,{maximumFractionDigits:2})} MD`}
+                              <div style={{fontSize:Math.max(8,coreDescriptionFontSize-1),fontWeight:600,color:"#2e414d",marginBottom:2}}>
+                                {`${formatNumber(convertCanonicalDepthToDisplay(description.top_md), 2)} ${depthUnit} MD`}
                               </div>
                             ) : null}
                             <div>{description.text}</div>
@@ -5033,7 +6999,7 @@ export function Wellbore3DPage({
                       width:`${coreModalImageLaneWidth}px`,
                       height:`${coreModalContentHeight}px`,
                       flex:`0 0 ${coreModalImageLaneWidth}px`,
-                      background:"#080c10",
+                      background:"#eef2f4",
                       overflow:"visible",
                     }}
                   >
@@ -5059,7 +7025,7 @@ export function Wellbore3DPage({
                             objectFit:"contain",
                             display:"block",
                             pointerEvents:"none",
-                            background:"#080c10",
+                            background:"#eef2f4",
                           }}
                         />
                       );
@@ -5068,7 +7034,7 @@ export function Wellbore3DPage({
                 </div>
               </div>
 
-              <footer style={{padding:"8px 14px",borderTop:"1px solid rgba(128,146,160,.18)",fontSize:11,opacity:.68,flex:"0 0 auto"}}>
+              <footer style={{padding:"8px 14px",borderTop:"1px solid #d6dde3",background:"#f7f9fa",color:"#526673",fontSize:11,opacity:1,flex:"0 0 auto"}}>
                 Wheel: zoom when unlocked / pan when locked · MB1 drag: pan core · Title bar: move modal · Corner tabs: resize
               </footer>
 

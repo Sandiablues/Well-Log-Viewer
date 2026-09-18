@@ -1,0 +1,59 @@
+
+/*
+ * MultiViewer Presentation Governance — shared application standards.
+ * Geometry and typography are theme-independent.
+ */
+:root {
+  --mv-font-ui: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mv-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+  /* Typography hierarchy */
+  --mv-font-size-xs: 11px;
+  --mv-font-size-sm: 12px;
+  --mv-font-size-ui: 13px;
+  --mv-font-size-md: 14px;
+  --mv-font-size-lg: 16px;
+  --mv-font-size-title: 20px;
+
+  --mv-font-weight-normal: 400;
+  --mv-font-weight-medium: 500;
+  --mv-font-weight-semibold: 600;
+  --mv-font-weight-bold: 700;
+
+  --mv-line-height-tight: 1.2;
+  --mv-line-height-ui: 1.35;
+  --mv-line-height-copy: 1.5;
+
+  /* Spacing */
+  --mv-space-1: 4px;
+  --mv-space-2: 6px;
+  --mv-space-3: 8px;
+  --mv-space-4: 10px;
+  --mv-space-5: 12px;
+  --mv-space-6: 16px;
+  --mv-space-7: 20px;
+  --mv-space-8: 24px;
+
+  /* Shared chrome geometry */
+  --mv-control-height-compact: 28px;
+  --mv-control-height: 32px;
+  --mv-button-height: 32px;
+  --mv-table-row-height: 46px;
+  --mv-border-width: 1px;
+  --mv-control-radius: 6px;
+  --mv-panel-radius: 10px;
+
+  /* Existing accepted WLV modal-control contract */
+  --mv-modal-select-short: 200px;
+  --mv-modal-select-medium: 260px;
+  --mv-modal-select-long: 300px;
+  --mv-modal-number-compact: 96px;
+  --mv-modal-number-standard: 120px;
+  --mv-modal-number-depth: 180px;
+  --mv-modal-slider: 260px;
+  --mv-modal-swatch: 34px;
+  --mv-modal-label-control-gap: 8px;
+  --mv-modal-control-gap: 14px;
+  --mv-modal-row-gap: 12px;
+  --mv-modal-section-gap: 16px;
+}

@@ -1,0 +1,144 @@
+/* ========================================================================== 
+   WBV PRESENTATION PHASE 4 — LEFT PANEL CONTROLS / ROW NORMALIZATION
+   V1.0.0 AUDITED — 2026-09-09
+
+   Scope:
+   - Display Layers section-header grammar
+   - Active Layers compact-row normalization
+   - View section title / subordinate label normalization
+   - left-panel normal-control surface, border, typography, radius
+   - disabled-state legibility
+
+   Protected:
+   - accepted View grid / width / height / padding geometry
+   - checkbox dimensions and native-state behavior
+   - Three.js/scientific viewport
+   - right-panel internals
+   - interaction/state/persistence behavior
+   ========================================================================== */
+
+/* Display Layers: make the title/action row read as one governed WDV header. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left
+  .wlv-wbv-left-section--display-layers > .wlv-wbv-section-heading-row {
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-bottom: 1px solid var(--mv-role-border-normal) !important;
+  box-shadow: inset 0 -1px 0 var(--mv-role-border-highlight) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left
+  .wlv-wbv-left-section--display-layers > .wlv-wbv-section-heading-row h2 {
+  color: var(--mv-role-text-primary) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* Manage remains compact but joins the normal WDV control family. */
+/* WBV_MANAGE_BUTTON_WDV_GREEN_SEMANTIC_ACCENT_V1_0_0_AUDITED
+   WDV semantic-accent parity: green outline/text at rest. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-manage-layers-button {
+  background: var(--mv-role-header-control-bg) !important;
+  color: var(--mv-semantic-positive-text) !important;
+  border: 1px solid var(--mv-semantic-positive-border) !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+}
+/* WBV_MANAGE_BUTTON_WDV_LIGHT_HOVER_PARITY_V1_0_0_AUDITED
+   Exact lighter WDV semantic-action hover treatment. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-manage-layers-button:hover:not(:disabled),
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-manage-layers-button.is-active:not(:disabled) {
+  color: var(--mv-semantic-positive-strong-text) !important;
+  -webkit-text-fill-color: var(--mv-semantic-positive-strong-text) !important;
+  border-color: var(--mv-semantic-positive-strong-border) !important;
+  background: var(--mv-semantic-positive-soft-bg) !important;
+}
+
+/* Active Layers: compact WDV information rows, not shallow spreadsheet stripes. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-active-layer-list {
+  gap: 4px !important;
+  background: var(--mv-role-panel-body-bg) !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-active-layer-list > div {
+  min-height: 26px !important;
+  padding: 5px 8px !important;
+  box-sizing: border-box !important;
+  align-items: center !important;
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-top: 0 !important;
+  border-bottom: 1px solid var(--mv-role-border-highlight) !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-active-layer-list strong {
+  color: var(--mv-role-text-primary) !important;
+  font-weight: 500 !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-active-layer-list span {
+  color: var(--mv-role-text-secondary) !important;
+}
+
+/* View title and subordinate labels: WDV role hierarchy, layout untouched. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-controls > h2 {
+  color: var(--mv-role-text-primary) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-control-block > h3 {
+  color: var(--mv-role-text-secondary) !important;
+  font-weight: 700 !important;
+}
+
+/* View buttons: preserve every accepted grid dimension / hit area; only change
+   the presentation role. The exaggerated 999px legacy pill radius is removed. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-controls button {
+  background: var(--mv-role-header-control-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border: 1px solid var(--mv-role-border-normal) !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-controls button:hover:not(:disabled) {
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-color: var(--mv-role-text-secondary) !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-controls button.is-active {
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-color: var(--mv-role-focus-accent) !important;
+  box-shadow: inset 0 -2px 0 var(--mv-role-focus-accent) !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-view-controls button:disabled {
+  color: var(--mv-role-text-secondary) !important;
+  background: var(--mv-role-panel-body-bg) !important;
+  border-color: var(--mv-role-border-highlight) !important;
+  opacity: 0.62 !important;
+}
+
+/* Generic left-panel normal buttons that are not part of the protected checkbox
+   or scientific viewport contracts. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-control-button,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-control-button--compact {
+  background: var(--mv-role-header-control-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-color: var(--mv-role-border-normal) !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-control-button:hover:not(:disabled),
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left .wlv-wbv-control-button--compact:hover:not(:disabled) {
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-color: var(--mv-role-text-secondary) !important;
+}
+
+/* Disabled Display Layers text remains visibly subordinate rather than washed out. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left
+  .wlv-wbv-left-section--display-layers .wlv-wbv-control-list label.is-disabled {
+  color: var(--mv-role-text-secondary) !important;
+  opacity: 0.72 !important;
+}

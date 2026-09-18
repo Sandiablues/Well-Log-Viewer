@@ -248,5 +248,7 @@ class WbvInteractionService:
 
     @staticmethod
     def _depth_unit(record: Any) -> str:
-        metadata = record.metadata if isinstance(record.metadata, dict) else {}
-        return str(metadata.get("wbv_display_depth_unit") or metadata.get("depth_unit") or "ft")
+        # WBV interaction geometry is sourced from the canonical viewer
+        # trajectory runtime domain. Presentation preference must never alter
+        # persisted interaction geometry or its unit metadata.
+        return "m"

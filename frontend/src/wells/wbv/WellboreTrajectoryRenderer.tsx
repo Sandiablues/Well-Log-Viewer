@@ -102,12 +102,15 @@ export type WbvDepthTrack = {
   background_mode: 'transparent' | 'solid';
   background_color: string;
   outline_visible: boolean;
+  outline_color?: string;
   grid_mode: 'off' | 'linear' | 'logarithmic';
   depth_type: 'MD' | 'TVD' | 'TVDSS';
   depth_increment: number;
   label_increment: number;
   label_size: number;
   show_depth_units: boolean;
+  tick_color?: string;
+  label_color?: string;
 };
 
 export type WbvCurveOverlayRenderCurve = {
@@ -145,7 +148,11 @@ export type WbvCurveOverlayRenderCurve = {
   fill_side: 'positive' | 'negative';
   fill_color: string;
   fill_opacity: number;
+  infill_brightness?: number;
   fill_outline: boolean;
+  infill_source?: 'solid' | 'pattern' | 'interval-column' | string | null;
+  infill_pattern?: string | null;
+  infill_interval_column?: string | null;
   baseline_normalized: number;
   samples: WbvCurveOverlayRenderSample[];
 };
@@ -172,6 +179,10 @@ export type WbvContextTrajectory = {
   color?: string;
   materialMode?: 'color' | 'gray_metallic';
   metallicTone?: 'light_silver' | 'silver' | 'steel' | 'gunmetal' | 'graphite';
+  metallicFinish?: 'matte' | 'satin' | 'polished';
+  metallicMetalness?: number;
+  metallicRoughness?: number;
+  metallicClearcoat?: number;
   thickness?: number;
   opacity?: number;
   formationTops?: WbvFormationTopRenderItem[];
@@ -192,18 +203,23 @@ export type WbvContextTrajectory = {
 };
 
 export type WbvFormationTopRenderItem = { top_id: string; name: string; marker_type: string; md: number; tvd?: number | null; group?: string | null; };
-export type WbvFormationTopAppearance = { color?: string | null; opacity: number; line_width: number; show_labels: boolean; marker_style?: "ring" | "disc" | "tick" | "flag"; marker_size?: number; color_mode?: "formation" | "well" | "classification" | "single"; label_mode?: "name" | "name_md" | "name_tvd" | "name_md_tvd"; label_size?: number; label_offset?: number; label_position?: "right" | "left" | "above" | "below"; };
+export type WbvFormationTopAppearance = { color?: string | null; opacity: number; line_width: number; show_labels: boolean; marker_style?: "ring" | "disc" | "tick" | "flag"; marker_size?: number; color_mode?: "formation" | "well" | "classification" | "single"; tie_formation_colours?: boolean; formation_top_color_overrides?: Record<string,string> | null; label_mode?: "name" | "name_md" | "name_tvd" | "name_md_tvd"; label_size?: number; label_offset?: number; label_position?: "right" | "left" | "above" | "below"; };
 
-const WBV_FORMATION_TOP_PALETTE = [
-  0x58d39b,
-  0x5fa8ff,
-  0xffc857,
-  0xee6c8a,
-  0xb98cff,
-  0x56cfe1,
-  0xf28482,
-  0x84a59d,
-] as const;
+function formationSpectrumColor(index: number): THREE.Color {
+  // Golden-angle stepping prevents neighbouring stratigraphic markers from receiving
+  // neighbouring hues, while still sampling the full spectrum as the top count grows.
+  const hueDegrees = (index * 137.50776405 + 12) % 360;
+  const hue = hueDegrees / 360;
+
+  // Keep colours vivid rather than pastel/white. Slight lightness compensation keeps
+  // blue/violet readable on black without washing cyan/yellow into the pale wellbore.
+  let lightness = 0.55;
+  if (hueDegrees >= 195 && hueDegrees < 285) lightness = 0.61;
+  else if (hueDegrees >= 40 && hueDegrees < 95) lightness = 0.50;
+  else if (hueDegrees >= 145 && hueDegrees < 195) lightness = 0.49;
+
+  return new THREE.Color().setHSL(hue, 0.68, lightness);
+}
 
 function canonicalFormationTopIdentity(name: string): string {
   return name
@@ -217,16 +233,72 @@ function canonicalFormationTopIdentity(name: string): string {
     .trim();
 }
 
-function canvasFormationTopColor(name: string): THREE.Color {
-  const key = canonicalFormationTopIdentity(name);
-  let hash = 2166136261;
-  for (let index = 0; index < key.length; index += 1) {
-    hash ^= key.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return new THREE.Color(WBV_FORMATION_TOP_PALETTE[(hash >>> 0) % WBV_FORMATION_TOP_PALETTE.length]);
+function tiedFormationTopIdentity(name: string): string {
+  return name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ø/g, "o")
+    .replace(/Ø/g, "O")
+    .replace(/æ/g, "ae")
+    .replace(/Æ/g, "AE")
+    .replace(/œ/g, "oe")
+    .replace(/Œ/g, "OE")
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[_\-–—]+/g, " ")
+    .replace(/[()[\]{}.,:;]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\s+(?:top|fm|formation)$/i, "")
+    .trim();
 }
 
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+}
+
+function orderedFormationKeyMap(
+  tops: WbvFormationTopRenderItem[],
+  tied: boolean,
+): Map<string, THREE.Color> {
+  const sorted = [...tops].filter((top) => Number.isFinite(top.md)).sort((a, b) => a.md - b.md || a.name.localeCompare(b.name));
+  const uniqueKeys: string[] = [];
+  const seen = new Set<string>();
+  sorted.forEach((top) => {
+    const key = tied ? tiedFormationTopIdentity(top.name) : canonicalFormationTopIdentity(top.name);
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueKeys.push(key);
+    }
+  });
+  return new Map(uniqueKeys.map((key, index) => [key, formationSpectrumColor(index)]));
+}
+
+function sharedTiedFormationKeyMap(
+  wells: Array<{ tops: WbvFormationTopRenderItem[]; tied: boolean }>,
+): Map<string, THREE.Color> {
+  const rankSamples = new Map<string, number[]>();
+
+  wells.filter((well) => well.tied).forEach((well) => {
+    const sorted = [...well.tops].filter((top) => Number.isFinite(top.md)).sort((a, b) => a.md - b.md || a.name.localeCompare(b.name));
+    const denominator = Math.max(1, sorted.length - 1);
+    sorted.forEach((top, index) => {
+      const key = tiedFormationTopIdentity(top.name);
+      const values = rankSamples.get(key) ?? [];
+      values.push(index / denominator);
+      rankSamples.set(key, values);
+    });
+  });
+
+  const orderedKeys = [...rankSamples.entries()]
+    .sort((a, b) => median(a[1]) - median(b[1]) || a[0].localeCompare(b[0]))
+    .map(([key]) => key);
+
+  return new Map(orderedKeys.map((key, index) => [key, formationSpectrumColor(index)]));
+}
 
 export type WbvLithologyIntervalRenderItem = {
   interval_id: string;
@@ -241,6 +313,66 @@ export type WbvLithologyIntervalRenderItem = {
   kr_pattern_url?: string | null;
 };
 export type WbvLithologyAppearance = { opacity: number; radiusMultiplier: number; brightness?: number; patternScale?: number; hideUnderlyingWellbore?: boolean; };
+
+/**
+ * Resolve the lithology interval that owns a curve-fill MD.
+ * This is independent of standalone Lithology visibility.
+ */
+function wbvCurveLithologyIntervalForMd(
+  md: number,
+  intervals: WbvLithologyIntervalRenderItem[],
+): WbvLithologyIntervalRenderItem | null {
+  for (const interval of intervals) {
+    const top = Math.min(interval.top_md, interval.base_md);
+    const base = Math.max(interval.top_md, interval.base_md);
+    if (md >= top && md <= base) return interval;
+  }
+  return null;
+}
+
+function wbvCurveLithologyMaterial(
+  interval: WbvLithologyIntervalRenderItem,
+  opacity: number,
+  infillBrightness: number = 1,
+): THREE.MeshBasicMaterial {
+  const fallback = interval.background_color || '#d8d2c5';
+  const material = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(fallback),
+    transparent: true,
+    opacity,
+    side: THREE.DoubleSide,
+    depthTest: false,
+    depthWrite: false,
+    // WBV_CURVE_LITHOLOGY_BRIGHTNESS_TONEMAP_BYPASS_V1_0_0_AUDITED
+    // KR lithology is categorical source artwork, not scene-lit geometry.
+    // Bypass global tone mapping so the curve-fill texture retains its authored
+    // brightness and approaches the standalone WBV lithology presentation.
+    toneMapped: false,
+  });
+
+  if (interval.kr_pattern_url) {
+    new THREE.TextureLoader().load(
+      interval.kr_pattern_url,
+      (texture) => {
+        if (material.userData.wbvDisposed) {
+          texture.dispose();
+          return;
+        }
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.colorSpace = THREE.SRGBColorSpace;
+        material.map = texture;
+        material.color.setRGB(infillBrightness, infillBrightness, infillBrightness);
+        material.needsUpdate = true;
+      },
+      undefined,
+      () => {
+        // Deterministic background fallback remains in place.
+      },
+    );
+  }
+  return material;
+}
 export type WbvCoreAppearance = { color?: string | null; brightness?: number; };
 
 export type WbvCoreTrack = {
@@ -390,6 +522,8 @@ type WbvTrajectoryRendererProps = {
   showGroundPlane?: boolean;
   showBottomGrid?: boolean;
   showTopGrid?: boolean;
+  canvasBackdrop?: "dark" | "light";
+  canvasShadeId?: "dark" | "charcoal" | "slate" | "mid" | "soft" | "light";
   surfaceDatumLabel?: string | null;
   showAxes?: boolean;
   showNorthArrow?: boolean;
@@ -416,6 +550,7 @@ type WbvTrajectoryRendererProps = {
   coreLocatorFocusInterval?: { top_md: number; base_md: number } | null;
   coreViewMode?: boolean;
   onCoreLocatorPick?: (pick: WbvCoreLocatorPick) => void;
+  onFirstFrameRendered?: () => void;
   trackLayoutTracks?: WbvTrackPlacementTrack[];
   viewProperties?: WbvViewProperties;
 };
@@ -748,7 +883,8 @@ function createTextSprite(
   canvas.height = 160;
   const context = canvas.getContext('2d');
 
-  if (context) {
+  const drawText = (nextText: string) => {
+    if (!context) return;
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.font = `${options?.fontWeight ?? 800} 32px Inter, Arial, sans-serif`;
     context.textBaseline = 'middle';
@@ -778,8 +914,10 @@ function createTextSprite(
     context.shadowColor = options?.shadowColor ?? 'rgba(111, 211, 255, 0.48)';
     context.shadowBlur = options?.shadowBlur ?? 8;
     context.fillStyle = options?.color ?? '#b9f3ff';
-    context.fillText(text, canvas.width / 2, canvas.height / 2);
-  }
+    context.fillText(nextText, canvas.width / 2, canvas.height / 2);
+  };
+
+  drawText(text);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -796,12 +934,27 @@ function createTextSprite(
   const scale = options?.scale ?? 0.27;
   sprite.scale.set(scale * 4.0, scale, 1);
   sprite.userData.baseTextScale = new THREE.Vector3(scale * 4.0, scale, 1);
+  sprite.userData.setText = (nextText: string) => {
+    drawText(nextText);
+    texture.needsUpdate = true;
+  };
   return sprite;
 }
 
+function setTextSpriteText(sprite: THREE.Sprite, text: string): void {
+  const setter = sprite.userData.setText;
+  if (typeof setter === 'function') setter(text);
+}
+
+function canonicalDepthToDisplay(value: number | null | undefined, unit: string): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return unit === 'ft' ? value / 0.3048 : value;
+}
+
 function formatDepth(value: number | null | undefined, unit: string): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return `— ${unit}`;
-  return `${Math.round(value).toLocaleString()} ${unit}`;
+  const displayValue = canonicalDepthToDisplay(value, unit);
+  if (displayValue === null) return `— ${unit}`;
+  return `${Math.round(displayValue).toLocaleString()} ${unit}`;
 }
 
 type RepresentativeDepthTick = {
@@ -1107,8 +1260,31 @@ type CurveScaleSpriteBinding = {
   verticalWorldOffset: number;
 };
 
+type CurveHtmlLabelBinding = {
+  element: HTMLDivElement;
+  trackId: string;
+  vertex: ViewRelativeVertex;
+  horizontalWorldOffset: number;
+  verticalWorldOffset: number;
+  placement: 'on_track' | 'left' | 'right';
+};
+
+type CurveHtmlScaleBinding = {
+  element: HTMLDivElement;
+  trackId: string;
+  anchorPosition: THREE.Vector3;
+  framePosition: number;
+  baselineOffset: number;
+  signedExcursion: number;
+  horizontalWorldOffset: number;
+  verticalWorldOffset: number;
+  placement: 'on_track' | 'left' | 'right';
+  scaleSize: number;
+};
+
 type CurveOverlayRuntime = {
   update(camera: THREE.Camera): void;
+  syncHtmlOverlay(camera: THREE.Camera, viewportWidth: number, viewportHeight: number): void;
 };
 
 function sharedViewAxes(
@@ -1314,8 +1490,8 @@ function addDepthTracks(
   renderPoints: WbvTrajectoryRenderPoint[],
   positions: THREE.Vector3[],
   depthUnit: string,
-  viewProperties?: WbvViewProperties,
   trackPlacements?: Map<string, WbvResolvedTrackPlacement>,
+  depthPresentationUpdaters: Array<(unit: string) => void> = [],
 ): DepthTrackRuntime {
   const bindings: ViewRelativeGeometryBinding[] = [];
   const spriteBindings: DepthSpriteBinding[] = [];
@@ -1420,7 +1596,7 @@ function addDepthTracks(
       [innerVertices, outerVertices].forEach((boundaryVertices) => {
         const boundaryDynamic = dynamicGeometry(boundaryVertices, undefined, track.track_uid);
         const boundaryMaterial = new THREE.LineBasicMaterial({
-          color: 0xb9f3ff,
+          color: new THREE.Color(track.outline_color!),
           transparent: true,
           opacity: track.opacity,
         });
@@ -1434,8 +1610,20 @@ function addDepthTracks(
     }
 
     // WLV-WBV-DEPTH-TRACK-STAGE3-REPAIR
-    // Tick and label schedules are independent. The ruler is two-sided.
+    // Tick and label schedules remain independent, but a label owns its exact
+    // depth position. Suppress the coincident tick so text and line never
+    // compete for the same screen-space location.
+    const depthLabelPoints = depthTrackPositions(renderPoints, track, track.label_increment);
+    // The visual annotation is formatted to at most two decimals. Use that same
+    // displayed-depth precision as the suppression authority so floating-point
+    // accumulation in independent tick/label schedules cannot leave a line
+    // through text that visibly represents the same depth.
+    const labelledDepthKeys = new Set(
+      depthLabelPoints.map((point) => point.depth.toFixed(2)),
+    );
+
     depthTrackPositions(renderPoints, track, track.depth_increment).forEach((tick) => {
+      if (labelledDepthKeys.has(tick.depth.toFixed(2))) return;
       const basis = interpolateTrajectoryBasisAtMd(renderPoints, positions, tangents, tick.md);
       if (!basis) return;
 
@@ -1455,7 +1643,7 @@ function addDepthTracks(
       ];
       const tickDynamic = dynamicGeometry(tickVertices, undefined, track.track_uid);
       const tickMaterial = new THREE.LineBasicMaterial({
-        color: 0xb9f3ff,
+        color: new THREE.Color(track.tick_color!),
         transparent: true,
         opacity: track.opacity,
       });
@@ -1467,23 +1655,32 @@ function addDepthTracks(
       bindings.push(tickDynamic.binding);
     });
 
-    depthTrackPositions(renderPoints, track, track.label_increment).forEach((labelPoint) => {
+    depthLabelPoints.forEach((labelPoint) => {
       const basis = interpolateTrajectoryBasisAtMd(renderPoints, positions, tangents, labelPoint.md);
       if (!basis) return;
 
-      const unitSuffix = track.show_depth_units ? ` ${depthUnit}` : '';
-      const formattedDepth = labelPoint.depth.toLocaleString(undefined, { maximumFractionDigits: 2 });
-      const label = createTextSprite(`${formattedDepth}${unitSuffix}`, {
-        color: viewProperties?.depthLabels.color ?? '#b9f3ff',
-        // WLV-WBV-DEPTH-TRACK-TRANSPARENT-LABEL-BACKGROUND-FIX
-        background: track.background_mode === 'solid' ? track.background_color : 'rgba(0, 0, 0, 0)',
-        scale: 0.15 * track.label_size,
+      const depthTrackLabelText = (unit: string) => {
+        const unitSuffix = track.show_depth_units ? ` ${unit}` : '';
+        const displayDepth = canonicalDepthToDisplay(labelPoint.depth, unit) ?? labelPoint.depth;
+        return `${displayDepth.toLocaleString(undefined, { maximumFractionDigits: 2 })}${unitSuffix}`;
+      };
+      const depthLabelScale =
+        0.035 * Math.pow(THREE.MathUtils.clamp(track.label_size, 0.05, 4), 1.35);
+      const label = createTextSprite(depthTrackLabelText(depthUnit), {
+        color: track.label_color!,
+        // Depth-label sprites are presentation text, not the track ribbon.
+        // Keep their background transparent regardless of track background mode.
+        background: 'rgba(0, 0, 0, 0)',
+        scale: depthLabelScale,
         fontWeight: 500,
-        shadowBlur: 2,
-        shadowColor: 'rgba(111, 211, 255, 0.18)',
+        shadowBlur: 0,
+        shadowColor: 'rgba(0, 0, 0, 0)',
       });
       label.material.opacity = track.opacity;
       label.renderOrder = 53;
+      depthPresentationUpdaters.push((unit) => {
+        setTextSpriteText(label, depthTrackLabelText(unit));
+      });
       group.add(label);
 
       spriteBindings.push({
@@ -1636,6 +1833,123 @@ function createCurveScaleSprite(
   return sprite;
 }
 
+function createCurveTextLabelElement(
+  curve: WbvCurveOverlayRenderCurve,
+  point: PreparedOverlayPoint,
+): HTMLDivElement {
+  const includeValue = (curve.label_content ?? 'mnemonic') === 'mnemonic_value';
+  const size = THREE.MathUtils.clamp(curve.label_size ?? 1, 0.5, 2.5);
+  const weight = Math.round(THREE.MathUtils.clamp(curve.label_weight ?? 800, 400, 900));
+
+  const element = document.createElement('div');
+  element.style.position = 'absolute';
+  element.style.left = '0px';
+  element.style.top = '0px';
+  element.style.pointerEvents = 'none';
+  element.style.userSelect = 'none';
+  element.style.whiteSpace = 'nowrap';
+  element.style.fontFamily = 'Inter, Arial, sans-serif';
+  element.style.lineHeight = '1';
+  element.style.textShadow = '0 0 3px rgba(0,0,0,.95), 0 0 7px rgba(0,0,0,.72)';
+  element.style.willChange = 'left, top, transform';
+  element.hidden = true;
+
+  const title = document.createElement('div');
+  title.textContent = curve.mnemonic || 'CURVE';
+  title.style.color = curve.color;
+  title.style.fontWeight = `${weight}`;
+  title.style.fontSize = `${Math.round(23 * size)}px`;
+  title.style.textAlign = 'center';
+  element.appendChild(title);
+
+  if (includeValue) {
+    const unit = curve.unit ? ` ${curve.unit}` : '';
+    const value = document.createElement('div');
+    value.textContent = `${formatCurveScaleValue(point.value)}${unit}`;
+    value.style.color = '#dbe5ec';
+    value.style.fontWeight = '700';
+    value.style.fontSize = `${Math.round(16 * size)}px`;
+    value.style.marginTop = '4px';
+    value.style.textAlign = 'center';
+    element.appendChild(value);
+  }
+
+  return element;
+}
+
+function createCurveScaleCanvasElement(curve: WbvCurveOverlayRenderCurve): HTMLDivElement {
+  const includeMnemonic = curve.label_content === 'mnemonic_scale';
+  const canvas = document.createElement('canvas');
+  canvas.width = 1200;
+  canvas.height = includeMnemonic ? 300 : 230;
+  const context = canvas.getContext('2d');
+  const axisStart = 90;
+  const axisEnd = 1110;
+  if (context) {
+    const scaleSize = THREE.MathUtils.clamp(curve.scale_size ?? 1, 0.5, 2);
+    const scaleWeight = THREE.MathUtils.clamp(curve.scale_line_width ?? 1, 0.5, 4);
+    const scaleColor = curve.scale_color ?? '#b7c5d0';
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.globalAlpha = 1;
+
+    if (includeMnemonic) {
+      const alignment = curve.label_alignment ?? 'center';
+      context.textAlign = alignment;
+      context.textBaseline = 'middle';
+      context.fillStyle = curve.color;
+      context.font = `${THREE.MathUtils.clamp(curve.label_weight ?? 800, 400, 900)} ${Math.round(56 * THREE.MathUtils.clamp(curve.label_size ?? 1, 0.5, 2.5))}px Inter, Arial, sans-serif`;
+      const x = alignment === 'left' ? axisStart : alignment === 'right' ? axisEnd : (axisStart + axisEnd) / 2;
+      context.fillText(curve.mnemonic || 'CURVE', x, 68);
+    }
+
+    const axisY = includeMnemonic ? 155 : 90;
+    context.strokeStyle = scaleColor;
+    context.fillStyle = scaleColor;
+    context.lineWidth = Math.max(1, scaleWeight * 2);
+    context.beginPath();
+    context.moveTo(axisStart, axisY);
+    context.lineTo(axisEnd, axisY);
+    context.stroke();
+
+    const tickLength = 22 * scaleSize;
+    context.font = `700 ${Math.round(30 * scaleSize)}px Inter, Arial, sans-serif`;
+    context.textAlign = 'center';
+    context.textBaseline = 'top';
+    curveScaleTicks(curve).forEach((tick) => {
+      const x = axisStart + (axisEnd - axisStart) * tick.position;
+      context.beginPath();
+      context.moveTo(x, axisY - tickLength / 2);
+      context.lineTo(x, axisY + tickLength / 2);
+      context.stroke();
+      context.fillText(formatCurveScaleValue(tick.value), x, axisY + tickLength / 2 + 10);
+    });
+
+    if (curve.unit) {
+      context.textAlign = 'right';
+      context.font = `700 ${Math.round(25 * scaleSize)}px Inter, Arial, sans-serif`;
+      context.fillText(curve.unit, axisEnd, axisY - tickLength / 2 - 34);
+    }
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.style.position = 'absolute';
+  wrapper.style.left = '0px';
+  wrapper.style.top = '0px';
+  wrapper.style.pointerEvents = 'none';
+  wrapper.style.userSelect = 'none';
+  wrapper.style.willChange = 'left, top, transform';
+  wrapper.style.opacity = `${THREE.MathUtils.clamp(curve.scale_opacity ?? 1, 0, 1)}`;
+  wrapper.hidden = true;
+
+  canvas.style.display = 'block';
+  canvas.style.width = '100%';
+  canvas.style.height = 'auto';
+  wrapper.style.width = '1px';
+  wrapper.appendChild(canvas);
+  return wrapper;
+}
+
+
 function curveLabelAnchorPoint(
   segments: PreparedOverlayPoint[][],
   anchor: 'top' | 'base' | 'custom_md',
@@ -1667,15 +1981,25 @@ function addCurveOverlays(
   positions: THREE.Vector3[],
   tracks: WbvCurveTrack[],
   trackSpacing: number,
+  lithologyIntervals: WbvLithologyIntervalRenderItem[],
   trackPlacements?: Map<string, WbvResolvedTrackPlacement>,
+  labelOverlayRoot?: HTMLDivElement | null,
 ): CurveOverlayRuntime {
   const bindings: ViewRelativeGeometryBinding[] = [];
   const labelBindings: CurveLabelBinding[] = [];
   const scaleSpriteBindings: CurveScaleSpriteBinding[] = [];
+  const htmlLabelBindings: CurveHtmlLabelBinding[] = [];
+  const htmlScaleBindings: CurveHtmlScaleBinding[] = [];
   const tangents = trajectoryTangents(positions);
   const trackById = new Map(tracks.map((track) => [track.track_id, track]));
   const update = (camera: THREE.Camera) => {
-    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+    group.updateWorldMatrix(true, false);
+    const groupWorldQuaternion = group.getWorldQuaternion(new THREE.Quaternion());
+    const worldToLocalQuaternion = groupWorldQuaternion.clone().invert();
+    const cameraRight = new THREE.Vector3(1, 0, 0)
+      .applyQuaternion(camera.quaternion)
+      .applyQuaternion(worldToLocalQuaternion)
+      .normalize();
     const axesCache = new Map<string, THREE.Vector3[]>();
     bindings.forEach((binding) => {
       let axes = axesCache.get(binding.trackId);
@@ -1692,7 +2016,10 @@ function addCurveOverlays(
         axesCache.set(binding.trackId, axes);
       }
       const axis = axisAtFramePosition(axes, binding.vertex.framePosition);
-      const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+      const cameraUp = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(camera.quaternion)
+        .applyQuaternion(worldToLocalQuaternion)
+        .normalize();
       const point = binding.vertex.position.clone().add(axis.multiplyScalar(binding.vertex.offset));
       point.add(cameraRight.clone().multiplyScalar(binding.horizontalWorldOffset));
       point.add(cameraUp.multiplyScalar(binding.verticalWorldOffset));
@@ -1706,7 +2033,10 @@ function addCurveOverlays(
         axesCache.set(binding.trackId, axes);
       }
       const axis = axisAtFramePosition(axes, binding.framePosition);
-      const cameraUp = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion).normalize();
+      const cameraUp = new THREE.Vector3(0, 1, 0)
+        .applyQuaternion(camera.quaternion)
+        .applyQuaternion(worldToLocalQuaternion)
+        .normalize();
       const centerOffset = binding.baselineOffset + binding.signedExcursion / 2;
       const point = binding.anchorPosition.clone().add(axis.clone().multiplyScalar(centerOffset));
       point.add(cameraRight.clone().multiplyScalar(binding.horizontalWorldOffset));
@@ -1714,7 +2044,128 @@ function addCurveOverlays(
       binding.sprite.position.copy(point);
     });
   };
-  if (overlays.length === 0 || positions.length < 2) return { update };
+
+  const syncHtmlOverlay = (camera: THREE.Camera, viewportWidth: number, viewportHeight: number) => {
+    const overlayVisible = Boolean(labelOverlayRoot) && group.visible;
+    if (!overlayVisible) {
+      htmlLabelBindings.forEach((binding) => { binding.element.hidden = true; });
+      htmlScaleBindings.forEach((binding) => { binding.element.hidden = true; });
+      return;
+    }
+
+    group.updateWorldMatrix(true, false);
+    const groupWorldQuaternion = group.getWorldQuaternion(new THREE.Quaternion());
+    const worldToLocalQuaternion = groupWorldQuaternion.clone().invert();
+    const cameraRight = new THREE.Vector3(1, 0, 0)
+      .applyQuaternion(camera.quaternion)
+      .applyQuaternion(worldToLocalQuaternion)
+      .normalize();
+    const cameraUp = new THREE.Vector3(0, 1, 0)
+      .applyQuaternion(camera.quaternion)
+      .applyQuaternion(worldToLocalQuaternion)
+      .normalize();
+    const axesCache = new Map<string, THREE.Vector3[]>();
+
+    const projectBindingPoint = (args: {
+      trackId: string;
+      anchorPosition: THREE.Vector3;
+      framePosition: number;
+      offset: number;
+      horizontalWorldOffset: number;
+      verticalWorldOffset: number;
+      element: HTMLDivElement;
+      placement: 'on_track' | 'left' | 'right';
+    }) => {
+      let axes = axesCache.get(args.trackId);
+      if (!axes) {
+        axes = axesForTrack(trackById.get(args.trackId), tangents, cameraRight);
+        axesCache.set(args.trackId, axes);
+      }
+      const axis = axisAtFramePosition(axes, args.framePosition);
+      const point = args.anchorPosition.clone().add(axis.multiplyScalar(args.offset));
+      point.add(cameraRight.clone().multiplyScalar(args.horizontalWorldOffset));
+      point.add(cameraUp.clone().multiplyScalar(args.verticalWorldOffset));
+      const projected = point.applyMatrix4(group.matrixWorld).project(camera);
+      const visible = Number.isFinite(projected.x)
+        && Number.isFinite(projected.y)
+        && Number.isFinite(projected.z)
+        && projected.z >= -1
+        && projected.z <= 1;
+      args.element.hidden = !visible;
+      if (!visible) return;
+
+      const x = (projected.x * 0.5 + 0.5) * viewportWidth;
+      const y = (-projected.y * 0.5 + 0.5) * viewportHeight;
+      args.element.style.left = `${x.toFixed(2)}px`;
+      args.element.style.top = `${y.toFixed(2)}px`;
+      args.element.style.transform = args.placement === 'left'
+        ? 'translate(-100%, -50%)'
+        : args.placement === 'right'
+          ? 'translate(0, -50%)'
+          : 'translate(-50%, -50%)';
+    };
+
+    htmlLabelBindings.forEach((binding) => {
+      projectBindingPoint({
+        trackId: binding.trackId,
+        anchorPosition: binding.vertex.position,
+        framePosition: binding.vertex.framePosition,
+        offset: binding.vertex.offset,
+        horizontalWorldOffset: binding.horizontalWorldOffset,
+        verticalWorldOffset: binding.verticalWorldOffset,
+        element: binding.element,
+        placement: binding.placement,
+      });
+    });
+
+    htmlScaleBindings.forEach((binding) => {
+      let axes = axesCache.get(binding.trackId);
+      if (!axes) {
+        axes = axesForTrack(trackById.get(binding.trackId), tangents, cameraRight);
+        axesCache.set(binding.trackId, axes);
+      }
+
+      const axis = axisAtFramePosition(axes, binding.framePosition);
+      const base = binding.anchorPosition.clone();
+      const fineOffset = cameraRight.clone().multiplyScalar(binding.horizontalWorldOffset)
+        .add(cameraUp.clone().multiplyScalar(binding.verticalWorldOffset));
+
+      const innerWorld = base.clone()
+        .add(axis.clone().multiplyScalar(binding.baselineOffset))
+        .add(fineOffset);
+      const outerWorld = base.clone()
+        .add(axis.clone().multiplyScalar(binding.baselineOffset + binding.signedExcursion))
+        .add(fineOffset);
+
+      const innerProjected = innerWorld.applyMatrix4(group.matrixWorld).project(camera);
+      const outerProjected = outerWorld.applyMatrix4(group.matrixWorld).project(camera);
+      const visible = [innerProjected, outerProjected].every((projected) =>
+        Number.isFinite(projected.x)
+        && Number.isFinite(projected.y)
+        && Number.isFinite(projected.z)
+        && projected.z >= -1
+        && projected.z <= 1,
+      );
+      binding.element.hidden = !visible;
+      if (!visible) return;
+
+      const innerX = (innerProjected.x * 0.5 + 0.5) * viewportWidth;
+      const innerY = (-innerProjected.y * 0.5 + 0.5) * viewportHeight;
+      const outerX = (outerProjected.x * 0.5 + 0.5) * viewportWidth;
+      const outerY = (-outerProjected.y * 0.5 + 0.5) * viewportHeight;
+      const centerX = (innerX + outerX) / 2;
+      const centerY = (innerY + outerY) / 2;
+      const projectedTrackWidth = Math.max(24, Math.hypot(outerX - innerX, outerY - innerY));
+      const governedWidth = projectedTrackWidth * THREE.MathUtils.clamp(binding.scaleSize, 0.5, 2);
+
+      binding.element.style.width = `${governedWidth.toFixed(2)}px`;
+      binding.element.style.left = `${centerX.toFixed(2)}px`;
+      binding.element.style.top = `${centerY.toFixed(2)}px`;
+      binding.element.style.transform = 'translate(-50%, -50%)';
+    });
+  };
+
+  if (overlays.length === 0 || positions.length < 2) return { update, syncHtmlOverlay };
 
   const wellboreRadius = 0.008;
   const innerClearance = wellboreRadius * 2.75;
@@ -1925,18 +2376,79 @@ function addCurveOverlays(
           indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
         }
         if (indices.length > 0) {
-          const { geometry, binding } = dynamicGeometry(vertices, indices, track.track_id);
-          bindings.push(binding);
-          const fillMesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
-            color: new THREE.Color(curve.fill_color),
-            transparent: true,
-            opacity: curve.fill_opacity,
-            side: THREE.DoubleSide,
-            depthTest: false,
-            depthWrite: false,
-          }));
-          fillMesh.renderOrder = 30 + curve.display_order;
-          group.add(fillMesh);
+          const isLithologyIntervalFill =
+            curve.infill_source === 'interval-column'
+            && curve.infill_interval_column === 'lithology'
+            && lithologyIntervals.length > 0;
+
+          if (!isLithologyIntervalFill) {
+            const { geometry, binding } = dynamicGeometry(vertices, indices, track.track_id);
+            bindings.push(binding);
+            const fillMesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+              color: new THREE.Color(curve.fill_color),
+              transparent: true,
+              opacity: curve.fill_opacity,
+              side: THREE.DoubleSide,
+              depthTest: false,
+              depthWrite: false,
+            }));
+            fillMesh.renderOrder = 30 + curve.display_order;
+            group.add(fillMesh);
+          } else {
+            const indicesByInterval = new Map<string, {
+              interval: WbvLithologyIntervalRenderItem;
+              indices: number[];
+            }>();
+
+            for (let index = 0; index < segment.length - 1; index += 1) {
+              const first = segment[index];
+              const second = segment[index + 1];
+              const firstEnabled = curve.fill_side === 'positive'
+                ? first.normalized >= curve.baseline_normalized
+                : first.normalized <= curve.baseline_normalized;
+              const secondEnabled = curve.fill_side === 'positive'
+                ? second.normalized >= curve.baseline_normalized
+                : second.normalized <= curve.baseline_normalized;
+              if (!firstEnabled || !secondEnabled) continue;
+
+              const interval = wbvCurveLithologyIntervalForMd(
+                (first.md + second.md) * 0.5,
+                lithologyIntervals,
+              );
+              if (!interval) continue;
+
+              const key = interval.interval_id
+                || `${interval.top_md}:${interval.base_md}:${interval.canonical_lithology ?? interval.lithology}`;
+              const bucket = indicesByInterval.get(key) ?? { interval, indices: [] };
+              const base = index * 2;
+              bucket.indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+              indicesByInterval.set(key, bucket);
+            }
+
+            indicesByInterval.forEach(({ interval, indices: lithologyIndices }) => {
+              if (lithologyIndices.length === 0) return;
+              const { geometry, binding } = dynamicGeometry(
+                vertices,
+                lithologyIndices,
+                track.track_id,
+              );
+
+              const uv: number[] = [];
+              segment.forEach((point) => {
+                const v = point.md / 8.0;
+                uv.push(0, v, 1, v);
+              });
+              geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+
+              bindings.push(binding);
+              const fillMesh = new THREE.Mesh(
+                geometry,
+                wbvCurveLithologyMaterial(interval, curve.fill_opacity, curve.infill_brightness ?? 1),
+              );
+              fillMesh.renderOrder = 30 + curve.display_order;
+              group.add(fillMesh);
+            });
+          }
         }
       }
 
@@ -1972,17 +2484,51 @@ function addCurveOverlays(
             ? curveWorldWidth + placementGap
             : 0;
         if (scaleMode) {
-          const sprite = createCurveScaleSprite(curve, curveWorldWidth);
-          group.add(sprite);
-          scaleSpriteBindings.push({
-            sprite,
+          if (labelOverlayRoot) {
+            const element = createCurveScaleCanvasElement(curve);
+            labelOverlayRoot.appendChild(element);
+            htmlScaleBindings.push({
+              element,
+              trackId: track.track_id,
+              anchorPosition: labelPoint.basis.position.clone(),
+              framePosition: labelPoint.basis.framePosition,
+              baselineOffset: labelPoint.baselineOffset,
+              signedExcursion,
+              horizontalWorldOffset: placementShift + fineHorizontal,
+              verticalWorldOffset: fineVertical,
+              placement,
+              scaleSize: curve.scale_size ?? 1,
+            });
+          } else {
+            const sprite = createCurveScaleSprite(curve, curveWorldWidth);
+            group.add(sprite);
+            scaleSpriteBindings.push({
+              sprite,
+              trackId: track.track_id,
+              anchorPosition: labelPoint.basis.position.clone(),
+              framePosition: labelPoint.basis.framePosition,
+              baselineOffset: labelPoint.baselineOffset,
+              signedExcursion,
+              horizontalWorldOffset: placementShift + fineHorizontal,
+              verticalWorldOffset: fineVertical,
+            });
+          }
+        } else if (labelOverlayRoot) {
+          const element = createCurveTextLabelElement(curve, labelPoint);
+          element.style.opacity = `${Math.max(0.45, curve.opacity)}`;
+          labelOverlayRoot.appendChild(element);
+          htmlLabelBindings.push({
+            element,
             trackId: track.track_id,
-            anchorPosition: labelPoint.basis.position.clone(),
-            framePosition: labelPoint.basis.framePosition,
-            baselineOffset: labelPoint.baselineOffset,
-            signedExcursion,
+            vertex: {
+              position: labelPoint.basis.position,
+              tangent: labelPoint.basis.tangent,
+              framePosition: labelPoint.basis.framePosition,
+              offset: labelPoint.traceOffset,
+            },
             horizontalWorldOffset: placementShift + fineHorizontal,
             verticalWorldOffset: fineVertical,
+            placement,
           });
         } else {
           const sprite = createCurveTextLabelSprite(curve, labelPoint);
@@ -2006,7 +2552,7 @@ function addCurveOverlays(
     }
   });
 
-  return { update };
+  return { update, syncHtmlOverlay };
 }
 
 function materialList(material: THREE.Material | THREE.Material[] | undefined): THREE.Material[] {
@@ -2208,6 +2754,9 @@ function disposeObject(object: THREE.Object3D): void {
     geometryHolder.geometry?.dispose();
 
     materialList(materialHolder.material).forEach((material) => {
+      // WBV_CURVE_INFILL_LIFECYCLE_STABILITY_V1_0_0_AUDITED
+      // Async KR loads must never attach to a material after scene teardown.
+      material.userData.wbvDisposed = true;
       const maybeMapped = material as THREE.Material & { map?: THREE.Texture | null; emissiveMap?: THREE.Texture | null };
       const textures = new Set<THREE.Texture>();
       if (maybeMapped.map) textures.add(maybeMapped.map);
@@ -2525,7 +3074,7 @@ function addCoreImageTracks(
       const context = canvas.getContext('2d');
       if (!context) {
         return new THREE.PointsMaterial({
-          color: 0xf59e0b,
+          color: 0xb8620e,
           size: 12,
           sizeAttenuation: false,
           transparent: true,
@@ -2536,7 +3085,7 @@ function addCoreImageTracks(
       }
 
       context.clearRect(0, 0, textureSize, textureSize);
-      context.fillStyle = '#f59e0b';
+      context.fillStyle = '#b8620e';
       context.beginPath();
 
       // Render the same WDV inward-facing triangle at high resolution and
@@ -2643,14 +3192,26 @@ function addCoreImageTracks(
     });
   });
 
-  let lastLocatorCameraQuaternion = new THREE.Quaternion(Number.NaN, Number.NaN, Number.NaN, Number.NaN);
+  const coreLocalCameraRight = (camera: THREE.Camera): THREE.Vector3 => {
+    group.updateWorldMatrix(true, false);
+    const groupWorldQuaternion = group.getWorldQuaternion(new THREE.Quaternion());
+    const worldToLocalQuaternion = groupWorldQuaternion.clone().invert();
+    return new THREE.Vector3(1, 0, 0)
+      .applyQuaternion(camera.quaternion)
+      .applyQuaternion(worldToLocalQuaternion)
+      .normalize();
+  };
 
   const rebuildLocatorTubes = (camera: THREE.Camera) => {
     if (locatorBindings.length === 0) return;
-    if (lastLocatorCameraQuaternion.angleTo(camera.quaternion) < 1e-5) return;
-    lastLocatorCameraQuaternion.copy(camera.quaternion);
 
-    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+    /*
+     * The parent WBV animation loop already calls Core update() when either the
+     * camera OR the model group orientation changes. Do not maintain a second
+     * camera-only cache here; it was the reason model rotation could leave Core
+     * locator geometry stale.
+     */
+    const cameraRight = coreLocalCameraRight(camera);
     const axes = sharedViewAxes(tangents, cameraRight);
     const centerOffset = resolvedCenterOffset;
 
@@ -2743,7 +3304,7 @@ function addCoreImageTracks(
 
   const update = (camera: THREE.Camera) => {
     lastCoreCamera = camera;
-    const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+    const cameraRight = coreLocalCameraRight(camera);
     const axes = sharedViewAxes(tangents, cameraRight);
     ribbonBindings.forEach((binding) => {
       binding.vertices.forEach((vertex, index) => {
@@ -2759,7 +3320,6 @@ function addCoreImageTracks(
   const setFocusInterval = (interval: { top_md: number; base_md: number } | null) => {
     activeFocusInterval = interval;
     if (!lastCoreCamera) return;
-    lastLocatorCameraQuaternion.set(Number.NaN, Number.NaN, Number.NaN, Number.NaN);
     rebuildLocatorTubes(lastCoreCamera);
   };
 
@@ -2773,9 +3333,8 @@ function addCoreImageTracks(
       return null;
     }
 
-    const cameraRight = new THREE.Vector3(1, 0, 0)
-      .applyQuaternion(pickCamera.quaternion)
-      .normalize();
+    group.updateWorldMatrix(true, false);
+    const cameraRight = coreLocalCameraRight(pickCamera);
     const axes = sharedViewAxes(tangents, cameraRight);
     const pointerPx = new THREE.Vector2(
       (pointerNdc.x * 0.5 + 0.5) * viewportWidth,
@@ -2800,7 +3359,8 @@ function addCoreImageTracks(
         if (!basis) continue;
 
         const axis = axisAtFramePosition(axes, basis.framePosition);
-        const world = basis.position.clone().add(axis.multiplyScalar(resolvedCenterOffset));
+        const local = basis.position.clone().add(axis.multiplyScalar(resolvedCenterOffset));
+        const world = local.applyMatrix4(group.matrixWorld);
         const projected = world.project(pickCamera);
         const currentPx = new THREE.Vector2(
           (projected.x * 0.5 + 0.5) * viewportWidth,
@@ -2961,6 +3521,7 @@ function addLithologyWellboreOverlay(
   appearance: WbvLithologyAppearance,
   useSurfaceLighting: boolean,
   managedWellId: string | null | undefined,
+  canvasBackdrop: "dark" | "light",
 ) {
   const radius=baseRadius*THREE.MathUtils.clamp(appearance.radiusMultiplier || 1.35,1.0,8.0);
   const opacity=THREE.MathUtils.clamp(appearance.opacity,0.05,1);
@@ -3016,6 +3577,54 @@ function addLithologyWellboreOverlay(
     mesh.renderOrder=32;
     mesh.userData={kind:"lithology_interval",managedWellId,intervalId:interval.interval_id,lithology:interval.lithology,topMd:interval.top_md,baseMd:interval.base_md,patternId:interval.pattern_id??null,canonicalLithology:interval.canonical_lithology??null};
     intervalGroup.add(mesh);
+
+    // WBV_LIGHT_LITHOLOGY_MICRO_CONTOUR_LINE_V1_0_0_AUDITED
+    // Light-canvas-only finite contour line on the exact lithology surface.
+    // WBV_LIGHT_LITHOLOGY_MICRO_CONTOUR_LINE_V1_0_1_AUDITED: slightly stronger contour presence.
+    // This is NOT a shell, silhouette, shadow or recolor. The overlay discards
+    // all non-grazing fragments and leaves only a narrow view-facing edge line.
+    if(canvasBackdrop==="light"){
+      const contourMaterial=new THREE.ShaderMaterial({
+        transparent:true,
+        depthTest:true,
+        depthWrite:false,
+        side:THREE.FrontSide,
+        polygonOffset:true,
+        polygonOffsetFactor:-1,
+        polygonOffsetUnits:-1,
+        vertexShader:`
+          varying vec3 vWorldNormal;
+          varying vec3 vWorldPosition;
+          void main(){
+            vec4 worldPosition=modelMatrix*vec4(position,1.0);
+            vWorldPosition=worldPosition.xyz;
+            vWorldNormal=normalize(mat3(modelMatrix)*normal);
+            gl_Position=projectionMatrix*viewMatrix*worldPosition;
+          }
+        `,
+        fragmentShader:`
+          varying vec3 vWorldNormal;
+          varying vec3 vWorldPosition;
+          void main(){
+            vec3 N=normalize(vWorldNormal);
+            vec3 V=normalize(cameraPosition-vWorldPosition);
+            float facing=abs(dot(N,V));
+            float edge=1.0-smoothstep(0.050,0.135,facing);
+            float alpha=0.62*edge;
+            if(alpha<0.025) discard;
+            gl_FragColor=vec4(0.31,0.36,0.39,alpha);
+          }
+        `,
+      });
+      const contourMesh=new THREE.Mesh(geometry,contourMaterial);
+      contourMesh.renderOrder=33;
+      contourMesh.userData={
+        kind:"lithology_interval_micro_contour",
+        managedWellId,
+        intervalId:interval.interval_id,
+      };
+      intervalGroup.add(contourMesh);
+    }
 
     // Thin dark collars at interval boundaries make adjacent lithologies readable
     // even when their colours are similar and at oblique camera angles.
@@ -3086,20 +3695,50 @@ function wdvTubingMaterial(
   useSurfaceLighting: boolean,
   opacity = 1,
   metallicTone: WbvTrajectoryMetallicTone = 'silver',
+  metallicFinish: 'matte' | 'satin' | 'polished' = 'satin',
 ): THREE.Material {
   const color = wbvTrajectoryMetallicColor(metallicTone);
-  if (!useSurfaceLighting) return new THREE.MeshBasicMaterial({ color, transparent: opacity < 0.999, opacity });
-  const emissive = new THREE.Color(color).multiplyScalar(metallicTone === 'graphite' ? .08 : .16);
-  return new THREE.MeshPhysicalMaterial({
-    color,
-    emissive,
-    emissiveIntensity: metallicTone === 'graphite' ? .08 : .12,
-    metalness: .36,
-    roughness: .30,
-    clearcoat: .68,
-    clearcoatRoughness: .16,
-    reflectivity: .82,
-    transparent: opacity < 0.999,
+
+  // WBV_WELLBORE_METALLIC_FINISH_SIMPLIFICATION_V1_0_0_AUDITED
+  // Selected gray is the luminosity authority; Finish only changes highlight character.
+  if (!useSurfaceLighting) {
+    return new THREE.MeshBasicMaterial({ color, transparent: opacity < 0.999, opacity });
+  }
+
+  // WBV_WELLBORE_FINISH_SHADING_MODEL_V1_0_0_AUDITED
+  // WBV_WELLBORE_FINISH_7X_CONTRAST_AND_THICKNESS_LAYOUT_V1_0_0_AUDITED
+  const baseColor = new THREE.Color(color);
+  const transparent = opacity < 0.999;
+
+  if (metallicFinish === 'matte') {
+    return new THREE.MeshLambertMaterial({
+      color: baseColor.clone().multiplyScalar(0.92),
+      emissive: baseColor.clone().multiplyScalar(0.010),
+      emissiveIntensity: 0.010,
+      transparent,
+      opacity,
+    });
+  }
+
+  if (metallicFinish === 'polished') {
+    return new THREE.MeshPhongMaterial({
+      color: baseColor.clone().multiplyScalar(1.08),
+      emissive: baseColor.clone().multiplyScalar(0.004),
+      emissiveIntensity: 0.004,
+      specular: new THREE.Color(0xffffff).multiplyScalar(1.85),
+      shininess: 240,
+      transparent,
+      opacity,
+    });
+  }
+
+  return new THREE.MeshPhongMaterial({
+    color: baseColor,
+    emissive: baseColor.clone().multiplyScalar(0.020),
+    emissiveIntensity: 0.020,
+    specular: new THREE.Color(0x7f8990),
+    shininess: 24,
+    transparent,
     opacity,
   });
 }
@@ -3110,8 +3749,9 @@ function wbvTrajectoryMaterial(
   color: string,
   materialMode: 'color' | 'gray_metallic',
   metallicTone: WbvTrajectoryMetallicTone = 'silver',
+  metallicFinish: 'matte' | 'satin' | 'polished' = 'satin',
 ): THREE.Material {
-  if (materialMode === 'gray_metallic') return wdvTubingMaterial(useSurfaceLighting, opacity, metallicTone);
+  if (materialMode === 'gray_metallic') return wdvTubingMaterial(useSurfaceLighting, opacity, metallicTone, metallicFinish);
   if (!useSurfaceLighting) return new THREE.MeshBasicMaterial({ color, transparent: opacity < 0.999, opacity });
   return new THREE.MeshPhysicalMaterial({
     color,
@@ -3424,6 +4064,7 @@ function addCompletionWellboreOverlay(
     position: "right" | "left" | "above" | "below";
     distance: number;
     kind?: "formation_top" | "completion";
+    textForDepthUnit?: (unit: string) => string;
   }) => void,
 ) {
   const opacity = THREE.MathUtils.clamp(appearance.opacity, .05, 1);
@@ -3463,15 +4104,18 @@ function addCompletionWellboreOverlay(
     pointComponentStackOffset,
   );
 
-  const labelText = (component: WbvCompletionRenderItem): string => {
+  const labelText = (component: WbvCompletionRenderItem, unit: string): string => {
     const mode = appearance.labelMode ?? 'name_md';
-    const unitSuffix = depthUnit ? ` ${depthUnit}` : '';
-    const mdText = component.base_md != null && Number.isFinite(component.base_md) && component.base_md > component.top_md
-      ? `${component.top_md.toLocaleString(undefined,{maximumFractionDigits:1})}–${component.base_md.toLocaleString(undefined,{maximumFractionDigits:1})}${unitSuffix} MD`
-      : `${component.top_md.toLocaleString(undefined,{maximumFractionDigits:1})}${unitSuffix} MD`;
+    const unitSuffix = unit ? ` ${unit}` : '';
+    const displayTopMd = canonicalDepthToDisplay(component.top_md, unit) ?? component.top_md;
+    const displayBaseMd = component.base_md == null ? null : canonicalDepthToDisplay(component.base_md, unit);
+    const mdText = displayBaseMd != null && Number.isFinite(displayBaseMd) && displayBaseMd > displayTopMd
+      ? `${displayTopMd.toLocaleString(undefined,{maximumFractionDigits:1})}–${displayBaseMd.toLocaleString(undefined,{maximumFractionDigits:1})}${unitSuffix} MD`
+      : `${displayTopMd.toLocaleString(undefined,{maximumFractionDigits:1})}${unitSuffix} MD`;
     const tvdValue = interpolateTrajectoryScalarAtMd(renderPoints, component.top_md, (point) => point.tvd ?? null);
-    const tvdText = typeof tvdValue === 'number' && Number.isFinite(tvdValue)
-      ? `${tvdValue.toLocaleString(undefined,{maximumFractionDigits:1})}${unitSuffix} TVD`
+    const displayTvdValue = canonicalDepthToDisplay(tvdValue, unit);
+    const tvdText = typeof displayTvdValue === 'number' && Number.isFinite(displayTvdValue)
+      ? `${displayTvdValue.toLocaleString(undefined,{maximumFractionDigits:1})}${unitSuffix} TVD`
       : '';
     return mode === 'name'
       ? sanitizeCompletionLabel(component.label)
@@ -3485,7 +4129,8 @@ function addCompletionWellboreOverlay(
   const addLabel = (component: WbvCompletionRenderItem, marker: THREE.Object3D, anchor: THREE.Vector3) => {
     if (!appearance.showLabels) return;
     addHtmlLabel?.({
-      text: labelText(component),
+      text: labelText(component, depthUnit ?? "m"),
+      textForDepthUnit: (unit) => labelText(component, unit),
       color: appearance.labelColor ?? '#dce7ef',
       opacity,
       size: appearance.labelSize ?? 1,
@@ -3823,6 +4468,77 @@ function addCompletionWellboreOverlay(
   });
 }
 
+type WbvCanvasEnvironmentPalette = {
+  boundingBoxColor: string | null;
+  gridColor: string | null;
+  groundPlaneColor: string | null;
+  rigColor: string;
+  neutralTextColor: string;
+  axisTextColor: string;
+};
+
+function resolveWbvCanvasEnvironmentPalette(
+  shadeId: "dark" | "charcoal" | "slate" | "mid" | "soft" | "light",
+): WbvCanvasEnvironmentPalette {
+  switch (shadeId) {
+    case "charcoal":
+      return {
+        boundingBoxColor: "#70828B",
+        gridColor: "#667983",
+        groundPlaneColor: "#303A3F",
+        rigColor: "#D8E5E9",
+        neutralTextColor: "#E8EFF2",
+        axisTextColor: "#B9D5DE",
+      };
+    case "slate":
+      return {
+        boundingBoxColor: "#9AA8AD",
+        gridColor: "#88989E",
+        groundPlaneColor: "#59666B",
+        rigColor: "#ECF3F5",
+        neutralTextColor: "#F2F6F7",
+        axisTextColor: "#D5E4E8",
+      };
+    case "mid":
+      return {
+        boundingBoxColor: "#46565D",
+        gridColor: "#52636A",
+        groundPlaneColor: "#768388",
+        rigColor: "#303F45",
+        neutralTextColor: "#1B282E",
+        axisTextColor: "#29434D",
+      };
+    case "soft":
+      return {
+        boundingBoxColor: "#6E7B80",
+        gridColor: "#7B888D",
+        groundPlaneColor: "#B2BABD",
+        rigColor: "#46575D",
+        neutralTextColor: "#2A373C",
+        axisTextColor: "#3F5962",
+      };
+    case "light":
+      return {
+        boundingBoxColor: "#606C73",
+        gridColor: "#7F8B92",
+        groundPlaneColor: "#CBD3D8",
+        rigColor: "#8A979E",
+        neutralTextColor: "#404548",
+        axisTextColor: "#414A50",
+      };
+    case "dark":
+    default:
+      return {
+        boundingBoxColor: null,
+        gridColor: null,
+        groundPlaneColor: null,
+        rigColor: "#E6FCFF",
+        neutralTextColor: "#F4FEFF",
+        axisTextColor: "#80DCFF",
+      };
+  }
+}
+
 export function WellboreTrajectoryRenderer({
   renderPoints,
   activeManagedWellId = null,
@@ -3857,6 +4573,8 @@ export function WellboreTrajectoryRenderer({
   showGroundPlane = false,
   showBottomGrid = false,
   showTopGrid = false,
+  canvasBackdrop = "dark",
+  canvasShadeId = canvasBackdrop === "light" ? "light" : "dark",
   surfaceDatumLabel = null,
   showAxes = false,
   showNorthArrow = true,
@@ -3883,9 +4601,11 @@ export function WellboreTrajectoryRenderer({
   coreLocatorFocusInterval = null,
   coreViewMode = false,
   onCoreLocatorPick,
+  onFirstFrameRendered,
   trackLayoutTracks = [],
   viewProperties,
 }: WbvTrajectoryRendererProps) {
+  const canvasEnvironmentPalette = resolveWbvCanvasEnvironmentPalette(canvasShadeId);
   const activeTrackingPointerRef = useRef<{ pointerId: number; clientX: number; clientY: number } | null>(null);
   const interactionLifecycleRef = useRef<{
     ordinaryPointerDown: { pointerId: number; x: number; y: number; moved: boolean } | null;
@@ -3956,16 +4676,35 @@ export function WellboreTrajectoryRenderer({
     applyViewAction: (action: WbvViewAction) => void;
     applyCameraView: (view: WbvCameraViewState) => void;
     syncInteraction: () => void;
+    setDepthPresentationUnit: (unit: string) => void;
     setHorizontalRotationLock: (locked: boolean) => void;
     setVerticalRotationLock: (locked: boolean) => void;
   } | null>(null);
+  const depthUnitRef = useRef(depthUnit);
   const cameraViewRef = useRef<CameraViewSnapshot | null>(null);
   const curveOverlayGroupRef = useRef<THREE.Group | null>(null);
   const depthTrackGroupRef = useRef<THREE.Group | null>(null);
+  // WBV_DISPLAY_LAYER_VISIBILITY_AUTHORITY_AND_NOFLASH_V1_0_0_AUDITED
+  const lithologyGroupRef = useRef<THREE.Group | null>(null);
+  const completionGroupRef = useRef<THREE.Group | null>(null);
+  const formationTopGroupRef = useRef<THREE.Group | null>(null);
+  const coreTrackGroupRef = useRef<THREE.Group | null>(null);
+  const trajectoryMeshRef = useRef<THREE.Mesh | null>(null);
+  const trajectoryLineRef = useRef<THREE.Line | null>(null);
+  const formationTopsVisibleRef = useRef(showFormationTops);
+  const completionsVisibleRef = useRef(showCompletions);
 
   useEffect(() => {
     trackValuesRef.current = trackValuesAlongWellbore;
   }, [trackValuesAlongWellbore]);
+
+  // WBV_PERSISTENT_FILL_VISIBILITY_NOFLASH_V1_0_0_AUDITED
+  // Trajectory visibility is presentation-only. Mutate the existing runtime
+  // objects rather than rebuilding the scene (which also destroys all fills).
+  useEffect(() => {
+    if (trajectoryMeshRef.current) trajectoryMeshRef.current.visible = showTrajectory;
+    if (trajectoryLineRef.current) trajectoryLineRef.current.visible = showTrajectory;
+  }, [showTrajectory]);
 
   useEffect(() => {
     if (curveOverlayGroupRef.current) {
@@ -3975,6 +4714,24 @@ export function WellboreTrajectoryRenderer({
       depthTrackGroupRef.current.visible = showCurveOverlays;
     }
   }, [showCurveOverlays]);
+
+  useEffect(() => {
+    if (lithologyGroupRef.current) lithologyGroupRef.current.visible = showLithologyOverlay;
+  }, [showLithologyOverlay]);
+
+  useEffect(() => {
+    completionsVisibleRef.current = showCompletions;
+    if (completionGroupRef.current) completionGroupRef.current.visible = showCompletions;
+  }, [showCompletions]);
+
+  useEffect(() => {
+    formationTopsVisibleRef.current = showFormationTops;
+    if (formationTopGroupRef.current) formationTopGroupRef.current.visible = showFormationTops;
+  }, [showFormationTops]);
+
+  useEffect(() => {
+    if (coreTrackGroupRef.current) coreTrackGroupRef.current.visible = showCoreOverlay;
+  }, [showCoreOverlay]);
 
   const scenePoints = useMemo(() => scenePointsFromBackend(renderPoints), [renderPoints]);
   const contextSceneTrajectories = useMemo(() => contextTrajectories.map((trajectory) => ({
@@ -3990,9 +4747,8 @@ export function WellboreTrajectoryRenderer({
     }
   }, [scenePoints]);
   const overviewFullPath = useMemo(() => overviewPath(overviewPoints), [overviewPoints]);
-  const depthTicks = useMemo(() => representativeTicks(renderPoints, depthUnit), [renderPoints, depthUnit]);
+  const depthTicks = useMemo(() => representativeTicks(renderPoints, "m"), [renderPoints]);
   const coreRenderKey = JSON.stringify({
-    visible: showCoreOverlay,
     inspectionInterval: coreInspectionInterval,
     appearance: {
       color: coreAppearance?.color ?? null,
@@ -4019,7 +4775,6 @@ export function WellboreTrajectoryRenderer({
   const trackPlacementRenderKey = JSON.stringify(trackLayoutTracks.map((track) => ({ track_uid: track.track_uid, track_type: track.track_type, display_order: track.display_order, visible: track.visible, position: track.position, distance_from_wellbore: track.distance_from_wellbore, previous_track_gap: track.previous_track_gap, width: track.width })));
 
   const lithologyRenderKey = JSON.stringify({
-    visible: showLithologyOverlay,
     appearance: lithologyAppearance ?? null,
     intervals: lithologyIntervals.map((interval) => ({
       interval_id: interval.interval_id,
@@ -4032,7 +4787,6 @@ export function WellboreTrajectoryRenderer({
   });
 
   const completionRenderKey = JSON.stringify({
-    visible: showCompletions,
     appearance: completionAppearance,
     components: completionComponents.map((component) => ({
       component_id: component.component_id,
@@ -4063,6 +4817,49 @@ export function WellboreTrajectoryRenderer({
     let controls: OrbitControls | null = null;
     let animationFrame: number | null = null;
     let resizeObserver: ResizeObserver | null = null;
+    let continuityFirstFramePresented = false;
+      let firstFrameReadyCallbackPresented = false;
+    const depthPresentationUpdaters: Array<(unit: string) => void> = [];
+
+    const registerSpriteDepthText = (
+      sprite: THREE.Sprite,
+      textForUnit: (unit: string) => string,
+    ) => {
+      depthPresentationUpdaters.push((unit) => setTextSpriteText(sprite, textForUnit(unit)));
+    };
+
+    const cancelContinuityRestore = () => {
+      const timerId = Number(host.dataset.wbvSceneContinuityRestoreTimer ?? "");
+      if (Number.isFinite(timerId) && timerId > 0) window.clearTimeout(timerId);
+      delete host.dataset.wbvSceneContinuityRestoreTimer;
+    };
+
+    const restoreContinuityBackdrop = () => {
+      cancelContinuityRestore();
+      if (host.dataset.wbvSceneContinuityActive !== "1") return;
+      canvas.style.visibility = "visible";
+      host.style.backgroundImage = host.dataset.wbvSceneContinuityBackgroundImage ?? "";
+      host.style.backgroundSize = host.dataset.wbvSceneContinuityBackgroundSize ?? "";
+      host.style.backgroundPosition = host.dataset.wbvSceneContinuityBackgroundPosition ?? "";
+      host.style.backgroundRepeat = host.dataset.wbvSceneContinuityBackgroundRepeat ?? "";
+      delete host.dataset.wbvSceneContinuityActive;
+      delete host.dataset.wbvSceneContinuityBackgroundImage;
+      delete host.dataset.wbvSceneContinuityBackgroundSize;
+      delete host.dataset.wbvSceneContinuityBackgroundPosition;
+      delete host.dataset.wbvSceneContinuityBackgroundRepeat;
+    };
+
+    const scheduleContinuityBackdropRestore = () => {
+      if (host.dataset.wbvSceneContinuityActive !== "1") return;
+      cancelContinuityRestore();
+      const timerId = window.setTimeout(() => restoreContinuityBackdrop(), 180);
+      host.dataset.wbvSceneContinuityRestoreTimer = String(timerId);
+    };
+
+    if (host.dataset.wbvSceneContinuityActive === "1") {
+      cancelContinuityRestore();
+      canvas.style.visibility = "hidden";
+    }
 
     try {
       const allScenePoints = [scenePoints, ...contextSceneTrajectories.map((entry) => entry.scenePoints)].flat();
@@ -4083,6 +4880,23 @@ export function WellboreTrajectoryRenderer({
       ));
       const normalizedPoints = normalizeShared(scenePoints);
       const normalizedContextTrajectories = contextSceneTrajectories.map((entry) => ({ ...entry, normalizedPoints: normalizeShared(entry.scenePoints) }));
+      const sharedTiedFormationColours = sharedTiedFormationKeyMap([
+        {
+          tops: formationTops,
+          tied: Boolean(formationTopAppearance?.tie_formation_colours),
+        },
+        ...normalizedContextTrajectories.map((entry) => ({
+          tops: entry.formationTops ?? [],
+          tied: Boolean(entry.formationTopAppearance?.tie_formation_colours),
+        })),
+      ]);
+      const activeLocalFormationColours = orderedFormationKeyMap(formationTops, false);
+      const contextLocalFormationColours = new Map(
+        normalizedContextTrajectories.map((entry) => [
+          entry.managedWellId,
+          orderedFormationKeyMap(entry.formationTops ?? [], false),
+        ]),
+      );
       const activeMinX = Math.min(...scenePoints.map((point) => point.x));
       const activeMaxX = Math.max(...scenePoints.map((point) => point.x));
       const activeMinY = Math.min(...scenePoints.map((point) => point.y));
@@ -4120,6 +4934,13 @@ export function WellboreTrajectoryRenderer({
       renderer.setClearColor(0x000000, 0);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.domElement.style.cursor = 'default';
+      // Light Canvas final-output enhancement only.
+      // This display filter does not modify source colors, materials, opacity,
+      // geometry, lithology classifications, interval boundaries, or data.
+      renderer.domElement.style.filter =
+        canvasBackdrop === 'light'
+          ? 'contrast(1.10) saturate(1.08)'
+          : 'none';
 
       controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
@@ -4133,14 +4954,16 @@ export function WellboreTrajectoryRenderer({
       controls.panSpeed = 0.72;
       controls.minZoom = 0.35;
       controls.maxZoom = 40;
-      const inspectionPrimaryPan = coreInspectionInterval !== null;
-      controls.enableRotate = !inspectionPrimaryPan;
+      // WBV_MB1_CTRL_PAN_ROTATE_STATE_FIX_V1_0_1_AUDITED:
+      // Plain MB1 owns free rotation. OrbitControls continues to use
+      // Ctrl/Meta/Shift + MB1 as the temporary PAN gesture.
+      controls.enableRotate = true;
       controls.mouseButtons = {
-        LEFT: inspectionPrimaryPan ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE,
+        LEFT: THREE.MOUSE.ROTATE,
         MIDDLE: THREE.MOUSE.DOLLY,
         RIGHT: THREE.MOUSE.PAN,
       };
-      renderer.domElement.style.cursor = inspectionPrimaryPan ? 'grab' : 'default';
+      renderer.domElement.style.cursor = 'default';
       controls.touches = {
         ONE: THREE.TOUCH.ROTATE,
         TWO: THREE.TOUCH.DOLLY_PAN,
@@ -4296,21 +5119,39 @@ export function WellboreTrajectoryRenderer({
       const zoomScaledTextSprites: THREE.Sprite[] = [];
 
       if (showBottomGrid) {
-        const bottomGrid = new THREE.GridHelper(gridSize, Math.max(2, Math.round(viewProperties?.grids.spacing ?? 12)), viewProperties?.grids.color ?? '#526878', viewProperties?.grids.color ?? '#526878');
+        const bottomGridColor = viewProperties?.grids.color ?? '#526878';
+        const bottomGrid = new THREE.GridHelper(gridSize, Math.max(2, Math.round(viewProperties?.grids.spacing ?? 12)), bottomGridColor, bottomGridColor);
         bottomGrid.position.set(gridCenterX, box.minY + 0.002, gridCenterZ);
+        (Array.isArray(bottomGrid.material) ? bottomGrid.material : [bottomGrid.material]).forEach((material) => {
+          material.transparent = true;
+          material.opacity = viewProperties?.grids.opacity ?? 0.8;
+          if (material instanceof THREE.LineBasicMaterial) {
+            material.linewidth = viewProperties?.grids.thickness ?? 1;
+          }
+          material.needsUpdate = true;
+        });
         group.add(bottomGrid);
       }
 
       if (showTopGrid) {
-        const topGrid = new THREE.GridHelper(gridSize, Math.max(2, Math.round(viewProperties?.grids.spacing ?? 12)), viewProperties?.grids.color ?? '#526878', viewProperties?.grids.color ?? '#526878');
+        const topGridColor = viewProperties?.grids.color ?? '#526878';
+        const topGrid = new THREE.GridHelper(gridSize, Math.max(2, Math.round(viewProperties?.grids.spacing ?? 12)), topGridColor, topGridColor);
         topGrid.position.set(gridCenterX, box.maxY - 0.002, gridCenterZ);
+        (Array.isArray(topGrid.material) ? topGrid.material : [topGrid.material]).forEach((material) => {
+          material.transparent = true;
+          material.opacity = viewProperties?.grids.opacity ?? 0.8;
+          if (material instanceof THREE.LineBasicMaterial) {
+            material.linewidth = viewProperties?.grids.thickness ?? 1;
+          }
+          material.needsUpdate = true;
+        });
         group.add(topGrid);
 
         // WBV_TOP_GRID_3D_TOPSIDE_RIG_V1_0_4: brighter rig + honest datum presentation.
         // WBV_WELL_INFORMATION_DATUM_BINDING_V1_0_1: datum supplied from Well Information metadata.
         const wellheadPoint = normalizedPoints[0];
         const rigScale = Math.max(0.34, Math.min(0.52, gridSize * 0.13));
-        const topsideRig = createWbvTopsideRig(rigScale, '#e6fcff');
+        const topsideRig = createWbvTopsideRig(rigScale, canvasEnvironmentPalette.rigColor);
         topsideRig.position.set(wellheadPoint.x, box.maxY, wellheadPoint.z);
         group.add(topsideRig);
 
@@ -4353,11 +5194,11 @@ export function WellboreTrajectoryRenderer({
         const datumLabel = createTextSprite(
           surfaceDatumLabel?.trim() || 'Surface datum unavailable',
           {
-            color: '#f4feff',
-            background: 'rgba(3, 8, 12, 0.84)',
+            color: canvasBackdrop === 'light' ? '#404548' : '#f4feff',
+            background: canvasBackdrop === 'light' ? 'rgba(0, 0, 0, 0)' : 'rgba(3, 8, 12, 0.84)',
             scale: 0.225,
-            shadowBlur: 14,
-            shadowColor: 'rgba(181, 244, 255, 0.82)',
+            shadowBlur: canvasBackdrop === 'light' ? 2 : 14,
+            shadowColor: canvasBackdrop === 'light' ? 'rgba(255, 255, 255, 0.90)' : 'rgba(181, 244, 255, 0.82)',
           },
         );
         datumLabel.position.set(
@@ -4376,17 +5217,38 @@ export function WellboreTrajectoryRenderer({
       }
 
       if (useSurfaceLighting) {
+        // WBV_WELLBORE_BALANCED_LUMINOSITY_V1_0_0_AUDITED
+        // Replace the former key + hard-coded rim + warm-fill rig with a balanced
+        // wrap-light model. The user directional control remains authoritative for
+        // total directional energy, but that energy is distributed around the
+        // wellbore instead of being concentrated into one dominant specular stripe.
         const shadingIntensity = viewProperties?.shading.intensity ?? 1;
-        scene.add(new THREE.HemisphereLight(0xeaf7ff, 0x24303a, (viewProperties?.shading.ambient ?? 1.55) * shadingIntensity));
-        const keyLight = new THREE.DirectionalLight(0xffffff, (viewProperties?.shading.directional ?? 3.6) * shadingIntensity);
-        keyLight.position.set(3, 5, 4);
-        scene.add(keyLight);
-        const rimLight = new THREE.DirectionalLight(0x8fd8ff, 1.8 * shadingIntensity);
-        rimLight.position.set(-4, 3, -3);
-        scene.add(rimLight);
-        const warmFill = new THREE.DirectionalLight(0xffd8a8, 0.85 * shadingIntensity);
-        warmFill.position.set(2, 2, -4);
-        scene.add(warmFill);
+        const ambientStrength = (viewProperties?.shading.ambient ?? 1.55) * shadingIntensity;
+        const directionalStrength = (viewProperties?.shading.directional ?? 3.6) * shadingIntensity;
+
+        // Broad, neutral base luminosity so the cylindrical wellbore retains form
+        // on both camera-facing and camera-away surfaces.
+        scene.add(new THREE.HemisphereLight(0xf2f7fb, 0x2b3339, ambientStrength * 0.78));
+        scene.add(new THREE.AmbientLight(0xffffff, ambientStrength * 0.22));
+
+        // Four low-intensity directional fills distribute the same user-controlled
+        // directional contribution around the circumference. No individual light
+        // is allowed to dominate the metallic response.
+        const frontKey = new THREE.DirectionalLight(0xffffff, directionalStrength * 0.34);
+        frontKey.position.set(4, 5, 4);
+        scene.add(frontKey);
+
+        const rearFill = new THREE.DirectionalLight(0xeaf3ff, directionalStrength * 0.28);
+        rearFill.position.set(-4, 3, -4);
+        scene.add(rearFill);
+
+        const leftFill = new THREE.DirectionalLight(0xf5f8fb, directionalStrength * 0.19);
+        leftFill.position.set(-4, 2, 4);
+        scene.add(leftFill);
+
+        const rightFill = new THREE.DirectionalLight(0xfff5e8, directionalStrength * 0.19);
+        rightFill.position.set(4, 2, -4);
+        scene.add(rightFill);
       }
 
 
@@ -4399,14 +5261,17 @@ export function WellboreTrajectoryRenderer({
 
         depthTicks.forEach((tick) => {
           const y = sceneYForMeasuredDepth(renderPoints, normalizedPoints, tick.md, tick.pointIndex);
-          const label = createTextSprite(`MD ${tick.label}`, {
-            color: viewProperties?.depthLabels.color ?? '#b9f3ff',
-            background: 'rgba(3, 8, 12, 0.58)',
+          const label = createTextSprite(`MD ${formatDepth(tick.md, depthUnitRef.current)}`, {
+            color: canvasBackdrop === 'light' ? '#000000' : (viewProperties?.depthLabels.color ?? '#b9f3ff'),
+            background: canvasBackdrop === 'light' ? 'rgba(0, 0, 0, 0)' : 'rgba(3, 8, 12, 0.58)',
             scale: 0.18 * (viewProperties?.depthLabels.size ?? 1),
+            shadowBlur: canvasBackdrop === 'light' ? 0 : 8,
+            shadowColor: canvasBackdrop === 'light' ? 'rgba(0, 0, 0, 0)' : 'rgba(111, 211, 255, 0.48)',
           });
           label.position.set(box.minX - (viewProperties?.depthLabels.offset ?? 0.52), y, box.maxZ + 0.09);
           zoomScaledTextSprites.push(label);
           group.add(label);
+          registerSpriteDepthText(label, (unit) => `MD ${formatDepth(tick.md, unit)}`);
 
           const verticalEdges = [
             { x: box.minX, z: box.maxZ, outwardX: -tickLength },
@@ -4426,9 +5291,9 @@ export function WellboreTrajectoryRenderer({
         if (depthTickPoints.length > 0) {
           const depthTickGeometry = new THREE.BufferGeometry().setFromPoints(depthTickPoints);
           const depthTickMaterial = new THREE.LineBasicMaterial({
-            color: 0x9bc8d6,
+            color: canvasBackdrop === 'light' ? 0x000000 : 0x9bc8d6,
             transparent: true,
-            opacity: 0.86,
+            opacity: canvasBackdrop === 'light' ? 0.72 : 0.86,
             depthTest: false,
             depthWrite: false,
           });
@@ -4551,6 +5416,7 @@ export function WellboreTrajectoryRenderer({
         position: "right" | "left" | "above" | "below";
         distance: number;
         kind?: "formation_top" | "completion";
+        textForDepthUnit?: (unit: string) => string;
       }) => {
         if (!formationTopLabelOverlay) return;
         const element = document.createElement('div');
@@ -4561,17 +5427,47 @@ export function WellboreTrajectoryRenderer({
         element.style.pointerEvents = 'none';
         element.style.userSelect = 'none';
         element.style.whiteSpace = 'nowrap';
+        const labelKind = args.kind ?? 'formation_top';
+        const isLightFormationTopLabel =
+          canvasBackdrop === 'light' && labelKind === 'formation_top';
+        const isLightCompletionLabel =
+          canvasBackdrop === 'light' && labelKind === 'completion';
+        const resolvedFormationTopLabelColor = (() => {
+          if (!isLightFormationTopLabel) return args.color;
+          const color = new THREE.Color(args.color);
+          const hsl = { h: 0, s: 0, l: 0 };
+          color.getHSL(hsl);
+          const targetLightness = hsl.l > 0.62
+            ? THREE.MathUtils.clamp(hsl.l - 0.26, 0.28, 0.50)
+            : THREE.MathUtils.clamp(hsl.l - 0.10, 0.28, 0.50);
+          const targetSaturation = THREE.MathUtils.clamp(hsl.s * 1.04, 0.30, 1);
+          color.setHSL(hsl.h, targetSaturation, targetLightness);
+          return `#${color.getHexString()}`;
+        })();
+        // WBV_LIGHT_CANVAS_OVERLAY_DARK_BEHAVIOR_PARITY_V1_0_0_AUDITED
+        // Keep Light Canvas overlay behavior identical to the accepted Dark Canvas:
+        // same font metrics, bounding boxes, anchors, collision spacing, and zoom response.
+        // Only foreground presentation color/shadow differs where Light Canvas requires contrast.
         element.style.fontFamily = 'inherit';
         element.style.fontWeight = '700';
         element.style.fontSize = `${THREE.MathUtils.clamp(13 * args.size, 8, 42)}px`;
         element.style.lineHeight = '1';
-        element.style.color = args.color;
+        element.style.color = resolvedFormationTopLabelColor;
         element.style.opacity = `${THREE.MathUtils.clamp(args.opacity, 0, 1)}`;
-        element.style.textShadow = '0 0 3px rgba(0,0,0,.95), 0 0 7px rgba(0,0,0,.72)';
+        element.style.textShadow = isLightCompletionLabel
+          ? 'none'
+          : (isLightFormationTopLabel
+            ? '0 0 1px rgba(255,255,255,.34)'
+            : '0 0 3px rgba(0,0,0,.95), 0 0 7px rgba(0,0,0,.72)');
         element.style.willChange = 'left, top, transform';
         element.style.transformOrigin = 'center center';
         element.hidden = true;
         formationTopLabelOverlay.appendChild(element);
+        if (args.textForDepthUnit) {
+          depthPresentationUpdaters.push((unit) => {
+            element.textContent = args.textForDepthUnit?.(unit) ?? args.text;
+          });
+        }
         formationTopLabelRuntimes.push({
           element,
           anchor: args.anchor.clone(),
@@ -4600,6 +5496,7 @@ export function WellboreTrajectoryRenderer({
           entry.color ?? '#67d599',
           entry.materialMode ?? 'color',
           entry.metallicTone ?? 'silver',
+          entry.metallicFinish ?? 'satin',
         );
         const contextHideLithologyUnderlay = Boolean(
           entry.showLithologyOverlay &&
@@ -4627,7 +5524,7 @@ export function WellboreTrajectoryRenderer({
           const contextTangents=trajectoryTangents(contextPositions);
           const lithologyGroup=new THREE.Group();
           lithologyGroup.name=`wbv-lithology-overlay-${entry.managedWellId}`;
-          addLithologyWellboreOverlay(lithologyGroup,entry.lithologyIntervals??[],contextRenderPoints,contextPositions,contextTangents,0.0075*(entry.thickness??1),entry.lithologyAppearance??{opacity:0.95,radiusMultiplier:1.2},useSurfaceLighting,entry.managedWellId);
+          addLithologyWellboreOverlay(lithologyGroup,entry.lithologyIntervals??[],contextRenderPoints,contextPositions,contextTangents,0.0075*(entry.thickness??1),entry.lithologyAppearance??{opacity:0.95,radiusMultiplier:1.2},useSurfaceLighting,entry.managedWellId,canvasBackdrop);
           group.add(lithologyGroup);
         }
 
@@ -4645,6 +5542,8 @@ export function WellboreTrajectoryRenderer({
             entry.completionAppearance ?? { opacity: 1, sizeMultiplier: 1, showLabels: true, labelMode: 'name_md', labelColor: '#dce7ef', labelSize: 1, labelOffset: 1, labelPosition: 'right' },
             useSurfaceLighting,
             entry.managedWellId,
+            depthUnitRef.current,
+            addFormationTopHtmlLabel,
           );
           group.add(completionGroup);
         }
@@ -4665,11 +5564,17 @@ export function WellboreTrajectoryRenderer({
 
           const appearance = entry.formationTopAppearance ?? { opacity: 1, line_width: 1, show_labels: true };
           const size = 0.042 * (appearance.marker_size ?? 1);
-          const formationColor = (name: string, markerType: string) => {
+          const formationColor = (topId: string, name: string, markerType: string) => {
             if ((appearance.color_mode ?? "formation") === "single") return new THREE.Color(appearance.color ?? "#58d39b");
             if ((appearance.color_mode ?? "formation") === "well") return new THREE.Color(entry.color ?? "#67d599");
             if ((appearance.color_mode ?? "formation") === "classification") return new THREE.Color(markerType.toLowerCase().includes("base") ? 0xee6c8a : 0x58d39b);
-            return canvasFormationTopColor(name);
+            const manualOverride = appearance.formation_top_color_overrides?.[topId];
+            if (manualOverride) return new THREE.Color(manualOverride);
+            const identity = appearance.tie_formation_colours ? tiedFormationTopIdentity(name) : canonicalFormationTopIdentity(name);
+            const planned = appearance.tie_formation_colours
+              ? sharedTiedFormationColours.get(identity)
+              : contextLocalFormationColours.get(entry.managedWellId)?.get(identity);
+            return planned?.clone() ?? formationSpectrumColor(0);
           };
 
           entry.formationTops?.forEach((top) => {
@@ -4682,7 +5587,7 @@ export function WellboreTrajectoryRenderer({
             );
             if (!basis) return;
 
-            const color = formationColor(top.name, top.marker_type);
+            const color = formationColor(top.top_id, top.name, top.marker_type);
             const style = appearance.marker_style ?? "ring";
             let marker: THREE.Object3D;
             if (style === "disc") {
@@ -4729,21 +5634,26 @@ export function WellboreTrajectoryRenderer({
 
             if (appearance.show_labels) {
               const mode = appearance.label_mode ?? "name_md";
-              const unitSuffix = entry.depthUnit ? ` ${entry.depthUnit}` : "";
-              const mdText = `${top.md.toLocaleString(undefined,{maximumFractionDigits:2})}${unitSuffix} MD`;
-              const tvdText = typeof top.tvd === "number" && Number.isFinite(top.tvd)
-                ? `${top.tvd.toLocaleString(undefined,{maximumFractionDigits:2})}${unitSuffix} TVD`
-                : "";
-              const labelText = mode === "name"
-                ? top.name
-                : mode === "name_tvd"
-                  ? `${top.name}${tvdText ? ` · ${tvdText}` : ""}`
-                  : mode === "name_md_tvd"
-                    ? `${top.name} · ${mdText}${tvdText ? ` / ${tvdText}` : ""}`
-                    : `${top.name} · ${mdText}`;
+              const labelTextForUnit = (unit: string) => {
+                const unitSuffix = unit ? ` ${unit}` : "";
+                const displayMd = canonicalDepthToDisplay(top.md, unit) ?? top.md;
+                const displayTvd = canonicalDepthToDisplay(top.tvd, unit);
+                const mdText = `${displayMd.toLocaleString(undefined,{maximumFractionDigits:2})}${unitSuffix} MD`;
+                const tvdText = typeof displayTvd === "number" && Number.isFinite(displayTvd)
+                  ? `${displayTvd.toLocaleString(undefined,{maximumFractionDigits:2})}${unitSuffix} TVD`
+                  : "";
+                return mode === "name"
+                  ? top.name
+                  : mode === "name_tvd"
+                    ? `${top.name}${tvdText ? ` · ${tvdText}` : ""}`
+                    : mode === "name_md_tvd"
+                      ? `${top.name} · ${mdText}${tvdText ? ` / ${tvdText}` : ""}`
+                      : `${top.name} · ${mdText}`;
+              };
 
               addFormationTopHtmlLabel({
-                text: labelText,
+                text: labelTextForUnit(depthUnitRef.current),
+                textForDepthUnit: labelTextForUnit,
                 color: `#${color.getHexString()}`,
                 opacity: appearance.opacity,
                 size: appearance.label_size ?? 1,
@@ -4769,7 +5679,9 @@ export function WellboreTrajectoryRenderer({
             entry.normalizedPoints,
             entry.curveTracks ?? [],
             entry.curveTrackSpacing ?? 0.05,
+            [],
             undefined,
+            formationTopLabelOverlay,
           );
           contextCurveOverlayRuntimes.push(contextCurveRuntime);
         }
@@ -4811,6 +5723,7 @@ export function WellboreTrajectoryRenderer({
         viewProperties?.trajectory.color ?? '#67d599',
         viewProperties?.trajectory.materialMode ?? 'color',
         viewProperties?.trajectory.metallicTone ?? 'silver',
+        viewProperties?.trajectory.metallicFinish ?? 'satin',
       );
       const activeHideLithologyUnderlay = Boolean(
         showLithologyOverlay &&
@@ -4819,6 +5732,7 @@ export function WellboreTrajectoryRenderer({
       );
       const trajectoryMesh = new THREE.Mesh(guideGeometry, guideMaterial);
       trajectoryMesh.visible = showTrajectory;
+      trajectoryMeshRef.current = trajectoryMesh;
       trajectoryMesh.renderOrder = 35;
       // Formation Tops and opaque Lithology sleeves are real 3D geometry. When either
       // requires true occlusion, let the base trajectory participate in the depth buffer.
@@ -4831,13 +5745,30 @@ export function WellboreTrajectoryRenderer({
       group.add(trajectoryMesh);
 
       const lineGeometry = new THREE.BufferGeometry().setFromPoints(displayTrajectoryPositions);
+      const trajectoryMaterialMode = viewProperties?.trajectory.materialMode ?? 'color';
+      const trajectoryMetallicFinish = viewProperties?.trajectory.metallicFinish ?? 'satin';
+      const trajectoryAccentColor = trajectoryMaterialMode === 'gray_metallic'
+        ? (trajectoryMetallicFinish === 'polished'
+            ? '#ffffff'
+            : wbvTrajectoryMetallicColor(viewProperties?.trajectory.metallicTone ?? 'silver'))
+        : (viewProperties?.trajectory.color ?? '#67d599');
+      const trajectoryAccentOpacity = !useSurfaceLighting
+        ? 0.04
+        : trajectoryMaterialMode !== 'gray_metallic'
+          ? 0.20
+          : trajectoryMetallicFinish === 'polished'
+            ? 0.84
+            : trajectoryMetallicFinish === 'satin'
+              ? 0.12
+              : 0.015;
       const lineMaterial = new THREE.LineBasicMaterial({
-        color: 0xffffff,
+        color: trajectoryAccentColor,
         transparent: true,
-        opacity: 0.94,
+        opacity: trajectoryAccentOpacity,
       });
       const trajectoryLine = new THREE.Line(lineGeometry, lineMaterial);
       trajectoryLine.visible = showTrajectory;
+      trajectoryLineRef.current = trajectoryLine;
       trajectoryLine.renderOrder = 36;
       // The white trajectory accent must obey the same scene depth buffer as
       // the tube; otherwise the accent line itself can appear through nearer wells.
@@ -4845,33 +5776,45 @@ export function WellboreTrajectoryRenderer({
       lineMaterial.depthWrite = false;
       group.add(trajectoryLine);
 
-      if (showLithologyOverlay && lithologyIntervals.length > 0) {
+      if (lithologyIntervals.length > 0) {
         const lithologyGroup=new THREE.Group();
         lithologyGroup.name="wbv-lithology-overlay";
-        addLithologyWellboreOverlay(lithologyGroup,lithologyIntervals,displayTrajectoryRenderPoints,displayTrajectoryPositions,displayTrajectoryTangents,0.008*(viewProperties?.trajectory.thickness??1),lithologyAppearance??{opacity:0.95,radiusMultiplier:1.2},useSurfaceLighting,activeManagedWellId);
+        lithologyGroup.visible = showLithologyOverlay;
+        lithologyGroupRef.current = lithologyGroup;
+        addLithologyWellboreOverlay(lithologyGroup,lithologyIntervals,displayTrajectoryRenderPoints,displayTrajectoryPositions,displayTrajectoryTangents,0.008*(viewProperties?.trajectory.thickness??1),lithologyAppearance??{opacity:0.95,radiusMultiplier:1.2},useSurfaceLighting,activeManagedWellId,canvasBackdrop);
         group.add(lithologyGroup);
       }
 
-      if (showCompletions && completionComponents.length > 0) {
+      if (completionComponents.length > 0) {
         const completionGroup = new THREE.Group();
         completionGroup.name = "wbv-completions";
+        completionGroup.visible = showCompletions;
+        completionGroupRef.current = completionGroup;
         addCompletionWellboreOverlay(
           completionGroup, completionComponents, displayTrajectoryRenderPoints, displayTrajectoryPositions, displayTrajectoryTangents,
-          0.008 * (viewProperties?.trajectory.thickness ?? 1), completionAppearance, useSurfaceLighting, activeManagedWellId, depthUnit, addFormationTopHtmlLabel,
+          0.008 * (viewProperties?.trajectory.thickness ?? 1), completionAppearance, useSurfaceLighting, activeManagedWellId, depthUnitRef.current, addFormationTopHtmlLabel,
         );
         group.add(completionGroup);
       }
 
-      if (showFormationTops && formationTops.length > 0) {
+      if (formationTops.length > 0) {
         const formationTopGroup = new THREE.Group();
         formationTopGroup.name = "wbv-formation-tops";
+        formationTopGroup.visible = showFormationTops;
+        formationTopGroupRef.current = formationTopGroup;
         const appearance = formationTopAppearance ?? { opacity: 1, line_width: 1, show_labels: true };
         const size = 0.042 * (appearance.marker_size ?? 1);
-        const formationColor = (name: string, markerType: string) => {
+        const formationColor = (topId: string, name: string, markerType: string) => {
           if ((appearance.color_mode ?? "formation") === "single") return new THREE.Color(appearance.color ?? "#58d39b");
           if ((appearance.color_mode ?? "formation") === "well") return new THREE.Color(viewProperties?.trajectory.color ?? "#67d599");
           if ((appearance.color_mode ?? "formation") === "classification") return new THREE.Color(markerType.toLowerCase().includes("base") ? 0xee6c8a : 0x58d39b);
-          return canvasFormationTopColor(name);
+          const manualOverride = appearance.formation_top_color_overrides?.[topId];
+          if (manualOverride) return new THREE.Color(manualOverride);
+          const identity = appearance.tie_formation_colours ? tiedFormationTopIdentity(name) : canonicalFormationTopIdentity(name);
+          const planned = appearance.tie_formation_colours
+            ? sharedTiedFormationColours.get(identity)
+            : activeLocalFormationColours.get(identity);
+          return planned?.clone() ?? formationSpectrumColor(0);
         };
         formationTops.forEach((top) => {
           if (!Number.isFinite(top.md)) return;
@@ -4880,7 +5823,7 @@ export function WellboreTrajectoryRenderer({
           // source-station interpolation path.
           const basis = interpolateTrajectoryBasisAtMd(displayTrajectoryRenderPoints, displayTrajectoryPositions, displayTrajectoryTangents, top.md);
           if (!basis) return;
-          const color = formationColor(top.name, top.marker_type);
+          const color = formationColor(top.top_id, top.name, top.marker_type);
           let marker: THREE.Object3D;
           const style = appearance.marker_style ?? "ring";
           if (style === "disc") {
@@ -4903,12 +5846,17 @@ export function WellboreTrajectoryRenderer({
 
           if (appearance.show_labels) {
             const mode = appearance.label_mode ?? "name_md";
-            const unitSuffix = depthUnit ? ` ${depthUnit}` : "";
-            const mdText = `${top.md.toLocaleString(undefined,{maximumFractionDigits:2})}${unitSuffix} MD`;
-            const tvdText = typeof top.tvd === "number" && Number.isFinite(top.tvd) ? `${top.tvd.toLocaleString(undefined,{maximumFractionDigits:2})}${unitSuffix} TVD` : "";
-            const labelText = mode === "name" ? top.name : mode === "name_tvd" ? `${top.name}${tvdText ? ` · ${tvdText}` : ""}` : mode === "name_md_tvd" ? `${top.name} · ${mdText}${tvdText ? ` / ${tvdText}` : ""}` : `${top.name} · ${mdText}`;
+            const labelTextForUnit = (unit: string) => {
+              const unitSuffix = unit ? ` ${unit}` : "";
+              const displayMd = canonicalDepthToDisplay(top.md, unit) ?? top.md;
+              const displayTvd = canonicalDepthToDisplay(top.tvd, unit);
+              const mdText = `${displayMd.toLocaleString(undefined,{maximumFractionDigits:2})}${unitSuffix} MD`;
+              const tvdText = typeof displayTvd === "number" && Number.isFinite(displayTvd) ? `${displayTvd.toLocaleString(undefined,{maximumFractionDigits:2})}${unitSuffix} TVD` : "";
+              return mode === "name" ? top.name : mode === "name_tvd" ? `${top.name}${tvdText ? ` · ${tvdText}` : ""}` : mode === "name_md_tvd" ? `${top.name} · ${mdText}${tvdText ? ` / ${tvdText}` : ""}` : `${top.name} · ${mdText}`;
+            };
             addFormationTopHtmlLabel({
-              text: labelText,
+              text: labelTextForUnit(depthUnitRef.current),
+              textForDepthUnit: labelTextForUnit,
               color: `#${color.getHexString()}`,
               opacity: appearance.opacity,
               size: appearance.label_size ?? 1,
@@ -4935,13 +5883,14 @@ export function WellboreTrajectoryRenderer({
         depthTracks,
         renderPoints,
         normalizedPoints,
-        depthUnit,
-        viewProperties,
+        depthUnitRef.current,
         resolvedTrackPlacements,
+        depthPresentationUpdaters,
       );
 
       const coreTrackGroup = new THREE.Group();
       coreTrackGroup.visible = showCoreOverlay;
+      coreTrackGroupRef.current = coreTrackGroup;
       group.add(coreTrackGroup);
       const coreTrackRuntime = addCoreImageTracks(
         coreTrackGroup,
@@ -4967,8 +5916,19 @@ export function WellboreTrajectoryRenderer({
         normalizedPoints,
         curveTracks,
         curveTrackSpacing,
+        lithologyIntervals,
         resolvedTrackPlacements,
+        formationTopLabelOverlay,
       );
+
+      // WBV_CURVE_FILL_FIRST_TOGGLE_WARMUP_V1_0_0_AUDITED
+      // The curve/fill meshes now exist. Prime their WebGL shader/material programs
+      // before the first visibility toggle, without changing presentation state.
+      try {
+        renderer.compile(scene, camera);
+      } catch {
+        // Warm-up is opportunistic; the normal render path remains authoritative.
+      }
 
       const createBullseye = () => {
         const canvas = document.createElement('canvas');
@@ -5256,12 +6216,19 @@ export function WellboreTrajectoryRenderer({
               .filter((value): value is string => value !== null)
           : [];
         return [
-          `MD ${formatDepth(point.md, depthUnit)} / TVD ${formatDepth(point.tvd, depthUnit)}`,
+          `MD ${formatDepth(point.md, depthUnitRef.current)} / TVD ${formatDepth(point.tvd, depthUnitRef.current)}`,
           ...curveValues,
         ].join('\n');
       };
 
       const syncInteraction = () => {
+        /*
+         * Do not let an older backend response move the visible interval marker
+         * away from a newer local click. Once all local observe commands settle,
+         * the latest authoritative state is rendered normally.
+         */
+        if (selectionModeRef.current === 'interval' && pendingIntervalObserveCount > 0) return;
+
         selectionMarker.visible = false;
         intervalStartMarker.visible = false;
         intervalEndMarker.visible = false;
@@ -5288,18 +6255,45 @@ export function WellboreTrajectoryRenderer({
           return;
         }
 
-        if (selectionModeRef.current !== 'interval') return;
+        if (selectionModeRef.current !== 'interval') {
+          localIntervalStartProjection = null;
+          localCommittedIntervalProjections = null;
+          return;
+        }
         const interval = savedIntervalRef.current;
+        if (!interval && !intervalDraftStartRef.current && localIntervalStartProjection == null) {
+          localCommittedIntervalProjections = null;
+        }
+        const exactStartProjection = localCommittedIntervalProjections?.start ?? localIntervalStartProjection;
+        const exactEndProjection = localCommittedIntervalProjections?.end ?? null;
         const start = interval?.start ?? intervalDraftStartRef.current;
         const end = interval?.end ?? null;
-        if (typeof start?.md === 'number') {
+        if (exactStartProjection) {
+          const position = new THREE.Vector3(
+            exactStartProjection.sceneX,
+            exactStartProjection.sceneY,
+            exactStartProjection.sceneZ,
+          );
+          setMarkerBasePosition(intervalStartMarker, position);
+          intervalStartMarker.position.copy(position);
+          intervalStartMarker.visible = true;
+        } else if (typeof start?.md === 'number') {
           const position = pointAtMd(start.md);
           if (position) {
             setMarkerBasePosition(intervalStartMarker, position);
             intervalStartMarker.visible = true;
           }
         }
-        if (typeof end?.md === 'number') {
+        if (exactEndProjection) {
+          const position = new THREE.Vector3(
+            exactEndProjection.sceneX,
+            exactEndProjection.sceneY,
+            exactEndProjection.sceneZ,
+          );
+          setMarkerBasePosition(intervalEndMarker, position);
+          intervalEndMarker.position.copy(position);
+          intervalEndMarker.visible = true;
+        } else if (typeof end?.md === 'number') {
           const position = pointAtMd(end.md);
           if (position) {
             setMarkerBasePosition(intervalEndMarker, position);
@@ -5428,6 +6422,18 @@ export function WellboreTrajectoryRenderer({
       let localTrackingPointerId: number | null = null;
       let localTrackingProjection: WbvFrontendSelectedPoint | null = null;
       let localContinuousTracker: WbvContinuousProjectedTracker | null = null;
+
+      /*
+       * Interval picks are backend-authoritative, but the backend round trip can
+       * take long enough that rapid spot checks visibly lag behind the mouse.
+       * Keep a renderer-local presentation stage while observe commands are in
+       * flight. Authoritative interaction state is reconciled as soon as the
+       * pending command count returns to zero.
+       */
+      let localIntervalStartProjection: WbvFrontendSelectedPoint | null = null;
+      let localCommittedIntervalProjections: { start: WbvFrontendSelectedPoint; end: WbvFrontendSelectedPoint } | null = null;
+      // WBV_INTERVAL_EXACT_LOCAL_AUTHORITY_V1_0_2
+      let pendingIntervalObserveCount = 0;
 
       const sendCommand = async (command: Parameters<NonNullable<WbvTrajectoryRendererProps['onInteractionCommand']>>[0]) => {
         const handler = onInteractionCommandRef.current;
@@ -5559,8 +6565,8 @@ export function WellboreTrajectoryRenderer({
         event.stopPropagation();
       };
 
-      const activateWellAtPointer = (event: PointerEvent): boolean => {
-        if (!renderer || selectableWellMeshes.length === 0) return false;
+      const managedWellAtPointer = (event: PointerEvent): string | null => {
+        if (!renderer || selectableWellMeshes.length === 0) return null;
         const rect = renderer.domElement.getBoundingClientRect();
         const pointer = new THREE.Vector2(
           ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -5570,10 +6576,17 @@ export function WellboreTrajectoryRenderer({
         raycaster.setFromCamera(pointer, camera);
         const hit = raycaster.intersectObjects(selectableWellMeshes, false)[0];
         const managedWellId = hit?.object.userData.managedWellId as string | null | undefined;
-        if (!managedWellId || managedWellId === activeManagedWellId) return false;
-        onActivateWellRef.current?.(managedWellId);
-        return true;
+        if (!managedWellId || managedWellId === activeManagedWellId) return null;
+        return managedWellId;
       };
+
+      let pendingWellActivation: {
+        pointerId: number;
+        x: number;
+        y: number;
+        managedWellId: string;
+        moved: boolean;
+      } | null = null;
 
       const pickCoreLocatorAtPointer = (event: PointerEvent): boolean => {
         if (!renderer || !coreViewModeRef.current || !onCoreLocatorPickRef.current) return false;
@@ -5613,21 +6626,73 @@ export function WellboreTrajectoryRenderer({
         return true;
       };
 
-      const handlePointerDown = (event: PointerEvent) => {
-        if (!renderer || event.button !== 0) return;
+      const showImmediateIntervalProjection = (projection: WbvFrontendSelectedPoint): void => {
+        const projectedPosition = new THREE.Vector3(
+          projection.sceneX,
+          projection.sceneY,
+          projection.sceneZ,
+        );
 
-        if (coreViewModeRef.current) {
-          if (pickCoreLocatorAtPointer(event)) {
-            interactionLifecycle.ordinaryPointerDown = null;
-            event.preventDefault();
-            event.stopPropagation();
-          }
+        if (localIntervalStartProjection == null) {
+          localCommittedIntervalProjections = null;
+          localIntervalStartProjection = projection;
+          setMarkerBasePosition(intervalStartMarker, projectedPosition);
+          intervalStartMarker.position.copy(projectedPosition);
+          intervalStartMarker.visible = true;
+          intervalEndMarker.visible = false;
+          clearIntervalHighlight();
           return;
         }
 
-        if (inspectionPrimaryPan) {
-          renderer.domElement.style.cursor = 'grabbing';
+        const startPosition = new THREE.Vector3(
+          localIntervalStartProjection.sceneX,
+          localIntervalStartProjection.sceneY,
+          localIntervalStartProjection.sceneZ,
+        );
+        setMarkerBasePosition(intervalStartMarker, startPosition);
+        intervalStartMarker.position.copy(startPosition);
+        intervalStartMarker.visible = true;
+        setMarkerBasePosition(intervalEndMarker, projectedPosition);
+        intervalEndMarker.position.copy(projectedPosition);
+        intervalEndMarker.visible = true;
+        localCommittedIntervalProjections = {
+          start: localIntervalStartProjection,
+          end: projection,
+        };
+        localIntervalStartProjection = null;
+      };
+
+      const handlePointerDown = (event: PointerEvent) => {
+        if (!renderer || event.button !== 0) return;
+
+        // WBV_VIEW_CORE_POINTER_OWNERSHIP_SELECT_POINT_REPAIR_V1_0_0_AUDITED
+        // View Core is a locator overlay, not an exclusive interaction mode.
+        // Consume MB1 only when the pointer actually resolves to Core.
+        if (coreViewModeRef.current && pickCoreLocatorAtPointer(event)) {
+          interactionLifecycle.ordinaryPointerDown = null;
+          event.preventDefault();
+          event.stopPropagation();
+          return;
         }
+
+
+        const activationManagedWellId = managedWellAtPointer(event);
+        if (activationManagedWellId) {
+          // Do not change active-well ownership on pointerdown. A scene rebuild
+          // while MB1 is still depressed can replace the canvas/listeners beneath
+          // the same physical gesture. Commit only on a stationary pointerup.
+          pendingWellActivation = {
+            pointerId: event.pointerId,
+            x: event.clientX,
+            y: event.clientY,
+            managedWellId: activationManagedWellId,
+            moved: false,
+          };
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+
         if (verticalLockActive) {
           verticalDragPointerId = event.pointerId;
           verticalDragLastY = event.clientY;
@@ -5637,11 +6702,6 @@ export function WellboreTrajectoryRenderer({
           } catch {
             // Window-level listeners preserve the drag if pointer capture is unavailable.
           }
-        }
-        if (activateWellAtPointer(event)) {
-          event.preventDefault();
-          event.stopPropagation();
-          return;
         }
         if (rotationCenterPickArmedRef.current) {
           interactionLifecycle.ordinaryPointerDown = {
@@ -5655,13 +6715,28 @@ export function WellboreTrajectoryRenderer({
           return;
         }
         if (selectionModeRef.current === 'none') return;
-        if (event.detail >= 2) {
+        /*
+         * A double-click is the accepted Interval Selection spot-check gesture.
+         * The second pointerdown must therefore be allowed to enter the ordinary
+         * interval pick path so the backend receives the second observation and
+         * commits saved_interval.  Point mode keeps the historical double-click
+         * suppression.
+         */
+        if (event.detail >= 2 && selectionModeRef.current !== 'interval') {
           event.preventDefault();
           event.stopPropagation();
           return;
         }
         const shiftTrackingRequested = event.shiftKey || event.getModifierState?.('Shift') === true;
-        if (shiftTrackingRequested && selectionModeRef.current === 'point') {
+        // WBV_POINT_SELECTION_TRACK_VALUES_POINTER_OWNERSHIP_REPAIR_V1_0_0_AUDITED
+        // "Track values along wellbore" explicitly requests continuous MB1 point
+        // tracking. It must own the pointer before OrbitControls can classify the
+        // same gesture as camera movement. Preserve Shift+MB1 as a compatible
+        // explicit tracking gesture.
+        const pointTrackingRequested =
+          selectionModeRef.current === 'point'
+          && (trackValuesRef.current || shiftTrackingRequested);
+        if (pointTrackingRequested) {
           if (beginLocalTracking(event)) {
             event.preventDefault();
             event.stopPropagation();
@@ -5677,6 +6752,12 @@ export function WellboreTrajectoryRenderer({
       };
 
       const handlePointerMove = (event: PointerEvent) => {
+        if (pendingWellActivation?.pointerId === event.pointerId) {
+          if (Math.hypot(event.clientX - pendingWellActivation.x, event.clientY - pendingWellActivation.y) > 8) {
+            pendingWellActivation.moved = true;
+          }
+          return;
+        }
         if (verticalLockActive && verticalDragPointerId === event.pointerId) {
           const deltaY = event.clientY - verticalDragLastY;
           verticalDragLastY = event.clientY;
@@ -5708,9 +6789,18 @@ export function WellboreTrajectoryRenderer({
       };
 
       const handlePointerUp = (event: PointerEvent) => {
-        if (inspectionPrimaryPan && renderer) {
-          renderer.domElement.style.cursor = 'grab';
+
+        if (pendingWellActivation?.pointerId === event.pointerId) {
+          const activation = pendingWellActivation;
+          pendingWellActivation = null;
+          if (!activation.moved) {
+            onActivateWellRef.current?.(activation.managedWellId);
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          return;
         }
+
         if (verticalDragPointerId === event.pointerId) {
           const moved = verticalDragMoved;
           verticalDragPointerId = null;
@@ -5750,13 +6840,38 @@ export function WellboreTrajectoryRenderer({
           return;
         }
 
+        if (selectionModeRef.current === 'interval') {
+          const projection = localProjectionFor(event);
+          if (!projection) return;
+          const observation = exactObservationForProjection(projection);
+          if (!observation) return;
+
+          showImmediateIntervalProjection(projection);
+          pendingIntervalObserveCount += 1;
+
+          void sendCommand({ kind: 'observe', observation, sequence: 0 })
+            .finally(() => {
+              pendingIntervalObserveCount = Math.max(0, pendingIntervalObserveCount - 1);
+              if (pendingIntervalObserveCount === 0) {
+                /*
+                 * Reconcile only after the newest queued local click has had a
+                 * chance to reach authority. This prevents older responses from
+                 * visibly pulling the marker back to a previous click.
+                 */
+                syncInteraction();
+              }
+            });
+          return;
+        }
+
         const observation = observationFor(event);
         if (observation) void sendCommand({ kind: 'observe', observation, sequence: 0 });
       };
 
       const handlePointerCancel = (event: PointerEvent) => {
-        if (inspectionPrimaryPan && renderer) {
-          renderer.domElement.style.cursor = 'grab';
+
+        if (pendingWellActivation?.pointerId === event.pointerId) {
+          pendingWellActivation = null;
         }
         if (verticalDragPointerId === event.pointerId) {
           verticalDragPointerId = null;
@@ -5792,36 +6907,44 @@ export function WellboreTrajectoryRenderer({
       }
 
       if (!showTopGrid) {
-        const topLabel = createTextSprite(`Top ${formatDepth(renderPoints[0]?.md ?? renderPoints[0]?.tvd, depthUnit)}`, {
-          color: '#e7fbff',
-          background: 'rgba(3, 8, 12, 0.62)',
+        const topDepthValue = renderPoints[0]?.md ?? renderPoints[0]?.tvd;
+        const topLabel = createTextSprite(`Top ${formatDepth(topDepthValue, depthUnitRef.current)}`, {
+          color: canvasEnvironmentPalette.neutralTextColor,
+          background: canvasBackdrop === 'light' ? 'rgba(0, 0, 0, 0)' : 'rgba(3, 8, 12, 0.62)',
           scale: 0.18,
+          shadowBlur: canvasBackdrop === 'light' ? 2 : 8,
+          shadowColor: canvasBackdrop === 'light' ? 'rgba(255, 255, 255, 0.90)' : 'rgba(111, 211, 255, 0.48)',
         });
         topLabel.position.set(box.maxX + 0.5, normalizedPoints[0].y, box.maxZ + 0.1);
         zoomScaledTextSprites.push(topLabel);
         group.add(topLabel);
+        registerSpriteDepthText(topLabel, (unit) => `Top ${formatDepth(topDepthValue, unit)}`);
       }
 
-      const baseLabel = createTextSprite(`Base ${formatDepth(renderPoints[renderPoints.length - 1]?.md ?? renderPoints[renderPoints.length - 1]?.tvd, depthUnit)}`, {
-        color: '#dff8ec',
-        background: 'rgba(3, 8, 12, 0.62)',
+      const baseDepthValue = renderPoints[renderPoints.length - 1]?.md ?? renderPoints[renderPoints.length - 1]?.tvd;
+      const baseLabel = createTextSprite(`Base ${formatDepth(baseDepthValue, depthUnitRef.current)}`, {
+        color: canvasEnvironmentPalette.neutralTextColor,
+        background: canvasBackdrop === 'light' ? 'rgba(0, 0, 0, 0)' : 'rgba(3, 8, 12, 0.62)',
         scale: 0.18,
+        shadowBlur: canvasBackdrop === 'light' ? 2 : 8,
+        shadowColor: canvasBackdrop === 'light' ? 'rgba(255, 255, 255, 0.90)' : 'rgba(111, 211, 255, 0.48)',
       });
       baseLabel.position.set(box.maxX + 0.52, normalizedPoints[normalizedPoints.length - 1].y, box.maxZ + 0.1);
       zoomScaledTextSprites.push(baseLabel);
       group.add(baseLabel);
+      registerSpriteDepthText(baseLabel, (unit) => `Base ${formatDepth(baseDepthValue, unit)}`);
 
-      const xLabel = createTextSprite('X / EAST', { color: '#80dcff', scale: 0.18 });
+      const xLabel = createTextSprite('X / EAST', { color: canvasEnvironmentPalette.axisTextColor, scale: 0.18, shadowBlur: canvasBackdrop === 'light' ? 2 : 8, shadowColor: canvasBackdrop === 'light' ? 'rgba(255, 255, 255, 0.76)' : 'rgba(111, 211, 255, 0.48)' });
       xLabel.position.set(box.maxX + 0.34, box.minY, box.maxZ + 0.08);
       zoomScaledTextSprites.push(xLabel);
       group.add(xLabel);
 
-      const yLabel = createTextSprite('Y / NORTH', { color: '#80dcff', scale: 0.18 });
+      const yLabel = createTextSprite('Y / NORTH', { color: canvasEnvironmentPalette.axisTextColor, scale: 0.18, shadowBlur: canvasBackdrop === 'light' ? 2 : 8, shadowColor: canvasBackdrop === 'light' ? 'rgba(255, 255, 255, 0.76)' : 'rgba(111, 211, 255, 0.48)' });
       yLabel.position.set(box.minX - 0.34, box.minY, box.maxZ + 0.08);
       zoomScaledTextSprites.push(yLabel);
       group.add(yLabel);
 
-      const zLabel = createTextSprite('Z / TVD', { color: '#80dcff', scale: 0.195 });
+      const zLabel = createTextSprite('Z / TVD', { color: canvasEnvironmentPalette.axisTextColor, scale: 0.195, shadowBlur: canvasBackdrop === 'light' ? 2 : 8, shadowColor: canvasBackdrop === 'light' ? 'rgba(255, 255, 255, 0.76)' : 'rgba(111, 211, 255, 0.48)' });
       zLabel.position.set(box.maxX + 0.38, box.maxY, box.minZ - 0.08);
       zoomScaledTextSprites.push(zLabel);
       group.add(zLabel);
@@ -6167,11 +7290,18 @@ export function WellboreTrajectoryRenderer({
         applyCameraProjection(camera, currentViewHeight, aspect);
       };
 
+      const setDepthPresentationUnit = (unit: string) => {
+        depthUnitRef.current = unit;
+        depthPresentationUpdaters.forEach((update) => update(unit));
+        syncInteraction();
+      };
+
       runtimeRef.current = {
         applyPreset,
         applyViewAction,
         applyCameraView,
         syncInteraction,
+        setDepthPresentationUnit,
         setHorizontalRotationLock: applyHorizontalRotationLock,
         setVerticalRotationLock: applyVerticalRotationLock,
       };
@@ -6200,8 +7330,13 @@ export function WellboreTrajectoryRenderer({
       depthTrackRuntime.update(camera);
       coreTrackRuntime.update(camera);
       curveOverlayRuntime.update(camera);
-      contextCurveOverlayRuntimes.forEach((runtime) => runtime.update(camera));
+      curveOverlayRuntime.syncHtmlOverlay(camera, viewportWidth, viewportHeight);
+      contextCurveOverlayRuntimes.forEach((runtime) => {
+        runtime.update(camera);
+        runtime.syncHtmlOverlay(camera, viewportWidth, viewportHeight);
+      });
       const lastOverlayQuaternion = camera.quaternion.clone();
+      const lastOverlayModelQuaternion = group.quaternion.clone();
       let lastOverviewUpdate = Number.NEGATIVE_INFINITY;
       let currentOverviewRange: OverviewRange = { startIndex: 0, endIndex: normalizedPoints.length - 1 };
 
@@ -6296,13 +7431,18 @@ export function WellboreTrajectoryRenderer({
             transientContinuity.locationAtArc(displayedTransientProjectedDistance),
           );
         }
-        if (1 - Math.abs(lastOverlayQuaternion.dot(camera.quaternion)) > 1e-5) {
+        const cameraOrientationChanged = 1 - Math.abs(lastOverlayQuaternion.dot(camera.quaternion)) > 1e-5;
+        const modelOrientationChanged = 1 - Math.abs(lastOverlayModelQuaternion.dot(group.quaternion)) > 1e-5;
+        if (cameraOrientationChanged || modelOrientationChanged) {
           lastOverlayQuaternion.copy(camera.quaternion);
+          lastOverlayModelQuaternion.copy(group.quaternion);
           depthTrackRuntime.update(camera);
           coreTrackRuntime.update(camera);
           curveOverlayRuntime.update(camera);
           contextCurveOverlayRuntimes.forEach((runtime) => runtime.update(camera));
         }
+        curveOverlayRuntime.syncHtmlOverlay(camera, viewportWidth, viewportHeight);
+        contextCurveOverlayRuntimes.forEach((runtime) => runtime.syncHtmlOverlay(camera, viewportWidth, viewportHeight));
         const leaderElement = leaderRef.current;
         const readoutElement = liveReadoutRef.current;
         if (leaderElement && readoutElement) {
@@ -6414,6 +7554,13 @@ export function WellboreTrajectoryRenderer({
           const viewportHeight = Math.max(renderer.domElement.clientHeight, 1);
 
           formationTopLabelRuntimes.forEach((runtime) => {
+            const layerVisible = runtime.kind === "completion"
+              ? completionsVisibleRef.current
+              : formationTopsVisibleRef.current;
+            if (!layerVisible) {
+              runtime.element.hidden = true;
+              return;
+            }
             runtime.marker.updateWorldMatrix(true, false);
             const projectedAnchor = runtime.marker.getWorldPosition(new THREE.Vector3()).project(camera);
             const visible = Number.isFinite(projectedAnchor.x)
@@ -6499,6 +7646,17 @@ export function WellboreTrajectoryRenderer({
         }
 
         renderer.render(scene, camera);
+        if (!firstFrameReadyCallbackPresented) {
+          firstFrameReadyCallbackPresented = true;
+          // Signal actual WebGL render completion. The parent intentionally
+          // waits additional animation-frame boundaries before declaring the
+          // Saved Canvas visually presented.
+          onFirstFrameRendered?.();
+        }
+        if (!continuityFirstFramePresented) {
+          continuityFirstFramePresented = true;
+          scheduleContinuityBackdropRestore();
+        }
         animationFrame = window.requestAnimationFrame(renderScene);
         if (!overviewDisabledRef.current && frameTime - lastOverviewUpdate >= 100) {
           try {
@@ -6517,6 +7675,34 @@ export function WellboreTrajectoryRenderer({
       setStatus('rendered');
 
       return () => {
+        // WBV_MULTI_WELL_SELECTION_SCENE_CONTINUITY_FIX_V1_0_0_AUDITED
+        // The main renderer effect is intentionally broad and is rebuilt when
+        // active-well ownership changes. Preserve the outgoing completed frame
+        // as a temporary host backdrop so the operator never sees the shared
+        // multi-well canvas disappear while the next scene is constructed.
+        try {
+          cancelContinuityRestore();
+          if (host.dataset.wbvSceneContinuityActive !== "1") {
+            const snapshot = canvas.toDataURL("image/png");
+            if (snapshot && snapshot !== "data:,") {
+              host.dataset.wbvSceneContinuityBackgroundImage = host.style.backgroundImage;
+              host.dataset.wbvSceneContinuityBackgroundSize = host.style.backgroundSize;
+              host.dataset.wbvSceneContinuityBackgroundPosition = host.style.backgroundPosition;
+              host.dataset.wbvSceneContinuityBackgroundRepeat = host.style.backgroundRepeat;
+              host.dataset.wbvSceneContinuityActive = "1";
+              host.style.backgroundImage = `url("${snapshot}")`;
+              host.style.backgroundSize = "100% 100%";
+              host.style.backgroundPosition = "center";
+              host.style.backgroundRepeat = "no-repeat";
+              canvas.style.visibility = "hidden";
+            }
+          } else {
+            canvas.style.visibility = "hidden";
+          }
+        } catch {
+          // Canvas snapshot continuity is best-effort only; never block cleanup.
+        }
+
         const finalCameraView = captureCameraViewState();
         if (finalCameraView) onCameraViewChangeRef.current?.(finalCameraView);
         cameraViewRef.current = {
@@ -6536,6 +7722,12 @@ export function WellboreTrajectoryRenderer({
         if (depthTrackGroupRef.current === depthTrackGroup) {
           depthTrackGroupRef.current = null;
         }
+        if (lithologyGroupRef.current?.parent === group) lithologyGroupRef.current = null;
+        if (completionGroupRef.current?.parent === group) completionGroupRef.current = null;
+        if (formationTopGroupRef.current?.parent === group) formationTopGroupRef.current = null;
+        if (coreTrackGroupRef.current === coreTrackGroup) coreTrackGroupRef.current = null;
+        if (trajectoryMeshRef.current === trajectoryMesh) trajectoryMeshRef.current = null;
+        if (trajectoryLineRef.current === trajectoryLine) trajectoryLineRef.current = null;
         if (coreTrackRuntimeRef.current === coreTrackRuntime) {
           coreTrackRuntimeRef.current = null;
         }
@@ -6566,7 +7758,12 @@ export function WellboreTrajectoryRenderer({
       overviewRuntimeRef.current = null;
       curveOverlayGroupRef.current = null;
       depthTrackGroupRef.current = null;
+      lithologyGroupRef.current = null;
+      completionGroupRef.current = null;
+      formationTopGroupRef.current = null;
+      coreTrackGroupRef.current = null;
       setStatus('error');
+      restoreContinuityBackdrop();
       controls?.dispose();
       renderer?.dispose();
       return undefined;
@@ -6579,7 +7776,6 @@ export function WellboreTrajectoryRenderer({
     depthTracks,
     curveTrackSpacing,
     depthTicks,
-    depthUnit,
     renderPoints,
     scenePoints,
     showAxes,
@@ -6588,15 +7784,22 @@ export function WellboreTrajectoryRenderer({
     showBottomGrid,
     showTopGrid,
     showGroundPlane,
+    canvasBackdrop,
+    canvasShadeId,
     showSurveyStations,
-    showTrajectory,
     lithologyRenderKey,
+    onFirstFrameRendered,
     completionRenderKey,
     coreRenderKey,
     trackPlacementRenderKey,
     useSurfaceLighting,
     viewProperties,
   ]);
+
+  useEffect(() => {
+    depthUnitRef.current = depthUnit;
+    runtimeRef.current?.setDepthPresentationUnit(depthUnit);
+  }, [depthUnit]);
 
   useEffect(() => {
     coreTrackRuntimeRef.current?.setFocusInterval(coreLocatorFocusInterval);

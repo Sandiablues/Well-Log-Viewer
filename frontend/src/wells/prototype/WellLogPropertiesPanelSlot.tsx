@@ -107,20 +107,20 @@ function PropertiesContractTable({
 }) {
   return (
     <div
-      className={`wlv-properties-contract-table${collapsed ? " is-collapsed" : ""}`}
+      className={`wlv-properties-contract-table mv-role-section-shell${collapsed ? " is-collapsed" : ""}`}
     >
       {sections.map((section, sectionIndex) => {
         const canCollapseSection = collapsible && sectionIndex === 0;
         return (
           <section
             key={section.sectionId}
-            className="wlv-properties-contract-section"
+            className="wlv-properties-contract-section mv-role-section-shell"
           >
             <h3>
               {canCollapseSection ? (
                 <button
                   type="button"
-                  className="wlv-properties-collapse-toggle"
+                  className="wlv-properties-collapse-toggle mv-role-collapse-control"
                   aria-expanded={!collapsed}
                   onClick={onToggle}
                 >
@@ -132,13 +132,13 @@ function PropertiesContractTable({
               )}
             </h3>
             {canCollapseSection && collapsed ? null : (
-              <table>
+              <table className="mv-role-property-grid">
                 <tbody>
                   {section.rows.map((row) => (
-                    <tr key={`${section.sectionId}-${row.label}`}>
-                      <th scope="row">{row.label}</th>
-                      <td>
-                        <span>{row.value}</span>
+                    <tr className="mv-role-property-row" key={`${section.sectionId}-${row.label}`}>
+                      <th className="mv-type-property-label mv-role-property-label" scope="row">{row.label}</th>
+                      <td className="mv-role-property-value-cell">
+                        <span className="mv-type-property-value mv-role-property-value">{row.value}</span>
                         {row.unit ? <em>{row.unit}</em> : null}
                         {row.source ? <small>{row.source}</small> : null}
                       </td>
@@ -168,15 +168,15 @@ function ConsolidatedPropertiesInfo({
 }) {
   return (
     <div
-      className={`wlv-properties-contract-table wlv-properties-consolidated-info${collapsed ? " is-collapsed" : ""}`}
+      className={`wlv-properties-contract-table wlv-properties-consolidated-info mv-role-section-shell${collapsed ? " is-collapsed" : ""}`}
     >
       <section
-        className={`wlv-properties-contract-section${collapsed ? " is-collapsed" : ""}`}
+        className={`wlv-properties-contract-section mv-role-section-shell${collapsed ? " is-collapsed" : ""}`}
       >
-        <h3>
+        <h3 className="mv-type-section-heading mv-role-section-title">
           <button
             type="button"
-            className="wlv-properties-collapse-toggle"
+            className="wlv-properties-collapse-toggle mv-role-collapse-control"
             aria-expanded={!collapsed}
             onClick={onToggle}
           >
@@ -189,16 +189,16 @@ function ConsolidatedPropertiesInfo({
           : sections.map((section) => (
               <section
                 key={section.sectionId}
-                className="wlv-properties-contract-section"
+                className="wlv-properties-contract-section mv-role-section-shell"
               >
-                <h3>{section.title}</h3>
-                <table>
+                <h3 className="mv-type-section-heading mv-role-section-title">{section.title}</h3>
+                <table className="mv-role-property-grid">
                   <tbody>
                     {section.rows.map((row) => (
-                      <tr key={`${section.sectionId}-${row.label}`}>
-                        <th scope="row">{row.label}</th>
-                        <td>
-                          <span>{row.value}</span>
+                      <tr className="mv-role-property-row" key={`${section.sectionId}-${row.label}`}>
+                        <th className="mv-type-property-label mv-role-property-label" scope="row">{row.label}</th>
+                        <td className="mv-role-property-value-cell">
+                          <span className="mv-type-property-value mv-role-property-value">{row.value}</span>
                           {row.unit ? <em>{row.unit}</em> : null}
                           {row.source ? <small>{row.source}</small> : null}
                         </td>
@@ -3964,13 +3964,13 @@ export function WellLogPropertiesPanelSlot({
   legacyPanel?: ReactElement;
 }) {
   const [curveDesignCollapsed, setCurveDesignCollapsed] = useState(true);
+  const [trackControlsCollapsed, setTrackControlsCollapsed] = useState(true);
   const [curveInfoCollapsed, setCurveInfoCollapsed] = useState(true);
   const [standardDesignCollapsed, setStandardDesignCollapsed] = useState(true);
-  const [standardTrackMetadataCollapsed, setStandardTrackMetadataCollapsed] = useState(true);
   const [standardInfoCollapsed, setStandardInfoCollapsed] = useState(true);
   const [curveEditModalOpen, setCurveEditModalOpen] = useState(false);
   const [curveEditModalTab, setCurveEditModalTab] =
-    useState<"curve" | "overlays" | "appearance" | "completion" | "interval">("curve");
+    useState<"curve" | "design" | "overlays" | "appearance" | "completion" | "interval">("curve");
   const [curveEditSectionTab, setCurveEditSectionTab] =
     useState<"controls" | "infill">("controls");
   const [editTrackOriginalCurve, setEditTrackOriginalCurve] =
@@ -4004,18 +4004,6 @@ export function WellLogPropertiesPanelSlot({
   );
   const touchedOverlayTrackIdsRef = useRef<Set<string>>(new Set());
   const lastHandledCurveEditRequestIdRef = useRef<number | null>(null);
-  const [curveEditModalOffset, setCurveEditModalOffset] = useState({
-    x: 0,
-    y: 0,
-  });
-  const [curveEditModalDrag, setCurveEditModalDrag] = useState<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    originX: number;
-    originY: number;
-  } | null>(null);
-  const curveEditModalRef = useRef<HTMLElement | null>(null);
   const intervalConfigMountRef = useRef<HTMLDivElement | null>(null);
   const [intervalConfigTab, setIntervalConfigTab] =
     useState<"formation" | "depth" | "descriptions" | "tie_in">("formation");
@@ -4023,18 +4011,6 @@ export function WellLogPropertiesPanelSlot({
     null | (() => Promise<boolean>)
   >(null);
   const overlayInfillDraftApplyRef = useRef<null | (() => Promise<boolean>)>(null);
-  const [curveEditModalSize, setCurveEditModalSize] = useState<{
-    width: number;
-    height: number;
-  } | null>(null);
-  const [curveEditModalResize, setCurveEditModalResize] = useState<{
-    startX: number;
-    startY: number;
-    originWidth: number;
-    originHeight: number;
-    originOffsetX: number;
-    originOffsetY: number;
-  } | null>(null);
   const normalizedSelection = normalizePropertiesSelection(
     tracks,
     selection,
@@ -4078,12 +4054,7 @@ export function WellLogPropertiesPanelSlot({
             : section,
         )
       : [];
-  const standardTrackMetadataSection =
-    standardNonDepthTrack &&
-    (standardNonDepthTrack.trackType === "core"
-      || standardNonDepthTrack.trackType === "completion")
-      ? trackPropertiesMetadataSection(standardNonDepthTrack)
-      : null;
+
 
   const commonWellSections = contract.tabs.info.sections.filter(
     (section) =>
@@ -4137,68 +4108,6 @@ export function WellLogPropertiesPanelSlot({
               ...commonWellSections,
             ]
           : [];
-
-  useEffect(() => {
-    if (!curveEditModalResize) {
-      return;
-    }
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const maxWidth = Math.max(520, window.innerWidth - 24);
-      const maxHeight = Math.max(420, window.innerHeight - 24);
-
-      const nextWidth = Math.min(
-        maxWidth,
-        Math.max(
-          520,
-          curveEditModalResize.originWidth +
-            (event.clientX - curveEditModalResize.startX),
-        ),
-      );
-      const nextHeight = Math.min(
-        maxHeight,
-        Math.max(
-          420,
-          curveEditModalResize.originHeight +
-            (event.clientY - curveEditModalResize.startY),
-        ),
-      );
-
-      setCurveEditModalSize({
-        width: nextWidth,
-        height: nextHeight,
-      });
-
-      /*
-       * The backdrop centers the modal. Without offset compensation, changing
-       * its size moves the top and left edges by half of the size delta.
-       * Counter that movement so the top-left corner remains fixed and the
-       * bottom-right resize handle is the only moving corner.
-       */
-      setCurveEditModalOffset({
-        x:
-          curveEditModalResize.originOffsetX +
-          (nextWidth - curveEditModalResize.originWidth) / 2,
-        y:
-          curveEditModalResize.originOffsetY +
-          (nextHeight - curveEditModalResize.originHeight) / 2,
-      });
-    };
-
-    const handlePointerUp = () => {
-      setCurveEditModalResize(null);
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
-
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-    };
-  }, [curveEditModalResize]);
 
   useEffect(() => {
     liveOverlayStylesRef.current = formationTopOverlayStylesByTrackId;
@@ -4348,7 +4257,7 @@ export function WellLogPropertiesPanelSlot({
       ? findCurveForAssignment(curveCatalogItems, editTrackTargetCurve)
       : null;
 
-  const beginEditTrackSession = (initialTab: "curve" | "overlays" | "appearance" | "completion" | "interval" = "curve") => {
+  const beginEditTrackSession = (initialTab: "curve" | "design" | "overlays" | "appearance" | "completion" | "interval" = "curve") => {
     touchedOverlayTrackIdsRef.current = new Set();
     if (!selectedTrack) {
       return;
@@ -4423,10 +4332,6 @@ export function WellLogPropertiesPanelSlot({
     setEditTrackMacroCoreImageDirty(false);
     setEditTrackDirty(false);
     setEditTrackOverlayDirty(false);
-    setCurveEditModalSize(null);
-    setCurveEditModalResize(null);
-    setCurveEditModalOffset({ x: 0, y: 0 });
-    setCurveEditModalDrag(null);
     setCurveEditModalTab(initialTab);
     setCurveEditModalOpen(true);
   };
@@ -4675,7 +4580,9 @@ export function WellLogPropertiesPanelSlot({
             ? "completion"
             : selectedTrack.trackType === "interval"
               ? "interval"
-              : "overlays",
+              : selectedTrack.trackType === "depth"
+                ? "design"
+                : "overlays",
     );
   }, [
     curveEditModalOpen,
@@ -4995,7 +4902,7 @@ export function WellLogPropertiesPanelSlot({
   if (collapsed) {
     return (
       <aside
-        className="wlv-right-panel wlv-properties-panel-v2 collapsed"
+        className="wlv-right-panel wlv-properties-panel-v2 mv-viewer-info-card mv-role-panel-shell collapsed"
         aria-label="Properties panel collapsed"
       >
         <button
@@ -5014,9 +4921,9 @@ export function WellLogPropertiesPanelSlot({
 
   return (
     <>
-    <aside className="wlv-right-panel wlv-properties-panel-v2">
+    <aside className="wlv-right-panel wlv-properties-panel-v2 mv-viewer-info-card mv-role-panel-shell">
       <div className="wlv-panel-heading wlv-properties-panel-heading-with-toggle">
-        <h2>Properties</h2>
+        <h2 className="mv-type-section-heading mv-role-panel-title">Properties</h2>
         <button
           type="button"
           className="wlv-curve-inventory-collapse-toggle wlv-right-properties-collapse-toggle"
@@ -5046,7 +4953,7 @@ export function WellLogPropertiesPanelSlot({
         >
           <button
             type="button"
-            className="wlv-edit-curve-launcher wlv-edit-curve-launcher-design-top wlv-edit-track-launcher"
+            className="wlv-edit-curve-launcher wlv-edit-curve-launcher-design-top wlv-edit-track-launcher mv-role-action-button"
             onClick={() =>
               beginEditTrackSession(
                 standardNonDepthTrack.trackType === "core"
@@ -5068,18 +4975,6 @@ export function WellLogPropertiesPanelSlot({
             collapsed={standardDesignCollapsed}
             onToggle={() => setStandardDesignCollapsed((value) => !value)}
           />
-
-          {standardTrackMetadataSection ? (
-            <PropertiesContractTable
-              sections={[standardTrackMetadataSection]}
-              collapsible
-              collapsed={standardTrackMetadataCollapsed}
-              onToggle={() =>
-                setStandardTrackMetadataCollapsed((value) => !value)
-              }
-            />
-          ) : null}
-
           <ConsolidatedPropertiesInfo
             title={`${standardTrackTypeLabel} / Well Info`}
             sections={standardInfoSections}
@@ -5097,7 +4992,7 @@ export function WellLogPropertiesPanelSlot({
         >
           <button
             type="button"
-            className="wlv-edit-curve-launcher wlv-edit-curve-launcher-design-top wlv-edit-track-launcher"
+            className="wlv-edit-curve-launcher wlv-edit-curve-launcher-design-top wlv-edit-track-launcher mv-role-action-button"
             onClick={() => beginEditTrackSession("curve")}
           >
             Open WDV Configuration
@@ -5116,10 +5011,10 @@ export function WellLogPropertiesPanelSlot({
             <section
               className={`wlv-properties-contract-section${curveInfoCollapsed ? " is-collapsed" : ""}`}
             >
-              <h3>
+              <h3 className="mv-type-section-heading mv-role-section-title">
                 <button
                   type="button"
-                  className="wlv-properties-collapse-toggle"
+                  className="wlv-properties-collapse-toggle mv-role-collapse-control"
                   aria-expanded={!curveInfoCollapsed}
                   onClick={() => setCurveInfoCollapsed((value) => !value)}
                 >
@@ -5132,16 +5027,16 @@ export function WellLogPropertiesPanelSlot({
                 : contract.tabs.info.sections.map((section) => (
                     <section
                       key={section.sectionId}
-                      className="wlv-properties-contract-section"
+                      className="wlv-properties-contract-section mv-role-section-shell"
                     >
-                      <h3>{section.title}</h3>
+                      <h3 className="mv-type-section-heading mv-role-section-title">{section.title}</h3>
                       <table>
                         <tbody>
                           {section.rows.map((row) => (
-                            <tr key={`${section.sectionId}-${row.label}`}>
-                              <th scope="row">{row.label}</th>
-                              <td>
-                                <span>{row.value}</span>
+                            <tr className="mv-role-property-row" key={`${section.sectionId}-${row.label}`}>
+                              <th className="mv-type-property-label mv-role-property-label" scope="row">{row.label}</th>
+                              <td className="mv-role-property-value-cell">
+                                <span className="mv-type-property-value mv-role-property-value">{row.value}</span>
                                 {row.unit ? <em>{row.unit}</em> : null}
                                 {row.source ? <small>{row.source}</small> : null}
                               </td>
@@ -5166,16 +5061,49 @@ export function WellLogPropertiesPanelSlot({
         <div className="wlv-properties-tab-body" role="region">
           <button
             type="button"
-            className="wlv-edit-curve-launcher wlv-edit-curve-launcher-design-top wlv-edit-track-launcher"
-            onClick={() => beginEditTrackSession(selectedTrack?.trackType === "interval" ? "interval" : "overlays")}
+            className="wlv-edit-curve-launcher wlv-edit-curve-launcher-design-top wlv-edit-track-launcher mv-role-action-button"
+            onClick={() =>
+              beginEditTrackSession(
+                selectedTrack?.trackType === "depth"
+                  ? "design"
+                  : selectedTrack?.trackType === "interval"
+                    ? "interval"
+                    : "overlays",
+              )
+            }
           >
             Open WDV Configuration
           </button>
-          <TrackDesignControls
-            track={selectedTrack}
-            curveCatalogItems={curveCatalogItems}
-            updateTrack={updateTrack}
-          />
+          {selectedTrack.trackType === "depth" ? null : (
+            <div
+              className={`wlv-properties-contract-table mv-role-section-shell${trackControlsCollapsed ? " is-collapsed" : ""}`}
+            >
+              <section
+                className={`wlv-properties-contract-section mv-role-section-shell${trackControlsCollapsed ? " is-collapsed" : ""}`}
+              >
+                <h3 className="mv-type-section-heading mv-role-section-title">
+                  <button
+                    type="button"
+                    className="wlv-properties-collapse-toggle mv-role-collapse-control"
+                    aria-expanded={!trackControlsCollapsed}
+                    onClick={() =>
+                      setTrackControlsCollapsed((value) => !value)
+                    }
+                  >
+                    <span>{trackControlsCollapsed ? "▸" : "▾"}</span>
+                    <strong>Track Controls</strong>
+                  </button>
+                </h3>
+                {trackControlsCollapsed ? null : (
+                  <TrackDesignControls
+                    track={selectedTrack}
+                    curveCatalogItems={curveCatalogItems}
+                    updateTrack={updateTrack}
+                  />
+                )}
+              </section>
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -5192,7 +5120,7 @@ export function WellLogPropertiesPanelSlot({
           storageKey="multiviewer.wdv.configuration.windowBounds.v1"
           defaultWidth={980}
           defaultHeight={700}
-          fitToContent
+          fitToContent={false}
           onExternalClose={cancelEditTrackSession}
           onPopupBlocked={cancelEditTrackSession}
         >
@@ -5201,79 +5129,14 @@ export function WellLogPropertiesPanelSlot({
             role="presentation"
           >
             <section
-              ref={curveEditModalRef}
               className="wlv-curve-edit-modal wlv-curve-editor wlv-edit-track-modal wlv-wdv-external-editor-modal"
               role="dialog"
               aria-modal="false"
               aria-label={editTrackTarget.trackType === "curve"
                 ? `Edit ${editTrackTargetCurveCatalogItem?.mnemonic ?? editTrackTargetCurve?.observedMnemonic ?? "curve"}`
                 : `Edit ${editTrackTarget.title}`}
-              style={{
-                ...(curveEditModalSize
-                  ? {
-                      width: `${curveEditModalSize.width}px`,
-                      height: `${curveEditModalSize.height}px`,
-                    }
-                  : {}),
-                transform: `translate(${curveEditModalOffset.x}px, ${curveEditModalOffset.y}px)`,
-              }}
             >
-              <header
-                className={`wlv-curve-edit-modal-header${curveEditModalDrag ? " is-dragging" : ""}`}
-                onPointerDown={(event) => {
-                  if (event.button !== 0) return;
-
-                  const target = event.target;
-                  if (
-                    target instanceof Element &&
-                    target.closest("button, input, select, textarea")
-                  ) {
-                    return;
-                  }
-
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  setCurveEditModalDrag({
-                    pointerId: event.pointerId,
-                    startX: event.clientX,
-                    startY: event.clientY,
-                    originX: curveEditModalOffset.x,
-                    originY: curveEditModalOffset.y,
-                  });
-                }}
-                onPointerMove={(event) => {
-                  if (
-                    !curveEditModalDrag ||
-                    curveEditModalDrag.pointerId !== event.pointerId
-                  ) {
-                    return;
-                  }
-
-                  setCurveEditModalOffset({
-                    x:
-                      curveEditModalDrag.originX +
-                      (event.clientX - curveEditModalDrag.startX),
-                    y:
-                      curveEditModalDrag.originY +
-                      (event.clientY - curveEditModalDrag.startY),
-                  });
-                }}
-                onPointerUp={(event) => {
-                  if (
-                    !curveEditModalDrag ||
-                    curveEditModalDrag.pointerId !== event.pointerId
-                  ) {
-                    return;
-                  }
-
-                  if (
-                    event.currentTarget.hasPointerCapture(event.pointerId)
-                  ) {
-                    event.currentTarget.releasePointerCapture(event.pointerId);
-                  }
-                  setCurveEditModalDrag(null);
-                }}
-                onPointerCancel={() => setCurveEditModalDrag(null)}
-              >
+              <header className="wlv-curve-edit-modal-header">
                 <div className="wlv-curve-edit-modal-title">
                   <span
                     className="wlv-curve-color"
@@ -5390,6 +5253,27 @@ export function WellLogPropertiesPanelSlot({
                       onClick={() => setCurveEditModalTab("interval")}
                     >
                       Interval
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={curveEditModalTab === "overlays"}
+                      className={curveEditModalTab === "overlays" ? "active" : ""}
+                      onClick={() => setCurveEditModalTab("overlays")}
+                    >
+                      Overlays
+                    </button>
+                  </>
+                ) : editTrackTarget.trackType === "depth" ? (
+                  <>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={curveEditModalTab === "design"}
+                      className={curveEditModalTab === "design" ? "active" : ""}
+                      onClick={() => setCurveEditModalTab("design")}
+                    >
+                      Design
                     </button>
                     <button
                       type="button"
@@ -5540,6 +5424,14 @@ export function WellLogPropertiesPanelSlot({
                       className="wlv-unified-interval-editor-mount"
                     />
                   </div>
+                ) : curveEditModalTab === "design" && editTrackTarget.trackType === "depth" ? (
+                  <div className="wlv-edit-track-curve-panel">
+                    <TrackDesignControls
+                      track={editTrackTarget}
+                      curveCatalogItems={curveCatalogItems}
+                      updateTrack={updateTrack}
+                    />
+                  </div>
                 ) : curveEditModalTab === "appearance" && editTrackTarget.trackType === "core" ? (
                   <CoreAppearanceEditor
                     appearance={resolveCoreTrackAppearance(editTrackTarget)}
@@ -5612,35 +5504,6 @@ export function WellLogPropertiesPanelSlot({
                 </div>
               </footer>
 
-              <div
-                className={`wlv-curve-edit-resize-handle${curveEditModalResize ? " is-resizing" : ""}`}
-                role="separator"
-                aria-label="Resize curve editor"
-                title="Drag to resize"
-                onPointerDown={(event) => {
-                  if (event.button !== 0) {
-                    return;
-                  }
-
-                  event.preventDefault();
-                  event.stopPropagation();
-
-                  const bounds =
-                    curveEditModalRef.current?.getBoundingClientRect();
-                  if (!bounds) {
-                    return;
-                  }
-
-                  setCurveEditModalResize({
-                    startX: event.clientX,
-                    startY: event.clientY,
-                    originWidth: bounds.width,
-                    originHeight: bounds.height,
-                    originOffsetX: curveEditModalOffset.x,
-                    originOffsetY: curveEditModalOffset.y,
-                  });
-                }}
-              />
             </section>
           </div>
         </WdvExternalWindowPortal>

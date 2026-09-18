@@ -1,0 +1,165 @@
+/* ========================================================================== 
+   WBV PRESENTATION PHASE 5 — RIGHT PANEL PROPERTIES / CARD NORMALIZATION
+   V1.0.0 AUDITED — 2026-09-09
+
+   Scope:
+   - right-panel title / section-title hierarchy
+   - Well & Trajectory / Selected Point / Interval Selection / Information cards
+   - property label/value role colors
+   - compact row fill / divider grammar
+   - Selected Point + Interval table de-boxing
+   - Interval action buttons to WDV light normal-control role
+   - Information/lithology readability
+
+   Protected:
+   - Three.js/scientific viewport
+   - right-panel field ordering and data semantics
+   - checkbox dimensions/state behavior
+   - interval-selection interaction
+   - depth-unit toggle geometry
+   - state/persistence/data model
+   ========================================================================== */
+
+/* Panel title and section titles: consume frozen WDV hierarchy. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .mv-role-panel-title,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .mv-role-section-title {
+  color: var(--mv-role-text-primary) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* Right-panel card shells: calm WDV body surface with deliberate boundaries. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .mv-role-section-shell {
+  background: var(--mv-role-panel-body-bg) !important;
+  border-top: 1px solid var(--mv-role-border-normal) !important;
+  box-shadow: inset 0 1px 0 var(--mv-role-border-highlight) !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .mv-role-section-shell:first-of-type {
+  border-top: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Section heading rows use the canonical compact header surface. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-section-heading-row {
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-bottom: 1px solid var(--mv-role-border-normal) !important;
+  box-shadow: inset 0 -1px 0 var(--mv-role-border-highlight) !important;
+}
+
+/* Property semantics. */
+/* WBV right-panel metadata-label presentation retired here.
+   Sole owner: components.css / WBV_RIGHT_METADATA_LABEL_MASTER_FINAL_AUTHORITY_V2_0_0_AUDITED. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .mv-role-property-value {
+  color: var(--mv-role-text-primary) !important;
+  font-weight: 500 !important;
+}
+
+/* Property rows: use one controlled divider, no raised/shadowed spreadsheet cells. */
+/* WBV_INFORMATION_GENERIC_PROPERTY_ROW_EXCLUSION_FIX_V1_0_0_AUDITED
+   Information rows are excluded from the generic right-panel property-row
+   authority so their dedicated Information rule is the sole geometry/divider
+   owner. No new override layer is introduced. */
+/* WBV_RIGHT_PANEL_INTERNAL_DIVIDER_PHASE5_OWNERSHIP_FIX_V1_0_0_AUDITED
+   Well-summary and trajectory rows have their own dedicated divider authority
+   in components.css. Exclude them from the generic Phase 5 property-row border
+   so the dedicated lighter divider can actually win. */
+/* WBV_RIGHT_PANEL_LEFT_RHYTHM_AND_DEPTH_TOGGLE_COMPACTION_V1_0_0_AUDITED
+   Match the left Viewer-control row pitch: 1.35rem row + 0.38rem grid gap
+   = 1.73rem effective vertical pitch. Right rows are contiguous because they
+   carry separators, so use a 1.73rem row with no added vertical padding.
+   Heavy section/header dividers remain untouched. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right
+  .mv-role-property-row:not(.wlv-wbv-interval-information__row):not(.wlv-wbv-well-summary__row):not(.wlv-wbv-trajectory-list__row) {
+  background: transparent !important;
+  border-top: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--mv-role-border-highlight) 20%, transparent) !important;
+  box-shadow: none !important;
+  min-height: 1.73rem !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* Selected Point / Interval Selection: retire nested outer boxes while retaining layout. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-selected-point-table,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-interval-table {
+  background: var(--mv-role-panel-body-bg) !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-selected-point-row {
+  background: var(--mv-role-header-control-bg) !important;
+  box-shadow: none !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-selected-point-row--paired > * + * {
+  border-left-color: var(--mv-role-border-highlight) !important;
+}
+
+/* Helper/status text: secondary, not disabled-looking. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .mv-role-helper-text,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-information-empty,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-track-values-control,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-information-section > p {
+  color: var(--mv-role-text-secondary) !important;
+}
+
+/* Interval action controls: light-theme WDV normal-control role, geometry retained. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right
+  .wlv-wbv-interval-actions .wlv-wbv-control-button--compact {
+  background: var(--mv-role-header-control-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-color: var(--mv-role-border-normal) !important;
+  border-radius: 4px !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right
+  .wlv-wbv-interval-actions .wlv-wbv-control-button--compact:hover:not(:disabled) {
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-color: var(--mv-role-text-secondary) !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right
+  .wlv-wbv-interval-actions .wlv-wbv-control-button--compact:disabled {
+  background: var(--mv-role-panel-body-bg) !important;
+  color: var(--mv-role-text-secondary) !important;
+  border-color: var(--mv-role-border-highlight) !important;
+  opacity: 0.62 !important;
+}
+
+/* Information panel: replace dark legacy micro-cards with WDV light surfaces. */
+/* WBV_INFORMATION_HEADER_SHADE_ROLE_REMAP_V1_0_1_AUDITED
+   Information header now owns the shaded section-header role.
+   Selected spot / interval is body content and stays unshaded. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-interval-information__range {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-interval-information__range span,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-interval-information__row span,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-interval-information__metadata,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-interval-information__description > span {
+  color: var(--mv-role-text-secondary) !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-interval-information__range strong,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-interval-information__row strong,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-interval-information__description > p {
+  color: var(--mv-role-text-primary) !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-interval-information__group {
+  border-top-color: var(--mv-role-border-highlight) !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-interval-information__group h3 {
+  color: var(--mv-role-text-secondary) !important;
+}
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--right .wlv-wbv-interval-information__description {
+  background: var(--mv-role-header-control-bg) !important;
+  border-left-color: var(--mv-role-border-normal) !important;
+}

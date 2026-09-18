@@ -63,6 +63,19 @@ function cloneHostStyles(targetDocument: Document): void {
   });
 }
 
+function syncHostPresentationTheme(targetDocument: Document): void {
+  const hostRoot = document.documentElement;
+  const targetRoot = targetDocument.documentElement;
+  const theme = hostRoot.getAttribute("data-mv-theme");
+
+  if (theme) targetRoot.setAttribute("data-mv-theme", theme);
+  else targetRoot.removeAttribute("data-mv-theme");
+
+  targetRoot.classList.toggle("mv-ui-scope", hostRoot.classList.contains("mv-ui-scope"));
+  targetDocument.body.style.background = theme === "light" ? "#f4f7f9" : "#0b1218";
+  targetDocument.body.style.colorScheme = theme === "light" ? "light" : "dark";
+}
+
 export function ExternalWindowPortal({
   enabled,
   children,
@@ -112,7 +125,7 @@ export function ExternalWindowPortal({
     popup.document.body.replaceChildren();
     popup.document.body.style.margin = "0";
     popup.document.body.style.overflow = "hidden";
-    popup.document.body.style.background = "#0b1218";
+    syncHostPresentationTheme(popup.document);
 
     const root = popup.document.createElement("div");
     root.id = "multiviewer-external-window-root";
@@ -133,10 +146,14 @@ export function ExternalWindowPortal({
       if (!popup.closed) popup.close();
     };
 
+    const themeObserver = new MutationObserver(() => syncHostPresentationTheme(popup.document));
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-mv-theme", "class"] });
+
     popup.addEventListener("beforeunload", handleExternalBeforeUnload);
     window.addEventListener("beforeunload", handleHostBeforeUnload);
 
     return () => {
+      themeObserver.disconnect();
       window.removeEventListener("beforeunload", handleHostBeforeUnload);
       popup.removeEventListener("beforeunload", handleExternalBeforeUnload);
       closingFromHostRef.current = true;

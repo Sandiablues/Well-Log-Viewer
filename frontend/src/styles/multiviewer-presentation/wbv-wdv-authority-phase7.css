@@ -1,0 +1,290 @@
+/* ==========================================================================
+   WBV PRESENTATION PHASE 7 — HIERARCHY / SPACING / HEADER / RIGHT PANEL CLEANUP
+   V1.0.0 AUDITED — 2026-09-09
+
+   Scope:
+   - top header/well-selection group cohesion
+   - left Active Layers visual simplification
+   - right-panel row density and border reduction
+   - section hierarchy strengthening
+   - interval/information spacing cleanup
+
+   Protected:
+   - Three.js/scientific viewport
+   - trajectory/completion/core rendering colors and geometry
+   - camera / fit / rotation-center behavior
+   - checkbox geometry and behavior
+   - data order / semantics / state / persistence
+   - far-left application navigation
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Header cohesion — treat title and well-selection controls as one governed
+   toolbar zone. Geometry changes are limited to chrome grouping/spacing only.
+   -------------------------------------------------------------------------- */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header {
+  align-items: center !important;
+  column-gap: 12px !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header-tools {
+  display: grid !important;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(220px, 1fr) auto !important;
+  align-items: center !important;
+  column-gap: 10px !important;
+  row-gap: 4px !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header-tools > * {
+  min-width: 0 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header-tools p,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header-tools small {
+  line-height: 1.25 !important;
+}
+
+/* --------------------------------------------------------------------------
+   Left panel: reduce stripe density in Active Layers without changing data.
+   -------------------------------------------------------------------------- */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-active-layers-list {
+  background: var(--mv-role-panel-body-bg) !important;
+  border-top: 1px solid var(--mv-role-border-normal) !important;
+  border-bottom: 1px solid var(--mv-role-border-highlight) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-active-layer-row {
+  min-height: 24px !important;
+  padding: 4px 6px !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--mv-role-divider-soft) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-active-layer-row:last-child {
+  border-bottom: 0 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-active-layer-row:hover {
+  background: var(--mv-role-header-control-bg) !important;
+}
+
+/* --------------------------------------------------------------------------
+   Right panel: calm the property-table appearance.
+   -------------------------------------------------------------------------- */
+/* WBV_INFORMATION_GENERIC_PROPERTY_ROW_EXCLUSION_FIX_V1_0_0_AUDITED
+   Information rows are excluded from the generic right-panel property-row
+   authority so their dedicated Information rule is the sole geometry/divider
+   owner. No new override layer is introduced. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-right-panel .mv-role-property-row:not(.wlv-wbv-interval-information__row) {
+  min-height: 28px !important;
+  padding: 5px 0 !important;
+  border-top: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  border-bottom: 1px solid var(--mv-role-divider-soft) !important;
+  background: transparent !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-right-panel .mv-role-property-row:last-child {
+  border-bottom: 0 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-right-panel .mv-role-property-label {
+  padding-right: 10px !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-right-panel .mv-role-property-value {
+  text-align: right !important;
+  padding-left: 10px !important;
+}
+
+/* --------------------------------------------------------------------------
+   Strengthen section separation while avoiding nested boxes.
+   -------------------------------------------------------------------------- */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-right-panel
+  :is(.mv-role-panel-title, .mv-role-section-title, .wlv-wbv-section-heading-row) {
+  background: var(--mv-role-section-header-bg) !important;
+  border-top: 1px solid var(--mv-role-border-normal) !important;
+  border-bottom: 1px solid var(--mv-role-border-highlight) !important;
+  box-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-selected-point-table,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-interval-selection-table,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-interval-information__range {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+/* --------------------------------------------------------------------------
+   Interval selection / action spacing.
+   -------------------------------------------------------------------------- */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-interval-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding-top: 8px !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-interval-selection {
+  padding-bottom: 8px !important;
+}
+
+/* --------------------------------------------------------------------------
+   Information section: stronger category rhythm, less repetitive striping.
+   -------------------------------------------------------------------------- */
+/* WBV_INFORMATION_OWNER_RULE_SURGICAL_FIX_V1_0_0_AUDITED
+   Owner-rule correction: compact Information groups and remove per-record dividers.
+   Evidence: exact-rule forensic 20260910_084245. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-interval-information__group {
+  padding-top: 4px !important;
+  margin-top: 4px !important;
+  border-top: 1px solid var(--mv-role-border-highlight) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-interval-information__group:first-child {
+  margin-top: 0 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-interval-information__row {
+  min-height: 0 !important;
+  padding: 2px 0 !important;
+  border-bottom: 0 !important;
+  background: transparent !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-interval-information__row:last-child {
+  border-bottom: 0 !important;
+}
+
+/* --------------------------------------------------------------------------
+   Explicitly avoid introducing more raised chrome.
+   -------------------------------------------------------------------------- */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-right-panel,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-left-panel {
+  box-shadow: none !important;
+}
+
+/* ==========================================================================
+   WBV_SCENE_OVERLAYS_EXACT_INFORMATION_HEADER_SPEC_V1_0_0_AUDITED
+   Exact resolved Information-header specification, scoped only to Scene Overlays.
+   ========================================================================== */
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left
+  .wlv-wbv-section-heading-row--scene-overlays {
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-top: 1px solid var(--mv-role-border-normal) !important;
+  border-bottom: 1px solid var(--mv-role-border-highlight) !important;
+  box-shadow: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  min-height: 1.35rem !important;
+  gap: 0.45rem !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left
+  .wlv-wbv-section-heading-row--scene-overlays
+  > #wbv-viewer-controls-heading.mv-role-section-title {
+  margin: 0 0 0.38rem 0 !important;
+  color: var(--mv-role-text-primary) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  text-shadow: none !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left
+  .wlv-wbv-section-heading-row--scene-overlays
+  > .wlv-wbv-section-collapse-button {
+  width: 1.35rem !important;
+  height: 1.35rem !important;
+  min-width: 1.35rem !important;
+  min-height: 1.35rem !important;
+  padding: 0 !important;
+  color: var(--mv-role-text-secondary) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* ==========================================================================
+   WBV_VIEW_HEADER_STANDARDIZATION_V1_0_0_AUDITED
+
+   Exact approved WBV Information-header standard applied to View only.
+   ========================================================================== */
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left
+  .wlv-wbv-section-heading-row--view-standard {
+  background: var(--mv-role-section-header-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border-top: 1px solid var(--mv-role-border-normal) !important;
+  border-bottom: 1px solid var(--mv-role-border-highlight) !important;
+  box-shadow: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  min-height: 1.35rem !important;
+  gap: 0.45rem !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left
+  .wlv-wbv-section-heading-row--view-standard
+  > .mv-role-section-title {
+  margin: 0 0 0.38rem 0 !important;
+  color: var(--mv-role-text-primary) !important;
+  font-family: var(--mv-font-ui) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  text-shadow: none !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Neutralize the legacy direct-child View h2 rule because View is now housed
+   in the approved shared subheader row. No control-block geometry is changed. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left
+  .wlv-wbv-view-controls
+  > .wlv-wbv-section-heading-row--view-standard {
+  margin-top: 0 !important;
+}
+
+/* ==========================================================================
+   WBV_VIEW_HEADER_TOP_BORDER_REMOVAL_V1_0_0_AUDITED
+
+   Remove only the top border of the shaded View header band.
+   All other View header styling remains unchanged.
+   ========================================================================== */
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left
+  .wlv-wbv-section-heading-row--view-standard {
+  border-top: 0 !important;
+}
+
+/* ==========================================================================
+   WBV_VIEW_SEPARATOR_GAP_8PX_V1_0_0_AUDITED
+
+   Reduce the vertical distance between the existing separator below
+   Active Layers / Lithology intervals and the shaded View header to ~8px.
+
+   Existing separator is left untouched.
+   ========================================================================== */
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel--left
+  .wlv-wbv-view-controls {
+  margin-top: 0 !important;
+  padding-top: 8px !important;
+}

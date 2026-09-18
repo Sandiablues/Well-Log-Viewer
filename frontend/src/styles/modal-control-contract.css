@@ -404,10 +404,6 @@
   width: max-content;
   max-width: 100%;
   margin: 0;
-  color: #aeb4bd;
-  font-size: 10px;
-  font-weight: 650;
-  line-height: 1.2;
 }
 
 .wlv-wbv-layer-manager-modal .wlv-wbv-field:not(.wlv-wbv-range-field):not(.wlv-wbv-colour-field) {
@@ -423,13 +419,6 @@
   box-sizing: border-box;
   min-height: 30px;
   padding: 0 8px;
-  border: 1px solid #454c56;
-  border-radius: 4px;
-  background: #121417;
-  color: #e5e7eb;
-  font-family: inherit;
-  font-size: 10.5px;
-  font-weight: 600;
 }
 
 .wlv-wbv-layer-manager-modal .wlv-wbv-field select {
@@ -453,17 +442,11 @@
   min-height: var(--wlv-modal-swatch) !important;
   max-height: var(--wlv-modal-swatch) !important;
   padding: 2px !important;
-  border: 1px solid #454c56 !important;
-  border-radius: 5px !important;
-  box-sizing: border-box !important;
-  background: #121417;
+box-sizing: border-box !important;
 }
 
 .wlv-wbv-layer-manager-modal .wlv-wbv-manager-toggle-row {
   gap: var(--wlv-modal-label-control-gap);
-  color: #d2d6dc;
-  font-size: 10.5px;
-  font-weight: 650;
 }
 
 .wlv-wbv-layer-manager-modal .wlv-wbv-manager-toggle-row input[type="checkbox"],
@@ -478,10 +461,4 @@
   padding: 0;
 }
 
-.wlv-wbv-layer-manager-modal .wlv-wbv-property-group legend {
-  color: #e5e7eb;
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 1.15;
-  letter-spacing: .075em;
-}
+.wlv-wbv-layer-manager-modal .wlv-wbv-property-group legend {}

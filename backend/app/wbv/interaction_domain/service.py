@@ -56,7 +56,36 @@ class WbvInteractionDomainService:
         record = self.repository.get_record(managed_well_id)
         raw = record.metadata.get(self.METADATA_KEY, {}) if isinstance(record.metadata, dict) else {}
         if isinstance(raw, dict) and raw:
-            state = WbvInteractionStateV2.model_validate({"managed_well_id": managed_well_id, **raw})
+            # Persisted interaction numbers are trajectory-runtime values.
+            # After canonical trajectory migration those values are metres.
+            # Older state may still carry a presentation-unit label such as
+            # "ft"; normalize metadata only and do not rescale the numbers.
+            canonical_raw = dict(raw)
+            canonical_raw["runtime_depth_unit"] = "m"
+
+            saved_interval = canonical_raw.get("saved_interval")
+            if isinstance(saved_interval, dict):
+                saved_interval = dict(saved_interval)
+                saved_interval["depth_unit"] = "m"
+                saved_interval["runtime_depth_unit"] = "m"
+                for key in ("start", "end"):
+                    point = saved_interval.get(key)
+                    if isinstance(point, dict):
+                        point = dict(point)
+                        point["runtime_depth_unit"] = "m"
+                        saved_interval[key] = point
+                canonical_raw["saved_interval"] = saved_interval
+
+            for key in ("selected_point", "interval_draft_start"):
+                point = canonical_raw.get(key)
+                if isinstance(point, dict):
+                    point = dict(point)
+                    point["runtime_depth_unit"] = "m"
+                    canonical_raw[key] = point
+
+            state = WbvInteractionStateV2.model_validate(
+                {"managed_well_id": managed_well_id, **canonical_raw}
+            )
             if state.active_tracking_session_id and state.active_tracking_session_id not in self._sessions:
                 state = state.model_copy(update={
                     "active_tracking_session_id": None,
@@ -211,7 +240,8 @@ class WbvInteractionDomainService:
             "interval_id": interval.interval_id,
             "top_md": interval.top_md,
             "base_md": interval.base_md,
-            "depth_unit": interval.depth_unit,
+            "depth_unit": "m",
+            "runtime_depth_unit": "m",
             "trajectory_id": interval.trajectory_id,
             "trajectory_revision_uid": interval.trajectory_revision_uid,
             "applied_at": now,
@@ -226,7 +256,8 @@ class WbvInteractionDomainService:
             interval_id=interval.interval_id,
             top_md=interval.top_md,
             base_md=interval.base_md,
-            depth_unit=interval.depth_unit,
+            depth_unit="m",
+            runtime_depth_unit="m",
             applied_at=now,
         )
 
@@ -250,7 +281,8 @@ class WbvInteractionDomainService:
             end=point,
             top_md=top_md,
             base_md=base_md,
-            depth_unit=self._depth_unit(record),
+            depth_unit="m",
+            runtime_depth_unit="m",
             created_at=state.saved_interval.created_at if state.saved_interval else now,
             updated_at=now,
         )
@@ -322,5 +354,6 @@ class WbvInteractionDomainService:
 
     @staticmethod
     def _depth_unit(record: Any) -> str:
-        metadata = record.metadata if isinstance(record.metadata, dict) else {}
-        return str(metadata.get("wbv_display_depth_unit") or metadata.get("depth_unit") or "ft")
+        # Projection runs against the canonical WBV trajectory package.
+        # Interaction state therefore always stores runtime depth geometry in m.
+        return "m"

@@ -39,6 +39,7 @@ class WbvLayoutTrack(BaseModel):
     background_mode: WbvTrackBackgroundMode = "transparent"
     background_color: str = "#000000"
     outline_visible: bool = True
+    outline_color: str = Field(default="#b9f3ff", pattern=r"^#[0-9A-Fa-f]{6}$")
     grid_mode: WbvTrackGridMode = "off"
     # WLV-WBV-DEPTH-TRACK-STAGE1
     depth_type: WbvDepthType = "MD"
@@ -46,6 +47,8 @@ class WbvLayoutTrack(BaseModel):
     label_increment: float = Field(default=500.0, gt=0.0)
     label_size: float = Field(default=1.0, gt=0.0)
     show_depth_units: bool = True
+    tick_color: str = Field(default="#b9f3ff", pattern=r"^#[0-9A-Fa-f]{6}$")
+    label_color: str = Field(default="#b9f3ff", pattern=r"^#[0-9A-Fa-f]{6}$")
 
 
 class WbvTrackLayout(BaseModel):
@@ -88,6 +91,7 @@ class WbvLayoutCommandRequest(BaseModel):
     background_mode: WbvTrackBackgroundMode | None = None
     background_color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     outline_visible: bool | None = None
+    outline_color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
     grid_mode: WbvTrackGridMode | None = None
     visible: bool | None = None
     depth_type: WbvDepthType | None = None
@@ -95,3 +99,5 @@ class WbvLayoutCommandRequest(BaseModel):
     label_increment: float | None = Field(default=None, gt=0.0)
     label_size: float | None = Field(default=None, gt=0.0)
     show_depth_units: bool | None = None
+    tick_color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    label_color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")

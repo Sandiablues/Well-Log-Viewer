@@ -1855,7 +1855,7 @@ export function CurveInventory({ availableCurves, curveUsageCounts, visibleTrack
         <span className="wlv-inventory-section-toggle-meta">{count === undefined ? '' : count}<b>{expanded ? '▾' : '▸'}</b></span>
       </button>
     );
-    return (<aside className="wlv-curve-inventory">
+    return (<aside className="wlv-curve-inventory mv-control-geometry-scope-exempt">
       <div className="wlv-panel-heading">
         <h2>Well Data Inventory</h2>
       </div>
@@ -3101,8 +3101,13 @@ export function Toolbar({ commonDepthUnit, onCommonDepthUnitChange, managedLayou
         });
     };
     const openGoToDepthEditor = () => {
-        updateGoToDepthPopoverPosition();
-        setGoToEditorOpen(true);
+        setGoToEditorOpen((open) => {
+            const nextOpen = !open;
+            if (nextOpen) {
+                window.requestAnimationFrame(updateGoToDepthPopoverPosition);
+            }
+            return nextOpen;
+        });
     };
     const applyGoToDepth = () => {
         onGoToDepth();
@@ -4662,7 +4667,7 @@ intervalBuilderPortalTarget??document.body
           </span>
           <button type="button" className={intervalZoomActive ? 'active' : ''} title="Drag on the log to zoom to a depth interval" onClick={onToggleIntervalZoom}>Drag</button>
           <div className="wlv-specified-range-control">
-            <button ref={specifyRangeButtonRef} type="button" className={rangeEditorOpen ? 'active' : ''} onClick={openSpecifiedRangeEditor} title="Specify top and base measured depth range">Range</button>
+            <button ref={specifyRangeButtonRef} type="button" className={rangeEditorOpen ? 'active' : ''} onClick={openSpecifiedRangeEditor} title="Specify top and base measured depth range">Range ▾</button>
             {rangeEditorOpen ? createPortal(<div ref={specifyRangePopoverRef} className="wlv-depth-command-popover wlv-range-command-popover" role="dialog" aria-label="Specify depth range" style={{ top: rangePopoverPosition.top, left: rangePopoverPosition.left }}>
                 <label><span>Top MD</span><input autoFocus value={rangeTopValue} onChange={(event) => setRangeTopValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') applySpecifiedRange(); if (event.key === 'Escape') setRangeEditorOpen(false); }}/></label>
                 <label><span>Base MD</span><input value={rangeBaseValue} onChange={(event) => setRangeBaseValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') applySpecifiedRange(); if (event.key === 'Escape') setRangeEditorOpen(false); }}/></label>
@@ -8163,7 +8168,7 @@ function CompletionTrack({
               borderTop: `${Math.max(1, appearance.lineWeight)}px solid ${shot.tone}`,
               transform: `rotate(${shot.angle}deg)`,
               transformOrigin: leftPhase ? 'right center' : 'left center',
-              filter: 'drop-shadow(1px 1px .7px rgba(55,28,12,.42)) drop-shadow(-.35px -.35px .35px rgba(255,216,178,.24))',
+              filter: 'drop-shadow(1px 1px .7px rgba(55,28,12,.42)) drop-shadow(-.35px -.35px .35px rgba(255,255,255,.24))',
             }}
           />)}
         </span>;
@@ -8430,7 +8435,7 @@ function CompletionTrack({
     }
 
     if (item.canonicalId === 'completion.retainer') {
-      return <svg aria-hidden="true" viewBox="0 0 24 34" style={{ ...baseStyle, width: symbolWidth + 1, height: symbolHeight + 5, filter: 'drop-shadow(2px 2.5px 2.2px rgba(29,18,11,.58)) drop-shadow(-.7px -.8px .55px rgba(255,245,220,.40))' }}>
+      return <svg aria-hidden="true" viewBox="0 0 24 34" style={{ ...baseStyle, width: symbolWidth + 1, height: symbolHeight + 5, filter: 'drop-shadow(2px 2.5px 2.2px rgba(29,18,11,.58)) drop-shadow(-.7px -.8px .55px rgba(255,255,255,.40))' }}>
         {metallicDefs}
         <rect x="7" y="1.5" width="10" height="31" rx="1.8" fill={`url(#${bronzeId})`} stroke={brown} strokeWidth={Math.max(1.2, line)}/>
         <line x1="7" y1="8" x2="17" y2="8" stroke={brown} strokeWidth="1.2"/>
@@ -8444,7 +8449,7 @@ function CompletionTrack({
     }
 
     if (item.canonicalId === 'completion.bridge_plug') {
-      return <svg aria-hidden="true" viewBox="0 0 22 28" style={{ ...baseStyle, filter: 'drop-shadow(2px 2.5px 2.1px rgba(31,19,11,.54)) drop-shadow(-.7px -.8px .5px rgba(255,240,213,.34))' }}>
+      return <svg aria-hidden="true" viewBox="0 0 22 28" style={{ ...baseStyle, filter: 'drop-shadow(2px 2.5px 2.1px rgba(31,19,11,.54)) drop-shadow(-.7px -.8px .5px rgba(255,255,255,.34))' }}>
         {metallicDefs}
         <rect x="6" y="1.5" width="10" height="25" rx="1.5" fill={`url(#${bronzeId})`} stroke="#5d4435" strokeWidth={line}/>
         <line x1="6" y1="7" x2="16" y2="21" stroke="#5d4435" strokeWidth="2"/>

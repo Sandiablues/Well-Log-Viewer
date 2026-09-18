@@ -14,7 +14,6 @@
   align-items: center;
   justify-content: center;
   padding: 32px;
-  background: rgba(0, 0, 0, 0.58);
 }
 
 .wlv-cim-url-modal {
@@ -32,22 +31,15 @@
   justify-content: space-between;
   gap: 16px;
   padding: 18px 20px 14px;
-  border-bottom: 1px solid var(--wlv-border, #344252);
 }
 
 .wlv-cim-url-modal h2 {
   margin: 0;
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1.2;
 }
 
 .wlv-cim-url-modal p {
   margin: 6px 0 0;
   max-width: 650px;
-  color: var(--wlv-muted, #9aa7b5);
-  font-size: 11px;
-  line-height: 1.45;
 }
 
 .wlv-cim-url-modal__close {
@@ -66,11 +58,7 @@
   padding: 20px;
 }
 
-.wlv-cim-url-modal__field > span {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-}
+.wlv-cim-url-modal__field > span {}
 
 .wlv-cim-url-modal__field input {
   width: 100%;
@@ -83,7 +71,6 @@
   justify-content: flex-end;
   gap: 8px;
   padding: 14px 20px;
-  border-top: 1px solid var(--wlv-border, #344252);
 }
 
 .wlv-cim-url-modal__field input {
@@ -172,11 +159,7 @@
   min-height: 240px;
   max-width: calc(100vw - 12px);
   max-height: calc(100vh - 12px);
-  border: 1px solid var(--wlv-border, #344252);
-  border-radius: 7px;
-  background: var(--wlv-panel, #151b22);
-  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.48);
-  resize: both;
+resize: both;
   overflow: hidden;
 }
 
@@ -187,9 +170,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 8px 10px;
-  border-bottom: 1px solid var(--wlv-border, #344252);
-  background: #18212a;
-  cursor: move;
+cursor: move;
   user-select: none;
 }
 
@@ -244,10 +225,7 @@
 }
 
 .wlv-cim-image-missing,
-.wlv-cim-empty-copy {
-  color: var(--wlv-muted, #9aa7b5);
-  font-size: 11px;
-}
+.wlv-cim-empty-copy {}
 
 .wlv-cim-description-window__body,
 .wlv-cim-edit-window__body {
@@ -259,8 +237,6 @@
 .wlv-cim-description-card {
   margin-top: 10px;
   padding: 10px;
-  border: 1px solid var(--wlv-border, #344252);
-  border-radius: 5px;
 }
 
 .wlv-cim-description-card__depths {
@@ -291,11 +267,7 @@
   gap: 5px;
 }
 
-.wlv-cim-edit-window__body label > span {
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-}
+.wlv-cim-edit-window__body label > span {}
 
 .wlv-cim-edit-window__body input,
 .wlv-cim-edit-window__body select,
@@ -320,7 +292,6 @@
   justify-content: flex-end;
   gap: 8px;
   padding: 10px 12px;
-  border-top: 1px solid var(--wlv-border, #344252);
 }
 
 

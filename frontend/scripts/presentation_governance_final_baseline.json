@@ -1,0 +1,26 @@
+{
+  "baseline_name": "MULTIVIEWER MASTER PRESENTATION GOVERNANCE FINAL BASELINE",
+  "baseline_version": "1.0.0",
+  "closure_phase": 38,
+  "regression_contract_manifest_version": "2.0.0",
+  "typescript_contract": {
+    "WLV_WBV": 35,
+    "SDV": 0
+  },
+  "baseline_files_sha256": {
+    "WLV/src/wells/wdv/WdvPageBoundary.tsx": "0f3ac5a3eb13ed44680fc1765461001457bf8f95d895d8dc17b2c575143a6fcf",
+    "WLV/src/styles/track-layout-prototype.css": "ab1a282a2acbd64f84de1743286865f9bc46ec4daab0c2d2fd2268b68c522c11",
+    "WLV/src/wells/wbv/Wellbore3DPage.css": "05e52083977f4867bdf3f4c57b4001e2bca2a5829b1a634bfeb78d9f370631a6",
+    "WLV/src/styles/multiviewer-presentation/components.css": "f3368cad3f6d03a9bef9fa665e6c9348b03641d2659be0713c075f25aa5e8cfa",
+    "SDV/src/components/Seismic2DViewer.tsx": "aa993cb960ab3fb5453130feb4ca34b1a0cedd5a6ee4e0be36608597f1333fd2",
+    "SDV/src/components/Seismic3DViewer.tsx": "84c5fe7926c98826f401785729ceced2efe3c4b939f41d0365481a9b2a73b0c1",
+    "SDV/src/styles/multiviewer-presentation/components.css": "f3368cad3f6d03a9bef9fa665e6c9348b03641d2659be0713c075f25aa5e8cfa"
+  },
+  "shared_master_sha256": "f3368cad3f6d03a9bef9fa665e6c9348b03641d2659be0713c075f25aa5e8cfa",
+  "viewer_status": {
+    "WDV": "CLOSED",
+    "WBV_WLV": "CLOSED",
+    "SDV_2D_3D": "CLOSED"
+  },
+  "theme_status": "light/dark theme work may resume after acceptance"
+}

@@ -1,0 +1,66 @@
+/* ==========================================================================
+   MULTIVIEWER MASTER STYLE MIGRATION — STAGE 1: NEUTRAL CONTROLS V1.0.0
+   Geometry only. Current accepted colors remain owned by existing app styles.
+   Scientific/domain rendering controls are excluded where input type implies
+   domain-specific behavior.
+   ========================================================================== */
+
+/*
+  Shared neutral control geometry.
+  This layer intentionally does NOT assign background, foreground, border color,
+  semantic color, accent color, or box-shadow.
+*/
+
+:where(.mv-ui-scope) button:not(.mv-control-geometry-exempt):not(.mv-control-geometry-scope-exempt *):not(.wlv-track-placement-selector),
+:where(.mv-ui-scope) input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.mv-control-geometry-exempt):not(.mv-control-geometry-scope-exempt *),
+:where(.mv-ui-scope) select:not(.mv-control-geometry-exempt):not(.mv-control-geometry-scope-exempt *),
+:where(.mv-ui-scope) textarea:not(.mv-control-geometry-exempt):not(.mv-control-geometry-scope-exempt *) {
+  box-sizing: border-box;
+  font-family: var(--mv-font-ui);
+  font-size: var(--mv-font-size-ui);
+  line-height: var(--mv-line-height-ui);
+  border-radius: var(--mv-control-radius);
+}
+
+:where(.mv-ui-scope) button:not(.mv-control-geometry-exempt):not(.mv-control-geometry-scope-exempt *):not(.wlv-track-placement-selector),
+:where(.mv-ui-scope) input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.mv-control-geometry-exempt):not(.mv-control-geometry-scope-exempt *),
+:where(.mv-ui-scope) select:not(.mv-control-geometry-exempt):not(.mv-control-geometry-scope-exempt *) {
+  min-height: var(--mv-control-height);
+}
+
+:where(.mv-ui-scope) button:not(.mv-control-geometry-exempt):not(.mv-control-geometry-scope-exempt *):not(.wlv-track-placement-selector) {
+  padding-inline: var(--mv-space-5);
+}
+
+:where(.mv-ui-scope) input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):not(.mv-control-geometry-exempt):not(.mv-control-geometry-scope-exempt *),
+:where(.mv-ui-scope) select:not(.mv-control-geometry-exempt):not(.mv-control-geometry-scope-exempt *) {
+  padding-inline: var(--mv-space-4);
+}
+
+:where(.mv-ui-scope) textarea:not(.mv-control-geometry-exempt):not(.mv-control-geometry-scope-exempt *) {
+  padding: var(--mv-space-4);
+}
+
+/*
+  Explicit compact-control opt-in. This avoids globally shrinking icon controls
+  or specialized viewer widgets.
+*/
+:where(.mv-ui-scope) .mv-control-compact {
+  min-height: var(--mv-control-height-compact);
+}
+
+/*
+  Explicit exemption hook for specialized scientific or legacy controls.
+*/
+:where(.mv-ui-scope) .mv-control-geometry-exempt {
+  /* marker class only */
+}
+
+/* WBV VIEW REGRESSION GUARD — scope exemption V1.0.1
+   WBV View is specialized viewer geometry.
+   The View section carries .mv-control-geometry-scope-exempt and all 13
+   View buttons retain .mv-control-geometry-exempt.
+   Generic migration selectors above must not style descendants of the
+   scope exemption. WDV-specific presentation in this file is preserved.
+*/
+

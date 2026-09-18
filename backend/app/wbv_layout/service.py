@@ -117,6 +117,7 @@ class WbvTrackLayoutService:
                     "background_mode": request.background_mode,
                     "background_color": request.background_color,
                     "outline_visible": request.outline_visible,
+                    "outline_color": request.outline_color,
                     "grid_mode": request.grid_mode,
                     "visible": request.visible,
                     "depth_type": request.depth_type,
@@ -124,6 +125,8 @@ class WbvTrackLayoutService:
                     "label_increment": request.label_increment,
                     "label_size": request.label_size,
                     "show_depth_units": request.show_depth_units,
+                    "tick_color": request.tick_color,
+                    "label_color": request.label_color,
                 }.items()
                 if value is not None
             }

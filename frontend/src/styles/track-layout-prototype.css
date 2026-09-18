@@ -233,20 +233,10 @@ button:disabled {
   justify-content: center;
   gap: 4px;
   padding: 3px 8px 4px;
-  border: 1px solid #333842;
-  border-radius: 5px;
-  background: #202124;
-  flex: 0 0 auto;
+flex: 0 0 auto;
 }
 
-.wlv-toolbar-group > span {
-  color: #a1a1aa;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  line-height: 1;
-  text-transform: uppercase;
-  white-space: nowrap;
+.wlv-toolbar-group > span {white-space: nowrap;
 }
 
 .wlv-toolbar-actions {
@@ -260,11 +250,6 @@ button:disabled {
 .wlv-toolbar-group select {
   height: 26px;
   padding: 0 8px;
-  border: 1px solid #4b5563;
-  background: transparent;
-  color: #e5e7eb;
-  border-radius: 3px;
-  font-size: 12px;
 }
 
 .wlv-toolbar-group button:hover:not(:disabled) {
@@ -613,8 +598,6 @@ button:disabled {
   display: grid;
   gap: 4px;
   margin-bottom: 9px;
-  font-size: 12px;
-  color: #a1a1aa;
 }
 
 .wlv-right-panel input,
@@ -683,9 +666,6 @@ button:disabled {
   align-items: center;
   gap: 24px;
   padding: 0 12px;
-  border-top: 1px solid var(--wlv-border);
-  background: #ffffff;
-  color: #a1a1aa;
   font-size: 11px;
 }
 
@@ -829,10 +809,6 @@ button:disabled {
   z-index: 1000;
   min-width: 190px;
   padding: 6px;
-  border: 1px solid #9aa8b8;
-  border-radius: 6px;
-  background: #ffffff;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.24);
 }
 
 .curve-header-action-menu button {
@@ -840,21 +816,13 @@ button:disabled {
   width: 100%;
   min-height: 28px;
   padding: 7px 9px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: #1d2835;
   text-align: left;
   font-size: 12px;
   cursor: pointer;
 }
 
-.curve-header-action-menu button:hover:not(:disabled) {
-  background: #eaf3ff;
-}
 
 .curve-header-action-menu button:disabled {
-  color: #a0a9b5;
   cursor: not-allowed;
 }
 
@@ -869,7 +837,6 @@ button:disabled {
 .curve-menu-divider {
   height: 1px;
   margin: 5px 0;
-  background: #d7dee6;
 }
 
 
@@ -1215,38 +1182,22 @@ button:disabled {
 }
 
 .wlv-curve-inventory .wlv-panel-heading,
-.wlv-right-panel .wlv-panel-heading {
-  background: #1e1e1e;
-  border-bottom: 1px solid #2d2d2d;
-  color: #e5e7eb;
-}
+.wlv-right-panel .wlv-panel-heading {}
 
 .wlv-curve-inventory .wlv-panel-heading h2,
-.wlv-right-panel .wlv-panel-heading h2 {
-  color: #e5e7eb;
-}
+.wlv-right-panel .wlv-panel-heading h2 {}
 
 .wlv-curve-inventory .wlv-panel-heading span,
-.wlv-right-panel .wlv-panel-heading span {
-  border-color: #3f3f46;
-  background: #171717;
-  color: #a1a1aa;
-}
+.wlv-right-panel .wlv-panel-heading span {}
 
 .wlv-search-row input,
 .wlv-search-row button,
 .wlv-right-panel input,
 .wlv-right-panel select,
-.wlv-right-panel button {
-  border: 1px solid #3f3f46;
-  background: #171717;
-  color: #e5e7eb;
-}
+.wlv-right-panel button {}
 
 .wlv-search-row input::placeholder,
-.wlv-right-panel input::placeholder {
-  color: #71717a;
-}
+.wlv-right-panel input::placeholder {}
 
 .wlv-search-row button:hover:not(:disabled),
 .wlv-right-panel button:hover:not(:disabled) {
@@ -1327,11 +1278,6 @@ button:disabled {
   color: #e5e7eb;
 }
 
-.wlv-status-footer {
-  border-top: 1px solid #2d2d2d;
-  background: #151515;
-  color: #8b8b8b;
-}
 
 .wlv-track-backdrop-dark .wlv-shared-go-to-depth-marker span {
   background: #111111;
@@ -1371,15 +1317,11 @@ button:disabled {
 .wlv-right-panel .wlv-panel-heading {
   height: 38px;
   padding: 0 12px;
-  background: #1e1e1e;
-  border-bottom: 1px solid #2d2d2d;
-  color: #e5e7eb;
 }
 
 .wlv-curve-inventory .wlv-panel-heading h2,
 .wlv-right-panel .wlv-panel-heading h2 {
   margin: 0;
-  color: #e5e7eb;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -1391,9 +1333,6 @@ button:disabled {
 .wlv-right-panel .wlv-panel-heading span {
   min-width: 22px;
   height: 20px;
-  border-color: #3f3f46;
-  background: #171717;
-  color: #a1a1aa;
   font-size: 11px;
   font-weight: 400;
 }
@@ -1409,18 +1348,11 @@ button:disabled {
 .wlv-right-panel select,
 .wlv-right-panel button {
   height: 29px;
-  border: 1px solid #3f3f46;
   border-radius: 4px;
-  background: #171717;
-  color: #e5e7eb;
   font-size: 12px;
   font-weight: 400;
 }
 
-.wlv-search-row input::placeholder,
-.wlv-right-panel input::placeholder {
-  color: #71717a;
-}
 
 .wlv-search-row button,
 .wlv-right-panel button {
@@ -1596,15 +1528,7 @@ button:disabled {
   line-height: 1.25;
 }
 
-.well-header dt {
-  color: #a1a1aa;
-  font-weight: 400;
-}
 
-.well-header dd {
-  color: #d4d4d8;
-  font-weight: 400;
-}
 
 .wlv-track-canvas {
   border-left: 1px solid #2d2d2d;
@@ -2013,47 +1937,18 @@ button:disabled {
 /* WL-PROTOTYPE-PROPS-STRUCTURAL-1-END */
 
 /* WLV-PROPS-STRUCTURAL-2-DARK-METADATA-START */
-.wlv-properties-panel-v2 {
-  background: #0f0f10;
-  color: #e5e7eb;
-}
 
-.wlv-properties-panel-v2 .wlv-panel-heading {
-  border-bottom: 1px solid #3f3f46;
-  background: #171717;
-}
 
-.wlv-properties-panel-v2 .wlv-panel-heading h2 {
-  color: #f3f4f6;
-}
 
-.wlv-properties-panel-v2 .wlv-panel-heading span {
-  border-color: #4b5563;
-  background: #18181b;
-  color: #d1d5db;
-}
 
 .wlv-properties-panel-v2 .wlv-properties-selected-entity {
   margin: 10px;
   padding: 9px 10px;
-  border: 1px solid #4b5563;
-  border-radius: 4px;
-  background: #151515;
-  display: grid;
+display: grid;
   gap: 3px;
 }
 
-.wlv-properties-panel-v2 .wlv-properties-selected-entity strong {
-  color: #f3f4f6;
-  font-size: 12px;
-  font-weight: 800;
-}
 
-.wlv-properties-panel-v2 .wlv-properties-selected-entity span {
-  color: #a1a1aa;
-  font-size: 10.5px;
-  line-height: 1.25;
-}
 
 .wlv-properties-panel-v2 .wlv-properties-tabs {
   display: grid;
@@ -2064,14 +1959,7 @@ button:disabled {
 
 .wlv-properties-panel-v2 .wlv-properties-tabs button {
   min-height: 32px;
-  border: 1px solid #52525b;
-  border-radius: 4px;
-  background: #151515;
-  color: #d4d4d8;
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 1.15;
-  cursor: pointer;
+cursor: pointer;
 }
 
 .wlv-properties-panel-v2 .wlv-properties-tabs button.active {
@@ -2087,26 +1975,13 @@ button:disabled {
 
 .wlv-properties-panel-v2 .wlv-properties-contract-table {
   margin: 0 10px 10px;
-  border: 1px solid #4b5563;
-  border-radius: 4px;
-  background: #101011;
-  overflow: hidden;
+overflow: hidden;
 }
 
-.wlv-properties-panel-v2 .wlv-properties-contract-section + .wlv-properties-contract-section {
-  border-top: 1px solid #52525b;
-}
 
 .wlv-properties-panel-v2 .wlv-properties-contract-section h3 {
   margin: 0;
   padding: 8px 9px;
-  border-bottom: 1px solid #4b5563;
-  background: #18181b;
-  color: #e5e7eb;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .wlv-properties-panel-v2 .wlv-properties-contract-section table {
@@ -2115,9 +1990,6 @@ button:disabled {
   table-layout: fixed;
 }
 
-.wlv-properties-panel-v2 .wlv-properties-contract-section tr + tr {
-  border-top: 1px solid #2f333a;
-}
 
 .wlv-properties-panel-v2 .wlv-properties-contract-section th,
 .wlv-properties-panel-v2 .wlv-properties-contract-section td {
@@ -2129,84 +2001,42 @@ button:disabled {
 
 .wlv-properties-panel-v2 .wlv-properties-contract-section th {
   width: 38%;
-  color: #9ca3af;
-  font-weight: 800;
   text-align: left;
 }
 
 .wlv-properties-panel-v2 .wlv-properties-contract-section td {
-  color: #f3f4f6;
-  font-weight: 750;
   word-break: break-word;
 }
 
 .wlv-properties-panel-v2 .wlv-properties-contract-section td em {
   margin-left: 4px;
-  color: #a1a1aa;
   font-style: normal;
-  font-weight: 700;
 }
 
 .wlv-properties-panel-v2 .wlv-properties-contract-section td small {
   display: block;
   margin-top: 3px;
-  color: #71717a;
-  font-size: 9px;
-  font-weight: 650;
 }
 
 .wlv-properties-panel-v2 .wlv-properties-dark-section,
 .wlv-properties-panel-v2 .wlv-property-section {
   margin: 10px;
   padding: 10px;
-  border: 1px solid #4b5563;
-  border-radius: 4px;
-  background: #151515;
 }
 
 .wlv-properties-panel-v2 .wlv-property-section h3 {
   margin: 0 0 10px;
-  color: #f3f4f6;
-  font-size: 12px;
-  font-weight: 850;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 
-.wlv-properties-panel-v2 .wlv-property-section label {
-  color: #b8bcc6;
-  font-size: 10.5px;
-  font-weight: 700;
-}
 
-.wlv-properties-panel-v2 .wlv-property-section input,
-.wlv-properties-panel-v2 .wlv-property-section select {
-  border: 1px solid #4b5563;
-  background: #121214;
-  color: #f3f4f6;
-}
 
-.wlv-properties-panel-v2 .wlv-property-section button {
-  border: 1px solid #4b5563;
-  background: #151515;
-  color: #d1d5db;
-}
 
 .wlv-properties-panel-v2 .wlv-property-section button:disabled {
   color: #6b7280;
   opacity: 0.75;
 }
 
-.wlv-properties-panel-v2 .wlv-property-note {
-  border-color: #4b5563;
-  background: #111113;
-  color: #a1a1aa;
-}
 
-.wlv-properties-panel-v2 .wlv-selected-curve-title {
-  border-color: #4b5563;
-  background: #101011;
-}
 /* WLV-PROPS-STRUCTURAL-2-DARK-METADATA-END */
 
 /* WLV curve header menu stacking contract.
@@ -4374,55 +4204,6 @@ button.wlv-view-range-readout,
 
 /* WLV-WMDP-CONTROL-ROWS-EXACT-SMDP-END */
 
-/* WLV-WMDP-DISPOSABLE-SEED-BUTTON-START */
-
-/*
-  Temporary WMDP seed button.
-  Remove when well intake workflow is complete.
-*/
-
-.wlv-wmdp-page-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.wlv-wmdp-page-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  margin-left: auto;
-  flex: 0 0 auto;
-}
-
-.wlv-wmdp-disposable-seed-button {
-  height: 26px;
-  padding: 0 8px;
-  border-radius: 6px;
-  border: 1px dashed rgba(214, 170, 82, 0.75);
-  background: transparent;
-  color: #d6aa52;
-  font-size: 11.25px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.wlv-wmdp-disposable-seed-button:hover:not(:disabled) {
-  background: rgba(214, 170, 82, 0.08);
-  border-color: #e2bd6a;
-  color: #e2bd6a;
-}
-
-.wlv-wmdp-disposable-seed-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.48;
-}
-
-/* WLV-WMDP-DISPOSABLE-SEED-BUTTON-END */
-
-
 /* WLV-WMDP-SMDP-VISUAL-TUNING-START */
 
 /*
@@ -4735,18 +4516,6 @@ button.wlv-view-range-readout,
 /* Checkboxes can make warm gray obvious; cool them too. */
 .wlv-wmdp-table input[type="checkbox"] {
   accent-color: #5f7fa6 !important;
-}
-
-/* Disposable seed button remains temporary, but reduce its brown/gold punch. */
-.wlv-wmdp-disposable-seed-button {
-  border-color: rgba(142, 155, 174, 0.55) !important;
-  color: #aeb8c7 !important;
-}
-
-.wlv-wmdp-disposable-seed-button:hover:not(:disabled) {
-  background-color: rgba(142, 155, 174, 0.08) !important;
-  border-color: #bdc8d8 !important;
-  color: #d5dde9 !important;
 }
 
 /* WLV-WMDP-BLUE-CHARCOAL-TABLE-END */
@@ -5569,39 +5338,25 @@ button.wlv-view-range-readout,
   justify-content: center;
   min-height: 520px;
   padding: 32px;
-  background: rgba(4, 13, 24, 0.42);
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
 }
 
 .wlv-empty-viewer-card {
   width: min(720px, 100%);
   padding: 28px 32px;
-  border: 1px solid rgba(96, 165, 250, 0.34);
   border-radius: 18px;
-  background: rgba(15, 23, 42, 0.78);
   box-shadow: 0 18px 42px rgba(2, 6, 23, 0.35);
-  color: #dbeafe;
 }
 
 .wlv-empty-viewer-card h2 {
   margin: 0 0 10px;
-  font-size: 1.15rem;
-  letter-spacing: 0.01em;
 }
 
 .wlv-empty-viewer-card p {
   margin: 0;
-  color: #b6c7dd;
-  line-height: 1.55;
 }
 
 .wlv-empty-viewer-card p + p {
   margin-top: 12px;
-}
-
-.wlv-empty-viewer-note {
-  color: #93a4b8 !important;
-  font-size: 0.9rem;
 }
 
 /* WLV-WDV-REBUILD-1: loaded availability is separate from visible track layout */
@@ -5612,31 +5367,21 @@ button.wlv-view-range-readout,
   align-items: center;
   justify-content: center;
   padding: 32px;
-  background: rgba(4, 13, 24, 0.42);
-  border-left: 1px solid rgba(148, 163, 184, 0.14);
-  border-right: 1px solid rgba(148, 163, 184, 0.14);
 }
 
 .wlv-loaded-curves-ready-card {
   width: min(680px, 100%);
   padding: 24px 28px;
-  border: 1px solid rgba(96, 165, 250, 0.34);
   border-radius: 18px;
-  background: rgba(15, 23, 42, 0.78);
   box-shadow: 0 18px 42px rgba(2, 6, 23, 0.35);
-  color: #dbeafe;
 }
 
 .wlv-loaded-curves-ready-card h2 {
   margin: 0 0 10px;
-  font-size: 1.15rem;
-  letter-spacing: 0.01em;
 }
 
 .wlv-loaded-curves-ready-card p {
   margin: 0;
-  color: #b6c7dd;
-  line-height: 1.55;
 }
 
 .wlv-loaded-curves-ready-card p + p {
@@ -5645,9 +5390,6 @@ button.wlv-view-range-readout,
 
 .wlv-ready-properties-copy {
   padding: 14px;
-  color: #9ca3af;
-  font-size: 12px;
-  line-height: 1.45;
 }
 
 
@@ -5686,15 +5428,8 @@ button.wlv-view-range-readout,
 .wlv-loaded-curves-ready-card h2,
 .wlv-empty-viewer-card h2 {
   margin: 0 0 8px;
-  font-size: 1rem;
-  line-height: 1.25;
 }
 
-.wlv-loaded-curves-ready-card p,
-.wlv-empty-viewer-card p {
-  font-size: 0.88rem;
-  line-height: 1.42;
-}
 
 .wlv-loaded-curves-ready-card p + p,
 .wlv-empty-viewer-card p + p {
@@ -6840,7 +6575,7 @@ button.wlv-view-range-readout,
 
 .wlv-wbv-layout {
   flex: 1 1 auto;
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(250px, 300px);
+  grid-template-columns: 300px minmax(0, 1fr) 330px;
   gap: 0.75rem;
   height: auto;
   min-height: 0;
@@ -7881,7 +7616,6 @@ button.wlv-view-range-readout,
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(2, 6, 23, 0.62);
 }
 
 .wlv-template-modal {
@@ -7901,7 +7635,6 @@ button.wlv-view-range-readout,
   justify-content: space-between;
   gap: 16px;
   padding: 16px 18px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.28);
 }
 
 .wlv-template-modal-header span {
@@ -7915,8 +7648,6 @@ button.wlv-view-range-readout,
 
 .wlv-template-modal-header h2 {
   margin: 4px 0 0;
-  color: #f8fafc;
-  font-size: 19px;
 }
 
 .wlv-template-modal-header button {
@@ -8110,18 +7841,7 @@ button.wlv-view-range-readout,
   width: 24px;
   height: 24px;
   padding: 0;
-  border: 1px solid #3f3f46;
-  border-radius: 6px;
-  background: #111111;
-  color: #d4d4d8;
-  font-size: 18px;
-  line-height: 1;
   cursor: pointer;
-}
-
-.wlv-curve-inventory-collapse-toggle:hover {
-  border-color: #60a5fa;
-  color: #60a5fa;
 }
 
 .wlv-curve-inventory-collapsed-label {
@@ -8130,11 +7850,6 @@ button.wlv-view-range-readout,
   left: 50%;
   transform: translateX(-50%) rotate(-90deg);
   transform-origin: center;
-  color: #a1a1aa;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -8461,20 +8176,9 @@ button.wlv-view-range-readout,
   justify-content: space-between;
   gap: 8px;
   padding: 7px 10px;
-  border: 0;
-  border-radius: 0;
-  background: #080a0d;
-  color: rgba(255,255,255,0.72);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  text-align: left;
+text-align: left;
 }
-.wlv-inventory-section-toggle:hover {
-  background: #11151a;
-  color: #f4f6f8;
-}
+.wlv-inventory-section-toggle:hover {}
 .wlv-inventory-section-toggle-meta {
   display: inline-flex;
   align-items: center;
@@ -8496,11 +8200,7 @@ button.wlv-view-range-readout,
 .wlv-inventory-section-body input,
 .wlv-inventory-section-body button,
 .wlv-search-row input,
-.wlv-search-row button {
-  background: #0b0e12;
-  color: #e7e9ec;
-  border-color: rgba(255,255,255,0.18);
-}
+.wlv-search-row button {}
 .wlv-inventory-section-body select:disabled,
 .wlv-inventory-section-body button:disabled {
   background: #111316;
@@ -9037,19 +8737,7 @@ button.wlv-view-range-readout,
   color: #7dffc3 !important;
 }
 
-.wlv-add-track-builder,
-.wlv-add-track-builder-draggable {
-  border-color: #4b5563;
-  background: #17191d;
-  color: #e5e7eb;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.58);
-}
 
-.wlv-add-track-builder-draggable .builder-drag-handle {
-  border-bottom-color: #3f4650;
-  background: #22262c;
-  color: #f3f4f6;
-}
 
 .wlv-add-track-builder .builder-section {
   padding-top: 10px;
@@ -9060,9 +8748,6 @@ button.wlv-view-range-readout,
   border-top: 0;
 }
 
-.wlv-add-track-builder .builder-label {
-  color: #aeb7c3;
-}
 
 .wlv-add-track-builder button,
 .wlv-add-track-builder select {
@@ -9107,9 +8792,6 @@ button.wlv-view-range-readout,
   border-top: 1px solid #3f4650;
 }
 
-.wlv-add-track-builder .builder-note {
-  color: #8d96a3;
-}
 
 .wlv-track-strip {
   position: relative;
@@ -9325,9 +9007,6 @@ button.wlv-view-range-readout,
   z-index: 5000;
   display: grid;
   place-items: center;
-  background: rgba(3, 7, 18, 0.82);
-  color: #f8fafc;
-  font-size: 20px;
   pointer-events: none;
 }
 
@@ -9340,13 +9019,6 @@ button.wlv-view-range-readout,
   max-width: min(680px, calc(100% - 32px));
   transform: translateX(-50%);
   padding: 5px 9px;
-  border: 1px solid #64748b;
-  border-radius: 4px;
-  background: #1e293b;
-  color: #e2e8f0;
-  font-size: 11px;
-  line-height: 1.25;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
 }
 
 .wlv-qv-canvas {
@@ -9608,9 +9280,6 @@ button.wlv-view-range-readout,
   gap: 8px;
   min-height: 24px;
   padding: 3px 6px;
-  border: 1px solid rgba(148, 163, 184, 0.20);
-  background: rgba(255, 255, 255, 0.025);
-  color: #cbd5e1;
   font-size: 11px;
   line-height: 1.12;
 }
@@ -12013,11 +11682,6 @@ button.wlv-view-range-readout,
 .wlv-well-info-import-modal {
   width: min(620px, calc(100vw - 56px));
   overflow: hidden;
-  border: 1px solid rgba(88, 111, 139, 0.82);
-  border-radius: 14px;
-  background: #111923;
-  color: #d9e3ef;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
 }
 .wlv-well-info-import-modal > header {
   display: flex;
@@ -12030,8 +11694,6 @@ button.wlv-view-range-readout,
 .wlv-well-info-import-modal h3 { margin: 0; font-size: 1.05rem; }
 .wlv-well-info-import-modal header p {
   margin: 6px 0 0;
-  color: #8f9cad;
-  font-size: 0.84rem;
 }
 .wlv-well-info-import-close { min-width: 34px; height: 34px; padding: 0; }
 .wlv-well-info-import-dropzone {
@@ -12946,7 +12608,7 @@ summary {
 .wlv-track-content-layer.fixed-grid { z-index: 1; }
 .wlv-curve-track-svg.content-layer { background: transparent; }
 .wlv-track-overlay-category { overflow: hidden; }
-.track-content-order-menu-portal { position: fixed; z-index: 10040; padding: 10px; border: 1px solid #8694a6; border-radius: 6px; background: #fff; color: #172033; box-shadow: 0 12px 32px rgba(15,23,42,.28); }
+.track-content-order-menu-portal { position: fixed; z-index: 10040; padding: 10px; border: 1px solid #8694a6; border-radius: 6px; background: #ffffff; color: #172033; box-shadow: 0 12px 32px rgba(15,23,42,.28); }
 .track-content-order-title { font-size: 11px; line-height: 1.2; font-weight: 700; margin-bottom: 2px; }
 .track-content-order-note { margin-bottom: 7px; font-size: 9px; line-height: 1.25; color: #667085; }
 .track-content-order-list { display: grid; gap: 4px; }
@@ -13100,11 +12762,6 @@ summary {
   width: min(1180px, calc(100vw - 48px));
   height: min(820px, calc(100vh - 48px));
   overflow: hidden;
-  border: 1px solid #4b5563;
-  border-radius: 8px;
-  background: #11151a;
-  color: #f4f4f5;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58);
 }
 
 .wlv-lithology-picker-modal > header {
@@ -13113,36 +12770,19 @@ summary {
   justify-content: space-between;
   gap: 18px;
   padding: 14px 16px;
-  border-bottom: 1px solid #343b45;
-  background: #181c22;
 }
 
-.wlv-lithology-picker-modal > header span {
-  color: #9ca3af;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
+.wlv-lithology-picker-modal > header span {}
 
 .wlv-lithology-picker-modal > header h2 {
   margin: 2px 0;
-  font-size: 19px;
 }
 
-.wlv-lithology-picker-modal > header small {
-  color: #aeb5bf;
-  font-size: 10px;
-}
+.wlv-lithology-picker-modal > header small {}
 
 .wlv-lithology-picker-modal > header > button {
   width: 36px;
   height: 36px;
-  border: 1px solid #566171;
-  border-radius: 5px;
-  background: #12171d;
-  color: #ffffff;
-  font-size: 22px;
 }
 
 .wlv-lithology-picker-toolbar {
@@ -13150,18 +12790,12 @@ summary {
   grid-template-columns: minmax(0, 1fr) 210px;
   gap: 10px;
   padding: 12px 16px;
-  border-bottom: 1px solid #303741;
 }
 
 .wlv-lithology-picker-toolbar input,
 .wlv-lithology-picker-toolbar select {
   min-height: 34px;
   padding: 6px 9px;
-  border: 1px solid #495361;
-  border-radius: 4px;
-  background: #0d1116;
-  color: #ffffff;
-  font-size: 11px;
 }
 
 .wlv-lithology-picker-workspace {
@@ -13276,18 +12910,11 @@ summary {
   justify-content: flex-end;
   gap: 9px;
   padding: 10px 16px;
-  border-top: 1px solid #343b45;
-  background: #171c22;
 }
 
 .wlv-lithology-picker-modal > footer button {
   min-width: 120px;
   min-height: 32px;
-  border: 1px solid #556171;
-  border-radius: 4px;
-  background: #12171d;
-  color: #ffffff;
-  font-size: 10px;
 }
 
 .wlv-lithology-picker-modal > footer button:last-child {
@@ -13631,10 +13258,10 @@ summary {
 .wlv-interval-row>span{position:relative;display:flex;align-items:center;justify-content:center;border-right:1px solid rgba(0,0,0,.55);box-sizing:border-box;font-size:9px;line-height:1.05;overflow:hidden;text-align:center;padding:1px}
 .wlv-interval-row .interval-group{background:#d7c58a;font-weight:600}
 .wlv-interval-row .interval-unit{background:#efe4bd}
-.wlv-interval-row .interval-relative{background:#fff}
+.wlv-interval-row .interval-relative{background:#ffffff}
 .wlv-interval-row .interval-relative i{display:block;width:5px;min-height:3px;background:#475569;border-radius:2px}
 .wlv-interval-row .interval-lithology{background:repeating-linear-gradient(135deg,#d7c58a 0 3px,#f6f0d8 3px 6px);font-size:8px}
-.wlv-interval-row .interval-md{background:#fff;flex-direction:column;align-items:flex-end!important;padding-right:3px!important}
+.wlv-interval-row .interval-md{background:#ffffff;flex-direction:column;align-items:flex-end!important;padding-right:3px!important}
 .wlv-interval-row .interval-md b{font-size:8px}.wlv-interval-row .interval-md small{margin-top:auto;font-size:7px;color:#475569}
 .wlv-interval-column-editor{position:absolute;z-index:80;top:34px;left:8px;width:310px;padding:9px;background:#111820;border:1px solid #6b7280;box-shadow:0 10px 30px rgba(0,0,0,.45);color:#fff;font-size:11px}
 .wlv-interval-column-editor-row{display:grid;grid-template-columns:20px 1fr 58px 28px 28px;gap:4px;align-items:center;margin-top:5px}
@@ -14186,7 +13813,7 @@ summary {
   position:relative;
   display:flex;
   flex-direction:column;
-  background:#fff;
+  background:#ffffff;
   border:1px solid var(--wlv-track-border,#43505e);
   box-sizing:border-box;
 }
@@ -14197,7 +13824,7 @@ summary {
 .wlv-interval-depth-body{
   position:relative;
   overflow:hidden;
-  background:#fff !important;
+  background:#ffffff !important;
 }
 .wlv-interval-depth-value{
   position:absolute;
@@ -14220,7 +13847,7 @@ summary {
   left:3px;
   right:3px;
   padding:0 2px;
-  background:#fff;
+  background:#ffffff;
   color:#1e2935;
   font-size:10px;
   line-height:16px;
@@ -14323,7 +13950,7 @@ summary {
   position:absolute;
   top:-8px;
   padding:0 2px;
-  background:#fff;
+  background:#ffffff;
   color:#1e2935;
   font-size:10px;
   line-height:16px;
@@ -14886,12 +14513,9 @@ summary {
   gap: 12px;
   min-height: 52px;
   padding: 9px 12px;
-  border-top: 1px solid #394450;
-  background: #171b20;
 }
 
 .wlv-edit-track-modal-footer-status {
-  color: #9fa9b6;
   font-size: 9px;
   font-weight: 700;
 }
@@ -14906,18 +14530,12 @@ summary {
   min-width: 112px;
   min-height: 32px;
   padding: 6px 14px;
-  border: 1px solid #596676;
-  border-radius: 5px;
   font-size: 10px;
   font-weight: 800;
   letter-spacing: .04em;
   text-transform: uppercase;
 }
 
-.wlv-edit-track-modal-footer button.secondary {
-  background: #10161c;
-  color: #e5ebf2;
-}
 
 .wlv-edit-track-modal-footer button.primary {
   border-color: #18b783;
@@ -16410,10 +16028,6 @@ summary {
   gap: 7px;
   box-sizing: border-box;
   padding: 8px;
-  border: 1px solid #566274;
-  border-radius: 7px;
-  background: #111827;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
   white-space: nowrap;
 }
 
@@ -16424,9 +16038,6 @@ summary {
   left: 24px;
   width: 8px;
   height: 8px;
-  background: #111827;
-  border-left: 1px solid #566274;
-  border-top: 1px solid #566274;
   transform: rotate(45deg);
 }
 
@@ -16443,7 +16054,6 @@ summary {
   flex: 1 1 auto;
   min-width: 0;
   gap: 3px;
-  color: #b8c0cc;
   font-size: 9px;
   font-weight: 650;
   line-height: 1;
@@ -16457,11 +16067,6 @@ summary {
   height: 28px;
   box-sizing: border-box;
   padding: 3px 8px;
-  border: 1px solid #5b6778;
-  border-radius: 4px;
-  background: transparent;
-  color: #eef2f7;
-  font: inherit;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.1;
@@ -16478,20 +16083,11 @@ summary {
   min-width: 58px;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid #5b6778;
-  border-radius: 4px;
-  background: transparent;
-  color: #dbe2ea;
   font-size: 11px;
   font-weight: 650;
   line-height: 1;
 }
 
-.wlv-depth-command-popover button:hover {
-  border-color: #94a3b8;
-  background: transparent;
-  color: #f8fafc;
-}
 
 .wlv-depth-command-popover button.primary {
   border-color: #16a34a;
@@ -16597,90 +16193,6 @@ summary {
 }
 
 /* ==========================================================================
-   WDV MIXED-CASE HEADING SIZE V1.0.1
-   Font-size adjustment only. No layout or geometry changes.
-   ========================================================================== */
-
-.wlv-prototype-root .wlv-toolbar-zone-header {
-  font-size: 11px !important;
-}
-
-.wlv-prototype-root .wlv-inventory-section-toggle {
-  font-size: 11px;
-}
-
-.wlv-prototype-root .wlv-panel-heading h2 {
-  font-size: 14px;
-}
-
-/* ==========================================================================
-   WDV HEADER-ONLY SIZE CORRECTION V1.0.2
-   Restores submenu labels to their original compact size.
-   ========================================================================== */
-
-.wlv-prototype-root .wlv-inventory-section-toggle {
-  font-size: 10px;
-}
-
-/* ==========================================================================
-   WDV ADOPT CURRENT WBV FONT BEHAVIOR V1.0.5
-   Font-family only: WDV now inherits the application font as WBV does.
-   ========================================================================== */
-
-.wlv-prototype-root,
-.wlv-prototype-root button,
-.wlv-prototype-root input,
-.wlv-prototype-root select,
-.wlv-prototype-root textarea,
-.wlv-prototype-root option {
-  font-family: inherit !important;
-}
-
-/* ==========================================================================
-   WDV TOP / SIDE EXACT TYPE PARITY V1.0.8A
-   Matches rendered top headings, side headings and side counts exactly.
-   ========================================================================== */
-
-.wlv-prototype-root .wlv-toolbar-zone-header > span:last-child,
-.wlv-prototype-root .wlv-inventory-section-toggle > span:first-child,
-.wlv-prototype-root .wlv-inventory-section-toggle-meta,
-.wlv-prototype-root .wlv-inventory-section-toggle-meta b {
-  font-family: inherit !important;
-  font-size: 11px !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.03em !important;
-  line-height: 1 !important;
-}
-
-/* ==========================================================================
-   WDV RIGHT HEADER TYPE PARITY V1.0.9
-   Matches all right-properties header labels to the left inventory style.
-   Body labels, values, tables and layout are intentionally untouched.
-   ========================================================================== */
-
-.wlv-prototype-root .wlv-properties-panel-v2 .wlv-panel-heading h2,
-.wlv-prototype-root .wlv-properties-panel-v2 .wlv-properties-tabs button,
-.wlv-prototype-root .wlv-properties-panel-v2 .wlv-properties-contract-section h3,
-.wlv-prototype-root .wlv-properties-panel-v2 .wlv-property-section h3,
-.wlv-prototype-root .wlv-properties-panel-v2 .wlv-properties-collapse-toggle strong {
-  font-family: inherit !important;
-  font-size: 11px !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.03em !important;
-  line-height: 1 !important;
-  text-transform: none !important;
-}
-
-/* ==========================================================================
-   WDV PROPERTIES TITLE SIZE PARITY V1.0.10
-   Matches only the outer Properties panel title to Well Data Inventory.
-   ========================================================================== */
-
-.wlv-prototype-root .wlv-right-panel > .wlv-panel-heading h2 {
-  font-size: 14px !important;
-}
-
-/* ==========================================================================
    WDV LITHOLOGY DESCRIPTION WEIGHT V1.0.11
    Reduces lithology-description strength without changing its size.
    ========================================================================== */
@@ -16691,21 +16203,6 @@ summary {
 > strong {
   font-weight: 600;
 }
-
-/* ==========================================================================
-   WDV EDIT CURVE TRACK HEADER PARITY V1.0.13
-   Typography only. Launcher position and geometry are unchanged.
-   ========================================================================== */
-
-.wlv-prototype-root .wlv-properties-panel-v2 .wlv-edit-track-launcher {
-  font-family: inherit !important;
-  font-size: 11px !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.03em !important;
-  line-height: 1 !important;
-  text-transform: none !important;
-}
-
 
 /* MWD DSM MULTI-SURVEY ACTIVE ROW V1.0.3 */
 .wlv-wmdp-product-item-summary-geometry {
@@ -18102,7 +17599,7 @@ button.wlv-core-threshold-button.active {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  background: #fff;
+  background: #ffffff;
   border: 1px solid var(--wlv-track-border,#43505e);
 }
 
@@ -18118,7 +17615,7 @@ button.wlv-core-threshold-button.active {
 .wlv-interval-core-description-body {
   position: relative;
   overflow: hidden;
-  background: #fff !important;
+  background: #ffffff !important;
   color: #1e2935;
 }
 
@@ -19553,6 +19050,15 @@ button.wlv-core-threshold-button.active {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* WDV Core Appearance local geometry balance V1.0.0.
+   Scope is intentionally limited to the Appearance grid: do not propagate
+   these dimensions to overlay placement or shared modal-control geometry. */
+.wlv-core-appearance-grid {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  column-gap: 24px;
+  padding: 0 8px 0 16px;
+}
+
 .wlv-core-appearance-grid > label,
 .wlv-core-overlay-placement-grid > label {
   display: grid;
@@ -19662,10 +19168,6 @@ button.wlv-core-threshold-button.active {
   gap: 6px;
   min-width: 330px;
   padding: 8px;
-  border: 1px solid #566274;
-  border-radius: 7px;
-  background: #111827;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
 }
 
 .wlv-saved-views-name-popover input {
@@ -19674,10 +19176,6 @@ button.wlv-core-threshold-button.active {
   height: 26px;
   box-sizing: border-box;
   padding: 3px 7px;
-  border: 1px solid #566274;
-  border-radius: 4px;
-  background: #0d1118;
-  color: #f3f4f6;
   font-size: 11px;
 }
 
@@ -19876,7 +19374,7 @@ button.wlv-core-threshold-button.active {
   bottom: 0;
   box-sizing: border-box;
   overflow: hidden;
-  background: #fff;
+  background: #ffffff;
   color: #1e2935;
   z-index: 4;
 }
@@ -20169,6 +19667,7 @@ button.wlv-core-threshold-button.active {
 .wlv-wdv-external-editor-modal {
   width: calc(100vw - 32px);
   height: calc(100vh - 32px);
+  resize: none !important;
   max-width: none !important;
   max-height: none !important;
   margin: 0 !important;
@@ -20181,4 +19680,939 @@ button.wlv-core-threshold-button.active {
 
 .wlv-wdv-external-editor-modal .wlv-curve-edit-modal-header {
   cursor: default;
+}
+
+/* ==========================================================================
+   WDV MENU / TOOLBAR PRESENTATION REGRESSION RESTORE V1.0.0
+   Exact accepted WDV presentation values are reasserted locally so broad
+   generic control styling cannot capture the specialized WDV shell.
+   Geometry and scientific rendering are unchanged.
+   ========================================================================== */
+
+:where(.mv-ui-scope) 
+:where(.mv-ui-scope) 
+:where(.mv-ui-scope) .wlv-toolbar-group button,
+:where(.mv-ui-scope) .wlv-toolbar-group select {
+  border: 1px solid #4b5563;
+  background: transparent;
+  color: #e5e7eb;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+:where(.mv-ui-scope) .wlv-inventory-section-toggle {
+  border: 0;
+  border-radius: 0;
+  background: #080a0d;
+  color: rgba(255,255,255,0.72);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+:where(.mv-ui-scope) .wlv-inventory-section-toggle:hover {
+  background: #11151a;
+  color: #f4f6f8;
+}
+
+:where(.mv-ui-scope) .wlv-inventory-section-body select,
+:where(.mv-ui-scope) .wlv-inventory-section-body input,
+:where(.mv-ui-scope) .wlv-inventory-section-body button,
+:where(.mv-ui-scope) .wlv-search-row input,
+:where(.mv-ui-scope) .wlv-search-row button {
+  background: #0b0e12;
+  color: #e7e9ec;
+  border-color: rgba(255,255,255,0.18);
+}
+
+:where(.mv-ui-scope) .wlv-curve-inventory .wlv-panel-heading,
+:where(.mv-ui-scope) .wlv-right-panel .wlv-panel-heading {
+  background: #1e1e1e;
+  border-bottom: 1px solid #2d2d2d;
+  color: #e5e7eb;
+}
+
+:where(.mv-ui-scope) .wlv-search-row input,
+:where(.mv-ui-scope) .wlv-search-row button,
+:where(.mv-ui-scope) .wlv-right-panel input,
+:where(.mv-ui-scope) .wlv-right-panel select,
+:where(.mv-ui-scope) .wlv-right-panel button {
+  border: 1px solid #3f3f46;
+  background: #171717;
+  color: #e5e7eb;
+}
+
+
+/* ==========================================================================
+   WDV TOP TOOLBAR TYPOGRAPHY UNIFICATION V1.0.0
+   Presentation only: typography is unified across the top toolbar.
+   Color, border, background, semantic state, geometry and interaction remain
+   owned by their existing rules.
+   ========================================================================== */
+.wlv-track-toolbar .wlv-toolbar-zone-header > span:last-child,
+.wlv-track-toolbar .wlv-toolbar-width-label,
+.wlv-track-toolbar button,
+.wlv-track-toolbar select,
+.wlv-track-toolbar .wlv-depth-readout {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  font-style: normal !important;
+  line-height: 14.4px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* ==========================================================================
+   WDV WELL DATA INVENTORY SUBCATEGORY TYPOGRAPHY PARITY V1.0.0
+   Typography-only parity with Design Controls. Colors and geometry unchanged.
+   ========================================================================== */
+.wlv-prototype-root .wlv-inventory-section-toggle > span:first-child {
+  font-family: var(--mv-font-ui) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 15.6px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+/* ==========================================================================
+   MULTIVIEWER WLV-SDV SIDEBAR STYLE-BEHAVIOR PARITY V1.0.0
+   Canonical values captured from the live SDV sidebar at install time.
+   Menu content/order and navigation handlers remain WLV-owned.
+   ========================================================================== */
+
+.wlv-demo-shell {
+  grid-template-columns: 92.000px minmax(0, 1fr) !important;
+}
+
+.wlv-demo-left-rail {
+  width: 92.000px !important;
+  background-color: rgb(13, 17, 22) !important;
+  border-right-width: 1px !important;
+  border-right-color: rgb(43, 55, 65) !important;
+}
+
+.wlv-demo-nav-item {
+  min-height: 55.234px !important;
+  border-radius: 6px !important;
+  background-color: rgba(0, 0, 0, 0) !important;
+  color: rgb(143, 156, 168) !important;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "system-ui", "Segoe UI", sans-serif !important;
+  font-size: 10px !important;
+  font-weight: 400 !important;
+  line-height: 12px !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  gap: 4px !important;
+  transition: background-color 0.15s, color 0.15s !important;
+  cursor: pointer !important;
+}
+
+.wlv-demo-nav-icon {
+  width: 24.000px !important;
+  height: 15.234px !important;
+  color: rgb(143, 156, 168) !important;
+}
+
+.wlv-demo-nav-icon svg {
+  width: 24.000px !important;
+  height: 15.234px !important;
+}
+
+.wlv-demo-nav-label {
+  color: inherit !important;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "system-ui", "Segoe UI", sans-serif !important;
+  font-size: 10px !important;
+  font-weight: 400 !important;
+  line-height: 12px !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+}
+
+.wlv-demo-nav-item.active {
+  background-color: rgb(82, 98, 111) !important;
+  color: rgb(226, 232, 237) !important;
+}
+
+.wlv-demo-nav-item.active .wlv-demo-nav-icon {
+  color: rgb(143, 156, 168) !important;
+}
+
+.wlv-demo-nav-item.active .wlv-demo-nav-label {
+  color: rgb(143, 156, 168) !important;
+}
+
+.wlv-demo-nav-item:focus-visible {
+  outline: 2px solid rgb(143, 156, 168) !important;
+  outline-offset: -2px !important;
+}
+
+.wlv-demo-nav-item:disabled {
+  cursor: default !important;
+  opacity: 0.45 !important;
+}
+
+.wlv-demo-nav-top,
+.wlv-demo-nav-bottom {
+  align-items: stretch !important;
+}
+
+/* ==========================================================================
+   MULTIVIEWER WLV-SDV SIDEBAR EXACT PARITY ICON CORRECTION V1.0.0
+   Restores the accepted SDV-style parity state, then corrects only the icon
+   envelope from the short-viewport capture artifact to the SDV 24x24 source size.
+   ========================================================================== */
+.wlv-demo-nav-icon,
+.wlv-demo-nav-icon svg {
+  width: 24px !important;
+  height: 24px !important;
+}
+
+/* ==========================================================================
+   WLV WELL INFORMATION CANONICAL SDV PALETTE PARITY V1.0.0
+   Palette-only normalization against the shared MultiViewer/SDV semantic
+   theme roles. Geometry, typography, data layout and semantic status colors
+   remain unchanged.
+   ========================================================================== */
+
+.wlv-well-info-page {
+  background: var(--mv-bg-app) !important;
+  color: var(--mv-text-primary) !important;
+}
+
+.wlv-well-info-topbar {
+  background: var(--mv-surface-1) !important;
+  color: var(--mv-text-primary) !important;
+  border-bottom-color: var(--mv-border-normal) !important;
+}
+
+.wlv-well-info-db-icon {
+  color: var(--mv-text-secondary) !important;
+}
+
+.wlv-well-info-topbar button,
+.wlv-well-info-footer-actions button,
+.wlv-well-info-empty button {
+  background: var(--mv-control-bg) !important;
+  color: var(--mv-text-primary) !important;
+  border-color: var(--mv-control-border) !important;
+}
+
+.wlv-well-info-topbar button:hover,
+.wlv-well-info-footer-actions button:hover,
+.wlv-well-info-empty button:hover {
+  background: var(--mv-surface-hover) !important;
+  border-color: var(--mv-border-strong) !important;
+}
+
+.wlv-well-info-hero,
+.wlv-well-info-section,
+.wlv-well-info-footer-actions {
+  background: var(--mv-surface-1) !important;
+  border-color: var(--mv-border-normal) !important;
+}
+
+.wlv-well-info-hero h2,
+.wlv-well-info-section-heading h3,
+.wlv-well-info-summary-panel h4,
+.wlv-well-info-loaded-grid strong,
+.wlv-well-info-empty strong {
+  color: var(--mv-text-primary) !important;
+}
+
+.wlv-well-info-hero p,
+.wlv-well-info-section-heading span,
+.wlv-well-info-summary-panel dt,
+.wlv-well-info-loaded-grid span,
+.wlv-well-info-field__label,
+.wlv-well-info-empty span {
+  color: var(--mv-text-muted) !important;
+}
+
+.wlv-well-info-context span,
+.wlv-well-info-summary-panel dd {
+  color: var(--mv-text-secondary) !important;
+}
+
+.wlv-well-info-context small,
+.wlv-well-info-field small,
+.wlv-well-info-footer-actions > span {
+  color: var(--mv-text-disabled) !important;
+}
+
+.wlv-well-info-summary-panel,
+.wlv-well-info-field,
+.wlv-well-info-loaded-grid article {
+  background: var(--mv-surface-2) !important;
+  border-color: var(--mv-border-normal) !important;
+}
+
+.wlv-well-info-field strong {
+  color: var(--mv-text-primary) !important;
+}
+
+.wlv-well-info-summary-panel dd.is-missing,
+.wlv-well-info-field strong.is-missing {
+  color: var(--mv-text-disabled) !important;
+}
+
+.wlv-well-info-field.is-armed,
+.wlv-well-info-field.is-editing {
+  border-color: var(--mv-border-strong) !important;
+}
+
+.wlv-well-info-field__input {
+  background: var(--mv-control-bg) !important;
+  color: var(--mv-text-primary) !important;
+  border-color: var(--mv-control-border) !important;
+}
+
+.wlv-well-info-field__edit-button {
+  background: var(--mv-control-bg) !important;
+  color: var(--mv-text-primary) !important;
+  border-color: var(--mv-control-border) !important;
+}
+
+.wlv-well-info-import-modal {
+  background: var(--mv-surface-1) !important;
+  color: var(--mv-text-primary) !important;
+  border-color: var(--mv-border-normal) !important;
+}
+
+.wlv-well-info-import-modal > header,
+.wlv-well-info-import-modal > footer {
+  border-color: var(--mv-border-normal) !important;
+}
+
+.wlv-well-info-import-dropzone {
+  background: var(--mv-surface-2) !important;
+  border-color: var(--mv-border-strong) !important;
+}
+
+.wlv-well-info-import-dropzone span {
+  color: var(--mv-text-muted) !important;
+}
+
+/* Semantic success/error colors intentionally remain locally owned. */
+
+/* ==========================================================================
+   WDV LIGHT INVENTORY WELL-SELECTION + ADVISORY LOCAL FIX V1.0.2
+   Local owner correction only.
+   - Lightens Well Selection control in Light mode.
+   - Removes the inventory advisory/help swatch.
+   Does not touch shared theme authority.
+   ========================================================================== */
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-loaded-well-selector select {
+  background: #71808c !important;
+  color: #f7f9fa !important;
+  border-color: #8f9ca7 !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-loaded-well-selector select:focus {
+  background: #7c8a95 !important;
+  border-color: #94a1ac !important;
+}
+
+.wlv-curve-inventory .wlv-drop-help {
+  display: none !important;
+}
+
+/* END WDV LIGHT INVENTORY WELL-SELECTION + ADVISORY LOCAL FIX */
+
+/* WDV EXACT ACTIVE-NAV AUTHORITY FIX V1.0.0
+   The local !important .wlv-demo-nav-item.active rule is the active rail winner. */
+
+/* WDV-CURVE-INVENTORY-VERTICAL-DENSITY-V1-0-0-START
+   Presentation-only compaction of Curve Inventory vertical rhythm.
+   Do not alter horizontal grid geometry, semantic colors, or state behavior. */
+
+.wlv-curve-inventory .wlv-curve-group-title,
+.wlv-curve-inventory-body .wlv-curve-group-title {
+  margin-top: 6px !important;
+  margin-bottom: 3px !important;
+}
+
+.wlv-curve-inventory .wlv-curve-row:not(.wlv-curve-duplicate-summary),
+.wlv-curve-inventory-body .wlv-curve-row:not(.wlv-curve-duplicate-summary) {
+  min-height: 28px !important;
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
+  margin-bottom: 1px !important;
+}
+
+.wlv-curve-inventory-body {
+  gap: 2px !important;
+}
+
+/* WDV-CURVE-INVENTORY-VERTICAL-DENSITY-V1-0-0-END */
+
+/* WDV-TOPBAR-CONTROL-ACCENT-BRIGHTENING-V1-0-0-START
+   Presentation-only brightening for selected light-motif topbar controls. */
+
+/* 1) Add Track button */
+:is(
+  .wlv-add-track-button,
+  .wdv-add-track-button,
+  .track-add-button,
+  .wlv-toolbar-add-track,
+  .wlv-btn-add-track,
+  button[data-role="add-track"]
+) {
+  color: #1bc978 !important;
+  border-color: #44d88d !important;
+  background: linear-gradient(180deg, rgba(68, 216, 141, 0.18) 0%, rgba(68, 216, 141, 0.08) 100%) !important;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.20), 0 0 0 1px rgba(68,216,141,0.10) !important;
+}
+:is(
+  .wlv-add-track-button,
+  .wdv-add-track-button,
+  .track-add-button,
+  .wlv-toolbar-add-track,
+  .wlv-btn-add-track,
+  button[data-role="add-track"]
+):hover {
+  color: #19d67d !important;
+  border-color: #52e39b !important;
+  background: linear-gradient(180deg, rgba(82, 227, 155, 0.22) 0%, rgba(82, 227, 155, 0.10) 100%) !important;
+}
+
+/* 2) Track Layout header / Width lettering */
+:is(
+  .wlv-track-layout-title,
+  .wdv-track-layout-title,
+  .track-layout-title,
+  .wlv-topbar-panel-title-track-layout,
+  .wlv-panel-title-track-layout
+) {
+  color: #415569 !important;
+}
+:is(
+  .wlv-width-label,
+  .wdv-width-label,
+  .track-width-label,
+  .wlv-track-layout-width-label,
+  .wlv-width-caption,
+  label[for*="width"],
+  .wlv-control-label
+) {
+  color: #7c90a4 !important;
+}
+:is(
+  .wlv-track-layout-title svg,
+  .wdv-track-layout-title svg,
+  .track-layout-title svg,
+  .wlv-topbar-panel-title-track-layout svg,
+  .wlv-panel-title-track-layout svg
+) {
+  opacity: 0.9 !important;
+}
+
+/* 3) Zoom depth interval readout */
+:is(
+  .wlv-depth-interval-readout,
+  .wdv-depth-interval-readout,
+  .zoom-depth-interval-readout,
+  .wlv-zoom-range-readout,
+  .wlv-depth-range-display,
+  .wlv-view-range-display,
+  .wlv-current-depth-range,
+  .wlv-zoom-depth-input,
+  .wlv-range-input-readonly,
+  input[data-role="zoom-depth-interval"],
+  input[data-role="depth-interval-display"]
+) {
+  color: #e4c17f !important;
+  border-color: #ebb664 !important;
+  background: linear-gradient(180deg, rgba(235, 182, 100, 0.14) 0%, rgba(235, 182, 100, 0.06) 100%) !important;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14) !important;
+}
+:is(
+  .wlv-depth-interval-readout,
+  .wdv-depth-interval-readout,
+  .zoom-depth-interval-readout,
+  .wlv-zoom-range-readout,
+  .wlv-depth-range-display,
+  .wlv-view-range-display,
+  .wlv-current-depth-range,
+  .wlv-zoom-depth-input,
+  .wlv-range-input-readonly,
+  input[data-role="zoom-depth-interval"],
+  input[data-role="depth-interval-display"]
+)::placeholder {
+  color: #d8bb89 !important;
+  opacity: 1 !important;
+}
+
+/* 4) Send to WBV button */
+:is(
+  .wlv-send-to-wbv-button,
+  .wdv-send-to-wbv-button,
+  .send-to-wbv-button,
+  .wlv-btn-send-to-wbv,
+  button[data-role="send-to-wbv"]
+) {
+  color: #41b8ff !important;
+  border-color: #73cfff !important;
+  background: linear-gradient(180deg, rgba(115, 207, 255, 0.18) 0%, rgba(115, 207, 255, 0.08) 100%) !important;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18), 0 0 0 1px rgba(115,207,255,0.08) !important;
+}
+:is(
+  .wlv-send-to-wbv-button,
+  .wdv-send-to-wbv-button,
+  .send-to-wbv-button,
+  .wlv-btn-send-to-wbv,
+  button[data-role="send-to-wbv"]
+):hover {
+  color: #57c5ff !important;
+  border-color: #8bd8ff !important;
+  background: linear-gradient(180deg, rgba(139, 216, 255, 0.22) 0%, rgba(139, 216, 255, 0.10) 100%) !important;
+}
+
+/* WDV-TOPBAR-CONTROL-ACCENT-BRIGHTENING-V1-0-0-END */
+
+/* WDV-TOPBAR-CONTROL-ACCENT-CORRECTIVE-V1-0-2-START
+   Exact-selector light-motif correction. */
+
+/* Add Track: gray face, green outline and lettering. */
+.wlv-add-track-button {
+  background: #edf1f4 !important;
+  color: #0f9f58 !important;
+  -webkit-text-fill-color: #0f9f58 !important;
+  border: 1px solid #24c978 !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+
+.wlv-add-track-button:hover:not(:disabled) {
+  background: #e7edf0 !important;
+  color: #0b8f4e !important;
+  -webkit-text-fill-color: #0b8f4e !important;
+  border-color: #18b96a !important;
+}
+
+/* Send to WBV: gray face, blue outline and lettering. */
+.wlv-send-to-wbv-button,
+.wlv-inline-wbv-publish-action > .wlv-send-to-wbv-button {
+  background: #edf1f4 !important;
+  color: #159ee7 !important;
+  -webkit-text-fill-color: #159ee7 !important;
+  border: 1px solid #43b8f3 !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+}
+
+.wlv-send-to-wbv-button:hover:not(:disabled),
+.wlv-inline-wbv-publish-action > .wlv-send-to-wbv-button:hover:not(:disabled) {
+  background: #e7edf0 !important;
+  color: #0b8fd4 !important;
+  -webkit-text-fill-color: #0b8fd4 !important;
+  border-color: #2daae9 !important;
+}
+
+/* Track Layout Width: intentionally darker than surrounding muted helper text. */
+.wlv-toolbar-group-arrange .wlv-toolbar-width-label,
+.wlv-toolbar-width-label {
+  color: #506274 !important;
+  -webkit-text-fill-color: #506274 !important;
+  opacity: 1 !important;
+  font-weight: 600 !important;
+}
+
+/* Zoom/View current depth interval: brighter orange frame, dark readable text. */
+.wlv-toolbar-group-view .wlv-depth-readout,
+.wlv-depth-readout {
+  color: #7a4600 !important;
+  -webkit-text-fill-color: #7a4600 !important;
+  border-color: #ff9f1c !important;
+  background: #f3f5f6 !important;
+  opacity: 1 !important;
+  font-weight: 700 !important;
+  text-shadow: none !important;
+}
+
+/* WDV-TOPBAR-CONTROL-ACCENT-CORRECTIVE-V1-0-2-END */
+
+/* WDV-SIDE-PANEL-CHEVRON-ALIGNMENT-V1-0-0-START
+   Exact shared geometry for left inventory and right Properties collapse buttons. */
+
+.wlv-curve-inventory-collapse-toggle,
+.wlv-right-properties-collapse-toggle {
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px !important;
+  max-width: 24px !important;
+  min-height: 24px !important;
+  max-height: 24px !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  margin: 0 !important;
+}
+
+/* Left control: center 24px control within the canonical 38px inventory header. */
+.wlv-curve-inventory-shell > .wlv-curve-inventory-collapse-toggle {
+  top: 7px !important;
+  right: 6px !important;
+}
+
+/* Right control: anchor it to the actual Properties heading, not the panel shell. */
+.wlv-properties-panel-heading-with-toggle {
+  position: relative !important;
+}
+
+.wlv-properties-panel-heading-with-toggle > .wlv-right-properties-collapse-toggle {
+  position: absolute !important;
+  top: 50% !important;
+  right: 6px !important;
+  transform: translateY(-50%) !important;
+}
+
+/* Slightly darker chevron in light mode; keep existing gray button face/border. */
+html[data-mv-theme="light"] .wlv-curve-inventory-collapse-toggle,
+html[data-mv-theme="light"] .wlv-right-properties-collapse-toggle {
+  color: #788692 !important;
+  -webkit-text-fill-color: #788692 !important;
+}
+
+/* WDV-SIDE-PANEL-CHEVRON-ALIGNMENT-V1-0-0-END */
+
+/* WDV-SIDE-PANEL-CHEVRON-GLYPH-STANDARDIZATION-V1-0-1-START */
+
+/* Preserve the current 24x24 button boxes and alignment; replace only the glyph. */
+.wlv-curve-inventory-shell > .wlv-curve-inventory-collapse-toggle,
+.wlv-properties-panel-heading-with-toggle > .wlv-right-properties-collapse-toggle,
+.wlv-properties-panel-v2.collapsed > .wlv-right-properties-collapse-toggle {
+  font-size: 0 !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+.wlv-curve-inventory-shell > .wlv-curve-inventory-collapse-toggle::before,
+.wlv-properties-panel-heading-with-toggle > .wlv-right-properties-collapse-toggle::before,
+.wlv-properties-panel-v2.collapsed > .wlv-right-properties-collapse-toggle::before {
+  content: "" !important;
+  width: 6px !important;
+  height: 6px !important;
+  border-top: 2px solid #788692 !important;
+  border-right: 2px solid #788692 !important;
+  box-sizing: border-box !important;
+  display: block !important;
+}
+
+/* Left inventory */
+.wlv-curve-inventory-shell > .wlv-curve-inventory-collapse-toggle[aria-expanded="true"]::before {
+  transform: rotate(-135deg) !important;
+}
+
+.wlv-curve-inventory-shell > .wlv-curve-inventory-collapse-toggle[aria-expanded="false"]::before {
+  transform: rotate(45deg) !important;
+}
+
+/* Right Properties */
+.wlv-properties-panel-heading-with-toggle > .wlv-right-properties-collapse-toggle[aria-expanded="true"]::before {
+  transform: rotate(45deg) !important;
+}
+
+.wlv-properties-panel-v2.collapsed > .wlv-right-properties-collapse-toggle[aria-expanded="false"]::before {
+  transform: rotate(-135deg) !important;
+}
+
+/* WDV-SIDE-PANEL-CHEVRON-GLYPH-STANDARDIZATION-V1-0-1-END */
+
+/* WDV-ZOOM-VIEW-BUTTON-HEIGHT-STANDARDIZATION-V1-0-2-START
+   Match all visible Zoom / View command buttons to the Full / Reset height. */
+
+.wlv-toolbar-group-view .wlv-toolbar-zone-body > button,
+.wlv-toolbar-group-view .wlv-toolbar-zone-body > .wlv-viewport-tie-control > button,
+.wlv-toolbar-group-view .wlv-toolbar-zone-body > .wlv-specified-range-control > button {
+  height: 26px !important;
+  min-height: 26px !important;
+  max-height: 26px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  box-sizing: border-box !important;
+  align-items: center !important;
+}
+
+/* WDV-ZOOM-VIEW-BUTTON-HEIGHT-STANDARDIZATION-V1-0-2-END */
+
+
+/* ==========================================================================
+   WBV_WDV_SIDE_PANEL_WIDTH_EDGE_TREATMENT_PARITY_V1_0_1_AUDITED
+   True live owner correction.
+   Match WDV side-panel widths and keep the canvas-facing panel edges clean.
+   ========================================================================== */
+html[data-mv-theme="light"] .wlv-wbv-panel--left {
+  border-right: 0 !important;
+  box-shadow:
+    -1px 0 2px rgba(23, 33, 43, 0.08),
+    -4px 0 10px rgba(23, 33, 43, 0.035) !important;
+}
+
+html[data-mv-theme="light"] .wlv-wbv-panel--right {
+  border-left: 0 !important;
+  box-shadow:
+    1px 0 2px rgba(23, 33, 43, 0.08),
+    4px 0 10px rgba(23, 33, 43, 0.035) !important;
+}
+
+/* ==========================================================================
+   WDV_ACTION_CONTROL_VERTICAL_COMPACTION_V1_0_0_AUDITED
+   HEIGHT ONLY.
+   Reduce vertical size of WDV toolbar action controls without changing
+   width, order, grouping, horizontal spacing, labels, or behavior.
+   ========================================================================== */
+
+.wlv-track-toolbar .wlv-toolbar-group button,
+.wlv-track-toolbar .wlv-toolbar-group select {
+  height: 22px !important;
+  min-height: 22px !important;
+  max-height: 22px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* Existing Zoom/View controls carry their own later 28px geometry.
+   Override height only; preserve widths and all other behavior. */
+.wlv-track-toolbar .wlv-toolbar-group-view button,
+.wlv-track-toolbar .wlv-toolbar-group-view select,
+.wlv-track-toolbar .wlv-toolbar-group-view input,
+.wlv-track-toolbar .wlv-toolbar-group-view .wlv-go-to-depth-button {
+  height: 22px !important;
+  min-height: 22px !important;
+  max-height: 22px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* WDV canvas/background swatch follows the same compact vertical box. */
+.wlv-track-toolbar .wlv-backdrop-toggle {
+  height: 22px !important;
+  min-height: 22px !important;
+  max-height: 22px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+/* ==========================================================================
+   WDV_SAVE_CANVAS_OUTER_BOUNDING_BOX_REMOVAL_V1_0_0_AUDITED
+   Remove ONLY the enclosing WDV Saved Canvas group box.
+   Preserve the actual Saved Canvas dropdown/button and all behavior.
+   Match the WBV transparent/borderless wrapper treatment.
+   ========================================================================== */
+
+.wlv-track-toolbar .wlv-toolbar-group-saved-canvas {
+  margin: 0 !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+}
+
+.wlv-track-toolbar .wlv-toolbar-group-saved-canvas > .wlv-toolbar-actions,
+.wlv-track-toolbar .wlv-toolbar-group-saved-canvas .wlv-saved-canvas-control {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+}
+
+/* ==========================================================================
+   WDV_SAVED_CANVAS_BUTTON_SIZE_MATCH_WBV_V1_0_0_AUDITED
+   Increase ONLY the actual WDV Saved Canvas trigger to match the WBV size.
+   Do not alter location, width, labels, behavior, or surrounding layout.
+   ========================================================================== */
+
+.wlv-track-toolbar .wlv-toolbar-group-saved-canvas .wlv-saved-canvas-control > button,
+.wlv-track-toolbar .wlv-toolbar-group-saved-canvas .wlv-saved-canvas-control button,
+.wlv-track-toolbar .wlv-toolbar-group-saved-canvas .wlv-toolbar-actions > button {
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  line-height: 1.2 !important;
+}
+
+/* Keep the slot wrapper neutral so only the button size changes. */
+.wlv-track-toolbar .wlv-toolbar-group-saved-canvas,
+.wlv-track-toolbar .wlv-toolbar-group-saved-canvas > .wlv-toolbar-actions,
+.wlv-track-toolbar .wlv-toolbar-group-saved-canvas .wlv-saved-canvas-control {
+  min-height: 0 !important;
+}
+
+
+/* WDV-LIGHT-WHITE-SURFACE-COOL-NEUTRAL-V1-0-1-START
+   WDV Light-theme neutral whitespace correction.
+   Presentation only. Scientific/data colors and Dark theme are excluded.
+*/
+html[data-mv-theme="light"] {
+  --wdv-light-white-surface: #f7fbff;
+}
+
+/* Left and right WDV panel body whitespace. */
+html[data-mv-theme="light"] .wlv-curve-inventory,
+html[data-mv-theme="light"] .wlv-curve-inventory-body,
+html[data-mv-theme="light"] .wlv-inventory-control-stack,
+html[data-mv-theme="light"] .wlv-inventory-control-section,
+html[data-mv-theme="light"] .wlv-inventory-section-body,
+html[data-mv-theme="light"] .wlv-right-panel,
+html[data-mv-theme="light"] .wlv-properties-panel-v2,
+html[data-mv-theme="light"] .wlv-properties-panel-v2 .wlv-properties-tab-body {
+  background-color: var(--wdv-light-white-surface) !important;
+}
+
+/* Unfilled scientific-track whitespace only. */
+.wlv-track-backdrop-light .wlv-depth-track-body,
+.wlv-track-backdrop-light .wlv-curve-track-svg,
+.wlv-track-backdrop-light .wlv-curve-track-svg.logarithmic,
+.wlv-track-backdrop-light .wlv-completion-track-body,
+.wlv-track-backdrop-light .wlv-lithology-track-body {
+  background: var(--wdv-light-white-surface) !important;
+}
+
+/* Keep depth label backing visually continuous with the corrected track surface. */
+.wlv-track-backdrop-light .wlv-depth-tick span {
+  background: var(--wdv-light-white-surface) !important;
+}
+
+/* WDV-LIGHT-WHITE-SURFACE-COOL-NEUTRAL-V1-0-1-END */
+
+
+/* WDV-LIGHT-MASTER-SURFACE-TOKENS-CONSOLIDATION-V1-0-0-START
+   MASTER LIGHT-THEME SURFACE AUTHORITY FOR WDV
+   One token set; no competing hard-coded canvas whites.
+   Panels remain cool gray. All internal WDV working-canvas neutral surfaces
+   are pure white. Scientific/data colors and Dark theme are excluded.
+*/
+html[data-mv-theme="light"].mv-ui-scope {
+  --wdv-light-surface-panel: #eef2f5;
+  --wdv-light-surface-panel-secondary: #f2f5f8;
+  --wdv-light-surface-header: #e9eef3;
+  --wdv-light-surface-border: #c9d2db;
+
+  --wdv-light-surface-canvas: #ffffff;
+  --wdv-light-surface-track-shell: #ffffff;
+  --wdv-light-surface-data-field: #ffffff;
+  --wdv-light-surface-label-backing: #ffffff;
+}
+
+/* Side-panel chrome: intentionally gray. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory,
+html[data-mv-theme="light"].mv-ui-scope .wlv-right-panel,
+html[data-mv-theme="light"].mv-ui-scope .wlv-properties-panel-v2 {
+  background: var(--wdv-light-surface-panel) !important;
+  border-color: var(--wdv-light-surface-border) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory-body,
+html[data-mv-theme="light"].mv-ui-scope .wlv-inventory-control-stack,
+html[data-mv-theme="light"].mv-ui-scope .wlv-inventory-control-section,
+html[data-mv-theme="light"].mv-ui-scope .wlv-inventory-section-body,
+html[data-mv-theme="light"].mv-ui-scope .wlv-properties-panel-v2 .wlv-properties-tab-body {
+  background: var(--wdv-light-surface-panel-secondary) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-curve-inventory .wlv-panel-heading,
+html[data-mv-theme="light"].mv-ui-scope .wlv-right-panel .wlv-panel-heading {
+  background: var(--wdv-light-surface-header) !important;
+  border-color: var(--wdv-light-surface-border) !important;
+}
+
+/* WDV_LIGHT_WORKSPACE_FIRST_RENDER_BACKGROUND_V1_0_0_AUDITED
+   The workspace itself historically retained a hard-coded #111111 backdrop.
+   During WDV hydration/loading that black workspace is exposed before the
+   track canvas occupies the center.  Bind the workspace background to the
+   already-selected backdrop mode so Light first-renders Light.
+*/
+.wlv-prototype-workspace.wlv-track-backdrop-light {
+  background: var(--wdv-light-surface-canvas) !important;
+}
+
+.wlv-prototype-workspace.wlv-track-backdrop-dark {
+  background: #111111 !important;
+}
+
+/* Working canvas: one pure-white authority. */
+.wlv-track-backdrop-light .wlv-track-canvas {
+  background: var(--wdv-light-surface-canvas) !important;
+}
+
+/* Track shells / unfilled track regions: pure white. */
+.wlv-track-backdrop-light .wlv-track-strip {
+  background: var(--wdv-light-surface-track-shell) !important;
+}
+
+/* Internal non-data plotting surfaces: pure white.
+   Actual curves, infills, lithology fills/patterns, completion symbols,
+   formation tops and annotations remain independently owned. */
+.wlv-track-backdrop-light .wlv-depth-track-body,
+.wlv-track-backdrop-light .wlv-curve-track-svg.grid-layer,
+.wlv-track-backdrop-light .wlv-curve-track-svg.logarithmic.grid-layer,
+.wlv-track-backdrop-light .wlv-completion-track-body,
+.wlv-track-backdrop-light .wlv-lithology-track-body {
+  background: var(--wdv-light-surface-data-field) !important;
+}
+
+/* Curve content layers must remain transparent so ordered infill/curve SVG
+   layers beneath them remain visible. Never paint content-layer SVGs white. */
+.wlv-track-backdrop-light .wlv-curve-track-svg.content-layer,
+.wlv-track-backdrop-light .wlv-curve-track-svg.logarithmic.content-layer {
+  background: transparent !important;
+}
+
+/* Depth label backing uses the same master pure-white surface token. */
+.wlv-track-backdrop-light .wlv-depth-tick span {
+  background: var(--wdv-light-surface-label-backing) !important;
+}
+
+/* WDV-LIGHT-MASTER-SURFACE-TOKENS-CONSOLIDATION-V1-0-0-END */
+
+/* WDV_CORE_MODAL_LEFT_GUTTER_BALANCE_V1_0_0_AUDITED
+   Core-only interior gutter correction. Keep the external host window as the
+   sole resize authority; do not alter modal/window geometry or shared tokens.
+   Align Core Description content with the established 16px Core Appearance
+   left gutter instead of allowing its controls to sit directly on the section edge. */
+.wlv-core-description-presentation-section > summary {
+  box-sizing: border-box;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.wlv-core-description-overlay-controls {
+  box-sizing: border-box;
+  width: 100%;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+/* WDV_CORE_MODAL_LEFT_GUTTER_BALANCE_V1_0_0_AUDITED-END */
+
+
+/* ==========================================================================
+   WLV MANAGED DATA REDUNDANT LABEL CLEANUP V1.0.0
+   The panel status is now the only left-side header text.
+   Center it vertically without changing panel actions or table geometry.
+   ========================================================================== */
+
+.wlv-wmdp-panel-header > .wlv-wmdp-panel-status {
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+
+.wlv-wmdp-panel-header > .wlv-wmdp-panel-status > p {
+  margin: 0 !important;
 }

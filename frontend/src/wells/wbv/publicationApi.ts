@@ -32,6 +32,8 @@ export type WbvCurvePresentationOverride = {
   visible: boolean | null;
   color: string | null;
   opacity: number | null;
+  infill_opacity: number | null;
+  infill_brightness: number | null;
   line_width: number | null;
   radial_exaggeration: number | null;
   label_visible: boolean | null;
@@ -275,8 +277,9 @@ export type WbvLayoutTrack = {
   track_uid: string; display_name: string; track_type: WbvLayoutTrackType; display_order: number; visible: boolean;
   position: WbvTrackPosition; angular_position_deg: number; distance_from_wellbore: number; previous_track_gap: number;
   width: number; opacity: number; background_mode: 'transparent' | 'solid'; background_color: string;
-  outline_visible: boolean; grid_mode: 'off' | 'linear' | 'logarithmic';
+  outline_visible: boolean; outline_color?: string; grid_mode: 'off' | 'linear' | 'logarithmic';
   depth_type: 'MD' | 'TVD' | 'TVDSS'; depth_increment: number; label_increment: number; label_size: number; show_depth_units: boolean;
+  tick_color?: string; label_color?: string;
 };
 export type WbvTrackLayout = { contract_version: 'wbv_track_layout_v1'; managed_well_uid: string; revision: number; tracks: WbvLayoutTrack[] };
 export type WbvLayoutCommand = {
@@ -284,8 +287,9 @@ export type WbvLayoutCommand = {
   track_uid?: string; display_name?: string; track_type?: WbvLayoutTrackType; position?: WbvTrackPosition;
   distance_from_wellbore?: number; previous_track_gap?: number; width?: number; opacity?: number;
   background_mode?: 'transparent' | 'solid'; background_color?: string;
-  outline_visible?: boolean; grid_mode?: 'off' | 'linear' | 'logarithmic'; visible?: boolean;
+  outline_visible?: boolean; outline_color?: string; grid_mode?: 'off' | 'linear' | 'logarithmic'; visible?: boolean;
   depth_type?: 'MD' | 'TVD' | 'TVDSS'; depth_increment?: number; label_increment?: number; label_size?: number; show_depth_units?: boolean;
+  tick_color?: string; label_color?: string;
 };
 
 export async function getWbvTrackLayout(managedWellUid: string): Promise<WbvTrackLayout> {

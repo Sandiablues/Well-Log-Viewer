@@ -1,0 +1,232 @@
+{
+  "suite": "MultiViewer Presentation Regression Suite",
+  "version": "2.9.12",
+  "protected_contracts": [
+    {
+      "name": "WBV View presentation",
+      "guard": "scripts/verify_wbv_view_presentation_guard.py",
+      "risk_files": [
+        "src/wells/wbv/Wellbore3DPage.tsx",
+        "src/wells/wbv/Wellbore3DPage.css",
+        "src/styles/multiviewer-presentation/migration-stage1-neutral-controls.css",
+        "src/styles/multiviewer-presentation/components.css"
+      ]
+    },
+    {
+      "name": "WBV Core / Interval interaction",
+      "guard": "scripts/verify_wbv_core_interval_regression_contract.py",
+      "risk_files": [
+        "src/wells/wbv/Wellbore3DPage.tsx",
+        "src/wells/wbv/Wellbore3DPage.css"
+      ]
+    },
+    {
+      "name": "WDV Menu / Toolbar presentation",
+      "guard": "scripts/verify_wdv_menu_presentation_guard.py",
+      "risk_files": [
+        "src/styles/track-layout-prototype.css",
+        "src/styles/multiviewer-presentation/components.css",
+        "src/styles/multiviewer-presentation/migration-stage1-neutral-controls.css"
+      ]
+    },
+    {
+      "name": "WDV Master scope",
+      "guard": "scripts/verify_wdv_master_scope_guard.py",
+      "risk_files": [
+        "src/main.tsx",
+        "src/styles/multiviewer-presentation/components.css",
+        "src/styles/track-layout-prototype.css"
+      ],
+      "coverage": "Dynamic discovery of every `MULTIVIEWER MASTER WDV` block in shared components.css; all must target mv-ui-scope and none may use `.mv-app .wlv-*`."
+    },
+    {
+      "name": "WDV Quick View presentation",
+      "guard": "scripts/verify_wdv_quick_view_presentation_guard.py",
+      "risk_files": [
+        "src/wells/wdv/WdvPageBoundary.tsx",
+        "src/styles/track-layout-prototype.css",
+        "src/styles/multiviewer-presentation/components.css"
+      ],
+      "coverage": "Protects master-owned Quick View neutral presentation plus the local semantic/dynamic color and geometry/interaction ownership boundary."
+    },
+    {
+      "name": "Darker Multi-Grey Depth Contrast",
+      "guard": "scripts/verify_multiviewer_darker_multi_grey_depth_contrast.py",
+      "risk_files": [
+        "src/styles/multiviewer-presentation/theme.css",
+        "SDV/src/styles/multiviewer-presentation/theme.css"
+      ],
+      "coverage": "Protects the darker multi-grey light theme hierarchy, deeper headers/panels, stronger borders, and preserved exclusion of scientific surfaces."
+    },
+    {
+      "name": "Light Theme Depth & Elevation",
+      "guard": "scripts/verify_multiviewer_light_theme_depth_elevation.py",
+      "risk_files": [
+        "src/styles/multiviewer-presentation/theme.css",
+        "SDV/src/styles/multiviewer-presentation/theme.css"
+      ],
+      "coverage": "Protects light-theme dimensional hierarchy across page, toolbar, panel, header, raised, inset, control, border and shadow roles while excluding scientific rendering and geometry."
+    },
+    {
+      "name": "Depth/Elevation Serialization",
+      "guard": "scripts/verify_multiviewer_depth_elevation_serialization.py",
+      "risk_files": [
+        "src/styles/multiviewer-presentation/theme.css",
+        "SDV/src/styles/multiviewer-presentation/theme.css"
+      ],
+      "coverage": "Rejects literal escaped-newline corruption in the Phase40.6 depth/elevation CSS block."
+    },
+    {
+      "name": "Phase41D SDV Cascade Authority",
+      "guard": "scripts/verify_multiviewer_phase41d_sdv_cascade_authority.py",
+      "risk_files": [
+        "src/styles/multiviewer-presentation/components.css",
+        "SDV/src/styles/multiviewer-presentation/components.css"
+      ],
+      "coverage": "High-authority role-specific SDV canonical presentation for WLV/WDV/WBV; fixes generic shared-control cascade masking."
+    },
+    {
+      "name": "Right-Panel Role Normalization",
+      "guard": "scripts/verify_multiviewer_right_panel_role_normalization.py",
+      "risk_files": [
+        "src/wells/prototype/WellLogPropertiesPanelSlot.tsx",
+        "src/wells/wbv/Wellbore3DPage.tsx"
+      ],
+      "coverage": "WDV/WBV right-side panels consume SDV canonical semantic role classes without changing scientific or protected geometry."
+    },
+    {
+      "name": "Right-Panel Shared Role Parity",
+      "guard": "scripts/verify_multiviewer_right_panel_shared_role_parity.py",
+      "risk_files": [
+        "src/styles/multiviewer-presentation/components.css"
+      ],
+      "coverage": "Shared SDV-derived right-panel presentation contract for normalized WDV/WBV semantic roles; local layout/science/interaction geometry preserved."
+    },
+    {
+      "name": "WBV Right-Panel Master Typography Ownership",
+      "guard": "scripts/verify_multiviewer_wbv_right_panel_master_typography_ownership.py",
+      "risk_files": [
+        "src/wells/wbv/Wellbore3DPage.css"
+      ],
+      "coverage": "Legacy WBV right-panel local label/title typography removed so normalized SDV-derived master roles own visible typography; local geometry preserved."
+    },
+    {
+      "name": "WBV Right-Panel Label Weight Parity",
+      "guard": "scripts/verify_multiviewer_wbv_right_panel_label_weight_parity.py",
+      "risk_files": [
+        "src/styles/multiviewer-presentation/components.css"
+      ],
+      "coverage": "WBV Well & Trajectory summary and trajectory metadata labels use SDV canonical 12/400/16.2; unrelated field-label treatment preserved."
+    },
+    {
+      "name": "SDV Right-Panel Muted Label Brightness",
+      "guard": "scripts/verify_multiviewer_sdv_right_panel_muted_label_brightness.py",
+      "risk_files": [
+        "src/styles/multiviewer-presentation/components.css"
+      ],
+      "coverage": "SDV viewer-info-stack property-label gray is brighter (#aab4bd) while typography, geometry, global muted token, WDV, and WBV presentation remain otherwise unchanged."
+    }
+  ],
+  "installer_policy": "Any future package touching a listed risk file must run verify_multiviewer_presentation_regressions.py before and after. The WDV master-scope guard dynamically covers all governed WDV master blocks.",
+  "wdv_properties_presentation": {
+    "guard": "verify_wdv_properties_presentation_guard.py",
+    "risk_files": [
+      "src/styles/track-layout-prototype.css",
+      "src/styles/multiviewer-presentation/components.css"
+    ]
+  },
+  "wdv_well_metadata_status_presentation": {
+    "guard": "verify_wdv_well_metadata_status_presentation_guard.py",
+    "risk_files": [
+      "src/styles/track-layout-prototype.css",
+      "src/styles/multiviewer-presentation/components.css"
+    ]
+  },
+  "wdv_add_track_presentation": {
+    "guard": "verify_wdv_add_track_presentation_guard.py",
+    "risk_files": [
+      "src/styles/track-layout-prototype.css",
+      "src/styles/multiviewer-presentation/components.css"
+    ]
+  },
+  "wdv_curve_header_action_menu_presentation": {
+    "guard": "verify_wdv_curve_header_action_menu_presentation_guard.py",
+    "risk_files": [
+      "src/styles/track-layout-prototype.css",
+      "src/styles/multiviewer-presentation/components.css"
+    ]
+  },
+  "wdv_final_consolidation_presentation": {
+    "guard": "verify_wdv_final_consolidation_presentation_guard.py",
+    "risk_files": [
+      "src/styles/track-layout-prototype.css",
+      "src/styles/multiviewer-presentation/components.css"
+    ]
+  },
+  "wbv_wlv_final_consolidation_presentation": {
+    "guard": "verify_wbv_wlv_final_consolidation_presentation_guard.py",
+    "risk_files": [
+      "src/wells/wbv/Wellbore3DPage.css",
+      "src/styles/multiviewer-presentation/components.css"
+    ]
+  },
+  "sdv_2d_3d_final_consolidation_presentation": {
+    "guard": "verify_sdv_2d_3d_final_consolidation_presentation_guard.py",
+    "risk_files": [
+      "SDV/src/components/Seismic2DViewer.tsx",
+      "SDV/src/components/Seismic3DViewer.tsx",
+      "src/styles/multiviewer-presentation/components.css"
+    ]
+  },
+  "final_presentation_governance_baseline": {
+    "guard": "verify_multiviewer_final_presentation_governance_baseline.py",
+    "risk_files": [
+      "WLV/src/wells/wdv/WdvPageBoundary.tsx",
+      "WLV/src/styles/track-layout-prototype.css",
+      "WLV/src/wells/wbv/Wellbore3DPage.css",
+      "WLV/src/styles/multiviewer-presentation/components.css",
+      "SDV/src/components/Seismic2DViewer.tsx",
+      "SDV/src/components/Seismic3DViewer.tsx",
+      "SDV/src/styles/multiviewer-presentation/components.css"
+    ]
+  },
+  "master_theme_authority": {
+    "guard": "verify_multiviewer_master_theme_authority.py",
+    "risk_files": [
+      "src/styles/multiviewer-presentation/theme.css",
+      "SDV/src/styles/multiviewer-presentation/theme.css"
+    ]
+  },
+  "global_theme_switch": {
+    "guard": "verify_multiviewer_global_theme_switch.py",
+    "risk_files": [
+      "src/main.tsx",
+      "src/themeRuntime.tsx",
+      "src/styles/multiviewer-presentation/theme.css",
+      "SDV/src/main.tsx",
+      "SDV/src/themeRuntime.tsx",
+      "SDV/src/styles/multiviewer-presentation/theme.css"
+    ]
+  },
+  "role_based_light_theme_wiring": {
+    "guard": "verify_multiviewer_role_based_light_theme_wiring.py",
+    "risk_files": [
+      "src/styles/multiviewer-presentation/theme.css",
+      "SDV/src/styles/multiviewer-presentation/theme.css"
+    ]
+  },
+  "light_palette_rebalance": {
+    "guard": "verify_multiviewer_light_palette_rebalance.py",
+    "risk_files": [
+      "src/styles/multiviewer-presentation/theme.css",
+      "SDV/src/styles/multiviewer-presentation/theme.css"
+    ]
+  },
+  "multi_grey_contrast_palette": {
+    "guard": "verify_multiviewer_multi_grey_contrast_palette.py",
+    "risk_files": [
+      "src/styles/multiviewer-presentation/theme.css",
+      "SDV/src/styles/multiviewer-presentation/theme.css"
+    ]
+  }
+}

@@ -1,6 +1,37 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+  <!-- WDV_LIGHT_THEME_PREPAINT_BOOTSTRAP_V1_0_0_AUDITED_START -->
+  <script>
+    (() => {
+      const STORAGE_KEY = 'multiviewer:theme';
+      const COOKIE_KEY = 'multiviewer_theme';
+      let theme = null;
+
+      try {
+        const prefix = `${COOKIE_KEY}=`;
+        const raw = document.cookie
+          .split(';')
+          .map((part) => part.trim())
+          .find((part) => part.startsWith(prefix));
+        const value = raw ? decodeURIComponent(raw.slice(prefix.length)) : '';
+        if (value === 'light' || value === 'dark') theme = value;
+      } catch {}
+
+      if (!theme) {
+        try {
+          const stored = window.localStorage.getItem(STORAGE_KEY);
+          if (stored === 'light' || stored === 'dark') theme = stored;
+        } catch {}
+      }
+
+      if (!theme) theme = 'dark';
+
+      document.documentElement.dataset.mvTheme = theme;
+      document.documentElement.style.colorScheme = theme;
+    })();
+  </script>
+  <!-- WDV_LIGHT_THEME_PREPAINT_BOOTSTRAP_V1_0_0_AUDITED_END -->
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MultiViewer Well Log Viewer</title>

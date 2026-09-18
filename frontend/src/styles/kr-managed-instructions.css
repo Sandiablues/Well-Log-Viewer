@@ -761,3 +761,130 @@
   padding: 12px 14px;
 }
 /* KR-MANAGER-UI-NORMALIZATION-1 END */
+
+/* ==========================================================================
+   WLV KR MANAGER CANONICAL MULTIVIEWER PALETTE V1.0.1
+   Neutral chrome only. Semantic truth/governance states remain local.
+   ========================================================================== */
+
+.wlv-kr-workbench {
+  color: var(--mv-text-primary);
+  background: var(--mv-bg-app);
+}
+
+.wlv-kr-header,
+.wlv-kr-count-card,
+.wlv-kr-controls,
+.wlv-kr-instruction-list,
+.wlv-kr-detail-panel,
+.wlv-kr-decision-workbench,
+.wlv-kr-template-panel {
+  background: var(--mv-surface-1);
+  border-color: var(--mv-border-normal);
+  box-shadow: var(--mv-depth-shadow-1);
+}
+
+.wlv-kr-header h1,
+.wlv-kr-count-card span,
+.wlv-kr-section-heading h2,
+.wlv-kr-detail-panel h2,
+.wlv-kr-template-group strong,
+.wlv-kr-modal-header h2 {
+  color: var(--mv-text-primary);
+}
+
+.wlv-kr-header p,
+.wlv-kr-count-card strong,
+.wlv-kr-controls label,
+.wlv-kr-section-heading span,
+.wlv-kr-detail-heading span,
+.wlv-kr-table th,
+.wlv-kr-table td span,
+.wlv-kr-detail-dl dt,
+.wlv-kr-rule-box h3,
+.wlv-kr-evidence-section h3,
+.wlv-kr-evidence-card span,
+.wlv-kr-template-group span,
+.wlv-kr-form-grid label {
+  color: var(--mv-text-muted);
+}
+
+.wlv-kr-detail-dl dd,
+.wlv-kr-rule-box p,
+.wlv-kr-muted,
+.wlv-kr-evidence-card p,
+.wlv-kr-template-group ul {
+  color: var(--mv-text-secondary);
+}
+
+.wlv-kr-controls input,
+.wlv-kr-controls select,
+.wlv-kr-form-grid input,
+.wlv-kr-form-grid select,
+.wlv-kr-form-grid textarea {
+  color: var(--mv-text-primary);
+  background: var(--mv-control-bg);
+  border-color: var(--mv-control-border);
+}
+
+.wlv-kr-table th {
+  background: var(--mv-surface-2);
+  border-bottom-color: var(--mv-border-subtle);
+}
+
+.wlv-kr-table td {
+  border-bottom-color: var(--mv-border-subtle);
+}
+
+.wlv-kr-table tr:hover {
+  background: var(--mv-surface-hover);
+}
+
+.wlv-kr-table tr.selected {
+  background: var(--mv-surface-selected);
+}
+
+.wlv-kr-rule-box,
+.wlv-kr-evidence-card,
+.wlv-kr-template-group {
+  background: var(--mv-surface-2);
+  border-color: var(--mv-border-normal);
+}
+
+.wlv-kr-section-heading,
+.wlv-kr-detail-heading,
+.wlv-kr-modal-header,
+.wlv-kr-modal-actions {
+  border-color: var(--mv-border-subtle);
+}
+
+.wlv-kr-primary-button,
+.wlv-kr-outline-button {
+  color: var(--mv-text-primary);
+  background: var(--mv-control-bg);
+  border-color: var(--mv-control-border);
+}
+
+.wlv-kr-primary-button:hover:not(:disabled),
+.wlv-kr-outline-button:hover:not(:disabled) {
+  background: var(--mv-surface-hover);
+  border-color: var(--mv-border-strong);
+}
+
+.wlv-kr-outline-button.danger {
+  border-color: #fb7185;
+  color: #fda4af;
+}
+
+.wlv-kr-modal-backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.wlv-kr-modal-card {
+  background: var(--mv-surface-1);
+  border-color: var(--mv-border-normal);
+  box-shadow: var(--mv-depth-shadow-1);
+}
+
+/* Explicitly preserved semantic colors:
+   approved green; review/must-not amber; danger/error red. */

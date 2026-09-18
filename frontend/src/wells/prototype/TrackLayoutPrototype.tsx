@@ -720,10 +720,6 @@ function wellStatus(well: ManagedInventoryWellRecord): string {
     return well.lifecycle_state || well.status || 'unknown';
 }
 
-function developmentSeedAlreadyRegistered(_wells: ManagedInventoryWellRecord[]): boolean {
-    return false;
-}
-
 function wellTypeLabel(well: ManagedInventoryWellRecord): string {
     const record = well as ManagedInventoryWellRecord & {
         well_type?: string | null;
@@ -1329,13 +1325,11 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onOpenInfo, onClearLogViewe
     const [flushApplying, setFlushApplying] = useState(false);
     const [trajectoryApplyingId, setTrajectoryApplyingId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
-    const [registering, setRegistering] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [recoveryByWellId, setRecoveryByWellId] = useState<Map<string, WmdDownstreamRecoveryStatus>>(new Map());
     // KR-1: backend-owned product groups fetched once on mount.
     // If unavailable the page degrades safely (subgroups not shown).
     const [krProductGroups, setKrProductGroups] = useState<KrProductGroup[]>([]);
-    const seedAlreadyRegistered = developmentSeedAlreadyRegistered(wells);
     const backendConnected = Boolean(status?.ok && !error);
     const filteredWells = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
@@ -1476,30 +1470,6 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onOpenInfo, onClearLogViewe
     useEffect(() => {
         setCurrentPage(1);
     }, [pageSize, searchQuery, sortKey, wells.length]);
-    const registerSeedWell = async () => {
-        if (seedAlreadyRegistered) {
-            setError('Development seed well is already registered. Use Refresh to reload the managed inventory.');
-            return;
-        }
-        setRegistering(true);
-        setError(null);
-        try {
-            const result = await fetchWlvJson<{
-                record: ManagedInventoryWellRecord;
-            }>('/api/wlv/inventory/wells/register-seed', {
-                method: 'POST',
-            });
-            await loadInventory();
-            setSelectedWellId(result.record.managed_well_id);
-            setExpandedWellIds((current) => new Set(current).add(result.record.managed_well_id));
-        }
-        catch (caught) {
-            setError(caught instanceof Error ? caught.message : 'Unable to register development seed well');
-        }
-        finally {
-            setRegistering(false);
-        }
-    };
     const toggleWellSelected = (managedWellId: string) => {
         setSelectedWellIds((current) => {
             const next = new Set(current);
@@ -1827,14 +1797,10 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onOpenInfo, onClearLogViewe
     return (<section className="wlv-managed-inventory-page wlv-wmdp-page" aria-label="Managed Well Data">
       <header className="wlv-managed-inventory-header wlv-wmdp-page-header">
         <div>
-          <span className="wlv-page-kicker">Data</span>
           <h1>Managed Data</h1>
           <p>Manage registered wells and data made available to the Well Data Viewer.</p>
         </div>
         <div className="wlv-wmdp-page-actions">
-          <button type="button" className="wlv-wmdp-disposable-seed-button" onClick={registerSeedWell} disabled={loading || registering || seedAlreadyRegistered} title="Temporary development bootstrap action. Remove when intake workflow is complete.">
-            {seedAlreadyRegistered ? '[disposable] Seed Registered' : registering ? '[disposable] Seeding…' : '[disposable] Seed Example Well'}
-          </button>
         </div>
       </header>
 
@@ -1843,8 +1809,7 @@ function ManagedWellInventoryPage({ onOpenLogViewer, onOpenInfo, onClearLogViewe
 
       <section className="wlv-wmdp-panel" aria-label="Managed well data table">
         <header className="wlv-wmdp-panel-header">
-          <div>
-            <h2>Managed Well Data</h2>
+          <div className="wlv-wmdp-panel-status">
             <p>{backendConnected ? 'Connected' : 'Backend unavailable'} · {safeText(status?.service, 'inventory')} · {wells.length} managed wells</p>
           </div>
           <div className="wlv-wmdp-panel-actions">

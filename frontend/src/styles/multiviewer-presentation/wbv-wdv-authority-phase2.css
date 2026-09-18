@@ -1,0 +1,83 @@
+/* ========================================================================== 
+   WBV PRESENTATION PHASE 2 — WDV AUTHORITY SHELL / HEADER / OUTER PANELS
+   V1.0.0 AUDITED — 2026-09-09
+
+   Scope:
+   - light-theme WBV application shell
+   - WBV top header and header tool zone
+   - WBV well-selection header controls
+   - outer left/right WBV panel shells only
+
+   Explicitly excluded:
+   - detailed left/right panel interior rows
+   - accepted WBV View control geometry
+   - Three.js/scientific viewport rendering
+   - trajectory/completion/core colors
+   - interaction/state/persistence behavior
+   ========================================================================== */
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-page {
+  background: var(--mv-role-app-shell-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header {
+  background: var(--mv-role-header-control-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border: 1px solid var(--mv-role-border-normal) !important;
+  box-shadow: inset 0 0 0 1px var(--mv-role-border-highlight) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header-tools {
+  color: var(--mv-role-text-primary) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header .wlv-page-kicker,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header h1 {
+  color: var(--mv-role-text-primary) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header p {
+  color: var(--mv-role-text-secondary) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-well-selector__label-button,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-well-selector__label-button.is-ready {
+  color: var(--mv-role-text-primary) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Pending remains semantic and is deliberately not flattened. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-well-selector__label-button.is-pending {
+  color: var(--mv-semantic-positive-text) !important;
+  background: var(--mv-role-header-control-bg) !important;
+  border-color: var(--mv-semantic-positive-border) !important;
+  box-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-well-selector__label-button.is-pending:hover {
+  color: var(--mv-semantic-positive-on-color) !important;
+  background: var(--mv-semantic-positive-border) !important;
+  border-color: var(--mv-semantic-positive-border) !important;
+  box-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-multiwell-select__trigger {
+  background: var(--mv-role-header-control-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border: 1px solid var(--mv-role-border-normal) !important;
+  box-shadow: inset 0 0 0 1px var(--mv-role-border-highlight) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-multiwell-select.is-open .wlv-wbv-multiwell-select__trigger {
+  border-color: var(--mv-role-focus-accent) !important;
+  box-shadow: inset 0 0 0 1px var(--mv-role-border-highlight), 0 0 0 1px var(--mv-role-focus-accent) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel {
+  background: var(--mv-role-panel-body-bg) !important;
+  color: var(--mv-role-text-primary) !important;
+  border: 1px solid var(--mv-role-border-normal) !important;
+  box-shadow: inset 0 0 0 1px var(--mv-role-border-highlight) !important;
+}

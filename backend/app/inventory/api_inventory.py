@@ -10,6 +10,7 @@ from typing import Any
 from pathlib import Path
 import json
 import zipfile
+import math
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import FileResponse, Response
@@ -750,6 +751,32 @@ def get_core_segment_image(
     )
 
 
+
+def _normalize_core_depth_unit(value: object) -> str | None:
+    text = str(value or "").strip().lower()
+    if text in {"m", "meter", "meters", "metre", "metres"}:
+        return "m"
+    if text in {"ft", "foot", "feet"}:
+        return "ft"
+    return None
+
+
+def _core_depth_to_runtime_m(value: object, source_unit: str) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    if source_unit == "m":
+        return number
+    if source_unit == "ft":
+        return number * 0.3048
+    raise ValueError(f"Unsupported Core depth unit: {source_unit}")
+
+
 @router.get(
     "/wells/{managed_well_id}/core-segment-display-chunks",
     summary="Return depth-indexed display chunks for a continuous core package",
@@ -757,6 +784,7 @@ def get_core_segment_image(
 def get_core_segment_display_chunks(
     managed_well_id: str,
     product_id: str = Query(..., min_length=1),
+    runtime_depth_unit: str | None = Query(default=None),
 ) -> dict:
     try:
         record = _service.repository.get_record(managed_well_id)
@@ -792,42 +820,115 @@ def get_core_segment_display_chunks(
 
     try:
         with zipfile.ZipFile(package_path, "r") as archive:
-            manifest = json.loads(
-                archive.read("manifest.json").decode("utf-8")
-            )
-
+            manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
             chunks = manifest.get("display_chunks") or []
             if not isinstance(chunks, list):
-                raise ValueError(
-                    "Core package display_chunks manifest value is invalid."
+                raise ValueError("Core package display_chunks manifest value is invalid.")
+
+            # Preserve original/native response for WDV and existing callers.
+            if runtime_depth_unit is None:
+                return {
+                    "product_id": product_id,
+                    "segment_id": manifest.get("segment_id"),
+                    "segment_name": manifest.get("segment_name"),
+                    "top_depth": manifest.get("top_depth"),
+                    "base_depth": manifest.get("base_depth"),
+                    "depth_unit": manifest.get("depth_unit"),
+                    "display_contract_version": manifest.get("display_contract_version"),
+                    "schema_version": manifest.get("schema_version"),
+                    "chunks": chunks,
+                }
+
+            requested_runtime_unit = _normalize_core_depth_unit(runtime_depth_unit)
+            if requested_runtime_unit != "m":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="WBV Core runtime_depth_unit currently supports only canonical metres.",
                 )
+
+            source_unit = _normalize_core_depth_unit(manifest.get("depth_unit"))
+            if source_unit is None:
+                raise ValueError(
+                    f"Core package has unsupported depth unit: {manifest.get('depth_unit')!r}"
+                )
+
+            runtime_chunks: list[dict] = []
+            for raw in chunks:
+                if not isinstance(raw, dict):
+                    continue
+                chunk_source_unit = _normalize_core_depth_unit(raw.get("depth_unit")) or source_unit
+                top_depth = _core_depth_to_runtime_m(raw.get("top_depth"), chunk_source_unit)
+                base_depth = _core_depth_to_runtime_m(raw.get("base_depth"), chunk_source_unit)
+                if top_depth is None or base_depth is None:
+                    continue
+                runtime_chunks.append({
+                    **raw,
+                    "top_depth": top_depth,
+                    "base_depth": base_depth,
+                    "depth_unit": "m",
+                    "source_depth_unit": chunk_source_unit,
+                    "runtime_depth_unit": "m",
+                })
+
+            try:
+                description_payload = json.loads(
+                    archive.read("descriptions.json").decode("utf-8")
+                )
+                raw_descriptions = description_payload.get("descriptions") or []
+            except KeyError:
+                raw_descriptions = []
+
+            if not isinstance(raw_descriptions, list):
+                raise ValueError("Core package descriptions manifest value is invalid.")
+
+            description_intervals: list[dict] = []
+            for raw in raw_descriptions:
+                if not isinstance(raw, dict):
+                    continue
+                description_source_unit = (
+                    _normalize_core_depth_unit(raw.get("depth_unit")) or source_unit
+                )
+                top_depth = _core_depth_to_runtime_m(
+                    raw.get("top_depth"), description_source_unit
+                )
+                base_depth = _core_depth_to_runtime_m(
+                    raw.get("base_depth"), description_source_unit
+                )
+                if top_depth is None:
+                    continue
+                if base_depth is None:
+                    base_depth = top_depth
+                description_intervals.append({
+                    **raw,
+                    "top_depth": top_depth,
+                    "base_depth": base_depth,
+                    "depth_unit": "m",
+                    "source_depth_unit": description_source_unit,
+                    "runtime_depth_unit": "m",
+                })
 
             return {
                 "product_id": product_id,
                 "segment_id": manifest.get("segment_id"),
                 "segment_name": manifest.get("segment_name"),
-                "top_depth": manifest.get("top_depth"),
-                "base_depth": manifest.get("base_depth"),
-                "depth_unit": manifest.get("depth_unit"),
-                "display_contract_version": manifest.get(
-                    "display_contract_version"
-                ),
+                "top_depth": _core_depth_to_runtime_m(manifest.get("top_depth"), source_unit),
+                "base_depth": _core_depth_to_runtime_m(manifest.get("base_depth"), source_unit),
+                "depth_unit": "m",
+                "source_depth_unit": source_unit,
+                "runtime_depth_unit": "m",
+                "display_contract_version": manifest.get("display_contract_version"),
                 "schema_version": manifest.get("schema_version"),
-                "chunks": chunks,
+                "chunks": runtime_chunks,
+                "description_intervals": description_intervals,
             }
 
-    except (
-        OSError,
-        KeyError,
-        ValueError,
-        zipfile.BadZipFile,
-        json.JSONDecodeError,
-    ) as exc:
+    except HTTPException:
+        raise
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile, json.JSONDecodeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Unable to read core display chunk manifest: {exc}",
         ) from exc
-
 
 @router.get(
     "/wells/{managed_well_id}/core-segment-display-chunk",

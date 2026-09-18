@@ -1651,16 +1651,6 @@ export interface WdvPageBoundaryProps {
 
 
 
-const WDV_QV_SHARED_HEADER_TEXT_STYLE = {
-    margin: 0,
-    color: '#dfe6f1',
-    fontSize: 11,
-    fontWeight: 720,
-    letterSpacing: '0.115em',
-    lineHeight: 1,
-    textTransform: 'uppercase' as const,
-};
-
 const QUICK_VIEW_INVENTORY_COLORS = [
   '#7CFC00',
   '#45D6FF',
@@ -1768,13 +1758,12 @@ function QuickViewMetadataRow({ label, value, tone = 'neutral' }: { label: strin
             columnGap: 8,
             alignItems: 'baseline',
             padding: '2px 0',
-            borderBottom: '1px solid rgba(116, 132, 158, 0.09)',
         }}
     >
-        <dt style={{ margin: 0, color: '#8f98a8', fontSize: 9.5, fontWeight: 650, letterSpacing: '0.055em', textTransform: 'uppercase' }}>{label}</dt>
+        <dt className="wlv-qv-metadata-label" style={{ margin: 0 }}>{label}</dt>
         <dd
             className={`wlv-qv-metadata-value wlv-qv-metadata-${tone}`}
-            style={{ margin: 0, minWidth: 0, color: quickViewToneColor(tone), fontSize: 10.5, fontWeight: 520, lineHeight: 1.22, overflowWrap: 'anywhere' }}
+            style={{ margin: 0, minWidth: 0, color: quickViewToneColor(tone), overflowWrap: 'anywhere' }}
         >
             {quickViewNormalizeEmpty(value)}
         </dd>
@@ -1787,14 +1776,11 @@ function QuickViewMetadataSection({ title, children, meta }: { title: string; ch
         style={{
             margin: '0 0 7px',
             padding: '8px 10px',
-            border: '1px solid rgba(116, 132, 158, 0.24)',
-            borderRadius: 7,
-            background: 'rgba(12, 15, 20, 0.64)',
         }}
     >
         <div className="wlv-qv-metadata-card-heading" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
-            <h3 style={{ margin: 0, color: '#dfe6f1', fontSize: 11, fontWeight: 720, letterSpacing: '0.095em', textTransform: 'uppercase' }}>{title}</h3>
-            {meta ? <span style={{ color: quickViewStatusTone(meta) === 'warning' ? '#d8b957' : '#9aa6b8', fontSize: 9.5, fontWeight: 650, letterSpacing: '0.055em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{meta.replace(/_/g, ' ')}</span> : null}
+            <h3 className="wlv-qv-metadata-card-title" style={{ margin: 0 }}>{title}</h3>
+            {meta ? <span className="wlv-qv-metadata-card-meta" style={{ color: quickViewStatusTone(meta) === 'warning' ? '#d8b957' : '#9aa6b8', whiteSpace: 'nowrap' }}>{meta.replace(/_/g, ' ')}</span> : null}
         </div>
         {children}
     </section>;
@@ -1807,7 +1793,7 @@ function QuickViewMetadataList({ children }: { children: ReactNode }) {
 function QuickViewNotice({ children }: { children: ReactNode }) {
     return <div
         className="wlv-property-note wlv-qv-metadata-notice"
-        style={{ marginTop: 6, padding: '5px 7px', border: '1px dashed rgba(116, 132, 158, 0.30)', borderRadius: 7, color: '#aeb7c6', fontSize: 10.5, fontWeight: 500, lineHeight: 1.28 }}
+        style={{ marginTop: 6, padding: '5px 7px' }}
     >
         {children}
     </div>;
@@ -1823,19 +1809,16 @@ function QuickViewSummaryPill({ label, value, tone = 'neutral' }: { label: strin
             gap: 4,
             minWidth: 0,
             padding: '3px 6px',
-            border: '1px solid rgba(116, 132, 158, 0.20)',
-            borderRadius: 5,
-            background: 'rgba(18, 23, 31, 0.54)',
         }}
     >
-        <span style={{ color: '#9aa6b8', fontSize: 9.5, fontWeight: 640, letterSpacing: '0.04em', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-        <b style={{ color: quickViewToneColor(tone), fontSize: 10.5, fontWeight: 680 }}>{value}</b>
+        <span className="wlv-qv-summary-pill-label" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+        <b className="wlv-qv-summary-pill-value" style={{ color: quickViewToneColor(tone) }}>{value}</b>
     </span>;
 }
 
 function QuickViewSummaryGroup({ title, children }: { title: string; children: ReactNode }) {
     return <div style={{ marginTop: 6 }}>
-        <div style={{ color: '#8f98a8', fontSize: 9.5, fontWeight: 680, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>{title}</div>
+        <div className="wlv-qv-summary-group-title" style={{ marginBottom: 4 }}>{title}</div>
         <div className="wlv-qv-summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4 }}>{children}</div>
     </div>;
 }
@@ -1857,7 +1840,7 @@ function QuickViewInfoToggle({ collapsed, onToggleCollapsed }: { collapsed: bool
 function QuickViewPanelHeaderTitle({ children }: { children: ReactNode }) {
     return <h2
         className="wlv-qv-panel-header-title wlv-qv-shared-header-text"
-        style={WDV_QV_SHARED_HEADER_TEXT_STYLE}
+        style={{ margin: 0 }}
     >
         {children}
     </h2>;
@@ -1883,7 +1866,7 @@ function QuickViewMetadataPanel({ pkg, collapsed = false, onToggleCollapsed = ()
             <QuickViewInfoHeading collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />
             {collapsed ? null : <div className="wlv-ready-properties-copy wlv-qv-metadata-panel" style={{ padding: 8, overflowY: 'auto' }}>
               <QuickViewMetadataSection title="File Info">
-                <p className="wlv-qv-source-name" style={{ margin: '0 0 6px', color: '#cbd4e1', fontSize: 10.5, fontWeight: 540, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{pkg.filename}</p>
+                <p className="wlv-qv-source-name" style={{ margin: '0 0 6px', overflowWrap: 'anywhere' }}>{pkg.filename}</p>
                 <QuickViewMetadataList>
                     <QuickViewMetadataRow label="Type" value={pkg.source_format} />
                     <QuickViewMetadataRow label="Curves" value={`${totalCurves} renderable curves`} />
@@ -1909,7 +1892,7 @@ function QuickViewMetadataPanel({ pkg, collapsed = false, onToggleCollapsed = ()
         <QuickViewInfoHeading collapsed={collapsed} onToggleCollapsed={onToggleCollapsed} />
         {collapsed ? null : <div className="wlv-ready-properties-copy wlv-qv-metadata-panel" style={{ padding: 8, overflowY: 'auto' }}>
             <QuickViewMetadataSection title="File Info">
-                <p className="wlv-qv-source-name" style={{ margin: '0 0 6px', color: '#cbd4e1', fontSize: 10.5, fontWeight: 540, lineHeight: 1.25, overflowWrap: 'anywhere' }}>{quickViewMetaDisplay(file.source_file_name, pkg.filename)}</p>
+                <p className="wlv-qv-source-name" style={{ margin: '0 0 6px', overflowWrap: 'anywhere' }}>{quickViewMetaDisplay(file.source_file_name, pkg.filename)}</p>
                 <QuickViewMetadataList>
                     <QuickViewMetadataRow label="Type" value={`${fileType}${fileVersion ? ` ${fileVersion}` : ''}`} />
                     <QuickViewMetadataRow label="Curves" value={`${curve.curve_counts.renderable_curves} rendered / ${curve.curve_counts.total_curves} total`} />
@@ -1948,10 +1931,10 @@ function QuickViewMetadataPanel({ pkg, collapsed = false, onToggleCollapsed = ()
                 </QuickViewSummaryGroup>
             </QuickViewMetadataSection>
             <QuickViewMetadataSection title="Early QAQC" meta={metadata.early_qaqc.severity.toUpperCase()}>
-                {qaqcFlags.length === 0 ? <QuickViewNotice>No QAQC warnings.</QuickViewNotice> : <div className="wlv-qv-qaqc-list" style={{ display: 'grid', gap: 4, marginTop: 2 }}>{qaqcFlags.slice(0, 6).map((flag) => <p key={`${flag.code}:${flag.message}`} className={`wlv-qv-qaqc-flag wlv-qv-qaqc-${flag.severity}`} style={{ margin: 0, padding: '4px 6px', borderRadius: 4, border: '1px solid rgba(116, 132, 158, 0.16)', background: 'rgba(18, 23, 31, 0.42)', color: '#b7c1d0', fontSize: 10.25, fontWeight: 500, lineHeight: 1.22 }}>{flag.message}</p>)}</div>}
-                {technicalFlags.length ? <details className="wlv-qv-technical-flags" style={{ marginTop: 6, color: '#9aa6b8', fontSize: 10.25, fontWeight: 500 }}>
-                    <summary>Technical parse flags</summary>
-                    {technicalFlags.map((flag) => <p style={{ margin: '5px 0 0' }} key={`${flag.code}:${flag.source ?? ''}:${flag.message}`}>{flag.message}</p>)}
+                {qaqcFlags.length === 0 ? <QuickViewNotice>No QAQC warnings.</QuickViewNotice> : <div className="wlv-qv-qaqc-list" style={{ display: 'grid', gap: 4, marginTop: 2 }}>{qaqcFlags.slice(0, 6).map((flag) => <p key={`${flag.code}:${flag.message}`} className={`wlv-qv-qaqc-flag wlv-qv-qaqc-${flag.severity}`} style={{ margin: 0, padding: '4px 6px' }}>{flag.message}</p>)}</div>}
+                {technicalFlags.length ? <details className="wlv-qv-technical-flags" style={{ marginTop: 6 }}>
+                    <summary className="wlv-qv-technical-flags-summary">Technical parse flags</summary>
+                    {technicalFlags.map((flag) => <p className="wlv-qv-technical-flags-message" style={{ margin: '5px 0 0' }} key={`${flag.code}:${flag.source ?? ''}:${flag.message}`}>{flag.message}</p>)}
                 </details> : null}
             </QuickViewMetadataSection>
         </div>}
@@ -1971,7 +1954,7 @@ function QuickViewCurveInventory({ pkg }: { pkg: QuickViewPackage }) {
       <div className="wlv-inventory-control-stack">
         <section className="wlv-inventory-control-section wlv-curve-inventory-section">
           <button type="button" className="wlv-inventory-section-toggle" aria-expanded="true" style={{ minHeight: 42, alignItems: 'center' }}>
-            <span className="wlv-qv-shared-header-text" style={WDV_QV_SHARED_HEADER_TEXT_STYLE}>CURVE INVENTORY</span>
+            <span className="wlv-qv-shared-header-text">CURVE INVENTORY</span>
             <span className="wlv-inventory-section-toggle-meta">{count}<b>▾</b></span>
           </button>
           <div className="wlv-inventory-section-body wlv-curve-inventory-body">
@@ -6953,6 +6936,7 @@ useEffect(() => {
         <div
           role="dialog"
           aria-label="Send WDV content to WBV"
+          className="wlv-wdv-wbv-publish-dialog"
           style={{
             position: 'fixed',
             right: 24,
@@ -6961,54 +6945,38 @@ useEffect(() => {
             minWidth: 300,
             maxWidth: 380,
             padding: 10,
-            border: '1px solid #566171',
-            borderRadius: 6,
-            background: '#171b20',
-            color: '#eef2f6',
-            boxShadow: '0 12px 32px rgba(0,0,0,0.58)',
             display: 'grid',
             gap: 8,
-            fontFamily: 'inherit',
-            fontSize: 12,
           }}
         >
-          <div style={{ display: 'grid', gap: 3 }}>
-            <strong style={{ color: '#f3f6f9', fontSize: 13, lineHeight: 1.2 }}>
-              Send WDV content to WBV
-            </strong>
-            <span style={{ color: '#b9c2ce', fontSize: 11, lineHeight: 1.35 }}>
+          <div className="wlv-wdv-wbv-publish-dialog__intro" style={{ display: 'grid', gap: 3 }}>
+            <strong>Send WDV content to WBV</strong>
+            <span>
               WBV retains each published package independently until you explicitly update it.
             </span>
           </div>
           {activeWbvPublishedPackage ? (
-            <div style={{ display: 'grid', gap: 3, padding: 7, border: '1px solid #3e4855', borderRadius: 4, background: '#11151a' }}>
-              <span style={{ color: '#9ea9b7', fontSize: 11 }}>Current retained package</span>
-              <strong style={{ color: '#eef2f6', fontSize: 12 }}>{activeWbvPublishedPackage.package_name}</strong>
-              <span style={{ color: '#9ea9b7', fontSize: 11 }}>
+            <div className="wlv-wdv-wbv-publish-dialog__package" style={{ display: 'grid', gap: 3, padding: 7 }}>
+              <span>Current retained package</span>
+              <strong>{activeWbvPublishedPackage.package_name}</strong>
+              <span>
                 Package revision {activeWbvPublishedPackage.package_revision} · source WDV revision {activeWbvPublishedPackage.source_wdv_revision}
               </span>
             </div>
           ) : (
-            <span style={{ color: '#b9c2ce', fontSize: 11 }}>
+            <span className="wlv-wdv-wbv-publish-dialog__empty">
               No retained WBV package exists for this well.
             </span>
           )}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <div className="wlv-wdv-wbv-publish-dialog__actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button
               type="button"
               onClick={() => setWbvPublishPanelOpen(false)}
               disabled={wbvPublishBusy}
+              className="wlv-wdv-wbv-publish-dialog__button"
               style={{
                 height: 28,
                 padding: '0 10px',
-                border: '1px solid #5d6978',
-                borderRadius: 5,
-                background: '#20262d',
-                color: '#eef2f6',
-                font: 'inherit',
-                fontSize: 12,
-                fontWeight: 700,
-                lineHeight: 1,
                 cursor: wbvPublishBusy ? 'default' : 'pointer',
                 opacity: wbvPublishBusy ? 0.55 : 1,
               }}
@@ -7020,17 +6988,10 @@ useEffect(() => {
                 type="button"
                 onClick={() => void updateExistingWbvPublication(activeWbvPublishedPackage)}
                 disabled={wbvPublishBusy}
+                className="wlv-wdv-wbv-publish-dialog__button is-primary"
                 style={{
                   height: 28,
                   padding: '0 10px',
-                  border: '1px solid #20d98b',
-                  borderRadius: 5,
-                  background: '#174b3a',
-                  color: '#55efaf',
-                  font: 'inherit',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  lineHeight: 1,
                   cursor: wbvPublishBusy ? 'default' : 'pointer',
                   opacity: wbvPublishBusy ? 0.55 : 1,
                 }}
@@ -7042,17 +7003,10 @@ useEffect(() => {
               type="button"
               onClick={() => void publishCurrentWdvAsNewWbvPackage()}
               disabled={wbvPublishBusy}
+              className="wlv-wdv-wbv-publish-dialog__button is-primary"
               style={{
                 height: 28,
                 padding: '0 10px',
-                border: '1px solid #20d98b',
-                borderRadius: 5,
-                background: '#174b3a',
-                color: '#55efaf',
-                font: 'inherit',
-                fontSize: 12,
-                fontWeight: 700,
-                lineHeight: 1,
                 cursor: wbvPublishBusy ? 'default' : 'pointer',
                 opacity: wbvPublishBusy ? 0.55 : 1,
               }}
@@ -7391,11 +7345,6 @@ useEffect(() => {
       </div>
 
 
-      <footer className="wlv-status-footer">
-        <span>Backend-managed WDV workspace</span>
-        <span>Backend-owned depth and curve contracts</span>
-        <span>Portable local and enterprise deployment</span>
-      </footer>
         </div>;
 }
 import type { CurveLineStyleValue } from "../prototype/CurveLineStyleControl";

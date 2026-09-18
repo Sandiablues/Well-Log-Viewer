@@ -36,6 +36,7 @@ class WbvAuthoritativePointV2(BaseModel):
     segment_index: int
     segment_ratio: float
     screen_distance_px: float
+    runtime_depth_unit: Literal["m"] = "m"
 
 
 class WbvSavedIntervalV2(BaseModel):
@@ -47,7 +48,8 @@ class WbvSavedIntervalV2(BaseModel):
     end: WbvAuthoritativePointV2
     top_md: float
     base_md: float
-    depth_unit: str
+    depth_unit: Literal["m"] = "m"
+    runtime_depth_unit: Literal["m"] = "m"
     created_at: str
     updated_at: str
 
@@ -56,6 +58,7 @@ class WbvInteractionStateV2(BaseModel):
     contract_kind: Literal["wbv_interaction_state"] = "wbv_interaction_state"
     contract_version: Literal["wbv_interaction_state_v2"] = "wbv_interaction_state_v2"
     managed_well_id: str
+    runtime_depth_unit: Literal["m"] = "m"
     revision: int = 0
     selection_mode: Literal["none", "point", "interval"] = "none"
     selected_point_visible: bool = False
@@ -96,6 +99,7 @@ class WbvAoiTransferResultV2(BaseModel):
     interval_id: str
     top_md: float
     base_md: float
-    depth_unit: str
+    depth_unit: Literal["m"] = "m"
+    runtime_depth_unit: Literal["m"] = "m"
     source_viewer: Literal["WBV"] = "WBV"
     applied_at: str

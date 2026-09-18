@@ -226,6 +226,15 @@ class WbvPublishedPackageRenderAdapter:
                     fill_color=fill_color,
                     fill_opacity=fill_opacity,
                     fill_outline=True,
+                    # Preserve canonical WDV infill presentation intent.
+                    # WBV_WDV_LITHOLOGY_INFILL_SOURCE_NORMALIZATION_V1_0_0_AUDITED
+                    infill_source=(
+                        "interval-column"
+                        if getattr(assignment, "infill_interval_column", None) == "lithology"
+                        else getattr(assignment, "infill_source", None)
+                    ),
+                    infill_pattern=getattr(assignment, "infill_pattern", None),
+                    infill_interval_column=getattr(assignment, "infill_interval_column", None),
                     baseline_normalized=baseline,
                     display_min=float(assignment.scale_min),
                     display_max=float(assignment.scale_max),

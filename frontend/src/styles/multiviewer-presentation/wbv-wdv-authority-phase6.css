@@ -1,0 +1,160 @@
+/* ==========================================================================
+   WBV PRESENTATION PHASE 6 — TYPOGRAPHY / DISCLOSURE / SEMANTIC CLEANUP
+   V1.0.0 AUDITED — 2026-09-09
+
+   Scope:
+   - WBV-scoped WDV typography authority
+   - toolbar/header title hierarchy
+   - panel title / section title hierarchy finalization
+   - subordinate labels / helper text
+   - disclosure/collapse glyph presentation
+   - active/selected semantic accents
+   - remove residual text-shadow / raised presentation from WBV chrome
+
+   Protected:
+   - layout geometry / widths / heights / padding
+   - checkbox geometry and behavior
+   - Three.js/scientific viewport and renderer colors
+   - trajectory/completion/core rendering
+   - camera / rotation-center behavior
+   - field order / data semantics
+   - state / persistence / data model
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Header typography: frozen WDV hierarchy.
+   -------------------------------------------------------------------------- */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header .wlv-page-kicker {
+  color: var(--mv-role-text-secondary) !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  line-height: 1.15 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  text-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header h1 {
+  color: var(--mv-role-text-primary) !important;
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  line-height: 1.15 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  text-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header-tools {
+  color: var(--mv-role-text-primary) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header p,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header-tools p,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header-tools small {
+  color: var(--mv-role-text-secondary) !important;
+  text-shadow: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   Panel / section typography finalization.
+   -------------------------------------------------------------------------- */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel .wlv-wbv-panel-heading,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel .mv-role-panel-title,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel .mv-role-section-title,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel .wlv-wbv-section-heading-row h2,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel .wlv-wbv-view-controls > h2 {
+  color: var(--mv-role-text-primary) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  text-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel .wlv-wbv-view-control-block > h3,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel .wlv-wbv-interval-information__group h3 {
+  color: var(--mv-role-text-secondary) !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  text-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel .mv-role-helper-text,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel .wlv-wbv-information-empty {
+  color: var(--mv-role-text-secondary) !important;
+  text-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel .mv-role-property-value {
+  color: var(--mv-role-text-primary) !important;
+  text-shadow: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   Disclosure/collapse presentation. Geometry is intentionally untouched.
+   -------------------------------------------------------------------------- */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel
+  :is(.wlv-wbv-section-collapse-button, .wlv-wbv-panel-collapse-button, .mv-role-collapse-control) {
+  color: var(--mv-role-text-secondary) !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel
+  :is(.wlv-wbv-section-collapse-button, .wlv-wbv-panel-collapse-button, .mv-role-collapse-control):hover {
+  color: var(--mv-role-text-primary) !important;
+  background: var(--mv-role-header-control-bg) !important;
+  box-shadow: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   Semantic active/selected accents. Do not create semantic color where none
+   exists; only normalize already-active WBV controls.
+   -------------------------------------------------------------------------- */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel button.is-active,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel [aria-pressed="true"] {
+  color: var(--mv-role-text-primary) !important;
+  border-color: var(--mv-role-focus-accent) !important;
+  box-shadow: inset 0 -2px 0 var(--mv-role-focus-accent) !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-multiwell-select.is-open
+  .wlv-wbv-multiwell-select__trigger {
+  border-color: var(--mv-role-focus-accent) !important;
+  box-shadow: inset 0 0 0 1px var(--mv-role-border-highlight), 0 0 0 1px var(--mv-role-focus-accent) !important;
+}
+
+/* Pending well-selection action retains the WDV semantic green role. */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-well-selector__label-button.is-pending {
+  color: var(--mv-semantic-positive-text) !important;
+  background: var(--mv-role-header-control-bg) !important;
+  border-color: var(--mv-semantic-positive-border) !important;
+  box-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-well-selector__label-button.is-pending:hover {
+  color: var(--mv-semantic-positive-on-color) !important;
+  background: var(--mv-semantic-positive-border) !important;
+  border-color: var(--mv-semantic-positive-border) !important;
+}
+
+/* --------------------------------------------------------------------------
+   Residual chrome cleanup: presentation only.
+   -------------------------------------------------------------------------- */
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel button,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header button,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-header select,
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel select {
+  text-shadow: none !important;
+}
+
+html[data-mv-theme="light"].mv-ui-scope .wlv-wbv-panel button:not(.is-active):not([aria-pressed="true"]) {
+  box-shadow: none !important;
+}
