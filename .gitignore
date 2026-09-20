@@ -95,3 +95,5 @@ post_build.log
 # Historical source snapshots that encode BACKUP in the filename.
 *BACKUP_*
 # END MULTIVIEWER_GIT_RECON_PHASE8_IGNORE_NAMED_BACKUP_SNAPSHOTS_V1_0_0
+.wbv_*_last_backup
+*.bak_*
