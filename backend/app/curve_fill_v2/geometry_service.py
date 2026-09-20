@@ -249,13 +249,35 @@ class CanonicalCurveFillGeometryService:
         revision = response.sample_revision or response.provenance.checksum or sha256(
             json.dumps(response.samples, separators=(",", ":")).encode()
         ).hexdigest()
+
+        # WLV_CANONICAL_CURVE_FILL_SAMPLE_NORMALIZATION_V1_0_0_AUDITED
+        # Curve Fill V2 must consume the same depth/value contour as the WLV
+        # visible curve renderer. Managed sample payloads can contain
+        # non-monotonic rows and duplicate depths; the frontend normalizes its
+        # render copy by sorting on depth and applying deterministic
+        # last-value-wins for duplicates. Without the same normalization here,
+        # canonical fill polygons can diverge from the visible curve boundary.
+        ordered_samples = sorted(
+            (
+                (float(depth), float(value))
+                for depth, value in response.samples
+            ),
+            key=lambda item: item[0],
+        )
+        normalized_samples: list[tuple[float, float]] = []
+        for depth, value in ordered_samples:
+            if normalized_samples and abs(normalized_samples[-1][0] - depth) <= 1e-9:
+                normalized_samples[-1] = (depth, value)
+            else:
+                normalized_samples.append((depth, value))
+
         return CurveSeries(
             managed_well_uid=well_uid,
             managed_curve_uid=assignment.managed_curve_uid,
             sample_revision=revision,
             depth_unit=response.depth_unit,
             value_unit=response.value_unit,
-            samples=response.samples,
+            samples=tuple(normalized_samples),
         )
 
     @staticmethod
@@ -348,3 +370,5 @@ class CanonicalCurveFillGeometryService:
             expected_revision=expected_revision,
             mutation=mutate,
         )
+
+# WLV_CANONICAL_CURVE_FILL_SAMPLE_NORMALIZATION_V1_0_0_AUDITED

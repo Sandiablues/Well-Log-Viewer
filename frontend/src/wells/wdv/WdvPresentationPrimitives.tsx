@@ -1097,16 +1097,20 @@ function curveRenderGapThreshold(points: CurveRenderPoint[]): number {
  * A fully outside run explicitly breaks the SVG subpath, so the renderer never
  * joins exit/re-entry points with a vertical edge-riding segment.
  */
-export function pathFromGeometricallyClippedCurvePoints(
+export function geometricallyClippedCurveSegments(
     points: CurveRenderPoint[],
     minimumX: number,
     maximumX: number,
-): string {
-    if (points.length < 2) return '';
+): CurveRenderPoint[][] {
+    if (points.length < 2) return [];
     const gapThreshold = curveRenderGapThreshold(points);
-    const commands: string[] = [];
-    let previousEnd: CurveRenderPoint | null = null;
-    let penDown = false;
+    const segments: CurveRenderPoint[][] = [];
+    let current: CurveRenderPoint[] = [];
+
+    const flushCurrent = () => {
+        if (current.length >= 2) segments.push(current);
+        current = [];
+    };
 
     for (let index = 1; index < points.length; index += 1) {
         const left = points[index - 1];
@@ -1117,8 +1121,7 @@ export function pathFromGeometricallyClippedCurvePoints(
             || depthGap <= 0
             || depthGap > gapThreshold
         ) {
-            penDown = false;
-            previousEnd = null;
+            flushCurrent();
             continue;
         }
 
@@ -1129,27 +1132,38 @@ export function pathFromGeometricallyClippedCurvePoints(
             maximumX,
         );
         if (!clipped) {
-            penDown = false;
-            previousEnd = null;
+            flushCurrent();
             continue;
         }
 
         const [start, end] = clipped;
+        const previousEnd = current[current.length - 1] ?? null;
         const continuesPrevious =
-            penDown
-            && previousEnd !== null
+            previousEnd !== null
             && Math.abs(previousEnd.x - start.x) <= 1e-6
             && Math.abs(previousEnd.y - start.y) <= 1e-6;
 
         if (!continuesPrevious) {
-            commands.push(`M${start.x.toFixed(1)} ${start.y.toFixed(1)}`);
+            flushCurrent();
+            current = [start, end];
+        } else {
+            current.push(end);
         }
-        commands.push(`L${end.x.toFixed(1)} ${end.y.toFixed(1)}`);
-        previousEnd = end;
-        penDown = true;
     }
 
-    return commands.join(' ');
+    flushCurrent();
+    return segments;
+}
+
+export function pathFromGeometricallyClippedCurvePoints(
+    points: CurveRenderPoint[],
+    minimumX: number,
+    maximumX: number,
+): string {
+    return geometricallyClippedCurveSegments(points, minimumX, maximumX)
+        .map((segment) => pathFromCurvePoints(segment))
+        .filter(Boolean)
+        .join(' ');
 }
 
 export function pathFromCurvePoints(points: CurveRenderPoint[]): string {
@@ -1184,6 +1198,18 @@ export function polygonToAnchor(points: CurveRenderPoint[], anchorX: number): st
     const first = points[0];
     const last = points[points.length - 1];
     return `${pathFromCurvePoints(points)} L ${anchorX.toFixed(1)} ${last.y.toFixed(1)} L ${anchorX.toFixed(1)} ${first.y.toFixed(1)} Z`;
+}
+
+export function polygonToAnchorFromGeometricallyClippedCurvePoints(
+    points: CurveRenderPoint[],
+    minimumX: number,
+    maximumX: number,
+    anchorX: number,
+): string {
+    return geometricallyClippedCurveSegments(points, minimumX, maximumX)
+        .map((segment) => polygonToAnchor(segment, anchorX))
+        .filter(Boolean)
+        .join(' ');
 }
 export function polygonThresholdToAnchor(
     points: CurveRenderPoint[],
@@ -2877,7 +2903,7 @@ function ToolbarZone({ id, title, children, defaultExpanded = true, className = 
     </section>);
 }
 
-export function Toolbar({ commonDepthUnit, onCommonDepthUnitChange, managedLayoutDisabled = false, depthUnitDisabled = false, selectedTrack, tracks, intervalTracks, pendingAddTrackCurveCount, viewDepthRange, fullDepthRange, viewDepthReadoutEnabled, intervalZoomActive, goToDepthValue, onGoToDepthValueChange, trackBackdropMode, onTrackBackdropModeChange, trackHeadersCollapsed, onTrackHeadersCollapsedChange, onAddTrack, onConfigureIntervalTrack, onDeleteTrack, onClearCanvas, onMoveSelectedTrack, canMoveSelectedTrackLeft, canMoveSelectedTrackRight, canAdjustSelectedCurveTrackWidthDown, canAdjustSelectedCurveTrackWidthUp, onAdjustSelectedCurveTrackWidth, onResetCurveTrackWidths, onZoomIn, onZoomOut, viewportToolbarPresentation, onLockSelectedTracks, onUnlockSelectedTracks, onCreateViewportTie, onUntieSelectedViewportTracks, onPreviousView, onFitDepth, onSpecifyDepthRange, onResetView, onToggleIntervalZoom, onGoToDepth, savedCanvases = [], savedCanvasDisabled = false, savedCanvasSaving = false, savedCanvasBusyUid = null, savedCanvasError = null, onSaveCanvas, onSaveActiveCanvas, onLoadSavedCanvas, onDeleteSavedCanvas, canvasRightInsetPx = 330,
+export function Toolbar({ commonDepthUnit, onCommonDepthUnitChange, managedLayoutDisabled = false, depthUnitDisabled = false, selectedTrack, tracks, intervalTracks, pendingAddTrackCurveCount, viewDepthRange, fullDepthRange, viewDepthReadoutEnabled, intervalZoomActive, goToDepthValue, onGoToDepthValueChange, trackBackdropMode, onTrackBackdropModeChange, trackHeadersCollapsed, onTrackHeadersCollapsedChange, onAddTrack, onConfigureIntervalTrack, onDeleteTrack, onClearCanvas, onMoveSelectedTrack, canMoveSelectedTrackLeft, canMoveSelectedTrackRight, canAdjustSelectedCurveTrackWidthDown, canAdjustSelectedCurveTrackWidthUp, onAdjustSelectedCurveTrackWidth, onResetCurveTrackWidths, onZoomIn, onZoomOut, viewportToolbarPresentation, onLockSelectedTracks, onUnlockSelectedTracks, onCreateViewportTie, onUntieSelectedViewportTracks, onPreviousView, onFitDepth, onSpecifyDepthRange, onResetView, onToggleIntervalZoom, onGoToDepth, savedCanvases = [], savedCanvasDisabled = false, savedCanvasSaving = false, savedCanvasBusyUid = null, savedCanvasError = null, onSaveCanvas, onSaveActiveCanvas, onLoadSavedCanvas, onDeleteSavedCanvas, openWithActiveCanvas, onOpenWithActiveCanvasChange, canvasRightInsetPx = 330,
     navigationFormationTops = [],
     onGoToFormationTop, goToDepthPickActive = false, onStartGoToDepthPick, displayGoToSelectionLine = true, onDisplayGoToSelectionLineChange, coreThresholdAvailable = false, onCoreThreshold, onAddTrackCurveSelectionModeChange, formationTopDatasets, formationTopMarkersByWellUid = {}, selectedFormationTopIds, coreImageItems, layoutRecommendations, layoutRecommendationsLoading, layoutRecommendationsError, selectedLayoutRecommendationKey, onLayoutRecommendationChange, onRefreshLayoutRecommendations, wbvPublishAction, }: {
     commonDepthUnit: 'm' | 'ft';
@@ -2937,6 +2963,8 @@ export function Toolbar({ commonDepthUnit, onCommonDepthUnitChange, managedLayou
     onSaveActiveCanvas?: (savedCanvasUid: string) => void | Promise<void>;
     onLoadSavedCanvas?: (savedCanvasUid: string) => void | Promise<void>;
     onDeleteSavedCanvas?: (savedCanvasUid: string) => void | Promise<void>;
+    openWithActiveCanvas?: boolean;
+    onOpenWithActiveCanvasChange?: (openWithActiveCanvas: boolean) => void;
     canvasRightInsetPx?: number;
     onToggleIntervalZoom: () => void;
     onGoToDepth: () => void;
@@ -4845,7 +4873,7 @@ intervalBuilderPortalTarget??document.body
 
           {onSaveCanvas && onSaveActiveCanvas && onLoadSavedCanvas && onDeleteSavedCanvas ? (
               <div
-                  className="wlv-toolbar-group wlv-toolbar-group-saved-canvas"
+                  className="wlv-toolbar-group wlv-toolbar-group-saved-canvas wlv-wbv-save-canvas-slot"
                   data-toolbar-group="saved-canvas"
                   aria-label="Saved Canvases"
                   data-anchor="canvas-right-edge"
@@ -4862,6 +4890,8 @@ intervalBuilderPortalTarget??document.body
                           onSaveChanges={onSaveActiveCanvas}
                           onLoad={onLoadSavedCanvas}
                           onDelete={onDeleteSavedCanvas}
+                          openWithActiveCanvas={openWithActiveCanvas}
+                          onOpenWithActiveCanvasChange={onOpenWithActiveCanvasChange}
                       />
                   </div>
               </div>
@@ -6273,9 +6303,19 @@ export function CurveTrackView({ track, depthTicks, viewDepthRange, trackBodyHei
                 ? curveRenderPoints(pairedCurve, pairedAssignment, index, viewDepthRange, lattice.lattice, trackWidth, trackBodyHeightPx, managedSamplesByCurveId)
                 : [];
             const anchorX = fillAnchorForAssignment(assignment, trackWidth);
+            // WLV_CURVE_INFILL_EXACT_STROKE_BOUNDARY_V1_0_0_AUDITED
+            // Left/right infill consumes the same geometrically clipped contour
+            // as the visible stroke so the boundaries remain coincident.
             const baseFillPath = assignment.fillSide === 'between' && pairedPoints.length > 0
                 ? polygonBetweenCurves(points, pairedPoints)
-                : polygonToAnchor(points, anchorX);
+                : clipToTrack
+                    ? polygonToAnchorFromGeometricallyClippedCurvePoints(
+                        strokePoints,
+                        CURVE_VIEW_PADDING_X,
+                        trackWidth - CURVE_VIEW_PADDING_X,
+                        anchorX,
+                    )
+                    : polygonToAnchor(points, anchorX);
             const intervalInfillActive = assignment.infillSource === 'interval-column'
                 && assignment.infillIntervalColumn === 'lithology'
                 && assignment.fillSide !== 'none';
@@ -11952,3 +11992,7 @@ export function RightPanel({ tracks, selection, curveCatalogItems, updateTrack, 
       </div>
     </aside>);
 }
+
+// WLV_WBV_SAVED_CANVAS_EXACT_PARITY_V1_0_1_AUDITED
+
+// WLV_CURVE_INFILL_EXACT_STROKE_BOUNDARY_V1_0_0_AUDITED

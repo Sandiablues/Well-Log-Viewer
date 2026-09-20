@@ -168,6 +168,7 @@ function getWbvCanvasShadeOption(id: WbvCanvasShadeId): WbvCanvasShadeOption {
 }
 const WBV_WELL_SELECTION_STORAGE_KEY = "wlv:wbv:well-selection:v1";
 const WBV_WORKING_CANVAS_STORAGE_KEY = "multiviewer.wbv.working-canvas.v1";
+const WBV_OPEN_WITH_ACTIVE_CANVAS_STORAGE_KEY = "multiviewer.wbv.open-with-active-canvas.v1";
 
 function isFiniteCameraTuple(values: readonly number[], expectedLength: number): boolean {
   return values.length === expectedLength && values.every((value) => Number.isFinite(value));
@@ -934,6 +935,21 @@ type WbvSavedCanvasSnapshot = {
 type WbvSavedCanvasRecord = SavedCanvasToolbarItem & { snapshot: WbvSavedCanvasSnapshot };
 
 
+// WBV_SAVED_CANVAS_STARTUP_PREFERENCE_V1_0_1_AUDITED
+function readWbvOpenWithActiveCanvas(): boolean {
+  try {
+    const raw = window.localStorage.getItem(WBV_OPEN_WITH_ACTIVE_CANVAS_STORAGE_KEY);
+    if (raw === "false") return false;
+    if (raw === "true") return true;
+  } catch { /* best-effort */ }
+  return true;
+}
+
+function writeWbvOpenWithActiveCanvas(value: boolean): void {
+  try { window.localStorage.setItem(WBV_OPEN_WITH_ACTIVE_CANVAS_STORAGE_KEY, value ? "true" : "false"); }
+  catch { /* best-effort */ }
+}
+
 type WbvWorkingCanvasPersistence = {
   schema_version: 1;
   snapshot: WbvSavedCanvasSnapshot;
@@ -1369,8 +1385,9 @@ export function Wellbore3DPage({
   // WBV_WORKING_CANVAS_APPLICATION_SWITCH_PERSISTENCE_V1_0_0_AUDITED
   // Restore the current WBV working-canvas authority synchronously before the
   // first backend/session hydration can misclassify its wells as fresh.
+  const initialOpenWithActiveCanvasRef = useRef(readWbvOpenWithActiveCanvas());
   const workingCanvasPersistenceRef = useRef<WbvWorkingCanvasPersistence | null>(
-    readWbvWorkingCanvasPersistence(),
+    initialOpenWithActiveCanvasRef.current ? readWbvWorkingCanvasPersistence() : null,
   );
   const workingCanvasRestoreInProgressRef = useRef(Boolean(workingCanvasPersistenceRef.current));
   const workingCanvasPersistenceReadyRef = useRef(!workingCanvasPersistenceRef.current);
@@ -1398,6 +1415,7 @@ export function Wellbore3DPage({
   const wbvCanvasShadeMenuRef = useRef<HTMLDivElement | null>(null);
   const [wbvSavedCanvases, setWbvSavedCanvases] = useState<SavedCanvasToolbarItem[]>([]);
   const [wbvSavedCanvasesLoaded, setWbvSavedCanvasesLoaded] = useState(false);
+  const [openWithActiveCanvas, setOpenWithActiveCanvas] = useState(initialOpenWithActiveCanvasRef.current);
   const activeSavedCanvasAutoRestoreAttemptedRef = useRef(false);
   const [wbvSavedCanvasSaving, setWbvSavedCanvasSaving] = useState(false);
   const [wbvSavedCanvasBusyUid, setWbvSavedCanvasBusyUid] = useState<string | null>(null);
@@ -1417,6 +1435,10 @@ export function Wellbore3DPage({
     const withUid = activeItem as SavedCanvasToolbarItem & { saved_canvas_uid?: string; uid?: string };
     return withUid.saved_canvas_uid ?? withUid.uid ?? null;
   }, [wbvSavedCanvases]);
+  const changeOpenWithActiveCanvas = useCallback((next: boolean) => {
+    setOpenWithActiveCanvas(next);
+    writeWbvOpenWithActiveCanvas(next);
+  }, []);
   const [layerEditorWellId, setLayerEditorWellId] = useState<string | null>(null);
   const [viewPropertiesByWell, setViewPropertiesByWell] = useState<Record<string, WbvViewProperties>>({});
   const [viewPreset, setViewPreset] = useState<WbvViewPreset>("fit");
@@ -2305,6 +2327,38 @@ export function Wellbore3DPage({
     }
   }, []);
 
+  // WBV_BLANK_STARTUP_CONNECTED_SESSION_V1_0_1_AUDITED
+  const loadWbvBlankStartupSession = useCallback(async () => {
+    if (wbvSessionRefreshInFlightRef.current) return;
+    wbvSessionRefreshInFlightRef.current = true;
+    setState((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const session = await fetchWlvJson<WbvSessionContract>("/api/wlv/wbv/session");
+      setDisplayedWellPackages({});
+      setPrefetchedWellPackages({});
+      setPendingDisplayedWellIds({});
+      setDisplayLayerFiles(null);
+      setFormationTopProducts(null);
+      setLithologyProducts(null);
+      setCompletionProducts(null);
+      setCurveOverlayProducts(null);
+      setCurveOverlayNormalization(null);
+      setCurveOverlayRenderPackage(null);
+      setWbvTrackLayout(null);
+      setPublishedOverlayPackages([]);
+      setSelectedPublishedPackageUid(null);
+      setSelectedPoint(null);
+      setInteraction(null);
+      setLayerEditorWellId(null);
+      setState({ session, viewerPackage: null, loading: false, error: null });
+    } catch (caught) {
+      setState({ session: null, viewerPackage: null, loading: false, error: caught instanceof Error ? caught.message : "Unable to initialize blank WBV canvas" });
+    } finally {
+      wbvSessionRefreshInFlightRef.current = false;
+      wbvSessionRefreshCompletedAtRef.current = Date.now();
+    }
+  }, []);
+
   const selectWbvWell = useCallback(async (managedWellId: string) => {
     if (!managedWellId) return;
     const item = wellSelectorItems.find((candidate) => candidate.managedWellId === managedWellId);
@@ -2595,6 +2649,7 @@ export function Wellbore3DPage({
     if (
       wellSelectionRestoreAttemptedRef.current
       || !wbvSavedCanvasesLoaded
+      || !openWithActiveCanvas
       || Boolean(activeSavedCanvasUid)
       || wellSelectorItems.length === 0
       || state.loading
@@ -2641,6 +2696,7 @@ export function Wellbore3DPage({
     });
   }, [
     activeSavedCanvasUid,
+    openWithActiveCanvas,
     displayedWellPackages,
     prefetchDisplayedWellPackage,
     prefetchedWellPackages,
@@ -2818,16 +2874,22 @@ export function Wellbore3DPage({
     if (
       initialSessionBootstrapAttemptedRef.current
       || !wbvSavedCanvasesLoaded
-      || Boolean(activeSavedCanvasUid)
       || wellSelectorItems.length === 0
     ) return;
 
+    if (openWithActiveCanvas && Boolean(activeSavedCanvasUid)) return;
+
     initialSessionBootstrapAttemptedRef.current = true;
-    setSelectedPoint(null);
-    void loadWbvSession();
+    wellSelectionRestoreAttemptedRef.current = true;
+    pendingWellSelectionRestoreRef.current = null;
+    wellSelectionRestoreInProgressRef.current = false;
+    workingCanvasRestoreInProgressRef.current = false;
+    workingCanvasPersistenceReadyRef.current = true;
+    void loadWbvBlankStartupSession();
   }, [
     activeSavedCanvasUid,
-    loadWbvSession,
+    loadWbvBlankStartupSession,
+    openWithActiveCanvas,
     wbvSavedCanvasesLoaded,
     wellSelectorItems.length,
   ]);
@@ -2838,6 +2900,7 @@ export function Wellbore3DPage({
     const scheduleRefreshFromBackend = () => {
       if (savedCanvasRestoreInProgressRef.current) return;
       if (activeSavedCanvasUid) return;
+      if (!openWithActiveCanvas && Object.keys(displayedWellPackages).length === 0) return;
       if (wellSelectionRestoreInProgressRef.current) return;
       if (wbvSessionRefreshInFlightRef.current) return;
 
@@ -2867,7 +2930,7 @@ export function Wellbore3DPage({
       window.removeEventListener("focus", scheduleRefreshFromBackend);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [activeSavedCanvasUid, loadWbvSession]);
+  }, [activeSavedCanvasUid, displayedWellPackages, loadWbvSession, openWithActiveCanvas]);
 
   const defaultLayerConfig = (layerType: WbvDisplayLayerKey): WbvLayerConfig =>
     createCleanWbvLayerConfig(layerType);
@@ -5070,6 +5133,7 @@ export function Wellbore3DPage({
   useEffect(() => {
     if (
       activeSavedCanvasAutoRestoreAttemptedRef.current
+      || !openWithActiveCanvas
       || !wbvSavedCanvasesLoaded
       || !activeSavedCanvasUid
       || wellSelectorItems.length === 0
@@ -5084,6 +5148,7 @@ export function Wellbore3DPage({
     void loadWbvSavedCanvas(activeSavedCanvasUid);
   }, [
     activeSavedCanvasUid,
+    openWithActiveCanvas,
     loadWbvSavedCanvas,
     wbvSavedCanvasBusyUid,
     wbvSavedCanvasesLoaded,
@@ -5203,7 +5268,7 @@ export function Wellbore3DPage({
         <div className="mv-wbv-header__workspace">
           <div className="wlv-toolbar-group wlv-toolbar-group-saved-canvas wlv-wbv-save-canvas-slot" data-toolbar-group="saved-canvas" aria-label="Saved Canvases">
             <div className="wlv-toolbar-actions">
-              <SavedCanvasToolbarControl items={wbvSavedCanvases} disabled={state.loading} saving={wbvSavedCanvasSaving} busySavedCanvasUid={wbvSavedCanvasBusyUid} error={wbvSavedCanvasError} onSave={saveWbvCanvas} onSaveChanges={saveActiveWbvCanvas} onLoad={loadWbvSavedCanvas} onDelete={deleteWbvSavedCanvas} />
+              <SavedCanvasToolbarControl items={wbvSavedCanvases} disabled={state.loading} saving={wbvSavedCanvasSaving} busySavedCanvasUid={wbvSavedCanvasBusyUid} error={wbvSavedCanvasError} onSave={saveWbvCanvas} onSaveChanges={saveActiveWbvCanvas} onLoad={loadWbvSavedCanvas} onDelete={deleteWbvSavedCanvas} openWithActiveCanvas={openWithActiveCanvas} onOpenWithActiveCanvasChange={changeOpenWithActiveCanvas} />
             </div>
           </div>
 
@@ -5696,7 +5761,33 @@ export function Wellbore3DPage({
             ) : null}
 
             <div
-              className={`wlv-wbv-scene-message ${hasTrajectory && !showSavedCanvasRestoreProgress ? "wlv-wbv-scene-message--package" : ""}`}
+              className={
+                !showSavedCanvasRestoreProgress && !state.loading && !state.error && !hasTrajectory
+                  ? undefined
+                  : `wlv-wbv-scene-message ${state.loading ? "wlv-wbv-scene-message--loading" : ""} ${hasTrajectory && !showSavedCanvasRestoreProgress ? "wlv-wbv-scene-message--package" : ""}`.trim()
+              }
+              role={!showSavedCanvasRestoreProgress && !state.loading && !state.error && !hasTrajectory ? "status" : undefined}
+              aria-live={!showSavedCanvasRestoreProgress && !state.loading && !state.error && !hasTrajectory ? "polite" : undefined}
+              style={
+                !showSavedCanvasRestoreProgress && !state.loading && !state.error && !hasTrajectory
+                  ? {
+                      position: "absolute",
+                      left: "50%",
+                      top: "50%",
+                      transform: "translate(-50%, -50%)",
+                      zIndex: 20,
+                      padding: "10px 16px",
+                      borderRadius: 6,
+                      border: "1px solid var(--mv-border-strong)",
+                      background: "color-mix(in srgb, var(--mv-surface-1) 92%, transparent)",
+                      color: "var(--mv-text-primary)",
+                      fontFamily: "var(--mv-font-ui)",
+                      fontSize: "0.82rem",
+                      fontWeight: 600,
+                      pointerEvents: "none",
+                    }
+                  : undefined
+              }
             >
               {showSavedCanvasRestoreProgress ? (
                 <>
@@ -5722,13 +5813,7 @@ export function Wellbore3DPage({
                   <p>{state.error}</p>
                 </>
               ) : !hasTrajectory ? (
-                <>
-                  <h2>Trajectory package not available</h2>
-                  <p>
-                    No backend-owned deviation survey / trajectory package is
-                    available yet. WBV will not fabricate a 3D well path.
-                  </p>
-                </>
+                <>Trajectory package not available</>
               ) : (
                 <>
                   <h2>

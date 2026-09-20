@@ -5890,3 +5890,40 @@ html[data-mv-theme="dark"].mv-ui-scope .mv-wbv-header {
   background: #1f1f1f !important;
   border-bottom-color: #2d2d2d !important;
 }
+
+/* ==========================================================================
+   WBV_WELL_SELECTION_CENTRAL_WIDTH_AUTHORITY_FIX_V1_0_3_AUDITED
+   Forensic owner correction:
+   - The effective Well Selection width is controlled by the central
+     --mv-wbv-header-label-width token consumed by the high-specificity
+     central heading-parity rule.
+   - Prior viewer-local width/grid overrides were defeated by central
+     !important rules and have been removed rather than compounded.
+   - Scope the reduced token only to the WBV Well Selection group so Saved
+     Canvas and other shared header controls retain their existing geometry.
+   ========================================================================== */
+.mv-ui-scope .mv-wbv-toolbar-group--well {
+  --mv-wbv-header-label-width: 99px;
+}
+
+/* ==========================================================================
+   WBV_WELL_SELECTION_ADDITIONAL_25_PERCENT_REDUCTION_V1_0_5_AUDITED
+   Confirmed baseline: 120px. Additional 25% reduction => 90px.
+   Corrected replacement for V1.0.4; no escaped newline text is written.
+   ========================================================================== */
+
+/* ==========================================================================
+   WBV_WELL_SELECTION_INCREASE_10_PERCENT_V1_0_6_AUDITED
+   Confirmed baseline: 90px. Increase 10% => 99px.
+   ========================================================================== */
+
+/* ==========================================================================
+   MULTIVIEWER GLOBAL SLIDER PRESENTATION STANDARD V1.0.0
+   Source visual authority: accepted WDV Core Appearance Brightness / Strength.
+   Presentation only. Intentionally does NOT own width, height, margin, layout,
+   min/max, step, value binding, pointer behavior, application logic, or color scheme.
+   ========================================================================== */
+.mv-ui-scope input[type="range"] {
+  accent-color: #5ca7e8 !important;
+}
+

@@ -83,6 +83,28 @@ type WellInfoSessionMetadataValue = {
 
 type WellInfoSessionMetadata = Record<string, WellInfoSessionMetadataValue>;
 
+// WLV_WBV_SAVED_CANVAS_EXACT_PARITY_V1_0_1_AUDITED
+const WLV_OPEN_WITH_ACTIVE_CANVAS_KEY = 'wlv.wdv.openWithActiveSavedCanvas.v1';
+
+function readWlvOpenWithActiveCanvas(): boolean {
+    if (typeof window === 'undefined') return true;
+    try {
+        const stored = window.localStorage.getItem(WLV_OPEN_WITH_ACTIVE_CANVAS_KEY);
+        return stored === null ? true : stored !== 'false';
+    } catch {
+        return true;
+    }
+}
+
+function writeWlvOpenWithActiveCanvas(next: boolean): void {
+    if (typeof window === 'undefined') return;
+    try {
+        window.localStorage.setItem(WLV_OPEN_WITH_ACTIVE_CANVAS_KEY, next ? 'true' : 'false');
+    } catch {
+        // Storage may be unavailable in restricted browser contexts.
+    }
+}
+
 const CURVE_OVERLAY_PERSISTENCE_KEY = 'wlv.wdv.curveOverlaysByWell.v1';
 const CURVE_OVERLAY_TRACK_STYLE_PERSISTENCE_KEY = 'wlv.wdv.formationTopOverlayStylesByTrack.v1';
 
@@ -5053,12 +5075,28 @@ useEffect(() => {
     if (layoutSource.managedWellUid !== managedViewerWellUid) return;
     if (canonicalStartupAppliedRef.current) return;
 
+    // WLV_OPEN_WITH_ACTIVE_CANVAS_OFF_BLANK_STARTUP_V1_0_0_AUDITED
+    // Exact WBV startup contract: when "Open with active canvas" is OFF,
+    // do not replay the prior working-canvas composition. WLV's working
+    // composition is canonical-session-owned, so initialize that working
+    // session as blank while leaving every immutable Saved Canvas intact.
+    if (!readWlvOpenWithActiveCanvas()) {
+      canonicalStartupAppliedRef.current = true;
+      setTracks([]);
+      setSelection({ kind: 'track', trackId: '' });
+      void runClearCanonicalCanvas().catch((error) => {
+        console.error('[WdvPageBoundary] blank startup initialization failed:', error);
+      });
+      return;
+    }
+
     applyCanonicalStartupLayout(layoutSource.tracks, layoutSource.selectedTrackId);
     canonicalStartupAppliedRef.current = true;
   }, [
     applyCanonicalStartupLayout,
     layoutSource,
     managedViewerWellUid,
+    runClearCanonicalCanvas,
   ]);
   useEffect(() => {
       recommendationAbortRef.current?.abort();
@@ -5740,6 +5778,18 @@ useEffect(() => {
   const [savedCanvasSaving, setSavedCanvasSaving] = useState(false);
   const [savedCanvasBusyUid, setSavedCanvasBusyUid] = useState<string | null>(null);
   const [savedCanvasError, setSavedCanvasError] = useState<string | null>(null);
+  // WLV_WBV_SAVED_CANVAS_EXACT_PARITY_V1_0_1_AUDITED
+  const [openWithActiveCanvas, setOpenWithActiveCanvas] = useState(readWlvOpenWithActiveCanvas);
+  const activeSavedCanvasAutoRestoreAttemptedRef = useRef(false);
+  const activeSavedCanvasUid = useMemo(
+      () => savedCanvases.find((item) => item.is_active)?.saved_canvas_uid ?? null,
+      [savedCanvases],
+  );
+  const changeOpenWithActiveCanvas = useCallback((next: boolean) => {
+      setOpenWithActiveCanvas(next);
+      writeWlvOpenWithActiveCanvas(next);
+      if (!next) activeSavedCanvasAutoRestoreAttemptedRef.current = false;
+  }, []);
 
   const buildSavedViewState = (): SavedWdvViewState => {
       const lockedViewports: Record<string, DepthViewRange> = {};
@@ -6180,7 +6230,28 @@ useEffect(() => {
               backgroundCurveFillHydrationKeysRef.current.clear();
               completedCurveFillHydrationKeysRef.current.clear();
 
-              applyCanonicalSession(response.session);
+              // WLV_SAVED_CANVAS_POST_RESTORE_CANONICAL_RECONCILIATION_V1_0_0_AUDITED
+              //
+              // The restore response contains the historical Saved Canvas
+              // session, but normal Curve modal Apply follows every canonical
+              // mutation by projecting a fresh backend session across the whole
+              // canvas. That fresh projection is what causes all curves/fills
+              // to snap into alignment. Reproduce that lifecycle here without
+              // mutating a curve: after the backend restore commits, fetch the
+              // now-current canonical session and make it the sole assignment
+              // presentation authority before replaying Saved Canvas view state.
+              const restoredAuthorityWellUid = managedViewerWellUid;
+
+              const reconciledSession = restoredAuthorityWellUid
+                  ? await fetchWlvJson<RawCanonicalSession>(
+                      `/api/wlv/v2/wdv/sessions/${encodeURIComponent(restoredAuthorityWellUid)}`,
+                    )
+                  : response.session;
+
+              applyCanonicalSession(
+                  reconciledSession,
+                  { preserveInteraction: true },
+              );
               await waitForSavedCanvasTrackComposition(response.view_state);
               await applySavedViewState(response.view_state);
               setStartupHydrationRetryTick((current) => current + 1);
@@ -6208,6 +6279,34 @@ useEffect(() => {
           setSavedCanvasBusyUid(null);
       }
   };
+
+  // WLV_WBV_SAVED_CANVAS_EXACT_PARITY_V1_0_1_AUDITED
+  // Match WBV: when configured, the backend-active Saved Canvas owns initial
+  // presentation after inventory is available. The WLV-native atomic restore
+  // remains the snapshot/transaction authority.
+  useEffect(() => {
+      if (
+          activeSavedCanvasAutoRestoreAttemptedRef.current
+          || !openWithActiveCanvas
+          || !activeSavedCanvasUid
+          || !wdvWorkspace?.workspace_id
+          || !canonicalSession
+          || quickViewPackage
+          || savedCanvasBusyUid
+          || activeView !== 'log-viewer'
+      ) return;
+
+      activeSavedCanvasAutoRestoreAttemptedRef.current = true;
+      void loadSavedCanvas(activeSavedCanvasUid);
+  }, [
+      activeSavedCanvasUid,
+      activeView,
+      canonicalSession,
+      openWithActiveCanvas,
+      quickViewPackage,
+      savedCanvasBusyUid,
+      wdvWorkspace?.workspace_id,
+  ]);
 
   const deleteSavedCanvas = async (savedCanvasUid: string): Promise<void> => {
       if (!wdvWorkspace || quickViewPackage || savedCanvasBusyUid) return;
@@ -6245,6 +6344,19 @@ useEffect(() => {
   }, []);
 
   useEffect(() => {
+      // WLV_OPEN_WITH_ACTIVE_CANVAS_OFF_BLANK_STARTUP_V1_0_0_AUDITED
+      // OFF means blank startup. Do not replay the previously committed/recovery
+      // viewport and presentation state after the canonical working session has
+      // intentionally been initialized blank.
+      if (!openWithActiveCanvas) {
+          if (!canvasRecoveryHydratedRef.current) {
+              canvasRecoveryHydratedRef.current = true;
+              setRecoveryHydratedWellUid(recoveryAuthorityWellUid(managedViewerWellUid));
+              setRecoveryAutosaveArmed(false);
+          }
+          return;
+      }
+
       if (!shouldAttemptUnifiedRecoveryHydration({
           managedViewerWellUid,
           canonicalRevision: canonicalRevisionRef.current,
@@ -6285,7 +6397,7 @@ useEffect(() => {
               setRecoveryAutosaveArmed(false);
           }
       })();
-  }, [managedViewerWellUid, canonicalSession?.revision]);
+  }, [managedViewerWellUid, canonicalSession?.revision, openWithActiveCanvas]);
 
   useEffect(() => {
       if (!shouldArmRecoveryAutosave({
@@ -7104,7 +7216,7 @@ useEffect(() => {
             return;
         }
         resetDepthView();
-    }} canvasRightInsetPx={quickViewPackage ? (quickViewInfoCollapsed ? 38 : 330) : (rightPropertiesCollapsed ? 38 : 330)} savedCanvases={savedCanvases} savedCanvasDisabled={Boolean(quickViewPackage) || !wdvWorkspace || !canonicalSession || curveFillPending} savedCanvasSaving={savedCanvasSaving} savedCanvasBusyUid={savedCanvasBusyUid} savedCanvasError={savedCanvasError} onSaveCanvas={saveCurrentCanvas} onSaveActiveCanvas={saveActiveCanvas} onLoadSavedCanvas={loadSavedCanvas} onDeleteSavedCanvas={deleteSavedCanvas} onToggleIntervalZoom={() => {
+    }} canvasRightInsetPx={quickViewPackage ? (quickViewInfoCollapsed ? 38 : 330) : (rightPropertiesCollapsed ? 38 : 330)} savedCanvases={savedCanvases} savedCanvasDisabled={Boolean(quickViewPackage) || !wdvWorkspace || !canonicalSession || curveFillPending} savedCanvasSaving={savedCanvasSaving} savedCanvasBusyUid={savedCanvasBusyUid} savedCanvasError={savedCanvasError} onSaveCanvas={saveCurrentCanvas} onSaveActiveCanvas={saveActiveCanvas} onLoadSavedCanvas={loadSavedCanvas} onDeleteSavedCanvas={deleteSavedCanvas} openWithActiveCanvas={openWithActiveCanvas} onOpenWithActiveCanvasChange={changeOpenWithActiveCanvas} onToggleIntervalZoom={() => {
         if (quickViewPackage) {
             setQuickViewIntervalZoomActive((active) => !active);
             return;
@@ -7348,3 +7460,9 @@ useEffect(() => {
         </div>;
 }
 import type { CurveLineStyleValue } from "../prototype/CurveLineStyleControl";
+
+// WLV_WBV_SAVED_CANVAS_EXACT_PARITY_V1_0_1_AUDITED
+
+// WLV_OPEN_WITH_ACTIVE_CANVAS_OFF_BLANK_STARTUP_V1_0_0_AUDITED
+
+// WLV_SAVED_CANVAS_POST_RESTORE_CANONICAL_RECONCILIATION_V1_0_0_AUDITED

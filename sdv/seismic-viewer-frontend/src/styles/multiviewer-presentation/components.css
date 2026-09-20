@@ -4160,3 +4160,13 @@ button:not(:disabled) {
   text-shadow: none !important;
 }
 
+/* ==========================================================================
+   MULTIVIEWER GLOBAL SLIDER PRESENTATION STANDARD V1.0.0
+   Source visual authority: accepted WDV Core Appearance Brightness / Strength.
+   Presentation only. Intentionally does NOT own width, height, margin, layout,
+   min/max, step, value binding, pointer behavior, application logic, or color scheme.
+   ========================================================================== */
+.mv-ui-scope input[type="range"] {
+  accent-color: #5ca7e8 !important;
+}
+

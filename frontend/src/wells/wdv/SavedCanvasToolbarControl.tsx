@@ -20,6 +20,8 @@ type Props = {
     onSaveChanges: (savedCanvasUid: string) => void | Promise<void>;
     onLoad: (savedCanvasUid: string) => void | Promise<void>;
     onDelete: (savedCanvasUid: string) => void | Promise<void>;
+    openWithActiveCanvas?: boolean;
+    onOpenWithActiveCanvasChange?: (openWithActiveCanvas: boolean) => void;
 };
 
 const MENU_WIDTH = 400;
@@ -48,6 +50,7 @@ const neutralButtonStyle = (width: number, primary = false) => ({
 export function SavedCanvasToolbarControl({
     items, disabled = false, busySavedCanvasUid = null, saving = false, error = null,
     onSave, onSaveChanges, onLoad, onDelete,
+    openWithActiveCanvas, onOpenWithActiveCanvasChange,
 }: Props) {
     const buttonRef = useRef<HTMLButtonElement | null>(null);
     const popoverRef = useRef<HTMLDivElement | null>(null);
@@ -108,7 +111,7 @@ export function SavedCanvasToolbarControl({
                 title={activeItem ? `Active Saved Canvas: ${activeItem.name}` : 'Save or restore the complete WDV canvas'}
                 onClick={() => { setOpen((value) => !value); setCreating(false); setName(''); window.requestAnimationFrame(updatePosition); }}
             >
-                {activeItem ? activeItem.name : 'Save Canvas'} ▾
+                Saved Canvas ▾
             </button>
 
             {open ? createPortal(
@@ -143,6 +146,16 @@ export function SavedCanvasToolbarControl({
                             <button type="button" disabled={saving || Boolean(busySavedCanvasUid)} onClick={() => void onSaveChanges(activeItem.saved_canvas_uid)} style={neutralButtonStyle(92, true)}>
                                 {saving ? '…' : 'Save Changes'}
                             </button>
+                        </div>
+                    ) : null}
+
+                    {typeof openWithActiveCanvas === 'boolean' && onOpenWithActiveCanvasChange && !creating ? (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 10, alignItems: 'center', padding: '7px 0', borderBottom: '1px solid #334155' }}>
+                            <label htmlFor="wlv-open-with-active-canvas" style={{ minWidth: 0, fontSize: 12, lineHeight: '18px', fontWeight: 500, cursor: 'pointer' }}>Open with active canvas</label>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, lineHeight: '16px', color: '#cbd5e1', cursor: 'pointer' }}>
+                                <input id="wlv-open-with-active-canvas" type="checkbox" checked={openWithActiveCanvas} onChange={(event) => onOpenWithActiveCanvasChange(event.target.checked)} aria-label="Open with active canvas" />
+                                {openWithActiveCanvas ? 'On' : 'Off'}
+                            </label>
                         </div>
                     ) : null}
 
@@ -185,8 +198,15 @@ export function SavedCanvasToolbarControl({
                                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, lineHeight: '18px', fontWeight: 500 }}>{item.name}</span>
                                         {active ? <span style={{ flex: '0 0 auto', fontSize: 10, lineHeight: '14px', color: '#86efac', fontWeight: 500 }}>Active</span> : null}
                                     </div>
-                                    <button type="button" disabled={saving || Boolean(busySavedCanvasUid) || active} onClick={() => void onLoad(item.saved_canvas_uid)} style={neutralButtonStyle(56)}>
-                                        {busy ? '…' : active ? '—' : 'Load'}
+                                    <button
+                                        type="button"
+                                        disabled={saving || Boolean(busySavedCanvasUid)}
+                                        onClick={() => void onLoad(item.saved_canvas_uid)}
+                                        title={active ? `Reload Saved Canvas "${item.name}"` : `Load Saved Canvas "${item.name}"`}
+                                        aria-label={active ? `Reload Saved Canvas ${item.name}` : `Load Saved Canvas ${item.name}`}
+                                        style={neutralButtonStyle(56)}
+                                    >
+                                        {busy ? '…' : active ? '↻' : 'Load'}
                                     </button>
                                     <button
                                         type="button"
